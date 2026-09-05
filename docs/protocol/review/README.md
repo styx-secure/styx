@@ -103,6 +103,17 @@ splitting the graph would create a second source-of-truth and is outside Issue
 #285. The closed modeled scope and per-decision attribution make that mismatch
 explicit, but do not eliminate its review cost.
 
+The historical C0.3 corpus and public kernel review model retain their exact
+eight-token Base precedence and do not project the APP-core
+`POST_REVOCATION`, `AUTHENTIC_BUT_UNAUTHORIZED` or
+`NO_OPERATIONAL_AUTHORITY` semantics. Their relative position of
+`LINEAGE_QUARANTINED` differs from the O-10 event precedence implemented by
+APP-core v0; APP-core record-outcome precedence is defined only by O-10 and
+ACV-076. The APP-core v0 interface document and executable candidate remain
+separate non-authoritative projections with respect to this public model. This
+separation is an explicit non-claim, not an alias, an implicit corpus extension
+or evidence that the public model validates APP-core precedence.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or

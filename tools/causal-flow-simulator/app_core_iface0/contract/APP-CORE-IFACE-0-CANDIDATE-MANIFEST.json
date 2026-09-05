@@ -1,0 +1,218 @@
+{
+  "manifestVersion": "APP-CORE-IFACE-0-CANDIDATE-MANIFEST-V1",
+  "status": "PRE_RATIFICATION_WORKING_EVIDENCE",
+  "authorityEffect": "NONE",
+  "derivedInterfaceMaxima": {
+    "derivationVersion": "APP-CORE-IFACE-0-INTERFACE-MAXIMA-V1",
+    "maxRetainedDecodedOctets": 35284168,
+    "maxRetainedDecodedRoot": "REQUEST-EVALUATE_CANDIDATE",
+    "maximizingRootBreakdowns": [
+      {
+        "breakdown": [
+          { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 55, "representedDecodedOctets": 0 },
+          { "component": "input", "jsonOctets": 138499171, "representedDecodedOctets": 68850888 },
+          { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
+          { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
+          { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 }
+        ],
+        "direction": "REQUEST",
+        "jsonOctets": 138499357,
+        "operation": "EVALUATE_CANDIDATE",
+        "representedDecodedOctets": 68850888,
+        "retainedDecodedOctets": 35284168,
+        "rootId": "REQUEST-EVALUATE_CANDIDATE"
+      },
+      {
+        "breakdown": [
+          { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 56, "representedDecodedOctets": 0 },
+          { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
+          { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
+          { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 },
+          { "component": "result", "jsonOctets": 71052447, "representedDecodedOctets": 35275892 }
+        ],
+        "direction": "RESPONSE",
+        "jsonOctets": 71052634,
+        "operation": "EVALUATE_CANDIDATE",
+        "representedDecodedOctets": 35275892,
+        "retainedDecodedOctets": 35275892,
+        "rootId": "RESPONSE-EVALUATE_CANDIDATE"
+      }
+    ],
+    "outerRequestOctets": 138499357,
+    "outerRequestRoot": "REQUEST-EVALUATE_CANDIDATE",
+    "outerResponseOctets": 71052634,
+    "outerResponseRoot": "RESPONSE-EVALUATE_CANDIDATE",
+    "rootMeasurementSetSha256": "3ead04f4d3c35e159baa69bb44ec6cd1221c1f736a275306271057994279258a"
+  },
+  "derivedCounts": {
+    "operations": 6,
+    "propertyBearingObjectSchemas": 78,
+    "directObjectDefinitions": 73,
+    "inlineObjectSchemas": 5,
+    "properties": 323,
+    "directlyRequiredProperties": 322,
+    "customKeywordOccurrences": 26,
+    "structuralRuleFamilies": 24,
+    "structuralExecutionInstances": 1450,
+    "oneOfOccurrences": 16,
+    "oneOfArms": 54,
+    "oneOfPairwiseDisjointnessRows": 93,
+    "semanticFamilies": 83,
+    "semanticExecutionInstances": 5149,
+    "totalExecutionInstances": 6599,
+    "contentRelationRows": 23,
+    "forkJoinLabelRelationRows": 10,
+    "authorityProjectionDimensionRelationRows": 16,
+    "graphAdmissionDimensionRelationRows": 11,
+    "candidatePrimaryRelationRows": 25,
+    "transcriptRelationRows": 16,
+    "genesisRelationRows": 17,
+    "terminalPredicateRelationRows": 33,
+    "signatureVerificationPathRows": 17,
+    "nativeDependencies": 63,
+    "readOnlyNativeDependencies": 59,
+    "seededExtensionNativeDependencies": 4,
+    "historicalProviderIncrements": 5,
+    "seedRegistryRowsPendingPostBase": 78,
+    "structuralWitnessRowsPendingPostBase": 1450
+  },
+  "artifacts": [
+    {
+      "path": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+      "role": "INTERFACE_SCHEMA",
+      "sha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json",
+      "role": "PROPERTY_OWNERSHIP",
+      "sha256": "af7c2db16398e383e28e1812fe88f5f5cfaa69599a9ea999395e69a4c36779a0"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json",
+      "role": "STRUCTURAL_INSTANCE_AXES",
+      "sha256": "ecca094cbda634c0db733d6c71c31fe5d92430ed8a8185de8569c6c5169230de"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
+      "role": "BOUNDED_STRUCTURAL_PERTURBATION_PALETTE",
+      "sha256": "db8ebfaf3d34a8d47dae6c1996eb4cadc91d737f13a9278a75c2ea441ebea9d8"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
+      "role": "ONEOF_PAIRWISE_DISJOINTNESS",
+      "sha256": "eb992a044c5a5c53b4ea0c01b743adfd5846896d30f9274e4f26a5927f193382"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
+      "role": "STRUCTURAL_WITNESS_REGISTRY_SCHEMA",
+      "sha256": "c74582b06caa57ae2981db55092dbb41d6a8a41f16977b53dad26e68e8879d89"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
+      "role": "SEMANTIC_RULE_FAMILIES",
+      "sha256": "03c12f8bcb11b9fea939bd8736c80ad2d5a591f4659f257c80ddac5715b19d72"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
+      "role": "SEMANTIC_INSTANCE_AXES",
+      "sha256": "04fd304ac6b23add64033b45282ac0d46fe09d44f92651881995f4727c9e0832"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
+      "role": "INSTANCE_EXECUTION_PHASES",
+      "sha256": "7dad552e9bcde710205302f72c81aac7ac98e350fc31cb4a11007739428cc0ed"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
+      "role": "LITERAL_LEGAL_RELATIONS",
+      "sha256": "ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
+      "role": "SEED_REGISTRY_SCHEMA",
+      "sha256": "8b98b69ee88bdbf59f5de1fc20e4008aaedd97c3f09a6c615869997501eeb2ef"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
+      "role": "POSITIVE_CARRIER_INVENTORY_SCHEMA",
+      "sha256": "8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json",
+      "role": "DERIVED_CARRIER_REACHABILITY",
+      "sha256": "6ead453a551472a87ca00ef812a8952ebaeb76d5cdbbe1e6dcf10279f32147ca"
+    },
+    {
+      "path": "derive_app_core_carrier_reachability.py",
+      "role": "CARRIER_REACHABILITY_DERIVER",
+      "sha256": "a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json",
+      "role": "EXACT_BASE_NATIVE_DEPENDENCY_RELATION",
+      "sha256": "1b9a0ae381a2ed8bd401a76fe2169992c4f0ec26248e1a4d36273833482abf17"
+    },
+    {
+      "path": "derive_app_core_native_dependencies.py",
+      "role": "EXACT_GIT_OBJECT_DEPENDENCY_DERIVER",
+      "sha256": "2d55694cbc47cd9fe49b51c0f4c33194bc84ae8f9314abccc9aa5a14003ccafc"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-PROVIDER-BINDINGS-CANDIDATE.json",
+      "role": "HISTORICAL_PROVIDER_AUTHORITY_AND_SCOPE_RELATION",
+      "sha256": "62d4689ca0e423211036d4fbff6f0dbf12ded13b2c474945dc6c1dfa812480d2"
+    },
+    {
+      "path": "validate_app_core_provider_bindings.py",
+      "role": "LIVE_PROVIDER_AND_MUTABLE_SCOPE_VALIDATOR",
+      "sha256": "7ec8ea41effded7e79be1310494be4520e4727663bd7c4cad851148cfbb18895"
+    },
+    {
+      "path": "validate_app_core_contract_candidates.py",
+      "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
+      "sha256": "200682b8c077f83525b19a3b0399a0086a872a26a448401c4f1022b86550c7c4"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
+      "role": "HOSTILE_DERIVATION",
+      "sha256": "2b52fdf5655d99b663bbb75129310b4afae4cb78d11bd5770c9c737f936a52eb"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
+      "role": "VALIDATOR_PIPELINE",
+      "sha256": "e49edb4dc29ffaaba51c05d2cd2402018bf1d9830203e046fd0c456df85f484e"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
+      "role": "DETERMINISTIC_SEED_AND_WITNESS_GENERATION",
+      "sha256": "63d8ac580dd5c4ceb5ca0f617d2af4da4da84b0a2d6a29637d73be4bfd1f9481"
+    },
+    {
+      "path": "APP-CORE-O10-CLOSURE-CANDIDATE.md",
+      "role": "F13_F14_RELATIONS",
+      "sha256": "15a8a30a58b9010452fb70132b9e8e1a302a0b8cefaa79938af704cd771b4dc8"
+    },
+    {
+      "path": "APP-CORE-EVIDENCE-UPDATE-CANDIDATE.md",
+      "role": "F16_RELATION",
+      "sha256": "9f8d7b09327a54f473bf208ea437463c8509ce19e6265ebbf97948fe00fd1aa1"
+    },
+    {
+      "path": "APP-CORE-FLOW-CLOSURE.md",
+      "role": "TWELVE_FLOW_RELATION",
+      "sha256": "3aa8fb2f4114f1ac19aecc3dbf2e5376b78943e51e70760b9a86f3c3fb5c3f51"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
+      "role": "EXECUTABLE_CONTRACT_OUTLINE",
+      "sha256": "d5d2fb90c4ab5bb2f0a4ed51f44dcb04f1a65376431e2052f6937350df391470"
+    }
+  ],
+  "remainingBeforeExecutableIssue": [
+    "RATIFIED_F13_F14_F16_NORMATIVE_RELATIONS",
+    "RATIFIED_BOUNDED_PERTURBATION_AND_CARRIER_GENERATION_CONTRACT",
+    "EXACT_PROVIDER_OBJECT_BINDINGS",
+    "INDEPENDENT_SECURITY_REVIEW",
+    "PROVIDER_BOUND_HUMAN_RATIFICATION"
+  ]
+}

@@ -1,0 +1,1330 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "registryVersion": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-V1",
+  "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
+  "pairCount": 93,
+  "pairSetSha256": "9e99136e0d831758c7a6b9f74649e3fbc3d617ea37e05c17be39c9e70ace465f",
+  "algorithm": [
+    "Resolve local refs only; remote refs or cycles fail closed.",
+    "Recursively flatten a nested oneOf only when proving an outer arm pair.",
+    "Conjunctively collect const/enum literal restrictions, closed object property sets and required properties through allOf and nested property refs.",
+    "A direct pair is disjoint only through an empty literal intersection at one common path or a property required by one arm and forbidden by the other closed shape.",
+    "A nested pair is disjoint only when every expanded subpair has a direct proof. Unknown or unsupported proof forms fail closed."
+  ],
+  "rows": [
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "REVOKE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "ROTATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/0-3",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 0,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/0-4",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 0,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/0-5",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 0,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "ROTATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/1-3",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 1,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/1-4",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 1,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/1-5",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 1,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/2-3",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 2,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ROTATE"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/2-4",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 2,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ROTATE"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/2-5",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 2,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ROTATE"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/3-4",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 3,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "RECOVER"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/3-5",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 3,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "RECOVER"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf/pair/4-5",
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "leftArm": 4,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "POLICY"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/AuthorityProjectionV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/status",
+      "leftValues": [
+        "AVAILABLE"
+      ],
+      "rightValues": [
+        "UNAVAILABLE"
+      ]
+    },
+    {
+      "pairId": "/$defs/CandidateEvaluationResultV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "TERMINAL_NO_SUCCESSOR"
+      ],
+      "rightValues": [
+        "PROPOSAL_READY"
+      ]
+    },
+    {
+      "pairId": "/$defs/ContentDescriptorProjectionV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/contentClass",
+      "leftValues": [
+        "NONE"
+      ],
+      "rightValues": [
+        "DETACHABLE",
+        "REQUIRED"
+      ]
+    },
+    {
+      "pairId": "/$defs/ContentDescriptorProjectionV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/contentClass",
+      "leftValues": [
+        "NONE"
+      ],
+      "rightValues": [
+        "DETACHABLE",
+        "REQUIRED"
+      ]
+    },
+    {
+      "pairId": "/$defs/ContentDescriptorProjectionV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/commitmentShape",
+      "leftValues": [
+        "SINGLE"
+      ],
+      "rightValues": [
+        "CHUNK_TREE"
+      ]
+    },
+    {
+      "pairId": "/$defs/CredentialBindingProjectionV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/origin",
+      "leftValues": [
+        "GENESIS"
+      ],
+      "rightValues": [
+        "GRANT"
+      ]
+    },
+    {
+      "pairId": "/$defs/DescribeProfileResultV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/DescribeProfileResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/disposition",
+      "leftValues": [
+        "SUPPORTED"
+      ],
+      "rightValues": [
+        "UNSUPPORTED"
+      ]
+    },
+    {
+      "pairId": "/$defs/EvaluateGenesisResultV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/EvaluateGenesisResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GENESIS_PROPOSAL_READY"
+      ],
+      "rightValues": [
+        "TERMINAL_NO_PROPOSAL"
+      ]
+    },
+    {
+      "pairId": "/$defs/EvidenceUpdateResultV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "TERMINAL_REJECTED"
+      ],
+      "rightValues": [
+        "IDEMPOTENT_NO_CHANGE"
+      ]
+    },
+    {
+      "pairId": "/$defs/EvidenceUpdateResultV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "TERMINAL_REJECTED"
+      ],
+      "rightValues": [
+        "PROPOSAL_READY"
+      ]
+    },
+    {
+      "pairId": "/$defs/EvidenceUpdateResultV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "IDEMPOTENT_NO_CHANGE"
+      ],
+      "rightValues": [
+        "PROPOSAL_READY"
+      ]
+    },
+    {
+      "pairId": "/$defs/GenesisEvaluationReasonV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/GenesisEvaluationReasonV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "",
+      "leftValues": [
+        "COMMITMENT_GEOMETRY_REJECTED",
+        "CONTENT_DESCRIPTOR_REJECTED",
+        "PROFILE_ACTIVATION_UNSUPPORTED",
+        "REFERENCE_MISMATCH",
+        "SELECTED_ENVELOPE_REJECTED",
+        "SIGNATURE_INVALID",
+        "SIGNATURE_LENGTH_MISMATCH",
+        "TRANSCRIPT_DOMAIN_REJECTED",
+        "TRANSCRIPT_LENGTH_MISMATCH",
+        "TRANSCRIPT_LENGTH_REJECTED",
+        "TRANSCRIPT_NONCANONICAL",
+        "TRANSCRIPT_TRAILING_BYTES",
+        "TRANSCRIPT_TRUNCATED"
+      ],
+      "rightValues": [
+        "EXPECTED_CONTEXT_MISMATCH",
+        "INITIAL_AUTHORITY_POLICY_REJECTED",
+        "ROOT_CREDENTIAL_POSITION_MISMATCH"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/0-3",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/0-4",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/0-5",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/1-3",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/1-4",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/1-5",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/2-3",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_GENESIS"
+      ],
+      "rightValues": [
+        "REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/2-4",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_GENESIS"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/2-5",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_GENESIS"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/3-4",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "REPLAY_CONTEXT"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/3-5",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "REPLAY_CONTEXT"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceRequestV0/oneOf/pair/4-5",
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "leftArm": 4,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_CANDIDATE"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/0-3",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/0-4",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/0-5",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "DESCRIBE_PROFILE"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/1-3",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/1-4",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/1-5",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "VALIDATE_TRANSCRIPT"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/2-3",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_GENESIS"
+      ],
+      "rightValues": [
+        "REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/2-4",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_GENESIS"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/2-5",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_GENESIS"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/3-4",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "REPLAY_CONTEXT"
+      ],
+      "rightValues": [
+        "EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/3-5",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "REPLAY_CONTEXT"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/InterfaceResponseV0/oneOf/pair/4-5",
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "leftArm": 4,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/operation",
+      "leftValues": [
+        "EVALUATE_CANDIDATE"
+      ],
+      "rightValues": [
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ReplayContextResultV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REPLAY_PROPOSAL_READY"
+      ],
+      "rightValues": [
+        "TERMINAL_INPUT_REJECTED"
+      ]
+    },
+    {
+      "pairId": "/$defs/ReplayContextResultV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REPLAY_PROPOSAL_READY"
+      ],
+      "rightValues": [
+        "TERMINAL_CANDIDATE_REJECTED"
+      ]
+    },
+    {
+      "pairId": "/$defs/ReplayContextResultV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "TERMINAL_INPUT_REJECTED"
+      ],
+      "rightValues": [
+        "TERMINAL_CANDIDATE_REJECTED"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "LOGICAL_REMOVAL"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "GRANT"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-3",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "REVOKE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-4",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "ROTATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-5",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-6",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 6,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/0-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ORDINARY"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "LOGICAL_REMOVAL"
+      ],
+      "rightValues": [
+        "GRANT"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/1-3",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "LOGICAL_REMOVAL"
+      ],
+      "rightValues": [
+        "REVOKE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/1-4",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "LOGICAL_REMOVAL"
+      ],
+      "rightValues": [
+        "ROTATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/1-5",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "LOGICAL_REMOVAL"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/1-6",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 6,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "LOGICAL_REMOVAL"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/1-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "LOGICAL_REMOVAL"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/2-3",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "REVOKE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/2-4",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "ROTATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/2-5",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/2-6",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 6,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/2-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "GRANT"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/3-4",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 4,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "ROTATE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/3-5",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/3-6",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 6,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/3-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 3,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "REVOKE"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/4-5",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 4,
+      "rightArm": 5,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ROTATE"
+      ],
+      "rightValues": [
+        "RECOVER"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/4-6",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 4,
+      "rightArm": 6,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ROTATE"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/4-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 4,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "ROTATE"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/5-6",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 5,
+      "rightArm": 6,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "RECOVER"
+      ],
+      "rightValues": [
+        "POLICY"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/5-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 5,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "RECOVER"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/RoleTailProjectionV0/oneOf/pair/6-7",
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "leftArm": 6,
+      "rightArm": 7,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "POLICY"
+      ],
+      "rightValues": [
+        "CLOSURE"
+      ]
+    },
+    {
+      "pairId": "/$defs/ValidateTranscriptInputV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/candidate/objectKind",
+      "leftValues": [
+        "GENESIS"
+      ],
+      "rightValues": [
+        "APPLICATION_EVENT"
+      ]
+    },
+    {
+      "pairId": "/$defs/ValidateTranscriptInputV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/candidate/objectKind",
+      "leftValues": [
+        "GENESIS"
+      ],
+      "rightValues": [
+        "APPLICATION_EVENT"
+      ]
+    },
+    {
+      "pairId": "/$defs/ValidateTranscriptInputV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "CLOSED_SHAPE_REQUIRED_PROPERTY",
+      "objectPointer": "",
+      "property": "standaloneVerification",
+      "forbiddenBy": "LEFT",
+      "requiredBy": "RIGHT"
+    },
+    {
+      "pairId": "/$defs/ValidateTranscriptResultV0/oneOf/pair/0-1",
+      "oneOfPointer": "/$defs/ValidateTranscriptResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": [
+        "VALIDATED"
+      ],
+      "rightValues": [
+        "REJECTED"
+      ]
+    },
+    {
+      "pairId": "/oneOf/pair/0-1",
+      "oneOfPointer": "/oneOf",
+      "leftArm": 0,
+      "rightArm": 1,
+      "method": "NESTED_UNION_EXHAUSTIVE",
+      "expandedPairCount": 36,
+      "subproofMethodSet": [
+        "CLOSED_SHAPE_REQUIRED_PROPERTY",
+        "DISJOINT_LITERAL"
+      ]
+    }
+  ]
+}

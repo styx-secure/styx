@@ -1,0 +1,297 @@
+{
+  "status": "INCOMPLETE_PRE_RATIFICATION_CANDIDATE",
+  "registryVersion": "APP-CORE-IFACE-0-STRUCTURAL-AXES-V1",
+  "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
+  "oneOfDisjointnessRegistry": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
+  "oneOfDisjointnessRegistrySha256": "eb992a044c5a5c53b4ea0c01b743adfd5846896d30f9274e4f26a5927f193382",
+  "perturbationPalette": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
+  "perturbationPaletteSha256": "db8ebfaf3d34a8d47dae6c1996eb4cadc91d737f13a9278a75c2ea441ebea9d8",
+  "positiveCarrierInventorySchema": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
+  "positiveCarrierInventorySchemaSha256": "8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f",
+  "structuralWitnessRegistrySchema": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
+  "structuralWitnessRegistrySchemaSha256": "c74582b06caa57ae2981db55092dbb41d6a8a41f16977b53dad26e68e8879d89",
+  "pointerDigestEncoding": "lexicographically sorted canonical JSON Pointer plus LF",
+  "executionContract": {
+    "request": {
+      "executionPhase": "BLIND_INPUT_EXECUTION",
+      "oracleDisclosure": "BLIND_INPUT",
+      "rejectObservation": "REQUEST_REJECTED_NO_BYTES",
+      "acceptObservation": "POSITIVE_REQUEST_ADMITTED"
+    },
+    "response": {
+      "executionPhase": "POST_OUTPUT_MUTATION",
+      "oracleDisclosure": "WITHHELD_ORACLE",
+      "rejectObservation": "OUTPUT_REJECTED_BEFORE_RELEASE",
+      "acceptObservation": "POSITIVE_OUTPUT_ADMITTED"
+    },
+    "defaultIsolationMode": "TARGET_ONLY_COUNTERFACTUAL",
+    "dispositionRule": "Every rule fixes perturbationKind and expectedDisposition. FROM_RELATION_SUFFIX means a literal relation row ending in _ACCEPTS expects ACCEPT and a row ending in _REJECTS expects REJECT; any other suffix fails closed."
+  },
+  "rules": [
+    {
+      "id": "STR-REQUIRED-PROPERTY-OMISSION",
+      "mode": "PER_REQUIRED_PROPERTY_OF_PROPERTY_BEARING_OBJECT_SCHEMA",
+      "sourceCount": 322,
+      "sourceSetSha256": "b2452de64e6283c9fa60a9984c92cbf27e41ffc5385632d156e6054b80c351f0",
+      "perturbationKind": "REMOVE_REQUIRED_PROPERTY",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 322
+    },
+    {
+      "id": "STR-NULL-SUBSTITUTION",
+      "mode": "PER_DECLARED_PROPERTY",
+      "sourceCount": 323,
+      "sourceSetSha256": "31aaa5401ba04e3efd9c6a6b4b5ba2a1ff9b3d5336adde552b8bf80a30aec64c",
+      "perturbationKind": "REPLACE_WITH_NULL",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 323
+    },
+    {
+      "id": "STR-DUPLICATE-JSON-PROPERTY",
+      "mode": "PER_PROPERTY_BEARING_OBJECT_SCHEMA",
+      "sourceCount": 78,
+      "sourceSetSha256": "79b260376a95d0c2e78e05b9ae347cf826c7dcb6b4b947acf977844390f2d20e",
+      "perturbationKind": "DUPLICATE_RAW_JSON_MEMBER",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 78
+    },
+    {
+      "id": "STR-UNKNOWN-OBJECT-PROPERTY",
+      "mode": "PER_ADDITIONAL_PROPERTIES_FALSE_OCCURRENCE",
+      "sourceCount": 79,
+      "sourceSetSha256": "5da53d4772b4240d18797782860fb61bbf7b1753e9ca3243dd5416d35b83ed4c",
+      "perturbationKind": "INSERT_UNKNOWN_PROPERTY",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 79
+    },
+    {
+      "id": "STR-TYPE-MISMATCH",
+      "mode": "PER_TYPE_OCCURRENCE",
+      "sourceCount": 97,
+      "sourceSetSha256": "0399be5dd7ffd9d8f34a6db8de6800f63ac4dce68ba76dd9c45c8b0707de53f1",
+      "perturbationKind": "REPLACE_WITH_WRONG_TYPE",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 97
+    },
+    {
+      "id": "STR-REF-TARGET-CONSTRAINT",
+      "mode": "PER_REF_OCCURRENCE",
+      "sourceCount": 263,
+      "sourceSetSha256": "8be2c2b0505f7630a9d52a1b19ab9086711d14bd96864a5b0e2cb779b6791f5c",
+      "perturbationKind": "VIOLATE_REFERENCED_SCHEMA",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 263
+    },
+    {
+      "id": "STR-CONST-SUBSTITUTION",
+      "mode": "PER_CONST_OCCURRENCE",
+      "sourceCount": 103,
+      "sourceSetSha256": "8cc02d57304108851dd1f8afc2f5d9be484d254cc904fca50485beea20bea58b",
+      "perturbationKind": "REPLACE_CONST_VALUE",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 103
+    },
+    {
+      "id": "STR-UNKNOWN-ENUM-VALUE",
+      "mode": "PER_ENUM_OCCURRENCE",
+      "sourceCount": 35,
+      "sourceSetSha256": "aec8b4702c582add406fd9764e7ed1d89e7507649a88a60c30bee5b0cc2bb0de",
+      "perturbationKind": "REPLACE_ENUM_VALUE",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 35
+    },
+    {
+      "id": "STR-PATTERN-MISMATCH",
+      "mode": "PER_PATTERN_OCCURRENCE",
+      "sourceCount": 3,
+      "sourceSetSha256": "ed9c30ab315b69607c8ac884892ec8e240379e0999fe43beecc3f821eb9a60b4",
+      "perturbationKind": "REPLACE_PATTERN_VALUE",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 3
+    },
+    {
+      "id": "STR-MIN-LENGTH-UNDERFLOW",
+      "mode": "PER_MIN_LENGTH_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "22b6c922585c9dba525ab609146cdb4b0fcb25a5b0049e7d53dccaa83a53bef9",
+      "perturbationKind": "UNDERFLOW_MIN_LENGTH",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 1
+    },
+    {
+      "id": "STR-MAX-LENGTH-OVERFLOW",
+      "mode": "PER_MAX_LENGTH_OCCURRENCE",
+      "sourceCount": 3,
+      "sourceSetSha256": "d59dea81b69b56f992069929c45187c821a416dd9227dc31eb26423a41d6ea6b",
+      "perturbationKind": "OVERFLOW_MAX_LENGTH",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 3
+    },
+    {
+      "id": "STR-MIN-ITEMS-UNDERFLOW",
+      "mode": "PER_MIN_ITEMS_OCCURRENCE",
+      "sourceCount": 4,
+      "sourceSetSha256": "b49aad7dabc2f4fd1bc21ea9e6aa777f2b5bb560920a385145459b3bf4024cf8",
+      "perturbationKind": "UNDERFLOW_MIN_ITEMS",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 4
+    },
+    {
+      "id": "STR-MAX-ITEMS-OVERFLOW",
+      "mode": "PER_MAX_ITEMS_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "c26a9da575b772c9001fbcb86f83c48ff5ddf3b697faeec4112d9a179d99bc87",
+      "perturbationKind": "OVERFLOW_MAX_ITEMS",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 1
+    },
+    {
+      "id": "STR-UNIQUE-ITEMS-DUPLICATE",
+      "mode": "PER_UNIQUE_ITEMS_TRUE_OCCURRENCE",
+      "sourceCount": 15,
+      "sourceSetSha256": "ff4007d749e72257b0b5acc4956e9fc3cc3eb40667d73f6f84238b84d16bbaf1",
+      "perturbationKind": "DUPLICATE_ARRAY_ITEM",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 15
+    },
+    {
+      "id": "STR-ITEM-CONSTRAINT-VIOLATION",
+      "mode": "PER_ITEMS_OCCURRENCE",
+      "sourceCount": 15,
+      "sourceSetSha256": "9f567eee798edaaae685a2e0932d1bb6027aefdfad44f412f3d386b7dc7938f5",
+      "perturbationKind": "VIOLATE_ARRAY_ITEM_SCHEMA",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 15
+    },
+    {
+      "id": "STR-ONE-OF-NO-ARM",
+      "mode": "PER_ONE_OF_OCCURRENCE",
+      "sourceCount": 16,
+      "sourceSetSha256": "baef25c34ee8edae62f62800188416c6486eb3dc1e7ab90a09a7957dab2ef94e",
+      "perturbationKind": "CONSTRUCT_NO_ONEOF_ARM",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 16
+    },
+    {
+      "id": "STR-ONE-OF-POSITIVE-ARM",
+      "mode": "PER_ONE_OF_ARM",
+      "sourceCount": 54,
+      "sourceSetSha256": "56e2eca24d79e3c29a4a2cbbb584783576ffe9fadacdc6d467943833f55db628",
+      "perturbationKind": "POSITIVE_ONEOF_ARM",
+      "expectedDisposition": "ACCEPT",
+      "expectedCount": 54
+    },
+    {
+      "id": "STR-ANY-OF-NO-ARM",
+      "mode": "PER_ANY_OF_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "050948d230649f7a68b4cfe220b35209965cccd18c7b97a7d9cd13d91310d0a6",
+      "perturbationKind": "CONSTRUCT_NO_ANYOF_ARM",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 1
+    },
+    {
+      "id": "STR-ANY-OF-POSITIVE-ARM",
+      "mode": "PER_ANY_OF_ARM",
+      "sourceCount": 2,
+      "sourceSetSha256": "ad7d77c0b85c8c28d1c352dbaa2f83a708dda76ae2e1fa5a7bd1559cc5c64ca2",
+      "perturbationKind": "POSITIVE_ANYOF_ARM",
+      "expectedDisposition": "ACCEPT",
+      "expectedCount": 2
+    },
+    {
+      "id": "STR-ANY-OF-ALL-ARMS",
+      "mode": "PER_ANY_OF_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "050948d230649f7a68b4cfe220b35209965cccd18c7b97a7d9cd13d91310d0a6",
+      "perturbationKind": "POSITIVE_ALL_ANYOF_ARMS",
+      "expectedDisposition": "ACCEPT",
+      "expectedCount": 1
+    },
+    {
+      "id": "STR-ALL-OF-BRANCH-CONSTRAINT",
+      "mode": "PER_ALL_OF_ARM",
+      "sourceCount": 19,
+      "sourceSetSha256": "5868e604e3721dbf45aa5c3bff4dcb05adcb18aab3dcb6dcaf6fd746162af4ee",
+      "perturbationKind": "VIOLATE_ALLOF_ARM",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 19
+    },
+    {
+      "id": "STR-CONDITIONAL-BRANCH-MATRIX",
+      "mode": "LITERAL_RELATION",
+      "sourceCount": 13,
+      "perturbationKind": "CONDITIONAL_MATRIX_ROW",
+      "expectedDisposition": "FROM_RELATION_SUFFIX",
+      "expectedCount": 13,
+      "relation": [
+        "AUTHOR_SEQUENCE_ZERO_WITHOUT_PREDECESSOR_ACCEPTS",
+        "AUTHOR_SEQUENCE_ZERO_WITH_PREDECESSOR_REJECTS",
+        "AUTHOR_SEQUENCE_NONZERO_WITH_PREDECESSOR_ACCEPTS",
+        "AUTHOR_SEQUENCE_NONZERO_WITHOUT_PREDECESSOR_REJECTS",
+        "ORDINARY_WITH_ORDINARY_TAIL_ACCEPTS",
+        "ORDINARY_WITH_NON_ORDINARY_TAIL_REJECTS",
+        "NON_ORDINARY_SKIPS_ORDINARY_BRANCH_ACCEPTS",
+        "LOGICAL_REMOVAL_WITH_REMOVAL_TAIL_ACCEPTS",
+        "LOGICAL_REMOVAL_WITH_NON_REMOVAL_TAIL_REJECTS",
+        "NON_REMOVAL_SKIPS_REMOVAL_BRANCH_ACCEPTS",
+        "CREDENTIAL_CONTROL_WITH_CONTROL_TAIL_ACCEPTS",
+        "CREDENTIAL_CONTROL_WITH_NON_CONTROL_TAIL_REJECTS",
+        "NON_CONTROL_SKIPS_CONTROL_BRANCH_ACCEPTS"
+      ]
+    },
+    {
+      "id": "STR-NOT-SUBSCHEMA-MATCH",
+      "mode": "PER_NOT_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "14a845e17cc05cddcd5a241b82a7f2b13c8bcb0cb5865e0ad7a5c2be25329a54",
+      "perturbationKind": "MATCH_FORBIDDEN_NOT_SUBSCHEMA",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 1
+    },
+    {
+      "id": "STR-MAX-PROPERTIES-OVERFLOW",
+      "mode": "PER_MAX_PROPERTIES_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "9605d7da2da96d3d0f58f6875d8c9ee12cef3e5fa2a04a20f745978b128becb0",
+      "perturbationKind": "EXCEED_MAX_PROPERTIES",
+      "expectedDisposition": "REJECT",
+      "isolationMode": "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST",
+      "redundancyReason": "DescribeProfileInputV0 has maxProperties 0 and additionalProperties false with no declared properties; removing only maxProperties cannot change acceptance on the exact schema.",
+      "expectedCount": 1
+    }
+  ],
+  "derivedCounts": {
+    "structuralRuleFamilies": 24,
+    "structuralExecutionInstances": 1450
+  },
+  "coverageReconciliation": {
+    "$schema/$id/title/description/$defs": "Exact schema bytes and SHA-256 are immutable preflight authority, not runtime input scenarios.",
+    "$ref": "STR-REF-TARGET-CONSTRAINT",
+    "additionalProperties": "STR-UNKNOWN-OBJECT-PROPERTY",
+    "allOf": "STR-ALL-OF-BRANCH-CONSTRAINT",
+    "anyOf": "STR-ANY-OF-NO-ARM plus STR-ANY-OF-POSITIVE-ARM plus STR-ANY-OF-ALL-ARMS",
+    "const": "STR-CONST-SUBSTITUTION",
+    "enum": "STR-UNKNOWN-ENUM-VALUE",
+    "if/then/else": "STR-CONDITIONAL-BRANCH-MATRIX",
+    "items": "STR-ITEM-CONSTRAINT-VIOLATION",
+    "maxLength": "STR-MAX-LENGTH-OVERFLOW",
+    "maxItems": "STR-MAX-ITEMS-OVERFLOW",
+    "maxProperties": "STR-MAX-PROPERTIES-OVERFLOW",
+    "minItems": "STR-MIN-ITEMS-UNDERFLOW",
+    "minLength": "STR-MIN-LENGTH-UNDERFLOW",
+    "not": "STR-NOT-SUBSCHEMA-MATCH",
+    "oneOf": "STR-ONE-OF-NO-ARM plus STR-ONE-OF-POSITIVE-ARM; pairwise arm disjointness is separately proven by the populated witness registry",
+    "pattern": "STR-PATTERN-MISMATCH",
+    "properties/required": "STR-REQUIRED-PROPERTY-OMISSION plus STR-NULL-SUBSTITUTION; conditional required predicates belong to STR-CONDITIONAL-BRANCH-MATRIX",
+    "type": "STR-TYPE-MISMATCH",
+    "uniqueItems": "STR-UNIQUE-ITEMS-DUPLICATE",
+    "x-styx-*": "ACV-050 exact custom-keyword registry and the owning semantic ACV rule"
+  },
+  "remainingBeforeRatification": [
+    "HUMAN_RATIFICATION_OF_THE_SINGLE_LOGICALLY_REDUNDANT_MAX_PROPERTIES_OCCURRENCE",
+    "POPULATED_STRUCTURAL_WITNESS_REGISTRY_WITH_EXACT_CARRIER_AND_TARGET_POINTER_PER_INSTANCE",
+    "CROSS_RUNTIME_VALIDATOR_AGREEMENT_ON_ALL_1450_INSTANCES"
+  ]
+}

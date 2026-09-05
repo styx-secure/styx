@@ -1,0 +1,3496 @@
+{
+  "reachabilityVersion": "APP-CORE-IFACE-0-CARRIER-REACHABILITY-V1",
+  "status": "PRE_RATIFICATION_PLANNING_EVIDENCE",
+  "authorityEffect": "NONE",
+  "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
+  "definitionPointerSetSha256": "49a1991afaad641cf108ce89f89103a3eb002b2d41853a916d01487933b1bef9",
+  "objectSchemaPointerSetSha256": "79b260376a95d0c2e78e05b9ae347cf826c7dcb6b4b947acf977844390f2d20e",
+  "oneOfArmEncoding": "lexicographically sorted <oneOfPointer>#<decimal-arm-index> plus LF",
+  "oneOfArmSetSha256": "56e2eca24d79e3c29a4a2cbbb584783576ffe9fadacdc6d467943833f55db628",
+  "rootCount": 12,
+  "definitionCount": 114,
+  "objectSchemaCount": 78,
+  "oneOfArmCount": 54,
+  "roots": [
+    {
+      "rootId": "REQUEST-DESCRIBE_PROFILE",
+      "direction": "REQUEST",
+      "operation": "DESCRIBE_PROFILE",
+      "wrapperSchemaPointer": "/$defs/OperationRequestDescribeProfileV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/DescribeProfileInputV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/InterfaceRequestV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/OperationRequestDescribeProfileV0",
+        "/$defs/U16Text",
+        "/$defs/U32Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/OperationRequestDescribeProfileV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 0
+        }
+      ]
+    },
+    {
+      "rootId": "REQUEST-VALIDATE_TRANSCRIPT",
+      "direction": "REQUEST",
+      "operation": "VALIDATE_TRANSCRIPT",
+      "wrapperSchemaPointer": "/$defs/OperationRequestValidateTranscriptV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/EvenLowerHex",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceRequestV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/OperationRequestValidateTranscriptV0",
+        "/$defs/SignatureHex",
+        "/$defs/StandaloneVerificationMaterialV0",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/ValidateTranscriptInputV0"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/OperationRequestValidateTranscriptV0",
+        "/$defs/StandaloneVerificationMaterialV0",
+        "/$defs/ValidateTranscriptInputV0/oneOf/0",
+        "/$defs/ValidateTranscriptInputV0/oneOf/1",
+        "/$defs/ValidateTranscriptInputV0/oneOf/2"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 0
+        }
+      ]
+    },
+    {
+      "rootId": "REQUEST-EVALUATE_GENESIS",
+      "direction": "REQUEST",
+      "operation": "EVALUATE_GENESIS",
+      "wrapperSchemaPointer": "/$defs/OperationRequestEvaluateGenesisV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/EvaluateGenesisInputV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceRequestV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/OperationRequestEvaluateGenesisV0",
+        "/$defs/SignatureHex",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/EvaluateGenesisInputV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/OperationRequestEvaluateGenesisV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 0
+        }
+      ]
+    },
+    {
+      "rootId": "REQUEST-REPLAY_CONTEXT",
+      "direction": "REQUEST",
+      "operation": "REPLAY_CONTEXT",
+      "wrapperSchemaPointer": "/$defs/OperationRequestReplayContextV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentHex",
+        "/$defs/ContentSegmentV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceRequestV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationRequestReplayContextV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/ReplayContextInputV0",
+        "/$defs/SignatureHex",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/U64Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationRequestReplayContextV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/ReplayContextInputV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 0
+        }
+      ]
+    },
+    {
+      "rootId": "REQUEST-EVALUATE_CANDIDATE",
+      "direction": "REQUEST",
+      "operation": "EVALUATE_CANDIDATE",
+      "wrapperSchemaPointer": "/$defs/OperationRequestEvaluateCandidateV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/AliasGroupV0",
+        "/$defs/ApTransitionBlockHex",
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityProjectionV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/CanonicalReferenceArray",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorProjectionV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentHex",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/CredentialBindingProjectionV0",
+        "/$defs/EvaluateCandidateInputV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceRequestV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationRequestEvaluateCandidateV0",
+        "/$defs/PrimaryToken",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailProjectionV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/SignatureHex",
+        "/$defs/StageToken",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/U64Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/EvaluateCandidateInputV0",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationRequestEvaluateCandidateV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 6
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 7
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 0
+        }
+      ]
+    },
+    {
+      "rootId": "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+      "direction": "REQUEST",
+      "operation": "EVALUATE_EVIDENCE_UPDATE",
+      "wrapperSchemaPointer": "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/AliasGroupV0",
+        "/$defs/ApTransitionBlockHex",
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityProjectionV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/CanonicalReferenceArray",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorProjectionV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentHex",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/CredentialBindingProjectionV0",
+        "/$defs/EvaluateEvidenceUpdateInputV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceAdditionSetV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceRequestV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
+        "/$defs/PrimaryToken",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailProjectionV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/SignatureHex",
+        "/$defs/StageToken",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/U64Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/EvaluateEvidenceUpdateInputV0",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 6
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 7
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 0
+        }
+      ]
+    },
+    {
+      "rootId": "RESPONSE-DESCRIBE_PROFILE",
+      "direction": "RESPONSE",
+      "operation": "DESCRIBE_PROFILE",
+      "wrapperSchemaPointer": "/$defs/OperationResponseDescribeProfileV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/CapabilityRequirementV0",
+        "/$defs/CapabilityRequirementsV0",
+        "/$defs/DescribeProfileResultSupportedV0",
+        "/$defs/DescribeProfileResultUnsupportedV0",
+        "/$defs/DescribeProfileResultV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/InterfaceLimitsV0",
+        "/$defs/InterfaceResponseV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/OperationResponseDescribeProfileV0",
+        "/$defs/ProfileDescriptorV0",
+        "/$defs/U16Text",
+        "/$defs/U32Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/CapabilityRequirementV0",
+        "/$defs/CapabilityRequirementsV0",
+        "/$defs/DescribeProfileResultSupportedV0",
+        "/$defs/DescribeProfileResultUnsupportedV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/InterfaceLimitsV0",
+        "/$defs/OperationResponseDescribeProfileV0",
+        "/$defs/ProfileDescriptorV0",
+        "/$defs/ProfileDescriptorV0/properties/authorityPins",
+        "/$defs/ProfileDescriptorV0/properties/evidenceEncoding"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/DescribeProfileResultV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/DescribeProfileResultV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 1
+        }
+      ]
+    },
+    {
+      "rootId": "RESPONSE-VALIDATE_TRANSCRIPT",
+      "direction": "RESPONSE",
+      "operation": "VALIDATE_TRANSCRIPT",
+      "wrapperSchemaPointer": "/$defs/OperationResponseValidateTranscriptV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/GeometryObservation",
+        "/$defs/InterfaceResponseV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/OperationResponseValidateTranscriptV0",
+        "/$defs/TranscriptObservationV0",
+        "/$defs/TranscriptValidationReasonV0",
+        "/$defs/TranscriptValidationStageV0",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/ValidateTranscriptResultRejectedV0",
+        "/$defs/ValidateTranscriptResultV0",
+        "/$defs/ValidateTranscriptResultValidatedV0"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/OperationResponseValidateTranscriptV0",
+        "/$defs/TranscriptObservationV0",
+        "/$defs/ValidateTranscriptResultRejectedV0",
+        "/$defs/ValidateTranscriptResultValidatedV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ValidateTranscriptResultV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ValidateTranscriptResultV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 1
+        }
+      ]
+    },
+    {
+      "rootId": "RESPONSE-EVALUATE_GENESIS",
+      "direction": "RESPONSE",
+      "operation": "EVALUATE_GENESIS",
+      "wrapperSchemaPointer": "/$defs/OperationResponseEvaluateGenesisV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/EvaluateGenesisResultReadyV0",
+        "/$defs/EvaluateGenesisResultTerminalV0",
+        "/$defs/EvaluateGenesisResultV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/GenesisEvaluationReasonV0",
+        "/$defs/GenesisEvaluationStageV0",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceResponseV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OperationResponseEvaluateGenesisV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/SignatureHex",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/EvaluateGenesisResultReadyV0",
+        "/$defs/EvaluateGenesisResultTerminalV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OperationResponseEvaluateGenesisV0",
+        "/$defs/ProposedGenesisSnapshotV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/EvaluateGenesisResultV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/EvaluateGenesisResultV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/GenesisEvaluationReasonV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/GenesisEvaluationReasonV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 1
+        }
+      ]
+    },
+    {
+      "rootId": "RESPONSE-REPLAY_CONTEXT",
+      "direction": "RESPONSE",
+      "operation": "REPLAY_CONTEXT",
+      "wrapperSchemaPointer": "/$defs/OperationResponseReplayContextV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/AliasGroupV0",
+        "/$defs/ApTransitionBlockHex",
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityProjectionV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/CanonicalReferenceArray",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorProjectionV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentHex",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/CredentialBindingProjectionV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceResponseV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/NoSuccessorPrimary",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationResponseReplayContextV0",
+        "/$defs/PrimaryToken",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/ReplayContextResultCandidateRejectedV0",
+        "/$defs/ReplayContextResultReadyV0",
+        "/$defs/ReplayContextResultTerminalV0",
+        "/$defs/ReplayContextResultV0",
+        "/$defs/ReplayInputRejectionReasonV0",
+        "/$defs/ReplayInputStageV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailProjectionV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/SignatureHex",
+        "/$defs/StageToken",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/U64Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationResponseReplayContextV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/ReplayContextResultCandidateRejectedV0",
+        "/$defs/ReplayContextResultReadyV0",
+        "/$defs/ReplayContextResultTerminalV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 6
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 7
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 1
+        }
+      ]
+    },
+    {
+      "rootId": "RESPONSE-EVALUATE_CANDIDATE",
+      "direction": "RESPONSE",
+      "operation": "EVALUATE_CANDIDATE",
+      "wrapperSchemaPointer": "/$defs/OperationResponseEvaluateCandidateV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/AliasGroupV0",
+        "/$defs/ApTransitionBlockHex",
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityProjectionV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/CandidateEvaluationReadyV0",
+        "/$defs/CandidateEvaluationResultV0",
+        "/$defs/CandidateEvaluationTerminalV0",
+        "/$defs/CanonicalReferenceArray",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorProjectionV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentHex",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/CredentialBindingProjectionV0",
+        "/$defs/EvaluateCandidateResultV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceResponseV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/NoSuccessorPrimary",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationResponseEvaluateCandidateV0",
+        "/$defs/PrimaryToken",
+        "/$defs/ProposedApplicationDeltaV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainNewPrimary",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailProjectionV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/SignatureHex",
+        "/$defs/StageToken",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/U64Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/CandidateEvaluationReadyV0",
+        "/$defs/CandidateEvaluationTerminalV0",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/EvaluateCandidateResultV0",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationResponseEvaluateCandidateV0",
+        "/$defs/ProposedApplicationDeltaV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 6
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 7
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 1
+        }
+      ]
+    },
+    {
+      "rootId": "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+      "direction": "RESPONSE",
+      "operation": "EVALUATE_EVIDENCE_UPDATE",
+      "wrapperSchemaPointer": "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
+      "eligibleDefinitionPointers": [
+        "/$defs/AliasGroupV0",
+        "/$defs/ApTransitionBlockHex",
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityProjectionV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/CanonicalReferenceArray",
+        "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorProjectionV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentHex",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/CredentialBindingProjectionV0",
+        "/$defs/EvaluateEvidenceUpdateResultV0",
+        "/$defs/EvenLowerHex",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/EvidenceUpdateIdempotentV0",
+        "/$defs/EvidenceUpdateReadyV0",
+        "/$defs/EvidenceUpdateRejectedV0",
+        "/$defs/EvidenceUpdateRejectionV0",
+        "/$defs/EvidenceUpdateResultV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/FixedHex32",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisPolicyBlockHex",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/InterfaceResponseV0",
+        "/$defs/InterfaceVersionV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
+        "/$defs/PrimaryToken",
+        "/$defs/ProposedApplicationDeltaV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailProjectionV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/SignatureHex",
+        "/$defs/StageToken",
+        "/$defs/TranscriptHex",
+        "/$defs/U16Text",
+        "/$defs/U32Text",
+        "/$defs/U64Text"
+      ],
+      "eligibleObjectSchemaPointers": [
+        "/$defs/ApplicationEventProjectionV0",
+        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/AuthorityAvailableV0",
+        "/$defs/AuthorityUnavailableV0",
+        "/$defs/ChunkGeometryProjectionV0",
+        "/$defs/ContentDescriptorChunkTreeV0",
+        "/$defs/ContentDescriptorNoneV0",
+        "/$defs/ContentDescriptorSingleV0",
+        "/$defs/ContentMaterialEvidenceV0",
+        "/$defs/ContentSegmentV0",
+        "/$defs/ContentStateProjectionV0",
+        "/$defs/ContextProjectionV0",
+        "/$defs/CredentialBindingGenesisV0",
+        "/$defs/CredentialBindingGrantV0",
+        "/$defs/EvaluateEvidenceUpdateResultV0",
+        "/$defs/EventAuthorityProjectionV0",
+        "/$defs/EvidenceProjectionV0",
+        "/$defs/EvidenceUpdateIdempotentV0",
+        "/$defs/EvidenceUpdateReadyV0",
+        "/$defs/EvidenceUpdateRejectedV0",
+        "/$defs/ExactProfileSelectorV0",
+        "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisProjectionV0",
+        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/O03TupleV0",
+        "/$defs/OpeningEvidenceV0",
+        "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
+        "/$defs/ProposedApplicationDeltaV0",
+        "/$defs/ProposedContextSnapshotV0",
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RecordOutcomeV0",
+        "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RoleTailClosureV0",
+        "/$defs/RoleTailGrantV0",
+        "/$defs/RoleTailOrdinaryV0",
+        "/$defs/RoleTailPolicyV0",
+        "/$defs/RoleTailRecoverV0",
+        "/$defs/RoleTailRemovalV0",
+        "/$defs/RoleTailRotateV0",
+        "/$defs/RoleTailTargetCredentialV0"
+      ],
+      "eligibleOneOfArms": [
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 0
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 3
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 4
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 5
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 6
+        },
+        {
+          "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+          "armIndex": 7
+        },
+        {
+          "oneOfPointer": "/oneOf",
+          "armIndex": 1
+        }
+      ]
+    }
+  ],
+  "definitionCoverage": [
+    {
+      "definitionPointer": "/$defs/AliasGroupV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ApTransitionBlockHex",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ApplicationEventProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ApplicationTranscriptCandidateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/AuthorityAvailableV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/AuthorityProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/AuthorityUnavailableV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CandidateEvaluationReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CandidateEvaluationResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CandidateEvaluationTerminalV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CanonicalReferenceArray",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CanonicalUnsignedDecimal",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CapabilityRequirementV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CapabilityRequirementsV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ChunkGeometryProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentDescriptorChunkTreeV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentDescriptorNoneV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentDescriptorProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentDescriptorSingleV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentMaterialEvidenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentSegmentHex",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentSegmentV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContentStateProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ContextProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CredentialBindingGenesisV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CredentialBindingGrantV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CredentialBindingProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/DescribeProfileInputV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/DescribeProfileResultSupportedV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/DescribeProfileResultUnsupportedV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/DescribeProfileResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateCandidateInputV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateCandidateResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateEvidenceUpdateInputV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateEvidenceUpdateResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateGenesisInputV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateGenesisResultReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateGenesisResultTerminalV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvaluateGenesisResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvenLowerHex",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EventAuthorityProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceAdditionSetV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceUpdateIdempotentV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceUpdateReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceUpdateRejectedV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceUpdateRejectionV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidenceUpdateResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ExactProfileSelectorV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/FixedHex32",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ForkJoinProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/GenesisEvaluationReasonV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/GenesisEvaluationStageV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/GenesisPolicyBlockHex",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/GenesisProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/GenesisTranscriptCandidateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/GeometryObservation",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/InterfaceLimitsV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/InterfaceRequestV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/InterfaceResponseV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/InterfaceVersionV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/NoSuccessorPrimary",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/O03TupleV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OpeningEvidenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationRequestDescribeProfileV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationRequestEvaluateCandidateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationRequestEvaluateGenesisV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationRequestReplayContextV0",
+      "eligibleRootIds": [
+        "REQUEST-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationRequestValidateTranscriptV0",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationResponseDescribeProfileV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationResponseEvaluateCandidateV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationResponseEvaluateGenesisV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationResponseReplayContextV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/OperationResponseValidateTranscriptV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/PrimaryToken",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ProfileDescriptorV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ProposedApplicationDeltaV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ProposedContextSnapshotV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ProposedGenesisSnapshotV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RecordOutcomeV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReductionStandingProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayContextInputV0",
+      "eligibleRootIds": [
+        "REQUEST-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayContextResultCandidateRejectedV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayContextResultReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayContextResultTerminalV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayContextResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayInputRejectionReasonV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ReplayInputStageV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RetainNewPrimary",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailClosureV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailGrantV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailOrdinaryV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailPolicyV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailRecoverV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailRemovalV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailRotateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RoleTailTargetCredentialV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/SignatureHex",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/StageToken",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/StandaloneVerificationMaterialV0",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/TranscriptHex",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/TranscriptObservationV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/TranscriptValidationReasonV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/TranscriptValidationStageV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/U16Text",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/U32Text",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/U64Text",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ValidateTranscriptInputV0",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ValidateTranscriptResultRejectedV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ValidateTranscriptResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ValidateTranscriptResultValidatedV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    }
+  ],
+  "objectCoverage": [
+    {
+      "objectSchemaPointer": "/$defs/ApplicationEventProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ApplicationTranscriptCandidateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/AuthorityAvailableV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/AuthorityUnavailableV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CandidateEvaluationReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CandidateEvaluationTerminalV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CapabilityRequirementV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CapabilityRequirementsV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ChunkGeometryProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContentDescriptorChunkTreeV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContentDescriptorNoneV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContentDescriptorSingleV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContentMaterialEvidenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContentSegmentV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContentStateProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ContextProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CredentialBindingGenesisV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CredentialBindingGrantV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/DescribeProfileResultSupportedV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/DescribeProfileResultUnsupportedV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateCandidateInputV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateCandidateResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateEvidenceUpdateInputV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateEvidenceUpdateResultV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateGenesisInputV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateGenesisResultReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvaluateGenesisResultTerminalV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EventAuthorityProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvidenceProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvidenceUpdateIdempotentV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvidenceUpdateReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvidenceUpdateRejectedV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ExactProfileSelectorV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ForkJoinProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/GenesisProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/GenesisTranscriptCandidateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/InterfaceLimitsV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/O03TupleV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OpeningEvidenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationRequestDescribeProfileV0",
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationRequestEvaluateCandidateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationRequestEvaluateGenesisV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationRequestReplayContextV0",
+      "eligibleRootIds": [
+        "REQUEST-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationRequestValidateTranscriptV0",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationResponseDescribeProfileV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationResponseEvaluateCandidateV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationResponseEvaluateGenesisV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationResponseReplayContextV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/OperationResponseValidateTranscriptV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ProfileDescriptorV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ProfileDescriptorV0/properties/authorityPins",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ProfileDescriptorV0/properties/evidenceEncoding",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ProposedApplicationDeltaV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ProposedContextSnapshotV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ProposedGenesisSnapshotV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RecordOutcomeV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ReductionStandingProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ReplayContextInputV0",
+      "eligibleRootIds": [
+        "REQUEST-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ReplayContextResultCandidateRejectedV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ReplayContextResultReadyV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ReplayContextResultTerminalV0",
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailClosureV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailGrantV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailOrdinaryV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailPolicyV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailRecoverV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailRemovalV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailRotateV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RoleTailTargetCredentialV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/StandaloneVerificationMaterialV0",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/TranscriptObservationV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ValidateTranscriptInputV0/oneOf/0",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ValidateTranscriptInputV0/oneOf/1",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ValidateTranscriptInputV0/oneOf/2",
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ValidateTranscriptResultRejectedV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ValidateTranscriptResultValidatedV0",
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    }
+  ],
+  "oneOfArmCoverage": [
+    {
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "armIndex": 3,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "armIndex": 4,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ApplicationEventProjectionV0/allOf/3/then/properties/roleTail/oneOf",
+      "armIndex": 5,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/AuthorityProjectionV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/CredentialBindingProjectionV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/DescribeProfileResultV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/DescribeProfileResultV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/EvaluateGenesisResultV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/EvaluateGenesisResultV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/GenesisEvaluationReasonV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/GenesisEvaluationReasonV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "armIndex": 3,
+      "eligibleRootIds": [
+        "REQUEST-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "armIndex": 4,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceRequestV0/oneOf",
+      "armIndex": 5,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_GENESIS"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "armIndex": 3,
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "armIndex": 4,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
+      "armIndex": 5,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 3,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 4,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 5,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 6,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
+      "armIndex": 7,
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ValidateTranscriptInputV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ValidateTranscriptResultV0/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ValidateTranscriptResultV0/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/oneOf",
+      "armIndex": 0,
+      "eligibleRootIds": [
+        "REQUEST-DESCRIBE_PROFILE",
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "oneOfPointer": "/oneOf",
+      "armIndex": 1,
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT",
+        "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    }
+  ],
+  "nonClaim": "Reachability is not positive-carrier existence, semantic validity, oracle independence or execution evidence."
+}
