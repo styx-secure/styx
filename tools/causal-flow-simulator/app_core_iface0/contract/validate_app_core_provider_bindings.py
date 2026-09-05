@@ -47,13 +47,15 @@ def issue_paths(body: str, number: int) -> list[str]:
     return rows
 
 
-def intersects(external: str, literals: set[str], prefix: str) -> bool:
-    if external in literals or external.startswith(prefix):
+def intersects(external: str, literals: set[str], prefixes: tuple[str, ...]) -> bool:
+    if external in literals or any(external.startswith(prefix) for prefix in prefixes):
         return True
     if any(fnmatch.fnmatchcase(path, external) for path in literals):
         return True
-    prefix_probe = prefix + "__scope_probe__"
-    return fnmatch.fnmatchcase(prefix_probe, external)
+    return any(
+        fnmatch.fnmatchcase(prefix + "__scope_probe__", external)
+        for prefix in prefixes
+    )
 
 
 def main() -> int:
@@ -65,6 +67,22 @@ def main() -> int:
 
     resolved = command("git", "-C", str(Path.cwd()), "rev-parse", f"{base}^{{commit}}").decode().strip()
     require(resolved == base, "exact Base unavailable")
+
+    authority = data["currentRemediationAuthority"]
+    authority_issue = authority["issue"]
+    issue = api(f"repos/{repository}/issues/{authority_issue['number']}")
+    require(issue["id"] == authority_issue["id"], "remediation Issue ID drift")
+    require(issue["node_id"] == authority_issue["nodeId"], "remediation Issue node drift")
+    require(issue["state"] == "open" and issue["locked"] is False, "remediation Issue state drift")
+    require(issue["user"]["id"] == owner["id"] and issue["user"]["login"] == owner["login"], "remediation Issue owner drift")
+    authority_comment = authority["comment"]
+    comment = api(f"repos/{repository}/issues/comments/{authority_comment['id']}")
+    require(comment["id"] == authority_comment["id"], "remediation comment ID drift")
+    require(comment["node_id"] == authority_comment["nodeId"], "remediation comment node drift")
+    require(comment["url"] == authority_comment["url"], "remediation comment URL drift")
+    require(comment["issue_url"] == f"https://api.github.com/repos/{repository}/issues/{authority_issue['number']}", "remediation comment Issue drift")
+    require(comment["user"]["id"] == owner["id"] and comment["user"]["login"] == owner["login"], "remediation comment owner drift")
+    require(hashlib.sha256(comment["body"].encode()).hexdigest() == authority_comment["bodySha256"], "remediation comment body drift")
 
     for row in data["historicalIncrements"]:
         issue_expected = row["issue"]
@@ -102,17 +120,19 @@ def main() -> int:
 
     scope = data["candidateMutableScope"]
     literals = set(scope["literalPaths"])
-    prefix = scope["directoryPrefix"]
+    prefixes = tuple(scope["directoryPrefixes"])
     open_items = api(f"repos/{repository}/issues?state=open&per_page=100")
     checked_contracts = 0
     for issue in open_items:
         if "pull_request" in issue:
             continue
+        if issue["number"] == authority_issue["number"]:
+            continue
         body = issue.get("body") or ""
         if not body.lstrip().startswith("<!-- styx-task-contract:v1 -->"):
             continue
         checked_contracts += 1
-        overlap = sorted(path for path in issue_paths(body, issue["number"]) if intersects(path, literals, prefix))
+        overlap = sorted(path for path in issue_paths(body, issue["number"]) if intersects(path, literals, prefixes))
         require(not overlap, f"mutable scope overlap with Issue #{issue['number']}: {overlap}")
 
     print(

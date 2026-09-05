@@ -235,8 +235,8 @@ SHA-256
 The still-to-be-generated 78-row positive seed registry has a closed row schema
 in `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`, SHA-256
 `8b98b69ee88bdbf59f5de1fc20e4008aaedd97c3f09a6c615869997501eeb2ef`.
-Exact carriers are implementation outputs derived from Base
-`16274cc194cd2f8f7b631332687a252bad92ce02`; the schema does not fabricate
+Exact carriers are implementation outputs derived from the combined-remediation Base
+`e0af4e1e2173deb2481eabdb24d8622282b33455`; the schema does not fabricate
 them or relax that dependency.
 
 The carrier relation itself must conform to

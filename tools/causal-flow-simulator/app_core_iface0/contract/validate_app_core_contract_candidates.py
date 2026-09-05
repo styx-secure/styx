@@ -1578,8 +1578,8 @@ def validate_manifest() -> None:
         "genesisRelationRows": 17,
         "terminalPredicateRelationRows": 33,
         "signatureVerificationPathRows": 17,
-        "nativeDependencies": 63,
-        "readOnlyNativeDependencies": 59,
+        "nativeDependencies": 65,
+        "readOnlyNativeDependencies": 61,
         "seededExtensionNativeDependencies": 4,
         "historicalProviderIncrements": 5,
         "seedRegistryRowsPendingPostBase": 78,
@@ -1735,24 +1735,24 @@ def validate_native_dependencies(repository: Path, base_ref: str) -> None:
     )
     inventory = load("APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json")
     require(
-        inventory["baseSha"] == "16274cc194cd2f8f7b631332687a252bad92ce02",
+        inventory["baseSha"] == "e0af4e1e2173deb2481eabdb24d8622282b33455",
         "native dependency Base drift",
     )
     require(
         inventory["derivedCounts"]
         == {
-            "dependencies": 63,
-            "readOnlyDependencies": 59,
+            "dependencies": 65,
+            "readOnlyDependencies": 61,
             "seededExtensionDependencies": 4,
             "c03CanonicalFiles": 6,
-            "c03ImplementationAndTestFiles": 24,
+            "c03ImplementationAndTestFiles": 26,
             "protocolReviewToolFiles": 16,
         },
         "native dependency count drift",
     )
     rows = inventory["dependencies"]
     paths = [row["path"] for row in rows]
-    require(len(paths) == len(set(paths)) == 63, "native dependency path drift")
+    require(len(paths) == len(set(paths)) == 65, "native dependency path drift")
     require(
         {row["path"] for row in rows if row["mutationPolicy"] != "READ_ONLY_BYTE_IDENTICAL"}
         == set(inventory["seededExtensionPaths"]),
@@ -1791,7 +1791,7 @@ def main() -> None:
     print(
         "PASS schemas=4 defs=114 refs=263 enums=35 oneOf=16 arms=54 "
         "pairs=93 objects=78 properties=323 required=322 structural=1450 "
-        "semantic=5149 total=6599 terminal=33 F13=25 dependencies=63 provider_history=5 "
+        "semantic=5149 total=6599 terminal=33 F13=25 dependencies=65 provider_history=5 "
         "manifest=27 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

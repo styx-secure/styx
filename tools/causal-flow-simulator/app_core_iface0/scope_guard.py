@@ -20,13 +20,26 @@ from inventory import BASE_SHA, InventoryError, _load_json, verify_contract_pack
 
 EXACT_MUTABLE = frozenset(
     {
-        "docs/protocol/styx-app-core-interface-v0.md",
+        "docs/protocol/styx-app-kernel-v0-decisions.md",
+        "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md",
+        "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md",
+        "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
+        "docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md",
+        "docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md",
+        "docs/protocol/styx-app-kernel-v0-resource-envelope-falsification-report.md",
+        "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
         "docs/protocol/review/README.md",
         "docs/protocol/review/styx-app-kernel-v0-review-model.json",
         "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
         "tools/protocol-review-model/validate.py",
-        "tools/protocol-review-model/tests/test_app_core_interface_v0.py",
     }
+)
+PREFIX_MUTABLE = (
+    "conformance/application-protocol/c03/",
+    "tools/causal-flow-simulator/c03/",
+    "tools/causal-flow-simulator/o07/",
+    "tools/causal-flow-simulator/o08/",
+    "tools/protocol-review-model/tests/",
 )
 SUBTREE = "tools/causal-flow-simulator/app_core_iface0/"
 IMPLEMENTATION_FILES = frozenset(
@@ -46,6 +59,10 @@ IMPLEMENTATION_FILES = frozenset(
         "run_cross_runtime.py",
         "run_mutations.py",
         "run_probe.py",
+        "run_semantic_acv048.py",
+        "run_semantic_acv049.py",
+        "run_semantic_preflight.py",
+        "run_structural_cross_runtime.py",
         "scope_guard.py",
         "validate_inventory.py",
     }
@@ -63,6 +80,7 @@ TEST_FILES = frozenset(
         "test_mutations.py",
         "test_report_hygiene.py",
         "test_scope_guard.py",
+        "test_structural_isolation_relation.py",
     }
 )
 REPORT_FIELDS = frozenset(
@@ -124,7 +142,11 @@ def _changed_rows(repo: Path, base: str, candidate: str) -> list[tuple[str, str]
 
 
 def _is_allowed(path: str) -> bool:
-    return path in EXACT_MUTABLE or path.startswith(SUBTREE)
+    return (
+        path in EXACT_MUTABLE
+        or path.startswith(SUBTREE)
+        or any(path.startswith(prefix) for prefix in PREFIX_MUTABLE)
+    )
 
 
 def _verify_subtree(repo: Path, candidate: str) -> tuple[int, int, int]:
@@ -141,7 +163,7 @@ def _verify_subtree(repo: Path, candidate: str) -> tuple[int, int, int]:
         raise ScopeError("APP-core implementation file set mismatch")
     if tests != TEST_FILES:
         raise ScopeError("APP-core test-module set mismatch")
-    if len(contracts) != 27:
+    if len(contracts) != 28:
         raise ScopeError("APP-core contract file set mismatch")
     if relative != {
         *IMPLEMENTATION_FILES,
@@ -171,7 +193,7 @@ def _verify_native_read_only(repo: Path, base: str, candidate: str) -> int:
         if before != after:
             raise ScopeError(f"read-only native dependency changed: {path}")
         count += 1
-    if count != 59:
+    if count != 61:
         raise ScopeError("read-only native dependency count drift")
     return count
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-EXPECTED_BASE = "16274cc194cd2f8f7b631332687a252bad92ce02"
+EXPECTED_BASE = "e0af4e1e2173deb2481eabdb24d8622282b33455"
 OUTPUT_NAME = "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
 
 GOVERNANCE = (
@@ -64,6 +64,7 @@ C03_EVIDENCE_IMPLEMENTATION = (
     "tools/causal-flow-simulator/c03/corpus-source-map.json",
     "tools/causal-flow-simulator/c03/corpus_model.py",
     "tools/causal-flow-simulator/c03/generate_corpus.py",
+    "tools/causal-flow-simulator/c03/h1_h2_relation.py",
     "tools/causal-flow-simulator/c03/node_adapter.mjs",
     "tools/causal-flow-simulator/c03/replay_corpus.py",
     "tools/causal-flow-simulator/c03/run_cross_runtime.py",
@@ -75,6 +76,7 @@ C03_EVIDENCE_IMPLEMENTATION = (
     "tools/causal-flow-simulator/c03/tests/test_coverage.py",
     "tools/causal-flow-simulator/c03/tests/test_cross_runtime.py",
     "tools/causal-flow-simulator/c03/tests/test_generation.py",
+    "tools/causal-flow-simulator/c03/tests/test_h1_h2_relation.py",
     "tools/causal-flow-simulator/c03/tests/test_manifest.py",
     "tools/causal-flow-simulator/c03/tests/test_mutations.py",
     "tools/causal-flow-simulator/c03/tests/test_replay.py",

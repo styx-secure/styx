@@ -3,7 +3,20 @@
   "status": "PRE_RATIFICATION_WORKING_EVIDENCE",
   "authorityEffect": "NONE",
   "repository": "styx-secure/styx",
-  "baseSha": "16274cc194cd2f8f7b631332687a252bad92ce02",
+  "baseSha": "e0af4e1e2173deb2481eabdb24d8622282b33455",
+  "currentRemediationAuthority": {
+    "issue": {
+      "number": 295,
+      "id": 5308835035,
+      "nodeId": "I_kwDOTVXjdc8AAAABPG5k2w"
+    },
+    "comment": {
+      "id": 5550502736,
+      "nodeId": "IC_kwDOTVXjdc8AAAABStXzUA",
+      "bodySha256": "a50460b3dd0d9698e6ddee05278af1f735938ffc6347d66c759638305439cfd6",
+      "url": "https://api.github.com/repos/styx-secure/styx/issues/comments/5550502736"
+    }
+  },
   "providerIdentities": {
     "integrationOwner": { "id": 141346846, "login": "maverde73" },
     "humanTechnicalReviewer": { "id": 314148709, "login": "manexada" }
@@ -122,14 +135,27 @@
   ],
   "candidateMutableScope": {
     "literalPaths": [
-      "docs/protocol/styx-app-core-interface-v0.md",
+      "docs/protocol/styx-app-kernel-v0-decisions.md",
+      "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md",
+      "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md",
+      "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
+      "docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md",
+      "docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md",
+      "docs/protocol/styx-app-kernel-v0-resource-envelope-falsification-report.md",
+      "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
       "docs/protocol/review/README.md",
       "docs/protocol/review/styx-app-kernel-v0-review-model.json",
       "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
-      "tools/protocol-review-model/validate.py",
-      "tools/protocol-review-model/tests/test_app_core_interface_v0.py"
+      "tools/protocol-review-model/validate.py"
     ],
-    "directoryPrefix": "tools/causal-flow-simulator/app_core_iface0/"
+    "directoryPrefixes": [
+      "conformance/application-protocol/c03/",
+      "tools/causal-flow-simulator/app_core_iface0/",
+      "tools/causal-flow-simulator/c03/",
+      "tools/causal-flow-simulator/o07/",
+      "tools/causal-flow-simulator/o08/",
+      "tools/protocol-review-model/tests/"
+    ]
   },
   "knownOpenTaskContracts": [
     {

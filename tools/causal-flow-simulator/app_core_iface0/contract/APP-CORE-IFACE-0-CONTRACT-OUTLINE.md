@@ -1,9 +1,9 @@
 # Draft task contract — minimum language-neutral application-core interface
 
-Working draft only; this file is not repository authority. Exact candidate
-Base: `16274cc194cd2f8f7b631332687a252bad92ce02`. The closed native dependency
-relation contains 63 Base files and has SHA-256
-`1b9a0ae381a2ed8bd401a76fe2169992c4f0ec26248e1a4d36273833482abf17`.
+Working draft only; this file is not repository authority. The superseding
+provider authority is Issue #295 comment `5550502736`. Exact combined-remediation
+Base: `e0af4e1e2173deb2481eabdb24d8622282b33455`. The closed native dependency
+relation contains 65 Base files; its digest is bound by the package manifest.
 
 <!-- styx-task-contract:v1 -->
 
@@ -274,13 +274,24 @@ instance-set equality.
 The candidate mutable path set is closed and literal:
 
 ```text
-docs/protocol/styx-app-core-interface-v0.md
+docs/protocol/styx-app-kernel-v0-decisions.md
+docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md
+docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md
+docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md
+docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md
+docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md
+docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md
+docs/protocol/styx-app-kernel-v0-resource-envelope-falsification-report.md
 docs/protocol/review/README.md
 docs/protocol/review/styx-app-kernel-v0-review-model.json
 docs/protocol/review/styx-app-kernel-v0-review-model.schema.json
 tools/protocol-review-model/validate.py
-tools/protocol-review-model/tests/test_app_core_interface_v0.py
 tools/causal-flow-simulator/app_core_iface0/**
+tools/causal-flow-simulator/c03/**
+tools/causal-flow-simulator/o07/**
+tools/causal-flow-simulator/o08/**
+conformance/application-protocol/c03/**
+tools/protocol-review-model/tests/**
 ```
 
 The responsibility matrix, protocol-hardening plan, threat model, existing C0.3
@@ -304,8 +315,8 @@ ratified.
 
 ## Acceptance criteria
 
-1. The normalized Issue body, exact Base
-   `16274cc194cd2f8f7b631332687a252bad92ce02`, and every one of the 63 native
+1. The provider-bound amendment comment, exact Base
+   `e0af4e1e2173deb2481eabdb24d8622282b33455`, and every one of the 65 native
    source/corpus/tool rows are provider-bound before execution. The derived
    path set and relation digests equal the ratified native inventory.
    Historical provider authority also equals the ratified five-increment

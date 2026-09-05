@@ -4,7 +4,7 @@
   "authorityEffect": "NONE",
   "repository": "styx-secure/styx",
   "baseBranch": "main",
-  "baseSha": "16274cc194cd2f8f7b631332687a252bad92ce02",
+  "baseSha": "e0af4e1e2173deb2481eabdb24d8622282b33455",
   "rules": {
     "contentDigest": "SHA-256 over exact Git blob bytes",
     "pathSet": "literal and closed at Base",
@@ -13,18 +13,18 @@
     "workingTreeBytes": "never accepted as native dependency evidence"
   },
   "derivedCounts": {
-    "dependencies": 63,
-    "readOnlyDependencies": 59,
+    "dependencies": 65,
+    "readOnlyDependencies": 61,
     "seededExtensionDependencies": 4,
     "c03CanonicalFiles": 6,
-    "c03ImplementationAndTestFiles": 24,
+    "c03ImplementationAndTestFiles": 26,
     "protocolReviewToolFiles": 16
   },
   "setDigests": {
-    "allPathSetSha256": "0ef6f9b117410b565d03c0078c33799a0caa86c7cebacba21a2b3f9143d6d1f3",
-    "readOnlyPathSetSha256": "8b8dc8ca6cb4067c3d2bfc91a2250ec8586588ff844db2fcbe922b715fcee2b3",
+    "allPathSetSha256": "236b0419285085d92e7b7bfe5967b8292c46da43bed09e0bceedf37eddd52028",
+    "readOnlyPathSetSha256": "38cada0fc22835df67f43e1390e6b2c1c1938abdf609bb27925cf44f37338564",
     "seededExtensionPathSetSha256": "cb8be3acdfd8cfa9dac993c1c1e158dbd847f5206659fc1de5f91701f9551520",
-    "dependencyRelationSha256": "00bf7aa66e9f72bc2c34b8446266bae1d919fa660233e9acd67df5d728e21c05"
+    "dependencyRelationSha256": "f0f157ab0ea69b105354b4b12b0ae80296b9a3738ceeff3cc98633fa006b94a5"
   },
   "seededExtensionPaths": [
     "docs/protocol/review/README.md",
@@ -47,9 +47,9 @@
       "category": "GOVERNANCE_AND_SEQUENCE",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
       "fileMode": "100644",
-      "gitBlobOid": "4a8d9f5d40d4dfbcbd43d3365ae49b69ddc74de9",
-      "byteSize": 61352,
-      "sha256": "21033486045cfcfc0947b8b516489d1683fe2ec3b48a184faa068bf1777ad0bf"
+      "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+      "byteSize": 61955,
+      "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c"
     },
     {
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
@@ -236,9 +236,9 @@
       "category": "C03_EVIDENCE_IMPLEMENTATION",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
       "fileMode": "100644",
-      "gitBlobOid": "45cfdbee83d92c0ecef7254dd9479cec07062a7f",
-      "byteSize": 5511,
-      "sha256": "bd7f0459836c07d849780789b7ba7b11107cd853921b185838c3a7b9db575d3c"
+      "gitBlobOid": "caa015280b9eb7a70c3a433675c586c184db97dd",
+      "byteSize": 6165,
+      "sha256": "5f81a81f17e1e3ec4dd06a0e898730920bebb41a5def6bd53c716710a6921262"
     },
     {
       "path": "tools/causal-flow-simulator/c03/build_blind_projection.py",
@@ -290,9 +290,9 @@
       "category": "C03_EVIDENCE_IMPLEMENTATION",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
       "fileMode": "100644",
-      "gitBlobOid": "fbceee7d614f8aca4d0b8136606487482c410114",
-      "byteSize": 79691,
-      "sha256": "c5fae0f950cc8f9691a95d8231cc88e6c43c5e1e74b797d716928b6c8f5b1558"
+      "gitBlobOid": "2b32cf37f4311961744d312db7cc6a5e9cad5919",
+      "byteSize": 94960,
+      "sha256": "6d72bb7daa780c65d1c94786c5ccae1418810955b51eb5ac4d0871f192dfd94c"
     },
     {
       "path": "tools/causal-flow-simulator/c03/generate_corpus.py",
@@ -304,13 +304,22 @@
       "sha256": "75ed59223f20a4d048876ffb0276aeddc26d62bb5837f5296cf2ab22ac35fad4"
     },
     {
+      "path": "tools/causal-flow-simulator/c03/h1_h2_relation.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "6c8620f019064488780e0c369f4ad79b64acbd72",
+      "byteSize": 218928,
+      "sha256": "1fbaff70b4b9220d47e3c0e2c4692112324a9d0156ec95ff021636dce8eb40b2"
+    },
+    {
       "path": "tools/causal-flow-simulator/c03/node_adapter.mjs",
       "category": "C03_EVIDENCE_IMPLEMENTATION",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
       "fileMode": "100644",
-      "gitBlobOid": "9247030761340b758db684adadd61e52913375cb",
-      "byteSize": 95082,
-      "sha256": "fc52c0800fab4c7cf75785b962ba09ffd67d06cb0b7bd02e850d6f13b0868da0"
+      "gitBlobOid": "20ca36f0cb72576f2d1bd8d3b0c08db161ce114b",
+      "byteSize": 112097,
+      "sha256": "e2e86cd1b1b8f5becd19eddc94c477e02ee091e5635351c8026e00ceb6b83887"
     },
     {
       "path": "tools/causal-flow-simulator/c03/replay_corpus.py",
@@ -344,9 +353,9 @@
       "category": "C03_EVIDENCE_IMPLEMENTATION",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
       "fileMode": "100644",
-      "gitBlobOid": "0351b348b22afabc3c5c038b17c2408cf677373c",
-      "byteSize": 6610,
-      "sha256": "434c0b5276a0aba79cfc8d2b3cc56c4e337c58c6415db0ced2f9f9339aed4c66"
+      "gitBlobOid": "18e996b7e8048330c16abde6a8105185c1a8753a",
+      "byteSize": 6667,
+      "sha256": "659174150266eee3c3b82048c146fdc3cef3b7a2aba48206443c210922d12975"
     },
     {
       "path": "tools/causal-flow-simulator/c03/tests/test_blind_projection.py",
@@ -403,6 +412,15 @@
       "sha256": "ffa3c7029821d15bf0848656067e7bcace993a3ca41fe6aaafcdbf08e84a4df4"
     },
     {
+      "path": "tools/causal-flow-simulator/c03/tests/test_h1_h2_relation.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "58475553760ce702acf4bbfbf44c8ffadc48aef1",
+      "byteSize": 44991,
+      "sha256": "261f66fbc41662cde671825eb64d9c7f360fe71b4a6ffd7b068abcb1767b0a3e"
+    },
+    {
       "path": "tools/causal-flow-simulator/c03/tests/test_manifest.py",
       "category": "C03_EVIDENCE_IMPLEMENTATION",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
@@ -434,9 +452,9 @@
       "category": "C03_EVIDENCE_IMPLEMENTATION",
       "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
       "fileMode": "100644",
-      "gitBlobOid": "14a778e41789d3a708168707a8752b634de7795e",
+      "gitBlobOid": "900be92f33e56d59bd616c6c0f5a072f0cd185ed",
       "byteSize": 2454,
-      "sha256": "208dd5995f2518bd1245cc6968bc6acc9c0d8686d620352d16006c8c12846011"
+      "sha256": "555d222f39f55549919ce2e46081011c92ae1a7f5cd4d072795f1c2e8fe5bbff"
     },
     {
       "path": "tools/causal-flow-simulator/c03/validate_corpus.py",
@@ -596,9 +614,9 @@
       "category": "SEEDED_REVIEW_DOCUMENTATION",
       "mutationPolicy": "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS",
       "fileMode": "100644",
-      "gitBlobOid": "3e54a76a6f3277244edd673e570faa519c125442",
-      "byteSize": 17914,
-      "sha256": "d355ad16b2025240dadedbf2ca6ca1b78a5036c8ff2a727cf19d48414299b050"
+      "gitBlobOid": "582b401df09f8625c649ec48abae94182c0e9608",
+      "byteSize": 18469,
+      "sha256": "749dd8869f437b58b0b090df50974afe40759e8e9759d120e2089c6cef705e9a"
     }
   ]
 }

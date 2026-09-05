@@ -225,8 +225,8 @@ def _dependency_rows(contract: Path) -> tuple[NativeDependency, ...]:
         contract / "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
     )
     rows = registry.get("dependencies")
-    if not isinstance(rows, list) or len(rows) != 63:
-        raise InterfaceModelError("native dependency relation must contain 63 rows")
+    if not isinstance(rows, list) or len(rows) != 65:
+        raise InterfaceModelError("native dependency relation must contain 65 rows")
     result: list[NativeDependency] = []
     for row in rows:
         if not isinstance(row, dict):

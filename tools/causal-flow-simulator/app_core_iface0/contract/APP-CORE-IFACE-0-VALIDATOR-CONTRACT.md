@@ -308,8 +308,8 @@ Two literal execution outputs cannot exist before the repository increment
 supplies valid carriers: the canonical 78-row seed registry and the
 per-instance structural witness registry. Their row shape, equality rules and
 hostile derivation are already fixed; only exact carrier case IDs, JSON
-pointers and object-byte digests remain to be generated from Base
-`16274cc194cd2f8f7b631332687a252bad92ce02`. They are deliverables, not choices
+pointers and object-byte digests remain to be generated from the combined-remediation Base
+`e0af4e1e2173deb2481eabdb24d8622282b33455`. They are deliverables, not choices
 that the executor may redefine.
 
 The row shape is frozen by the working

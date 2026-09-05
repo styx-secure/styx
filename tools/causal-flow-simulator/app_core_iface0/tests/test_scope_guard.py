@@ -28,6 +28,10 @@ class ScopeGuardTests(unittest.TestCase):
             "run_cross_runtime.py",
             "run_mutations.py",
             "run_probe.py",
+            "run_semantic_acv048.py",
+            "run_semantic_acv049.py",
+            "run_semantic_preflight.py",
+            "run_structural_cross_runtime.py",
             "scope_guard.py",
             "validate_inventory.py",
         }
@@ -43,10 +47,17 @@ class ScopeGuardTests(unittest.TestCase):
             "test_mutations.py",
             "test_report_hygiene.py",
             "test_scope_guard.py",
+            "test_structural_isolation_relation.py",
         }
         for path in EXACT_MUTABLE:
             self.assertTrue(_is_allowed(path))
         self.assertTrue(_is_allowed("tools/causal-flow-simulator/app_core_iface0/README.md"))
+        self.assertTrue(_is_allowed("tools/causal-flow-simulator/c03/corpus_model.py"))
+        self.assertTrue(_is_allowed("tools/causal-flow-simulator/o07/genesis_model.py"))
+        self.assertTrue(_is_allowed("tools/causal-flow-simulator/o08/envelope_model.py"))
+        self.assertTrue(_is_allowed("conformance/application-protocol/c03/manifest.json"))
+        self.assertTrue(_is_allowed("tools/protocol-review-model/tests/test_validate.py"))
+        self.assertFalse(_is_allowed("docs/protocol/styx-app-core-interface-v0.md"))
         self.assertFalse(_is_allowed("tools/causal-flow-simulator/o10/taxonomy.py"))
         self.assertFalse(_is_allowed("styx-js/src/adapter.js"))
         self.assertEqual(IMPLEMENTATION_FILES, expected_implementation_files)

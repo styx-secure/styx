@@ -9,11 +9,31 @@
     "maximizingRootBreakdowns": [
       {
         "breakdown": [
-          { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 55, "representedDecodedOctets": 0 },
-          { "component": "input", "jsonOctets": 138499171, "representedDecodedOctets": 68850888 },
-          { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
-          { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
-          { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 }
+          {
+            "component": "canonical-syntax-keys-and-final-lf",
+            "jsonOctets": 55,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "input",
+            "jsonOctets": 138499171,
+            "representedDecodedOctets": 68850888
+          },
+          {
+            "component": "interfaceVersion",
+            "jsonOctets": 3,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "operation",
+            "jsonOctets": 20,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "profile",
+            "jsonOctets": 108,
+            "representedDecodedOctets": 0
+          }
         ],
         "direction": "REQUEST",
         "jsonOctets": 138499357,
@@ -24,11 +44,31 @@
       },
       {
         "breakdown": [
-          { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 56, "representedDecodedOctets": 0 },
-          { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
-          { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
-          { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 },
-          { "component": "result", "jsonOctets": 71052447, "representedDecodedOctets": 35275892 }
+          {
+            "component": "canonical-syntax-keys-and-final-lf",
+            "jsonOctets": 56,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "interfaceVersion",
+            "jsonOctets": 3,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "operation",
+            "jsonOctets": 20,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "profile",
+            "jsonOctets": 108,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "result",
+            "jsonOctets": 71052447,
+            "representedDecodedOctets": 35275892
+          }
         ],
         "direction": "RESPONSE",
         "jsonOctets": 71052634,
@@ -70,8 +110,8 @@
     "genesisRelationRows": 17,
     "terminalPredicateRelationRows": 33,
     "signatureVerificationPathRows": 17,
-    "nativeDependencies": 63,
-    "readOnlyNativeDependencies": 59,
+    "nativeDependencies": 65,
+    "readOnlyNativeDependencies": 61,
     "seededExtensionNativeDependencies": 4,
     "historicalProviderIncrements": 5,
     "seedRegistryRowsPendingPostBase": 78,
@@ -156,42 +196,42 @@
     {
       "path": "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json",
       "role": "EXACT_BASE_NATIVE_DEPENDENCY_RELATION",
-      "sha256": "1b9a0ae381a2ed8bd401a76fe2169992c4f0ec26248e1a4d36273833482abf17"
+      "sha256": "5157181660eb8832e76d71773bf0bbbae6d3a6e353129294e8de9acf643bd090"
     },
     {
       "path": "derive_app_core_native_dependencies.py",
       "role": "EXACT_GIT_OBJECT_DEPENDENCY_DERIVER",
-      "sha256": "2d55694cbc47cd9fe49b51c0f4c33194bc84ae8f9314abccc9aa5a14003ccafc"
+      "sha256": "9aa073dee658067bac782582adb76305ca539d6f8a0e90227a3e25ded5504a8c"
     },
     {
       "path": "APP-CORE-IFACE-0-PROVIDER-BINDINGS-CANDIDATE.json",
       "role": "HISTORICAL_PROVIDER_AUTHORITY_AND_SCOPE_RELATION",
-      "sha256": "62d4689ca0e423211036d4fbff6f0dbf12ded13b2c474945dc6c1dfa812480d2"
+      "sha256": "d60e9352607b06fb3f7d932afba037884c1e23c800d86d882b5bb4eb2eb924e7"
     },
     {
       "path": "validate_app_core_provider_bindings.py",
       "role": "LIVE_PROVIDER_AND_MUTABLE_SCOPE_VALIDATOR",
-      "sha256": "7ec8ea41effded7e79be1310494be4520e4727663bd7c4cad851148cfbb18895"
+      "sha256": "7e83976f3d8120ee87ab12a99ce6c569b5b1ed22e12274d2ae20561aa9477c45"
     },
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "f455c96b053fdc9b34f13b2808203926963b105d231b620f8c88adc2ab095cb1"
+      "sha256": "4def0dcff09d0a957197a16ef8b0d12fc3f31dc5804330dc86d59ee1794ea8a3"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "4ef61765300177bf5f32f722f89458de3f6ed052676dcfcddfe2a5afc16f64d5"
+      "sha256": "00c852713798964fbab9da0c5f3457aca8b7e79f2108848910b2c19c9e73eb4e"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "e49edb4dc29ffaaba51c05d2cd2402018bf1d9830203e046fd0c456df85f484e"
+      "sha256": "5ed5a4d63ad4e526c0ddff99ef5a144d171fbc5310d3a7ac475c02bb42b774c1"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
       "role": "DETERMINISTIC_SEED_AND_WITNESS_GENERATION",
-      "sha256": "f75429da8d6ab6a9c36a38c180e81bde84c7fc40dc78b55928023037f31014b7"
+      "sha256": "a78465343bf34983f9fe125172dbd4f533747d2be84aa3fdfe1f3ef9530f133a"
     },
     {
       "path": "APP-CORE-O10-CLOSURE-CANDIDATE.md",
@@ -211,7 +251,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "d5d2fb90c4ab5bb2f0a4ed51f44dcb04f1a65376431e2052f6937350df391470"
+      "sha256": "a2c81860e12ba03bbc11d3e98b4249582d5145acd98c1f35439532e94be37ed5"
     }
   ],
   "remainingBeforeExecutableIssue": [
