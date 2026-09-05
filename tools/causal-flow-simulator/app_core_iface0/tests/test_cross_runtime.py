@@ -216,6 +216,42 @@ class SeedReachabilityTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("candidate manifest digest mismatch", completed.stderr)
 
+    def test_javascript_contract_reader_binds_selected_resource_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            repository = Path(raw) / "repository"
+            contract = (
+                repository
+                / "tools/causal-flow-simulator/app_core_iface0/contract"
+            )
+            envelope = (
+                repository
+                / "tools/causal-flow-simulator/o08/resource-envelope.candidate.json"
+            )
+            contract.parent.mkdir(parents=True)
+            envelope.parent.mkdir(parents=True)
+            shutil.copytree(ROOT / "contract", contract)
+            shutil.copy2(
+                ROOT.parent / "o08/resource-envelope.candidate.json",
+                envelope,
+            )
+            original = envelope.read_bytes()
+            envelope.write_bytes(b"[" + original[1:])
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--preflight-collections",
+                    "--contract",
+                    str(contract),
+                ],
+                input=json.dumps({"direction": "REQUEST", "message": {}}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("selected resource-envelope digest mismatch", completed.stderr)
+
     def test_javascript_contract_reader_rejects_symlinked_contract_ancestor(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -571,6 +607,39 @@ class SeedReachabilityTests(unittest.TestCase):
             check=True,
         )
         self.assertEqual(json.loads(accepted.stdout), {"verdict": "PASS"})
+
+        presentation_request = {
+            "direction": "REQUEST",
+            "message": {
+                "operation": "EVALUATE_CANDIDATE",
+                "input": {"candidate": {"proofs": []}},
+            },
+        }
+        accepted_presentation = subprocess.run(
+            command,
+            input=json.dumps(presentation_request),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(
+            json.loads(accepted_presentation.stdout),
+            {"verdict": "PASS"},
+        )
+
+        too_many_proofs = json.loads(json.dumps(presentation_request))
+        too_many_proofs["message"]["input"]["candidate"]["proofs"] = [
+            {} for _ in range(65)
+        ]
+        rejected_proofs = subprocess.run(
+            command,
+            input=json.dumps(too_many_proofs),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(rejected_proofs.returncode, 2)
+        self.assertIn("SIGNATURE_ATTEMPTS", rejected_proofs.stderr)
 
         over_bound = json.loads(json.dumps(request))
         over_bound["message"]["input"]["presentations"] = [

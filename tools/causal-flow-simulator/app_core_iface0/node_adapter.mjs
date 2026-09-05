@@ -16,6 +16,8 @@ class AdapterFailure extends Error {}
 
 
 const FORK_JOIN_DOMAIN = Buffer.from("STYX-APP-CORE-IFACE-0-FORK-JOIN-V0\0", "ascii");
+const NATIVE_DEPENDENCY_INVENTORY = "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json";
+const RESOURCE_ENVELOPE_PATH = "tools/causal-flow-simulator/o08/resource-envelope.candidate.json";
 const IMPLEMENTED_COLLECTION_BOUND_TARGETS = Object.freeze([
   "$defs.AliasGroupV0.allOf[0]",
   "$defs.ApplicationPresentationGroupV0.proofs",
@@ -117,6 +119,47 @@ function readManifestBoundJson(authority, filename) {
   const digest = crypto.createHash("sha256").update(raw).digest("hex");
   requireCondition(digest === authority.artifacts.get(filename), `candidate manifest digest mismatch: ${filename}`);
   return JSON.parse(raw.toString("utf8"));
+}
+
+
+function readSelectedResourceEnvelope(authority) {
+  const inventory = readManifestBoundJson(authority, NATIVE_DEPENDENCY_INVENTORY);
+  requireCondition(Array.isArray(inventory.dependencies), "native dependency relation is absent");
+  const matches = inventory.dependencies.filter(
+    (row) => objectValue(row) && row.path === RESOURCE_ENVELOPE_PATH,
+  );
+  requireCondition(matches.length === 1, "selected resource-envelope dependency is not unique");
+  const dependency = matches[0];
+  requireCondition(
+    dependency.mutationPolicy === "READ_ONLY_BYTE_IDENTICAL"
+      && typeof dependency.sha256 === "string" && /^[0-9a-f]{64}$/.test(dependency.sha256)
+      && Number.isSafeInteger(dependency.byteSize) && dependency.byteSize >= 0,
+    "selected resource-envelope dependency is malformed",
+  );
+
+  const repository = path.resolve(authority.real, "..", "..", "..", "..");
+  requireCondition(
+    path.join(repository, "tools", "causal-flow-simulator", "app_core_iface0", "contract")
+      === authority.real,
+    "contract authority is outside the expected repository location",
+  );
+  const lexical = path.resolve(repository, RESOURCE_ENVELOPE_PATH);
+  requireCondition(
+    lexical.startsWith(`${repository}${path.sep}`),
+    "selected resource-envelope path escapes the repository",
+  );
+  const real = fs.realpathSync.native(lexical);
+  requireCondition(real === lexical, "selected resource-envelope path or ancestor is a symlink");
+  const raw = readBytes(real);
+  const digest = crypto.createHash("sha256").update(raw).digest("hex");
+  requireCondition(raw.length === dependency.byteSize, "selected resource-envelope size mismatch");
+  requireCondition(digest === dependency.sha256, "selected resource-envelope digest mismatch");
+  const envelope = JSON.parse(raw.toString("utf8"));
+  requireCondition(
+    objectValue(envelope) && envelope.candidate_id === "balanced" && objectValue(envelope.entries),
+    "selected resource envelope is not the balanced candidate",
+  );
+  return envelope;
 }
 
 
@@ -768,7 +811,7 @@ function validateSchema(value, schema, root, branchTrace = null) {
 }
 
 
-function interfaceLimits(schema) {
+function interfaceLimits(schema, resourceEnvelope) {
   const properties = schema.$defs?.InterfaceLimitsV0?.properties;
   requireCondition(objectValue(properties), "interface limits are absent");
   const limits = {};
@@ -777,6 +820,21 @@ function interfaceLimits(schema) {
     const parsed = Number(row.const);
     requireCondition(Number.isSafeInteger(parsed) && parsed >= 0, `invalid limit: ${name}`);
     limits[name] = parsed;
+  }
+  requireCondition(objectValue(resourceEnvelope?.entries), "resource-envelope entries are absent");
+  for (const [name, row] of Object.entries(resourceEnvelope.entries)) {
+    requireCondition(objectValue(row), `invalid resource-envelope entry: ${name}`);
+    const selected = row.selected_value;
+    if (selected === null) continue;
+    requireCondition(
+      Number.isSafeInteger(selected) && selected >= 0,
+      `invalid selected resource-envelope limit: ${name}`,
+    );
+    if (Object.prototype.hasOwnProperty.call(limits, name)) {
+      requireCondition(limits[name] === selected, `resource-envelope limit drift: ${name}`);
+    } else {
+      limits[name] = selected;
+    }
   }
   return limits;
 }
@@ -918,12 +976,12 @@ function preflightSnapshotCollections(snapshot, limits) {
 }
 
 
-function preflightCollections(input, schema, semantics) {
+function preflightCollections(input, schema, semantics, resourceEnvelope) {
   exactKeys(input, ["direction", "message"], "collection preflight input");
   requireCondition(["REQUEST", "RESPONSE"].includes(input.direction), "invalid collection preflight direction");
   requireCondition(objectValue(input.message), "collection preflight message is not an object");
   verifyCollectionTargetClosure(semantics);
-  const limits = interfaceLimits(schema);
+  const limits = interfaceLimits(schema, resourceEnvelope);
   const message = input.message;
   if (input.direction === "REQUEST") {
     const value = message.input;
@@ -1346,8 +1404,9 @@ try {
   } else if (preflightCollectionsMode) {
     const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
     const semantics = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json");
+    const resourceEnvelope = readSelectedResourceEnvelope(authority);
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
-    process.stdout.write(`${JSON.stringify(preflightCollections(input, schema, semantics))}\n`);
+    process.stdout.write(`${JSON.stringify(preflightCollections(input, schema, semantics, resourceEnvelope))}\n`);
   } else if (outcomeProjectionMode) {
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify(outcomeProjection(input))}\n`);
@@ -1356,7 +1415,13 @@ try {
     const schema = schemaOverride === null ? manifestSchema : readJson(schemaOverride);
     const input = readCanonicalInput(v1DetectorMutant);
     const semantics = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json");
-    preflightCollections({ direction: trustedDirection, message: input }, manifestSchema, semantics);
+    const resourceEnvelope = readSelectedResourceEnvelope(authority);
+    preflightCollections(
+      { direction: trustedDirection, message: input },
+      manifestSchema,
+      semantics,
+      resourceEnvelope,
+    );
     validateCompleteV2Document(input, schema, trustedDirection);
     process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
   }
