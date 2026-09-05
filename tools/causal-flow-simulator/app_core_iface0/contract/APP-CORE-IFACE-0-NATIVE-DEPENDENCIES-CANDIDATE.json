@@ -26,7 +26,7 @@
     "readOnlyPathSetSha256": "107c9f61ffc6bd44c4cf36f132c40380b5726af813399601ea5d94f1e75c3499",
     "seededExtensionPathSetSha256": "cb8be3acdfd8cfa9dac993c1c1e158dbd847f5206659fc1de5f91701f9551520",
     "ratifiedExactRepinPathSetSha256": "626f1f4719aea4a6046ee036826277514c31b97fc25c7bd5757ef58918b823d3",
-    "dependencyRelationSha256": "9d20f0139a895851a73b2060fe4add2fa1524b8bce5c9cce491b29f3d71927ef"
+    "dependencyRelationSha256": "ba67224da7a79df7b11e6a6c4f29d1308b2361ec383e16b5b9822cebf9627eb2"
   },
   "seededExtensionPaths": [
     "docs/protocol/review/README.md",
@@ -300,9 +300,9 @@
       "sha256": "6d72bb7daa780c65d1c94786c5ccae1418810955b51eb5ac4d0871f192dfd94c",
       "repin": {
         "oldSha256": "6d72bb7daa780c65d1c94786c5ccae1418810955b51eb5ac4d0871f192dfd94c",
-        "newSha256": "a7bc951d9e9b41ab5f75691ddf01ba222c2dc5c83025b078f14e7b2c41bc305c",
-        "newGitBlobOid": "1132039cbe2163fd7e175b16256259aa92cc021a",
-        "newByteSize": 96995,
+        "newSha256": "88006ae04db4d99dc3f0fe779f3a0cad1511c2e0a121448de9f21980271e1454",
+        "newGitBlobOid": "eedb80547418f487767e36f1702c2f9b5005190d",
+        "newByteSize": 99831,
         "reason": "Issue #295 comment 5550502736, amendment V3 sections 3.2, 3.4 and 4: separate logical K admission from O-04 content/opening availability while preserving the legacy evidence evaluator as an explicitly distinct path"
       }
     },

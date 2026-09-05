@@ -209,6 +209,61 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertEqual(result.diagnostic, "CARRIED_REFERENCE_MISMATCH")
         self.assertEqual(result.signature_attempts, 0)
 
+    def test_k_binding_reduces_proofs_after_unique_key_resolution(self) -> None:
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        proposed_genesis, candidate = self._replay_fixture(event_type=1)
+        assert candidate is not None
+        transcript = bytes.fromhex(candidate["transcriptHex"])
+        reference = backend.framed_hash(
+            backend.DOMAINS["event_reference"], transcript
+        ).hex()
+        genesis_candidate = proposed_genesis["candidate"]
+        genesis_record = {
+            "kind": "GENESIS",
+            "genesisReferenceHex": proposed_genesis["projection"][
+                "genesisReferenceHex"
+            ],
+            "signatureHex": genesis_candidate["signatureHex"],
+            "transcriptHex": genesis_candidate["transcriptHex"],
+        }
+        valid = candidate["signatureHex"]
+        invalid = "00" * 64
+
+        def evaluate(proofs: list[str]) -> dict[str, object]:
+            rows = backend.evaluate_logical_k_admission_graph(
+                genesis_record,
+                [
+                    {
+                        "id": "diagnostic-only",
+                        "kind": "APPLICATION_EVENT",
+                        "eventReferenceHex": reference,
+                        "transcriptHex": candidate["transcriptHex"],
+                        "proofs": [
+                            {
+                                "presentationId": str(index),
+                                "signatureHex": signature,
+                            }
+                            for index, signature in enumerate(proofs)
+                        ],
+                    }
+                ],
+                presentation_evidence=True,
+            )
+            self.assertEqual(len(rows), 1)
+            return rows[0]
+
+        left = evaluate([invalid, valid])
+        right = evaluate([valid, invalid])
+        duplicate = evaluate([valid, valid])
+        for observation in (left, right, duplicate):
+            self.assertEqual(observation["kBindingAdmission"], "ADMITTED")
+            self.assertEqual(observation["retainedProofSignatureHex"], valid)
+            self.assertIsNone(observation["protocolErrorCode"])
+
+        rejected = evaluate([invalid])
+        self.assertEqual(rejected["kBindingAdmission"], "REJECTED")
+        self.assertNotIn("retainedProofSignatureHex", rejected)
+
     def test_complete_v2_branch_trace_is_bound_to_direction_and_operation(self) -> None:
         request = {
             "input": {},

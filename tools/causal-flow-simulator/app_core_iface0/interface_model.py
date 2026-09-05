@@ -151,6 +151,7 @@ class ReplayCandidate:
     reference_hex: str
     transcript: bytes
     fields: dict[str, Any]
+    retained_proof_signature_hex: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1872,8 +1873,10 @@ def _candidate_records_for_k(
             "id": candidate.reference_hex,
             "kind": "APPLICATION_EVENT",
             "eventReferenceHex": candidate.reference_hex,
-            "signatureHex": candidate.candidate["signatureHex"],
             "transcriptHex": candidate.candidate["transcriptHex"],
+            "proofs": [
+                {"signatureHex": candidate.candidate["signatureHex"]}
+            ],
         }
         records.append(record)
     return genesis_record, records
@@ -2560,7 +2563,7 @@ def prepare_replay_closure(
     genesis_record, records = _candidate_records_for_k(proposed_genesis, candidates)
     try:
         observations = module.evaluate_logical_k_admission_graph(
-            genesis_record, records
+            genesis_record, records, presentation_evidence=True
         )
     except module.ProtocolError as error:
         raise HarnessFailure(
@@ -2577,6 +2580,20 @@ def prepare_replay_closure(
             return _candidate_terminal(
                 observation["protocolErrorCode"], observation["stage"]
             )
+    candidates = tuple(
+        ReplayCandidate(
+            candidate=candidate.candidate,
+            reference_hex=candidate.reference_hex,
+            transcript=candidate.transcript,
+            fields=candidate.fields,
+            retained_proof_signature_hex=str(
+                observation_by_reference[candidate.reference_hex][
+                    "retainedProofSignatureHex"
+                ]
+            ),
+        )
+        for candidate in candidates
+    )
     return ReplayClosure(
         proposed_genesis=proposed_genesis,
         candidates=candidates,
