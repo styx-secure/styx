@@ -34,6 +34,13 @@ OPERATIONS = (
     "EVALUATE_CANDIDATE",
     "EVALUATE_EVIDENCE_UPDATE",
 )
+REQUEST_SET_MANIFEST_FILENAME = "request-set-manifest.json"
+REQUEST_SET_MANIFEST_SHA256 = (
+    "43a75ca967bf95991692ad07c3944b5792456b4c958df2ff663b2b9ec6b8145d"
+)
+SEMANTIC_FIXTURE_SOURCE_SHA256 = (
+    "323c5227972b79a33bc8238390e8e6000cd6a339a65375155ebea21010b4c8d4"
+)
 ROOT_ORDER = tuple(
     f"{direction}-{operation}"
     for direction in ("REQUEST", "RESPONSE")
@@ -2267,6 +2274,43 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     )
     if len(provenance_rows) != 77:
         raise SeedGenerationError("request provenance count drift")
+    provenance_by_id = {row["caseId"]: row for row in provenance_rows}
+    request_manifest_rows = []
+    for row in sorted(
+        request_rows.values(), key=lambda value: value["caseId"].encode("utf-8")
+    ):
+        provenance = provenance_by_id[row["caseId"]]
+        request_manifest_rows.append(
+            {
+                "caseId": row["caseId"],
+                "carrierFile": row["carrierFile"],
+                "carrierOctets": row["carrierOctets"],
+                "carrierSha256": row["carrierSha256"],
+                "coveredObjectSchemaPointers": row[
+                    "coveredObjectSchemaPointers"
+                ],
+                "coveredOneOfArms": row["coveredOneOfArms"],
+                "eligibleRootId": provenance["eligibleRootId"],
+                "generatorKind": provenance["generatorKind"],
+                "generatorOrdinal": provenance["generatorOrdinal"],
+                "sourceIdentity": provenance["sourceIdentity"],
+            }
+        )
+    request_set_manifest = {
+        "formatVersion": 1,
+        "interfaceSchemaSha256": reachability["schemaSha256"],
+        "objectSchemaPointerSetSha256": reachability[
+            "objectSchemaPointerSetSha256"
+        ],
+        "oneOfArmSetSha256": reachability["oneOfArmSetSha256"],
+        "requestCount": 77,
+        "semanticFixtureSourceSha256": SEMANTIC_FIXTURE_SOURCE_SHA256,
+        "requests": request_manifest_rows,
+    }
+    request_set_manifest_bytes = dumps(request_set_manifest)
+    if _sha256(request_set_manifest_bytes) != REQUEST_SET_MANIFEST_SHA256:
+        raise SeedGenerationError("ratified request-set manifest identity drift")
+    _write_external(root / REQUEST_SET_MANIFEST_FILENAME, request_set_manifest_bytes)
     inventory = {
         "inventoryVersion": "APP-CORE-IFACE-0-POSITIVE-CARRIERS-V1",
         "status": "PRE_RATIFICATION_CANDIDATE",
@@ -2322,6 +2366,7 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "case_count": 96,
         "inventory_sha256": _sha256(inventory_bytes),
         "package_report_sha256": _sha256(package_bytes),
+        "request_set_manifest_sha256": _sha256(request_set_manifest_bytes),
     }
 
 
@@ -2391,7 +2436,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"requests={result['request_case_count']} "
                 f"responses={result['response_case_count']} "
                 f"inventory={result['inventory_sha256']} "
-                f"package={result['package_report_sha256']}"
+                f"package={result['package_report_sha256']} "
+                f"request_manifest={result['request_set_manifest_sha256']}"
             )
     except (InventoryError, OSError, SeedGenerationError) as error:
         print(f"APP-core seed generation: FAIL: {error}", file=sys.stderr)

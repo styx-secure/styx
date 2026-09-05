@@ -14,8 +14,12 @@ graph, credential and authority projections, exact event/context outcome
 precedence, and the same closed collection bounds.
 
 Phase A now generates the closed 77-request blind population, 19 withheld
-reference responses, the 96-row positive-carrier inventory and exact package
-manifest outside the repository. Of the 77 requests, 64 are schema-object
+reference responses, the 96-row positive-carrier inventory, an exact
+request-only review manifest and the package report outside the repository.
+The request-only manifest is pinned to the independently reviewed digest and
+contains carrier bytes, coverage and first-retained synthesis provenance, but
+no response identity, response digest or semantic outcome. Of the 77 requests,
+64 are schema-object
 coverage carriers that stop at profile selection and thirteen are semantic
 fixtures that reach the evaluator; none of the attempted `oneOf` carriers
 survives canonical-byte de-duplication as a distinct request. Three semantic
@@ -31,6 +35,10 @@ Phase-A package mutations are required to fail through their named detectors.
 Exact-final-head two-clean-checkout evidence, independent acceptance and
 provider-bound human ratification are still required before the carrier
 inventory becomes Phase-B input.
+
+For the combined H12/H3 increment, provider identity is the exact commit plus
+`refs/heads/task/295-c03-h12-h3-combined-remediation`. PR #296 is unrelated to
+this terminal check and can neither satisfy nor veto it.
 
 Phase B remains incomplete. Its deterministic registry derivation maps all
 1,553 structural instances to Phase-A carriers and preflights both target

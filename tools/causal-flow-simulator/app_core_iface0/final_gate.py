@@ -20,10 +20,13 @@ from typing import Any
 sys.dont_write_bytecode = True
 
 from canonical_json import CanonicalJsonError, dumps, loads
+from generate_seed_registry import REQUEST_SET_MANIFEST_SHA256
 from inventory import BASE_SHA, InventoryError
 
 
-RATIFIED_V14_SHA256 = "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+RATIFIED_CARRIER_AUTHORITY_V3_SHA256 = (
+    "19133d9a7734d054832b706b03c885ce6dc82b17902a9e9196e404a2ef109918"
+)
 POSITIVE_INVENTORY_RATIFICATION_KIND = (
     "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1"
 )
@@ -32,6 +35,11 @@ POSITIVE_INVENTORY_AUTHORITY_CHANGE_KIND = (
 )
 ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/295"
 ISSUE_COMMENTS_URL = ISSUE_URL + "/comments?per_page=100&page=1"
+COMBINED_BRANCH_REF = "refs/heads/task/295-c03-h12-h3-combined-remediation"
+COMBINED_BRANCH_URL = (
+    "https://api.github.com/repos/styx-secure/styx/git/ref/heads/"
+    "task/295-c03-h12-h3-combined-remediation"
+)
 OPERATOR_ID = 141346846
 OPERATOR_LOGIN = "maverde73"
 SEMANTIC_FIXTURE_SOURCE_PATH = (
@@ -265,6 +273,8 @@ def _validate_external_root(repo: Path, root: Path) -> dict[str, object]:
         or any(report.get(key) != value for key, value in required.items())
         or not isinstance(report.get("inventory_sha256"), str)
         or not isinstance(report.get("package_report_sha256"), str)
+        or report.get("request_set_manifest_sha256")
+        != REQUEST_SET_MANIFEST_SHA256
     ):
         raise FinalGateError("checkout validator report shape drift")
     return report
@@ -313,6 +323,9 @@ def run_phase_a_gate(
         "caseCount": 96,
         "positiveCarrierInventorySha256": first_result["inventory_sha256"],
         "phaseAPackageReportSha256": first_result["package_report_sha256"],
+        "requestSetManifestSha256": first_result[
+            "request_set_manifest_sha256"
+        ],
     }
 
 
@@ -482,7 +495,8 @@ def _validate_ratification_target(
         or target_decision.get("repository") != "styx-secure/styx"
         or target_decision.get("issue") != 295
         or target_decision.get("baseSha") != BASE_SHA
-        or target_decision.get("closureAmendmentSha256") != RATIFIED_V14_SHA256
+        or target_decision.get("closureAmendmentSha256")
+        != RATIFIED_CARRIER_AUTHORITY_V3_SHA256
         or target_decision.get("selectionHead") != selection_head
         or (
             target_decision.get("caseCount"),
@@ -688,7 +702,8 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
         or decision["repository"] != "styx-secure/styx"
         or decision["issue"] != 295
         or decision["baseSha"] != BASE_SHA
-        or decision["closureAmendmentSha256"] != RATIFIED_V14_SHA256
+        or decision["closureAmendmentSha256"]
+        != RATIFIED_CARRIER_AUTHORITY_V3_SHA256
         or (decision["caseCount"], decision["requestCaseCount"], decision["responseCaseCount"])
         != (96, 77, 19)
     ):
@@ -708,24 +723,19 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     commit, _commit_raw, _ = _fetch_json(
         f"https://api.github.com/repos/styx-secure/styx/commits/{selection_head}"
     )
-    pull, _pull_raw, _ = _fetch_json(
-        "https://api.github.com/repos/styx-secure/styx/pulls/296"
-    )
-    if not isinstance(commit, dict) or not isinstance(pull, dict):
-        raise FinalGateError("provider commit or PR is not a JSON object")
+    branch, _branch_raw, _ = _fetch_json(COMBINED_BRANCH_URL)
+    if not isinstance(commit, dict) or not isinstance(branch, dict):
+        raise FinalGateError("provider commit or branch ref is not a JSON object")
     if commit.get("sha") != selection_head:
         raise FinalGateError("provider commit identity drift")
-    pull_base = pull.get("base")
-    pull_head = pull.get("head")
+    branch_object = branch.get("object")
     if (
-        pull.get("state") != "open"
-        or pull.get("draft") is not True
-        or not isinstance(pull_base, dict)
-        or not isinstance(pull_head, dict)
-        or pull_base.get("sha") != BASE_SHA
-        or pull_head.get("sha") != selection_head
+        branch.get("ref") != COMBINED_BRANCH_REF
+        or not isinstance(branch_object, dict)
+        or branch_object.get("type") != "commit"
+        or branch_object.get("sha") != selection_head
     ):
-        raise FinalGateError("provider PR freeze identity drift")
+        raise FinalGateError("provider combined branch identity drift")
 
     pre_regeneration_scan = _scan_provider_authority(
         decision,
@@ -748,6 +758,8 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
             != result["inventory_sha256"]
             or decision["phaseAPackageReportSha256"]
             != result["package_report_sha256"]
+            or result["request_set_manifest_sha256"]
+            != REQUEST_SET_MANIFEST_SHA256
         ):
             raise FinalGateError("provider decision does not bind regenerated Phase A")
 
@@ -808,6 +820,7 @@ def main(argv: list[str] | None = None) -> int:
                 "positiveCarrierInventorySha256": decision[
                     "positiveCarrierInventorySha256"
                 ],
+                "requestSetManifestSha256": REQUEST_SET_MANIFEST_SHA256,
             }
     except (
         FinalGateError,

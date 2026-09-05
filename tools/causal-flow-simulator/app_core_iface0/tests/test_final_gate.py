@@ -15,7 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from final_gate import (  # noqa: E402
+    COMBINED_BRANCH_REF,
+    COMBINED_BRANCH_URL,
     FinalGateError,
+    RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
     _fetch_json,
     _generate_phase_a_from_checkout,
     _next_link,
@@ -127,7 +130,7 @@ class FinalGateTests(unittest.TestCase):
     def test_provider_environment_override_fails_before_network(self) -> None:
         with patch.dict("os.environ", {"GITHUB_TOKEN": "forbidden"}, clear=True):
             with self.assertRaisesRegex(FinalGateError, "override environment"):
-                _fetch_json("https://api.github.com/repos/styx-secure/styx/pulls/296")
+                _fetch_json(COMBINED_BRANCH_URL)
 
     def test_next_link_accepts_only_the_exact_next_relation(self) -> None:
         self.assertEqual(
@@ -242,6 +245,10 @@ class FinalGateTests(unittest.TestCase):
         self.assertEqual(result["verdict"], "PASS")
         self.assertEqual(result["caseCount"], 96)
         self.assertRegex(result["positiveCarrierInventorySha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            result["requestSetManifestSha256"],
+            "43a75ca967bf95991692ad07c3944b5792456b4c958df2ff663b2b9ec6b8145d",
+        )
         self.assertRegex(result["phaseAPackageReportSha256"], r"^[0-9a-f]{64}$")
 
     def test_authority_scan_rejects_withdrawal_and_supersession(self) -> None:
@@ -251,9 +258,7 @@ class FinalGateTests(unittest.TestCase):
             "baseSha": BASE_SHA,
             "candidateManifestSha256": manifest_sha,
             "caseCount": 96,
-            "closureAmendmentSha256": (
-                "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
-            ),
+            "closureAmendmentSha256": RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
             "decision": "RATIFY",
             "issue": 295,
             "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
@@ -405,9 +410,7 @@ class FinalGateTests(unittest.TestCase):
                 "baseSha": BASE_SHA,
                 "candidateManifestSha256": manifest_sha,
                 "caseCount": 96,
-                "closureAmendmentSha256": (
-                    "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
-                ),
+                "closureAmendmentSha256": RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
                 "decision": "RATIFY",
                 "issue": 295,
                 "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
@@ -437,14 +440,12 @@ class FinalGateTests(unittest.TestCase):
                 if url.endswith("/commits/" + selection_head):
                     events.append("commit")
                     return {"sha": selection_head}, b"commit", {}
-                if url.endswith("/pulls/296"):
-                    events.append("pull")
+                if url == COMBINED_BRANCH_URL:
+                    events.append("branch")
                     return {
-                        "base": {"sha": BASE_SHA},
-                        "draft": True,
-                        "head": {"sha": selection_head},
-                        "state": "open",
-                    }, b"pull", {}
+                        "ref": COMBINED_BRANCH_REF,
+                        "object": {"sha": selection_head, "type": "commit"},
+                    }, b"branch", {}
                 if "/issues/295/comments?" in url:
                     events.append("comments")
                     return [comment], b"comments", {}
@@ -454,7 +455,7 @@ class FinalGateTests(unittest.TestCase):
                 self.assertFalse(output.exists())
                 self.assertEqual(
                     events,
-                    ["comment", "commit", "pull", "comments", "source"],
+                    ["comment", "commit", "branch", "comments", "source"],
                 )
                 events.append("generate")
                 output.mkdir()
@@ -466,13 +467,16 @@ class FinalGateTests(unittest.TestCase):
                 return {
                     "inventory_sha256": inventory_sha,
                     "package_report_sha256": package_sha,
+                    "request_set_manifest_sha256": (
+                        "43a75ca967bf95991692ad07c3944b5792456b4c958df2ff663b2b9ec6b8145d"
+                    ),
                 }
 
             def verify_source(
                 _selection_head: str,
                 _selected: bytes,
             ) -> None:
-                self.assertEqual(events, ["comment", "commit", "pull", "comments"])
+                self.assertEqual(events, ["comment", "commit", "branch", "comments"])
                 events.append("source")
 
             with (
@@ -494,34 +498,45 @@ class FinalGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(FinalGateError, "provenance drift"):
                     _validate_provider_authority(comment_id, repo)
 
-            def malformed_pull_fetch(
+            stale_decision = dict(decision)
+            stale_decision["closureAmendmentSha256"] = (
+                "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+            )
+            stale_comment = dict(comment)
+            stale_comment["body"] = dumps(stale_decision).decode("utf-8")
+            with patch(
+                "final_gate._fetch_json",
+                return_value=(stale_comment, b"stale", {}),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "value drift"):
+                    _validate_provider_authority(comment_id, repo)
+
+            def malformed_branch_fetch(
                 url: str,
             ) -> tuple[object, bytes, dict[str, str]]:
                 if url == comment_url:
                     return comment, provider_raw, {}
                 if url.endswith("/commits/" + selection_head):
                     return {"sha": selection_head}, b"commit", {}
-                if url.endswith("/pulls/296"):
+                if url == COMBINED_BRANCH_URL:
                     return {
-                        "base": None,
-                        "draft": True,
-                        "head": {"sha": selection_head},
-                        "state": "open",
-                    }, b"pull", {}
+                        "ref": COMBINED_BRANCH_REF,
+                        "object": {"sha": selection_head, "type": "tag"},
+                    }, b"branch", {}
                 raise AssertionError(url)
 
             with (
-                patch("final_gate._fetch_json", side_effect=malformed_pull_fetch),
+                patch("final_gate._fetch_json", side_effect=malformed_branch_fetch),
                 patch("final_gate._verify_clean_checkout"),
             ):
-                with self.assertRaisesRegex(FinalGateError, "PR freeze identity drift"):
+                with self.assertRaisesRegex(FinalGateError, "branch identity drift"):
                     _validate_provider_authority(comment_id, repo)
 
         self.assertEqual(observed, decision)
         self.assertEqual(
             events,
             [
-                "comment", "commit", "pull", "comments", "source",
+                "comment", "commit", "branch", "comments", "source",
                 "generate", "validate", "comment", "comments",
             ],
         )
@@ -545,9 +560,7 @@ class FinalGateTests(unittest.TestCase):
                     manifest.read_bytes()
                 ).hexdigest(),
                 "caseCount": 96,
-                "closureAmendmentSha256": (
-                    "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
-                ),
+                "closureAmendmentSha256": RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
                 "decision": "RATIFY",
                 "issue": 295,
                 "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
@@ -579,13 +592,11 @@ class FinalGateTests(unittest.TestCase):
                     return comment, raw_comment, {}
                 if url.endswith("/commits/" + selection_head):
                     return {"sha": selection_head}, b"commit", {}
-                if url.endswith("/pulls/296"):
+                if url == COMBINED_BRANCH_URL:
                     return {
-                        "base": {"sha": BASE_SHA},
-                        "draft": True,
-                        "head": {"sha": selection_head},
-                        "state": "open",
-                    }, b"pull", {}
+                        "ref": COMBINED_BRANCH_REF,
+                        "object": {"sha": selection_head, "type": "commit"},
+                    }, b"branch", {}
                 return [comment], b"comments", {}
 
             def generate(_repo: Path, output: Path) -> None:
@@ -602,6 +613,9 @@ class FinalGateTests(unittest.TestCase):
                     return_value={
                         "inventory_sha256": "b" * 64,
                         "package_report_sha256": "c" * 64,
+                        "request_set_manifest_sha256": (
+                            "43a75ca967bf95991692ad07c3944b5792456b4c958df2ff663b2b9ec6b8145d"
+                        ),
                     },
                 ),
             ):

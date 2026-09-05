@@ -20,6 +20,9 @@ from canonical_json import CanonicalJsonError, dumps, loads
 from canonical_report import ReportError, store_report
 from generate_seed_registry import (
     OPERATIONS,
+    REQUEST_SET_MANIFEST_FILENAME,
+    REQUEST_SET_MANIFEST_SHA256,
+    SEMANTIC_FIXTURE_SOURCE_SHA256,
     SeedGenerationError,
     TERMINAL_IMPLEMENTATION_FILES,
     _case_ids,
@@ -169,6 +172,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "positive-carrier-inventory.json",
         "reference-toolchain.json",
         "phase-a-package-report.json",
+        REQUEST_SET_MANIFEST_FILENAME,
         *(f"carriers/{case_id}.json" for case_id in expected_payloads.values()),
         *(
             f"reference-executions/{case_id}.json"
@@ -329,10 +333,11 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     expected_paths = {
         "positive-carrier-inventory.json",
         "reference-toolchain.json",
+        REQUEST_SET_MANIFEST_FILENAME,
         *(f"carriers/{case_id}.json" for case_id in by_id),
         *response_report_files,
     }
-    if set(artifact_paths) != expected_paths or len(artifact_paths) != 117:
+    if set(artifact_paths) != expected_paths or len(artifact_paths) != 118:
         raise PhaseAValidationError("Phase-A external file set drift")
     artifacts = [
         {
@@ -351,6 +356,47 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     )
     if len(request_provenance) != 77:
         raise PhaseAValidationError("request provenance reconstruction count drift")
+    provenance_by_id = {row["caseId"]: row for row in request_provenance}
+    request_manifest_rows = []
+    for case_id in sorted(request_ids.values(), key=lambda value: value.encode("utf-8")):
+        row = by_id[case_id]
+        provenance = provenance_by_id[case_id]
+        request_manifest_rows.append(
+            {
+                "caseId": case_id,
+                "carrierFile": row["carrierFile"],
+                "carrierOctets": row["carrierOctets"],
+                "carrierSha256": row["carrierSha256"],
+                "coveredObjectSchemaPointers": row[
+                    "coveredObjectSchemaPointers"
+                ],
+                "coveredOneOfArms": row["coveredOneOfArms"],
+                "eligibleRootId": provenance["eligibleRootId"],
+                "generatorKind": provenance["generatorKind"],
+                "generatorOrdinal": provenance["generatorOrdinal"],
+                "sourceIdentity": provenance["sourceIdentity"],
+            }
+        )
+    expected_request_set_manifest = {
+        "formatVersion": 1,
+        "interfaceSchemaSha256": reachability["schemaSha256"],
+        "objectSchemaPointerSetSha256": reachability[
+            "objectSchemaPointerSetSha256"
+        ],
+        "oneOfArmSetSha256": reachability["oneOfArmSetSha256"],
+        "requestCount": 77,
+        "semanticFixtureSourceSha256": SEMANTIC_FIXTURE_SOURCE_SHA256,
+        "requests": request_manifest_rows,
+    }
+    request_set_manifest_path = root / REQUEST_SET_MANIFEST_FILENAME
+    request_set_manifest = _load_canonical(request_set_manifest_path)
+    request_set_manifest_bytes = request_set_manifest_path.read_bytes()
+    if (
+        request_set_manifest != expected_request_set_manifest
+        or dumps(request_set_manifest) != request_set_manifest_bytes
+        or _sha256(request_set_manifest_bytes) != REQUEST_SET_MANIFEST_SHA256
+    ):
+        raise PhaseAValidationError("ratified request-set manifest drift")
     expected_package = {
         "reportVersion": "APP-CORE-IFACE-0-PHASE-A-PACKAGE-V1",
         "status": "PRE_RATIFICATION_CANDIDATE",
@@ -365,7 +411,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "requestCaseCount": 77,
         "responseCaseCount": 19,
         "requestProvenance": request_provenance,
-        "artifactCount": 117,
+        "artifactCount": 118,
         "artifacts": artifacts,
     }
     if package != expected_package:
@@ -374,6 +420,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "case_count": 96,
         "inventory_sha256": _sha256(inventory_path.read_bytes()),
         "package_report_sha256": _sha256(package_path.read_bytes()),
+        "request_set_manifest_sha256": _sha256(request_set_manifest_bytes),
     }
 
 
@@ -408,6 +455,7 @@ def main(argv: list[str] | None = None) -> int:
                         "case_count",
                         "inventory_sha256",
                         "package_report_sha256",
+                        "request_set_manifest_sha256",
                     }
                 ),
             )

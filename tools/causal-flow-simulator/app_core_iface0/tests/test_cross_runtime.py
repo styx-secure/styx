@@ -34,6 +34,10 @@ from authority_witness import isolated_authority_states_witness  # noqa: E402
 from interface_model import ContractAuthority, evaluate_interface_request  # noqa: E402
 from run_cross_runtime import build_report as build_javascript_release_report  # noqa: E402
 from run_probe import build_report as build_reference_probe_report  # noqa: E402
+from validate_inventory import (  # noqa: E402
+    PhaseAValidationError,
+    validate_phase_a,
+)
 import run_probe  # noqa: E402
 
 
@@ -956,6 +960,73 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
             },
         )
         self.assertEqual(_pointer_to_dotted("/$defs/a~1b~0c"), "$defs.a/b~c")
+
+    def test_request_set_manifest_is_exact_and_contains_no_response_or_outcome(self) -> None:
+        manifest_path = self.evidence / "request-set-manifest.json"
+        manifest = json.loads(manifest_path.read_bytes())
+        self.assertEqual(
+            set(manifest),
+            {
+                "formatVersion",
+                "interfaceSchemaSha256",
+                "objectSchemaPointerSetSha256",
+                "oneOfArmSetSha256",
+                "requestCount",
+                "semanticFixtureSourceSha256",
+                "requests",
+            },
+        )
+        self.assertEqual(manifest["requestCount"], 77)
+        self.assertEqual(len(manifest["requests"]), 77)
+        self.assertEqual(
+            [row["caseId"] for row in manifest["requests"]],
+            sorted(row["caseId"] for row in manifest["requests"]),
+        )
+        expected_row_keys = {
+            "caseId",
+            "carrierFile",
+            "carrierOctets",
+            "carrierSha256",
+            "coveredObjectSchemaPointers",
+            "coveredOneOfArms",
+            "eligibleRootId",
+            "generatorKind",
+            "generatorOrdinal",
+            "sourceIdentity",
+        }
+        self.assertTrue(
+            all(set(row) == expected_row_keys for row in manifest["requests"])
+        )
+        self.assertTrue(
+            all(row["caseId"].startswith("PCR-REQUEST-") for row in manifest["requests"])
+        )
+        all_keys: set[str] = set()
+
+        def collect_keys(value: object) -> None:
+            if isinstance(value, dict):
+                all_keys.update(str(key).lower() for key in value)
+                for child in value.values():
+                    collect_keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect_keys(child)
+
+        collect_keys(manifest)
+        for forbidden in ("response", "outcome", "disposition", "observation"):
+            self.assertFalse(any(forbidden in key for key in all_keys))
+
+    def test_request_set_manifest_tampering_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            evidence = Path(raw) / "evidence"
+            shutil.copytree(self.evidence, evidence)
+            manifest_path = evidence / "request-set-manifest.json"
+            manifest = json.loads(manifest_path.read_bytes())
+            manifest["requests"][0]["sourceIdentity"] = "semantic-fixture/999"
+            manifest_path.write_bytes(dumps(manifest))
+            with self.assertRaisesRegex(
+                PhaseAValidationError, "request-set manifest drift"
+            ):
+                validate_phase_a(ROOT.parents[2], ROOT / "contract", evidence)
 
     def test_javascript_reader_admits_every_released_response(self) -> None:
         report = build_javascript_release_report(
