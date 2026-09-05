@@ -44,6 +44,7 @@ from interface_model import (  # noqa: E402
     _replay_graph_capacity_failure,
     _protocol_error_reason,
     _reduce_application_proof_group,
+    _reduce_complete_evidence_attempts,
     _selected_envelope_failure,
     _validate_complete_v2_document,
     _validate_structural_v2_evidence,
@@ -55,7 +56,7 @@ from interface_model import (  # noqa: E402
     evaluate_evidence_update,
     evaluate_interface_request,
     evaluate_genesis,
-    merge_evidence_additions,
+    merge_verified_complete_evidence,
     prepare_replay_closure,
     project_replay_state,
     replay_context,
@@ -1058,6 +1059,24 @@ class InterfaceModelTests(unittest.TestCase):
         )
         self.assertEqual(response["result"], evaluated)
 
+        with self.assertRaises(RequestRejected):
+            evaluate_candidate(
+                self.authority,
+                dict(SUPPORTED_PROFILE),
+                {
+                    **value,
+                    "evidence": {
+                        "contentMaterial": [
+                            {
+                                "eventReferenceHex": "00" * 32,
+                                "segments": [],
+                            }
+                        ],
+                        "openingMaterial": [],
+                    },
+                },
+            )
+
         duplicate = evaluate_candidate(
             self.authority,
             dict(SUPPORTED_PROFILE),
@@ -1215,6 +1234,35 @@ class InterfaceModelTests(unittest.TestCase):
                 {"prior": successor, "additions": additions},
             ),
             {"evaluation": {"kind": "IDEMPOTENT_NO_CHANGE"}},
+        )
+        partial = {**additions, "openingMaterial": []}
+        self.assertEqual(
+            evaluate_evidence_update(
+                self.authority,
+                dict(SUPPORTED_PROFILE),
+                {"prior": pending, "additions": partial},
+            ),
+            {
+                "evaluation": {
+                    "kind": "TERMINAL_REJECTED",
+                    "reason": "NONCANONICAL_MATERIAL",
+                }
+            },
+        )
+        mismatched = json.loads(json.dumps(additions))
+        mismatched["openingMaterial"][0]["openingRandomizerHex"] = "46" * 32
+        self.assertEqual(
+            evaluate_evidence_update(
+                self.authority,
+                dict(SUPPORTED_PROFILE),
+                {"prior": pending, "additions": mismatched},
+            ),
+            {
+                "evaluation": {
+                    "kind": "TERMINAL_REJECTED",
+                    "reason": "EVIDENCE_COMMITMENT_MISMATCH",
+                }
+            },
         )
         response = evaluate_interface_request(
             self.authority,
@@ -1516,6 +1564,10 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertIsInstance(absent_same_candidate, ReplayClosure)
         self.assertIsInstance(mismatched_same_candidate, ReplayClosure)
         self.assertEqual(
+            mismatched_same_candidate.evidence,
+            {"contentMaterial": [], "openingMaterial": []},
+        )
+        self.assertEqual(
             absent_same_candidate.k_observations,
             mismatched_same_candidate.k_observations,
         )
@@ -1584,31 +1636,13 @@ class InterfaceModelTests(unittest.TestCase):
                 valid, {reference: {"class": "NONE", "exactLength": 0}}
             )
 
-    def test_evidence_merge_distinguishes_idempotence_new_and_conflict(self) -> None:
+    def test_verified_evidence_merge_has_no_partial_or_arrival_winner(self) -> None:
         reference = "44" * 32
-        descriptors = {
-            reference: {"class": "REQUIRED", "exactLength": 4},
-        }
         prior = {
             "contentMaterial": [
                 {
                     "eventReferenceHex": reference,
-                    "segments": [{"offset": "0", "octetsHex": "aabb"}],
-                }
-            ],
-            "openingMaterial": [],
-        }
-        duplicate = json.loads(json.dumps(prior))
-        self.assertEqual(
-            merge_evidence_additions(prior, duplicate, descriptors),
-            (prior, False),
-        )
-
-        addition = {
-            "contentMaterial": [
-                {
-                    "eventReferenceHex": reference,
-                    "segments": [{"offset": "2", "octetsHex": "ccdd"}],
+                    "segments": [{"offset": "0", "octetsHex": "aabbccdd"}],
                 }
             ],
             "openingMaterial": [
@@ -1618,58 +1652,44 @@ class InterfaceModelTests(unittest.TestCase):
                 }
             ],
         }
-        merged, changed = merge_evidence_additions(prior, addition, descriptors)
+        duplicate = json.loads(json.dumps(prior))
+        self.assertEqual(
+            merge_verified_complete_evidence(prior, duplicate),
+            (prior, False),
+        )
+
+        second_reference = "66" * 32
+        addition = {
+            "contentMaterial": [
+                {
+                    "eventReferenceHex": second_reference,
+                    "segments": [{"offset": "0", "octetsHex": "eeff"}],
+                }
+            ],
+            "openingMaterial": [
+                {
+                    "eventReferenceHex": second_reference,
+                    "openingRandomizerHex": "77" * 32,
+                }
+            ],
+        }
+        merged, changed = merge_verified_complete_evidence(prior, addition)
         self.assertTrue(changed)
         self.assertEqual(
-            merged["contentMaterial"][0]["segments"],
-            [
-                {"offset": "0", "octetsHex": "aabb"},
-                {"offset": "2", "octetsHex": "ccdd"},
-            ],
+            [row["eventReferenceHex"] for row in merged["contentMaterial"]],
+            [reference, second_reference],
         )
 
-        conflicting = json.loads(json.dumps(duplicate))
+        conflicting = json.loads(json.dumps(prior))
         conflicting["contentMaterial"][0]["segments"][0]["octetsHex"] = "ffff"
-        with self.assertRaisesRegex(EvidenceError, "CONFLICTING_DUPLICATE"):
-            merge_evidence_additions(prior, conflicting, descriptors)
+        with self.assertRaisesRegex(EvidenceError, "PRIMITIVE_ASSUMPTION_FAILURE"):
+            merge_verified_complete_evidence(prior, conflicting)
 
-        overlapping = json.loads(json.dumps(duplicate))
-        overlapping["contentMaterial"][0]["segments"][0] = {
-            "offset": "1",
-            "octetsHex": "ffff",
-        }
-        with self.assertRaisesRegex(EvidenceError, "PARTIAL_OVERLAP"):
-            merge_evidence_additions(prior, overlapping, descriptors)
-
+        unpaired = {"contentMaterial": prior["contentMaterial"], "openingMaterial": []}
         with self.assertRaisesRegex(EvidenceError, "NONCANONICAL_MATERIAL"):
-            merge_evidence_additions(
-                prior,
-                {
-                    "contentMaterial": [
-                        {"eventReferenceHex": reference, "segments": []}
-                    ],
-                    "openingMaterial": [],
-                },
-                descriptors,
+            merge_verified_complete_evidence(
+                {"contentMaterial": [], "openingMaterial": []}, unpaired
             )
-
-        zero_reference = "66" * 32
-        zero_descriptors = {
-            zero_reference: {"class": "DETACHABLE", "exactLength": 0},
-        }
-        zero_addition = {
-            "contentMaterial": [
-                {"eventReferenceHex": zero_reference, "segments": []}
-            ],
-            "openingMaterial": [],
-        }
-        zero_merged, zero_changed = merge_evidence_additions(
-            {"contentMaterial": [], "openingMaterial": []},
-            zero_addition,
-            zero_descriptors,
-        )
-        self.assertTrue(zero_changed)
-        self.assertEqual(zero_merged, zero_addition)
 
     def test_content_and_event_projection_are_recomputed_from_raw_material(self) -> None:
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
@@ -1730,23 +1750,45 @@ class InterfaceModelTests(unittest.TestCase):
                 }
             ],
         }
-        states, roots = _project_content_states(
+        verified = _reduce_complete_evidence_attempts(
             self.authority, (candidate,), complete
         )
+        self.assertEqual(verified, complete)
+        states, roots = _project_content_states(self.authority, (candidate,), verified)
         self.assertEqual(roots, frozenset())
         self.assertEqual(states[0]["bindingObservation"], "VERIFIED")
         self.assertEqual(states[0]["replayReadiness"], "READY")
 
         missing_opening = {**complete, "openingMaterial": []}
-        pending_states, roots = _project_content_states(
+        reduced_missing = _reduce_complete_evidence_attempts(
             self.authority, (candidate,), missing_opening
         )
-        self.assertEqual(roots, frozenset({reference}))
         self.assertEqual(
-            pending_states[0]["bindingObservation"], "OPENING_MISSING"
+            reduced_missing, {"contentMaterial": [], "openingMaterial": []}
         )
+        pending_states, roots = _project_content_states(
+            self.authority, (candidate,), reduced_missing
+        )
+        self.assertEqual(roots, frozenset({reference}))
+        self.assertEqual(pending_states[0]["bindingObservation"], "NOT_CHECKED")
         self.assertEqual(
             pending_states[0]["replayReadiness"], "CONTENT_DEFERRED"
+        )
+
+        mismatched = {
+            **complete,
+            "openingMaterial": [
+                {
+                    "eventReferenceHex": reference,
+                    "openingRandomizerHex": "44" * 32,
+                }
+            ],
+        }
+        self.assertEqual(
+            _reduce_complete_evidence_attempts(
+                self.authority, (candidate,), mismatched
+            ),
+            {"contentMaterial": [], "openingMaterial": []},
         )
 
         projected = _event_projection(

@@ -1732,93 +1732,126 @@ def _complete_content_hex(
     return "".join(parts) if cursor == exact_length else None
 
 
-def merge_evidence_additions(
-    prior: Mapping[str, Any],
-    additions: Mapping[str, Any],
-    descriptors: Mapping[str, Mapping[str, Any]],
-) -> tuple[dict[str, Any], bool]:
-    """Merge one ACV-035/038/065 monotone evidence addition.
+def _verified_complete_pair(
+    module: ModuleType,
+    candidate: ReplayCandidate,
+    material: Mapping[str, Any] | None,
+    opening: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, str]] | None:
+    """Return one exact verified E value or ``None`` for an invalid attempt.
 
-    The return flag distinguishes an exact idempotent repeat from any genuine
-    addition.  No presentation order chooses a winner and no prior byte can be
-    deleted, replaced or partially overwritten.
+    This is the only constructor for authoritative application content
+    evidence.  Partial material, an unpaired side and a commitment mismatch
+    remain attempt-local observations and are never returned as state.
     """
 
-    canonical_prior = _canonicalize_evidence(prior, descriptors)
-    canonical_additions = _canonicalize_evidence(additions, descriptors)
-    if not canonical_additions["contentMaterial"] and not canonical_additions[
-        "openingMaterial"
-    ]:
+    descriptor = candidate.fields["content"]
+    if descriptor["class"] == "NONE" or material is None or opening is None:
+        return None
+    complete = _complete_content_hex(material, descriptor["exactLength"])
+    if complete is None:
+        return None
+    commitment = module.encode_commitment(
+        profile_id=candidate.fields["applicationProfileId"],
+        profile_version=candidate.fields["applicationProfileVersion"],
+        context=bytes.fromhex(candidate.fields["contextIdentifierHex"]),
+        credential=bytes.fromhex(candidate.fields["credentialIdentifierHex"]),
+        sequence=candidate.fields["authorSequence"],
+        content_type=descriptor["contentType"],
+        content=bytes.fromhex(complete),
+        randomizer=bytes.fromhex(opening["openingRandomizerHex"]),
+        chunk_size=(descriptor.get("geometry") or {}).get("chunkSize"),
+    )
+    if commitment["commitmentHex"] != descriptor["commitmentHex"]:
+        return None
+    return (
+        {
+            "eventReferenceHex": candidate.reference_hex,
+            "segments": [dict(segment) for segment in material["segments"]],
+        },
+        {
+            "eventReferenceHex": candidate.reference_hex,
+            "openingRandomizerHex": opening["openingRandomizerHex"],
+        },
+    )
+
+
+def _reduce_complete_evidence_attempts(
+    authority: ContractAuthority,
+    candidates: tuple[ReplayCandidate, ...],
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Reduce raw attempts to the H3-A ``ABSENT | VERIFIED_COMPLETE`` plane."""
+
+    canonical = _canonicalize_evidence(evidence, _content_descriptors(candidates))
+    content = {
+        row["eventReferenceHex"]: row for row in canonical["contentMaterial"]
+    }
+    openings = {
+        row["eventReferenceHex"]: row for row in canonical["openingMaterial"]
+    }
+    module = _load_pinned_c03_model(str(authority.repo_root))
+    verified_content: list[dict[str, Any]] = []
+    verified_openings: list[dict[str, str]] = []
+    for candidate in candidates:
+        pair = _verified_complete_pair(
+            module,
+            candidate,
+            content.get(candidate.reference_hex),
+            openings.get(candidate.reference_hex),
+        )
+        if pair is None:
+            continue
+        material, opening = pair
+        verified_content.append(material)
+        verified_openings.append(opening)
+    return {
+        "contentMaterial": verified_content,
+        "openingMaterial": verified_openings,
+    }
+
+
+def merge_verified_complete_evidence(
+    prior: Mapping[str, Any], additions: Mapping[str, Any]
+) -> tuple[dict[str, Any], bool]:
+    """Merge two already-verified H3-A evidence sets without partial state."""
+
+    def paired(value: Mapping[str, Any]) -> dict[str, tuple[dict[str, Any], dict[str, str]]]:
+        content = {
+            row["eventReferenceHex"]: row for row in value["contentMaterial"]
+        }
+        openings = {
+            row["eventReferenceHex"]: row for row in value["openingMaterial"]
+        }
+        if set(content) != set(openings):
+            raise EvidenceError("NONCANONICAL_MATERIAL")
+        return {
+            reference: (dict(content[reference]), dict(openings[reference]))
+            for reference in content
+        }
+
+    combined = paired(prior)
+    incoming = paired(additions)
+    if not incoming:
         raise EvidenceError("EMPTY_ADDITION_SET")
-
-    content: dict[str, list[dict[str, str]]] = {
-        row["eventReferenceHex"]: [dict(segment) for segment in row["segments"]]
-        for row in canonical_prior["contentMaterial"]
-    }
-    openings: dict[str, str] = {
-        row["eventReferenceHex"]: row["openingRandomizerHex"]
-        for row in canonical_prior["openingMaterial"]
-    }
     changed = False
-    for row in canonical_additions["contentMaterial"]:
-        reference = row["eventReferenceHex"]
-        existed = reference in content
-        existing = content.setdefault(reference, [])
-        if not existed:
-            # For exact zero-length content, row presence with an empty segment
-            # array is the material fact and is distinct from absence.
-            changed = True
-        for addition in row["segments"]:
-            start = int(addition["offset"])
-            end = start + len(bytes.fromhex(addition["octetsHex"]))
-            exact = next(
-                (
-                    segment
-                    for segment in existing
-                    if segment["offset"] == addition["offset"]
-                    and segment["octetsHex"] == addition["octetsHex"]
-                ),
-                None,
-            )
-            if exact is not None:
-                continue
-            for segment in existing:
-                prior_start = int(segment["offset"])
-                prior_end = prior_start + len(bytes.fromhex(segment["octetsHex"]))
-                if start < prior_end and prior_start < end:
-                    if start == prior_start and end == prior_end:
-                        raise EvidenceError("CONFLICTING_DUPLICATE")
-                    raise EvidenceError("PARTIAL_OVERLAP")
-            existing.append(dict(addition))
-            existing.sort(key=lambda segment: int(segment["offset"]))
-            changed = True
-
-    for row in canonical_additions["openingMaterial"]:
-        reference = row["eventReferenceHex"]
-        opening = row["openingRandomizerHex"]
-        previous = openings.get(reference)
+    for reference, pair in incoming.items():
+        previous = combined.get(reference)
         if previous is None:
-            openings[reference] = opening
+            combined[reference] = pair
             changed = True
-        elif previous != opening:
-            raise EvidenceError("CONFLICTING_DUPLICATE")
-
-    merged = {
-        "contentMaterial": [
-            {"eventReferenceHex": reference, "segments": segments}
-            for reference, segments in sorted(content.items())
-        ],
-        "openingMaterial": [
-            {
-                "eventReferenceHex": reference,
-                "openingRandomizerHex": opening,
-            }
-            for reference, opening in sorted(openings.items())
-        ],
-    }
-    # Re-run the complete canonical and exact-domain checks over the result;
-    # this is intentionally not inferred from the two input validations.
-    return _canonicalize_evidence(merged, descriptors), changed
+        elif previous != pair:
+            # Both pairs have already verified against the same authenticated
+            # descriptor.  Distinct bytes therefore enter the amendment's
+            # primitive-assumption fail-stop branch, never arrival selection.
+            raise EvidenceError("PRIMITIVE_ASSUMPTION_FAILURE")
+    return (
+        {
+            "contentMaterial": [combined[reference][0] for reference in sorted(combined)],
+            "openingMaterial": [combined[reference][1] for reference in sorted(combined)],
+        },
+        changed,
+    )
 
 
 def _candidate_records_for_k(
@@ -1872,39 +1905,23 @@ def _project_content_states(
         material = content_by_reference.get(reference)
         opening = opening_by_reference.get(reference)
         if content_class == "NONE":
+            if material is not None or opening is not None:
+                raise HarnessFailure("NONE event acquired authoritative evidence")
             availability = "ABSENT"
             observation = "NOT_APPLICABLE"
             readiness = "READY"
         else:
-            complete = _complete_content_hex(material, descriptor["exactLength"])
-            availability = (
-                "ABSENT"
-                if material is None
-                else "PRESENT"
-                if complete is not None
-                else "PARTIAL"
-            )
-            if availability != "PRESENT":
+            if material is None and opening is None:
+                availability = "ABSENT"
                 observation = "NOT_CHECKED"
-            elif opening is None:
-                observation = "OPENING_MISSING"
             else:
-                commitment = module.encode_commitment(
-                    profile_id=fields["applicationProfileId"],
-                    profile_version=fields["applicationProfileVersion"],
-                    context=bytes.fromhex(fields["contextIdentifierHex"]),
-                    credential=bytes.fromhex(fields["credentialIdentifierHex"]),
-                    sequence=fields["authorSequence"],
-                    content_type=descriptor["contentType"],
-                    content=bytes.fromhex(complete),
-                    randomizer=bytes.fromhex(opening["openingRandomizerHex"]),
-                    chunk_size=(descriptor.get("geometry") or {}).get("chunkSize"),
-                )
-                observation = (
-                    "VERIFIED"
-                    if commitment["commitmentHex"] == descriptor["commitmentHex"]
-                    else "COMMITMENT_MISMATCH"
-                )
+                pair = _verified_complete_pair(module, candidate, material, opening)
+                if pair is None:
+                    raise HarnessFailure(
+                        "authoritative evidence is not VERIFIED_COMPLETE"
+                    )
+                availability = "PRESENT"
+                observation = "VERIFIED"
             readiness = (
                 "READY"
                 if content_class == "DETACHABLE" or observation == "VERIFIED"
@@ -2529,8 +2546,8 @@ def prepare_replay_closure(
         )
     candidates = tuple(parsed_candidates)
     try:
-        evidence = _canonicalize_evidence(
-            value["evidence"], _content_descriptors(candidates)
+        evidence = _reduce_complete_evidence_attempts(
+            authority, candidates, value["evidence"]
         )
     except EvidenceError as error:
         reason = (
@@ -3091,21 +3108,12 @@ def evaluate_candidate(
     }
 
     parsed_candidate = ReplayCandidate(candidate, reference, transcript, fields)
-    descriptors = _content_descriptors(
-        prior_projection.closure.candidates + (parsed_candidate,)
-    )
-    try:
-        call_evidence = _canonicalize_evidence(value["evidence"], descriptors)
-        if call_evidence["contentMaterial"] or call_evidence["openingMaterial"]:
-            merged_evidence, _ = merge_evidence_additions(
-                prior_projection.closure.evidence, call_evidence, descriptors
-            )
-        else:
-            merged_evidence = _canonicalize_evidence(
-                prior_projection.closure.evidence, descriptors
-            )
-    except EvidenceError as error:
-        raise RequestRejected() from error
+    if value["evidence"] != {"contentMaterial": [], "openingMaterial": []}:
+        # The v0 schema still carries the legacy empty slot until the closed
+        # schema is regenerated, but no content/opening input is accepted by
+        # EVALUATE_CANDIDATE under the ratified H12/H3 operation split.
+        raise RequestRejected()
+    merged_evidence = prior_projection.closure.evidence
 
     previous = prior_by_reference.get(reference)
     if previous is not None:
@@ -3174,14 +3182,36 @@ def evaluate_evidence_update(
                 "reason": "PRIOR_REVALIDATION_FAILED",
             }
         }
-    descriptors = _content_descriptors(prior_projection.closure.candidates)
+    candidates = prior_projection.closure.candidates
     try:
-        merged, changed = merge_evidence_additions(
-            prior_projection.closure.evidence, value["additions"], descriptors
+        additions = _reduce_complete_evidence_attempts(
+            authority, candidates, value["additions"]
+        )
+        if not additions["contentMaterial"]:
+            raw = value["additions"]
+            content_refs = {
+                row["eventReferenceHex"] for row in raw["contentMaterial"]
+            }
+            opening_refs = {
+                row["eventReferenceHex"] for row in raw["openingMaterial"]
+            }
+            reason = (
+                "EVIDENCE_COMMITMENT_MISMATCH"
+                if content_refs & opening_refs
+                else "NONCANONICAL_MATERIAL"
+            )
+            return {"evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}}
+        merged, changed = merge_verified_complete_evidence(
+            prior_projection.closure.evidence, additions
         )
     except EvidenceError as error:
+        reason = (
+            "FULL_REPLAY_MISMATCH"
+            if error.code == "PRIMITIVE_ASSUMPTION_FAILURE"
+            else error.code
+        )
         return {
-            "evaluation": {"kind": "TERMINAL_REJECTED", "reason": error.code}
+            "evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}
         }
     if not changed:
         return {"evaluation": {"kind": "IDEMPOTENT_NO_CHANGE"}}
