@@ -5,7 +5,7 @@ interface ratified by Issue #295.  It is a conformance model only: none of the
 objects or reports produced here is an accepted context, authority capability,
 durable commit, wire format, storage record, or supported runtime adapter.
 
-The immutable `contract/` directory contains the manifest plus the exact 26
+The immutable `contract/` directory contains the manifest plus the exact 27
 ratified inputs.  The current Python reference model evaluates the six pure
 operations and enforces the V9 replay, authority, pending/content, F13 and
 closed collection-bound relations covered by its tests.  The independent
@@ -62,7 +62,7 @@ than complete conformance evidence.
 ACV-049 is intentionally not counted as executed. Its preflight expands the
 current 4,060 candidate pairs, identifies non-string `const` paths, classifies
 literal versus schema-admissible encoded provenance, records which paths exist
-in the fifteen frozen outputs using their exact labelled `oneOf` branch, and
+in the nineteen frozen outputs using their exact labelled `oneOf` branch, and
 runs only live negative controls. It returns
 `AMEND_REQUIRED` and claims zero mutant kills because the current target-only
 isolation model is equivalent to existing schema rejection.

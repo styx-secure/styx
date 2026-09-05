@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,7 @@ SEMANTIC_FIXTURE_SOURCE_SHA256 = (
     "323c5227972b79a33bc8238390e8e6000cd6a339a65375155ebea21010b4c8d4"
 )
 SEMANTIC_FIXTURE_IDENTIFIER = b"_semantic_request_carriers"
+HISTORICAL_EVIDENCE_HEAD = "fb42037934618dacbb8d4aac65f68b01bc9e7bbb"
 BANNED_PROVIDER_ENVIRONMENT = frozenset(
     {
         "GH_HOST",
@@ -58,6 +60,16 @@ BANNED_PROVIDER_ENVIRONMENT = frozenset(
         "GH_ENTERPRISE_TOKEN",
         "GITHUB_ENTERPRISE_TOKEN",
         "GITHUB_API_URL",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
     }
 )
 
@@ -108,7 +120,7 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
         raise FinalGateError("semantic-fixture source is not valid Python") from error
     definitions = [
         node
-        for node in tree.body
+        for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name == "_semantic_request_carriers"
     ]
@@ -117,8 +129,38 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
         for line in source.splitlines()
         if line.startswith(b"def _semantic_request_carriers(")
     ]
-    if len(definitions) != 1 or len(definition_lines) != 1:
+    if (
+        len(definitions) != 1
+        or len(definition_lines) != 1
+        or definitions[0] not in tree.body
+    ):
         raise FinalGateError("semantic-fixture definition count drift")
+    forbidden_bindings = [
+        node
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "_semantic_request_carriers"
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+        )
+        or (
+            isinstance(node, (ast.Global, ast.Nonlocal))
+            and "_semantic_request_carriers" in node.names
+        )
+        or (
+            isinstance(node, ast.alias)
+            and (
+                node.asname == "_semantic_request_carriers"
+                or (
+                    node.asname is None
+                    and node.name.rsplit(".", 1)[-1]
+                    == "_semantic_request_carriers"
+                )
+            )
+        )
+    ]
+    if forbidden_bindings:
+        raise FinalGateError("semantic-fixture identifier is rebound")
     node = definitions[0]
     if node.end_lineno is None:
         raise FinalGateError("semantic-fixture definition has no exact end")
@@ -144,14 +186,22 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
     return result
 
 
-def _local_source_blobs(repo: Path, selection_head: str) -> bytes:
+def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
+    historical = _git_bytes(
+        repo,
+        "show",
+        f"{HISTORICAL_EVIDENCE_HEAD}:{SEMANTIC_FIXTURE_SOURCE_PATH}",
+    )
     selected = _git_bytes(
         repo,
         "show",
         f"{selection_head}:{SEMANTIC_FIXTURE_SOURCE_PATH}",
     )
-    _frozen_semantic_fixture_slice(selected)
-    return selected
+    if _frozen_semantic_fixture_slice(historical) != _frozen_semantic_fixture_slice(
+        selected
+    ):
+        raise FinalGateError("historical and selected semantic-fixture slices differ")
+    return historical, selected
 
 
 def _verify_clean_checkout(repo: Path, selection_head: str) -> None:
@@ -337,7 +387,12 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 def _fetch_json(url: str) -> tuple[Any, bytes, dict[str, str]]:
     if any(name in os.environ for name in BANNED_PROVIDER_ENVIRONMENT):
         raise FinalGateError("credential or provider override environment is present")
-    opener = urllib.request.build_opener(_NoRedirect)
+    tls_context = ssl.create_default_context()
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPSHandler(context=tls_context),
+        _NoRedirect,
+    )
     request = urllib.request.Request(
         url,
         headers={"Accept": "application/vnd.github+json", "User-Agent": "styx-app-core-final-gate-v1"},
@@ -381,12 +436,20 @@ def _provider_source_blob(commit: str) -> bytes:
 
 def _verify_provider_source_slice(
     selection_head: str,
-    local_selected: bytes,
+    local_sources: tuple[bytes, bytes],
 ) -> None:
+    local_historical, local_selected = local_sources
+    provider_historical = _provider_source_blob(HISTORICAL_EVIDENCE_HEAD)
     provider_selected = _provider_source_blob(selection_head)
-    if provider_selected != local_selected:
+    if (
+        provider_historical != local_historical
+        or provider_selected != local_selected
+    ):
         raise FinalGateError("provider and local source blobs differ")
-    _frozen_semantic_fixture_slice(provider_selected)
+    if _frozen_semantic_fixture_slice(provider_historical) != (
+        _frozen_semantic_fixture_slice(provider_selected)
+    ):
+        raise FinalGateError("provider historical and selected fixture slices differ")
 
 
 def _next_link(headers: dict[str, str]) -> str | None:

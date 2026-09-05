@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.request
 from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
@@ -83,6 +84,11 @@ class FinalGateTests(unittest.TestCase):
             "323c5227972b79a33bc8238390e8e6000cd6a339a65375155ebea21010b4c8d4",
         )
         self.assertEqual(selected.count(frozen), 1)
+        historical_blob, selected_blob = _local_source_blobs(repo, selection_head)
+        self.assertEqual(
+            _frozen_semantic_fixture_slice(historical_blob),
+            _frozen_semantic_fixture_slice(selected_blob),
+        )
 
     def test_provider_source_slice_must_equal_local_selection_blob(self) -> None:
         selected = (ROOT / "generate_seed_registry.py").read_bytes()
@@ -100,9 +106,11 @@ class FinalGateTests(unittest.TestCase):
             return value, b"provider", {}
 
         with patch("final_gate._fetch_json", side_effect=provider):
-            _verify_provider_source_slice("a" * 40, selected)
+            _verify_provider_source_slice("a" * 40, (selected, selected))
             with self.assertRaisesRegex(FinalGateError, "local source blobs differ"):
-                _verify_provider_source_slice("a" * 40, selected + b"drift")
+                _verify_provider_source_slice(
+                    "a" * 40, (selected, selected + b"drift")
+                )
 
     def test_semantic_fixture_source_rejects_definition_shadowing_and_rebinding(self) -> None:
         selected = (ROOT / "generate_seed_registry.py").read_bytes()
@@ -114,6 +122,13 @@ class FinalGateTests(unittest.TestCase):
             _frozen_semantic_fixture_slice(
                 selected + b"\nsemantic = _semantic_request_carriers\n"
             )
+        with self.assertRaisesRegex(FinalGateError, "definition count drift"):
+            _frozen_semantic_fixture_slice(
+                selected
+                + b"\nif True:\n"
+                + b"    def _semantic_request_carriers(authority):\n"
+                + b"        return []\n"
+            )
 
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"
@@ -122,15 +137,32 @@ class FinalGateTests(unittest.TestCase):
                 with patch(
                     "final_gate.urllib.request.build_opener",
                     return_value=_Opener(_Response(url, value)),
-                ):
+                ) as build_opener:
                     observed, raw, _headers = _fetch_json(url)
+                handlers = build_opener.call_args.args
+                proxy = next(
+                    handler
+                    for handler in handlers
+                    if isinstance(handler, urllib.request.ProxyHandler)
+                )
+                self.assertEqual(proxy.proxies, {})
             self.assertEqual(observed, value)
             self.assertEqual(json.loads(raw), value)
 
     def test_provider_environment_override_fails_before_network(self) -> None:
-        with patch.dict("os.environ", {"GITHUB_TOKEN": "forbidden"}, clear=True):
-            with self.assertRaisesRegex(FinalGateError, "override environment"):
-                _fetch_json(COMBINED_BRANCH_URL)
+        for name in (
+            "GITHUB_TOKEN",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "SSL_CERT_FILE",
+            "SSL_CERT_DIR",
+        ):
+            with self.subTest(name=name), patch.dict(
+                "os.environ", {name: "forbidden"}, clear=True
+            ):
+                with self.assertRaisesRegex(FinalGateError, "override environment"):
+                    _fetch_json(COMBINED_BRANCH_URL)
 
     def test_next_link_accepts_only_the_exact_next_relation(self) -> None:
         self.assertEqual(
@@ -232,7 +264,10 @@ class FinalGateTests(unittest.TestCase):
             _generate_phase_a_from_checkout(checkout_two, evidence_two)
             selected_source = (ROOT / "generate_seed_registry.py").read_bytes()
             with (
-                patch("final_gate._local_source_blobs", return_value=selected_source),
+                patch(
+                    "final_gate._local_source_blobs",
+                    return_value=(selected_source, selected_source),
+                ),
                 patch("final_gate._verify_provider_source_slice"),
             ):
                 result = run_phase_a_gate(
@@ -474,7 +509,7 @@ class FinalGateTests(unittest.TestCase):
 
             def verify_source(
                 _selection_head: str,
-                _selected: bytes,
+                _selected: tuple[bytes, bytes],
             ) -> None:
                 self.assertEqual(events, ["comment", "commit", "branch", "comments"])
                 events.append("source")
@@ -482,7 +517,7 @@ class FinalGateTests(unittest.TestCase):
             with (
                 patch("final_gate._fetch_json", side_effect=fetch),
                 patch("final_gate._verify_clean_checkout"),
-                patch("final_gate._local_source_blobs", return_value=b"s"),
+                patch("final_gate._local_source_blobs", return_value=(b"s", b"s")),
                 patch("final_gate._verify_provider_source_slice", side_effect=verify_source),
                 patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
                 patch("final_gate._validate_external_root", side_effect=validate),
