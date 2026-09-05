@@ -20,8 +20,10 @@ from final_gate import (  # noqa: E402
     COMBINED_BRANCH_URL,
     FinalGateError,
     RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
+    _carrier_subtree,
     _fetch_json,
     _generate_phase_a_from_checkout,
+    _historical_carrier_bytes,
     _verify_exact_carrier_bytes,
     _next_link,
     _local_source_blobs,
@@ -30,7 +32,6 @@ from final_gate import (  # noqa: E402
     _tree,
     _validate_provider_authority,
     _verify_provider_source_slice,
-    _verify_historical_semantic_fixture,
     _verify_runtime_semantic_fixture,
     _verify_clean_checkout,
     run_phase_a_gate,
@@ -193,6 +194,7 @@ class FinalGateTests(unittest.TestCase):
         selected = (ROOT / "generate_seed_registry.py").read_bytes()
         baseline = _verify_runtime_semantic_fixture(source_repo, selected)
         conditional_injection = b'''\nif __name__ != "styx_app_core_frozen_generator":\n    _g = globals\n    _original_oracle = _g()["_TestCollision" "Oracle"]\n    def _patched_oracle(family, alternate_input, forced_digest):\n        return _original_oracle(family, alternate_input, b"\\x00" * 32)\n    _g()["_TestCollision" "Oracle"] = _patched_oracle\n'''
+        path_discriminating_injection = b'''\nif __name__ != "styx_app_core_frozen_generator" and not any("historical-fixture" in item for item in sys.argv):\n    _g = globals\n    _original_oracle = _g()["_TestCollision" "Oracle"]\n    def _patched_oracle(family, alternate_input, forced_digest):\n        return _original_oracle(family, alternate_input, b"\\x00" * 32)\n    _g()["_TestCollision" "Oracle"] = _patched_oracle\n'''
         mutations = {
             "distinguishable-runtime": selected.replace(
                 b'\n\nif __name__ == "__main__":\n',
@@ -202,6 +204,11 @@ class FinalGateTests(unittest.TestCase):
             "oracle-application": selected.replace(
                 b"return oracle.forced_digest",
                 b"return bytes(32)",
+                1,
+            ),
+            "path-discriminating-runtime": selected.replace(
+                b'\n\nif __name__ == "__main__":\n',
+                path_discriminating_injection + b'\nif __name__ == "__main__":\n',
                 1,
             ),
         }
@@ -281,31 +288,45 @@ class FinalGateTests(unittest.TestCase):
                     FinalGateError,
                     "checkout-owned evidence tool failed|carrier bytes differ",
                 ):
-                    _verify_historical_semantic_fixture(
+                    actual_evidence = Path(raw) / "actual-phase-a-evidence"
+                    _generate_phase_a_from_checkout(repo, actual_evidence)
+                    historical_carriers = _historical_carrier_bytes(
                         repo,
                         historical,
                         mutated_attestation,
                         selection_head,
                     )
+                    _verify_exact_carrier_bytes(
+                        historical_carriers,
+                        _carrier_subtree(_tree(actual_evidence)),
+                    )
 
     def test_exact_carrier_comparison_requires_77_requests_and_19_responses(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            root = Path(raw)
-            historical = root / "historical/carriers"
-            selected = root / "selected/carriers"
-            historical.mkdir(parents=True)
-            selected.mkdir(parents=True)
-            names = [
-                *(f"PCR-REQUEST-X-{index:04d}.json" for index in range(77)),
-                *(f"PCR-RESPONSE-X-{index:04d}.json" for index in range(19)),
-            ]
-            for name in names:
-                (historical / name).write_bytes(b"{}\n")
-                (selected / name).write_bytes(b"{}\n")
-            _verify_exact_carrier_bytes(historical.parent, selected.parent)
-            (selected / names[-1]).write_bytes(b'{"changed":true}\n')
+        names = [
+            *(f"PCR-REQUEST-X-{index:04d}.json" for index in range(77)),
+            *(f"PCR-RESPONSE-X-{index:04d}.json" for index in range(19)),
+        ]
+        historical = {name: b"{}\n" for name in names}
+        selected = dict(historical)
+        _verify_exact_carrier_bytes(historical, selected)
+
+        selected[names[-1]] = b'{"changed":true}\n'
+        with self.assertRaisesRegex(FinalGateError, "carrier bytes differ"):
+            _verify_exact_carrier_bytes(historical, selected)
+
+        for changed in (
+            {**historical, "PCR-REQUEST-X-extra.json": b"{}\n"},
+            {
+                **{
+                    name: payload
+                    for name, payload in historical.items()
+                    if name != names[0]
+                },
+                "PCR-RESPONSE-X-extra.json": b"{}\n",
+            },
+        ):
             with self.assertRaisesRegex(FinalGateError, "carrier bytes differ"):
-                _verify_exact_carrier_bytes(historical.parent, selected.parent)
+                _verify_exact_carrier_bytes(historical, changed)
 
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"
@@ -412,6 +433,59 @@ class FinalGateTests(unittest.TestCase):
             with self.assertRaisesRegex(FinalGateError, "not distinct"):
                 run_phase_a_gate(root, root, root / "a", root / "b", "a" * 40)
 
+    def test_phase_a_compares_historical_bytes_with_actual_gate_input(self) -> None:
+        names = [
+            *(f"PCR-REQUEST-X-{index:04d}.json" for index in range(77)),
+            *(f"PCR-RESPONSE-X-{index:04d}.json" for index in range(19)),
+        ]
+        historical = {name: b"{}\n" for name in names}
+        selected = dict(historical)
+        selected[names[-1]] = b'{"path-discriminated":true}\n'
+        validation = {
+            "inventory_sha256": "a" * 64,
+            "package_report_sha256": "b" * 64,
+            "request_set_manifest_sha256": (
+                "43a75ca967bf95991692ad07c3944b5792456b4c958df2ff663b2b9ec6b8145d"
+            ),
+        }
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo_one = root / "repo-one"
+            repo_two = root / "repo-two"
+            evidence_one = root / "evidence-one"
+            evidence_two = root / "evidence-two"
+            repo_one.mkdir()
+            repo_two.mkdir()
+            for evidence in (evidence_one, evidence_two):
+                carriers = evidence / "carriers"
+                carriers.mkdir(parents=True)
+                for name, payload in selected.items():
+                    (carriers / name).write_bytes(payload)
+            with (
+                patch("final_gate._verify_clean_checkout"),
+                patch("final_gate._local_source_blobs", return_value=(b"h", b"s")),
+                patch("final_gate._verify_provider_source_slice"),
+                patch("final_gate._validate_external_root", return_value=validation),
+                patch(
+                    "final_gate._verify_runtime_semantic_fixture",
+                    return_value=("a" * 64, "b" * 64, "c" * 64),
+                ),
+                patch(
+                    "final_gate._historical_carrier_bytes",
+                    return_value=historical,
+                ),
+                patch("final_gate._generate_phase_a_from_checkout") as regenerate,
+            ):
+                with self.assertRaisesRegex(FinalGateError, "carrier bytes differ"):
+                    run_phase_a_gate(
+                        repo_one,
+                        repo_two,
+                        evidence_one,
+                        evidence_two,
+                        "d" * 40,
+                    )
+            regenerate.assert_not_called()
+
     def test_phase_a_uses_two_clean_checkout_tools_and_regenerates_exact_bytes(self) -> None:
         source = ROOT.parents[2]
         selection_head = subprocess.run(
@@ -439,14 +513,7 @@ class FinalGateTests(unittest.TestCase):
             evidence_two = temporary / "evidence-two"
             _generate_phase_a_from_checkout(checkout_one, evidence_one)
             _generate_phase_a_from_checkout(checkout_two, evidence_two)
-            selected_source = (ROOT / "generate_seed_registry.py").read_bytes()
-            with (
-                patch(
-                    "final_gate._local_source_blobs",
-                    return_value=(selected_source, selected_source),
-                ),
-                patch("final_gate._verify_provider_source_slice"),
-            ):
+            with patch("final_gate._verify_provider_source_slice"):
                 result = run_phase_a_gate(
                     checkout_one,
                     checkout_two,
@@ -684,6 +751,19 @@ class FinalGateTests(unittest.TestCase):
                     ),
                 }
 
+            def verify_actual_carriers(
+                _repo: Path,
+                _sources: tuple[bytes, bytes],
+                _selection_head: str,
+                actual_tree: dict[str, bytes],
+            ) -> None:
+                self.assertEqual(actual_tree, {"generated": b"phase-a"})
+                self.assertEqual(
+                    events,
+                    ["comment", "commit", "branch", "comments", "source", "generate"],
+                )
+                events.append("historical")
+
             def verify_source(
                 _selection_head: str,
                 _selected: tuple[bytes, bytes],
@@ -697,6 +777,10 @@ class FinalGateTests(unittest.TestCase):
                 patch("final_gate._local_source_blobs", return_value=(b"s", b"s")),
                 patch("final_gate._verify_provider_source_slice", side_effect=verify_source),
                 patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
+                patch(
+                    "final_gate._verify_actual_carriers_against_historical",
+                    side_effect=verify_actual_carriers,
+                ),
                 patch("final_gate._validate_external_root", side_effect=validate),
             ):
                 observed = _validate_provider_authority(comment_id, repo)
@@ -749,7 +833,7 @@ class FinalGateTests(unittest.TestCase):
             events,
             [
                 "comment", "commit", "branch", "comments", "source",
-                "generate", "validate", "comment", "comments",
+                "generate", "historical", "validate", "comment", "comments",
             ],
         )
 
@@ -820,6 +904,7 @@ class FinalGateTests(unittest.TestCase):
                 patch("final_gate._local_source_blobs", return_value=(b"h", b"s")),
                 patch("final_gate._verify_provider_source_slice"),
                 patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
+                patch("final_gate._verify_actual_carriers_against_historical"),
                 patch(
                     "final_gate._validate_external_root",
                     return_value={

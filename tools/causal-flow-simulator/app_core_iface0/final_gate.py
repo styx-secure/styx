@@ -462,13 +462,13 @@ sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     )
 
 
-def _verify_historical_semantic_fixture(
+def _historical_carrier_bytes(
     repo: Path,
     historical_source: bytes,
     selected_attestation: tuple[str, str, str],
     selection_head: str,
-) -> None:
-    """Compare hidden fixture semantics and actual carrier bytes."""
+) -> dict[str, bytes]:
+    """Generate the immutable historical carrier baseline once."""
 
     _verify_clean_checkout(repo, selection_head)
     with tempfile.TemporaryDirectory(
@@ -504,21 +504,29 @@ def _verify_historical_semantic_fixture(
         if historical_attestation != selected_attestation:
             raise FinalGateError("historical and selected fixture semantics differ")
         historical_evidence = Path(temporary) / "historical-evidence"
-        selected_evidence = Path(temporary) / "selected-evidence"
         _generate_phase_a_from_checkout(historical_repo, historical_evidence)
-        _generate_phase_a_from_checkout(repo, selected_evidence)
-        _verify_exact_carrier_bytes(historical_evidence, selected_evidence)
+        historical_carriers = _tree(historical_evidence / "carriers")
     _verify_clean_checkout(repo, selection_head)
+    return historical_carriers
+
+
+def _carrier_subtree(evidence_tree: dict[str, bytes]) -> dict[str, bytes]:
+    """Extract carrier files from the exact evidence tree under review."""
+
+    prefix = "carriers/"
+    return {
+        name[len(prefix) :]: payload
+        for name, payload in evidence_tree.items()
+        if name.startswith(prefix)
+    }
 
 
 def _verify_exact_carrier_bytes(
-    historical_evidence: Path,
-    selected_evidence: Path,
+    historical_carriers: dict[str, bytes],
+    selected_carriers: dict[str, bytes],
 ) -> None:
     """Require the exact 77-request/19-response carrier relation."""
 
-    historical_carriers = _tree(historical_evidence / "carriers")
-    selected_carriers = _tree(selected_evidence / "carriers")
     request_count = sum(
         name.startswith("PCR-REQUEST-") for name in selected_carriers
     )
@@ -532,6 +540,28 @@ def _verify_exact_carrier_bytes(
         or historical_carriers != selected_carriers
     ):
         raise FinalGateError("historical and selected carrier bytes differ")
+
+
+def _verify_actual_carriers_against_historical(
+    repo: Path,
+    sources: tuple[bytes, bytes],
+    selection_head: str,
+    actual_evidence_tree: dict[str, bytes],
+) -> None:
+    """Compare the real gate input with the immutable historical baseline."""
+
+    historical_source, selected_source = sources
+    selected_attestation = _verify_runtime_semantic_fixture(repo, selected_source)
+    historical_carriers = _historical_carrier_bytes(
+        repo,
+        historical_source,
+        selected_attestation,
+        selection_head,
+    )
+    _verify_exact_carrier_bytes(
+        historical_carriers,
+        _carrier_subtree(actual_evidence_tree),
+    )
 
 
 def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
@@ -549,13 +579,6 @@ def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
         selected
     ):
         raise FinalGateError("historical and selected semantic-fixture slices differ")
-    selected_attestation = _verify_runtime_semantic_fixture(repo, selected)
-    _verify_historical_semantic_fixture(
-        repo,
-        historical,
-        selected_attestation,
-        selection_head,
-    )
     return historical, selected
 
 
@@ -711,6 +734,12 @@ def run_phase_a_gate(
     second_tree = _tree(evidence_two.resolve())
     if first_tree != second_tree or first_result != second_result:
         raise FinalGateError("the two Phase-A evidence sets are not byte-identical")
+    _verify_actual_carriers_against_historical(
+        first,
+        selected_one,
+        selection_head,
+        first_tree,
+    )
 
     with tempfile.TemporaryDirectory(prefix="styx-app-core-phase-a-") as temporary:
         temporary_root = Path(temporary)
@@ -1170,6 +1199,12 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="styx-app-core-phase-b-entry-") as temporary:
         regenerated = Path(temporary) / "phase-a"
         _generate_phase_a_from_checkout(repo.resolve(), regenerated)
+        _verify_actual_carriers_against_historical(
+            repo.resolve(),
+            selected,
+            selection_head,
+            _tree(regenerated),
+        )
         result = _validate_external_root(repo.resolve(), regenerated)
         if (
             decision["positiveCarrierInventorySha256"]
