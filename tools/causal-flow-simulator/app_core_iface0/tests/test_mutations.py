@@ -63,6 +63,7 @@ from run_semantic_acv049 import (  # noqa: E402
     _terminal_execution_plan,
     _value_at_report_pointer,
     build_report as build_acv049_preflight,
+    build_phase_a_enum_tuple_source_mutant_manifest,
     build_phase_a_scalar_source_mutant_manifest,
     build_scalar_source_mutant_spec,
     build_terminal_jobs as build_acv049_terminal_jobs,
@@ -259,6 +260,42 @@ class StructuralPlanTests(unittest.TestCase):
                 {"PURITY-SITE-ABSENT": (((), ("one", "two")),)},
                 ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
             )
+
+    def test_acv049_source_mutant_replaces_one_relation_tuple_atomically(self) -> None:
+        source = (
+            "def build():\n"
+            "    return {'tuple': {'reason': 'BASE', 'stage': 'START'}}\n"
+        )
+        mapper = _SourceSiteInstrumenter()
+        mapper.visit(ast.parse(source))
+        target = next(
+            site_id
+            for site_id, row in mapper.sites.items()
+            if row["label"] == "tuple"
+        )
+        transformed, _sites, _canonical_source = _mutated_source_tree(
+            source,
+            "fixture.py",
+            {
+                target: (
+                    (("reason",), ("FIRST", "SECOND")),
+                    (("stage",), ("S1", "S2")),
+                )
+            },
+            ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
+        )
+        namespace: dict[str, object] = {}
+        exec(compile(transformed, "fixture.py", "exec"), namespace)
+        build = namespace["build"]
+        self.assertTrue(callable(build))
+        for channel, expected in (
+            ("CHANNEL-ALPHA", {"reason": "FIRST", "stage": "S1"}),
+            ("CHANNEL-BRAVO", {"reason": "SECOND", "stage": "S2"}),
+        ):
+            with mock.patch.dict(
+                "os.environ", {"STYX_ACV049_MUTANT_CHANNEL": channel}, clear=False
+            ):
+                self.assertEqual(build(), {"tuple": expected})  # type: ignore[operator]
 
     def test_acv049_external_artifacts_are_exclusive_and_outside_repository(
         self,
@@ -668,6 +705,50 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             len({row["mutantId"] for row in scalar_manifest["mutants"]}),
             scalar_manifest["mutantCount"],
+        )
+
+        enum_tuple_manifest = build_phase_a_enum_tuple_source_mutant_manifest(
+            ROOT.parents[2],
+            ROOT / "contract",
+            self.evidence,
+            source_site_map=report,
+        )
+        self.assertEqual(
+            enum_tuple_manifest["verdict"],
+            "PHASE_A_ENUM_TUPLE_MUTANT_MANIFEST_PASS",
+        )
+        self.assertEqual(enum_tuple_manifest["enumRouteCount"], 212)
+        self.assertEqual(enum_tuple_manifest["coveredEnumRouteCount"], 212)
+        self.assertEqual(enum_tuple_manifest["ordinaryEnumMutantCount"], 134)
+        self.assertEqual(enum_tuple_manifest["relationTupleMutantCount"], 34)
+        self.assertEqual(enum_tuple_manifest["relationTupleResidualCount"], 1)
+        self.assertEqual(enum_tuple_manifest["mutantCount"], 168)
+        self.assertEqual(
+            len({row["mutantId"] for row in enum_tuple_manifest["mutants"]}),
+            168,
+        )
+        self.assertEqual(
+            {
+                (row["siteId"], row["baselineRelationRowId"])
+                for row in enum_tuple_manifest["residuals"]
+            },
+            {("PURITY-SITE-TRANSCRIPT-VALIDATED", "TRS-001")},
+        )
+        self.assertEqual(
+            sum(
+                row["twoStateRule"]
+                for row in enum_tuple_manifest["mutants"]
+                if row["kind"] == "ORDINARY_ENUM"
+            ),
+            18,
+        )
+        self.assertEqual(
+            sum(
+                bool(row["reservedValues"])
+                for row in enum_tuple_manifest["mutants"]
+                if row["kind"] == "ORDINARY_ENUM"
+            ),
+            10,
         )
 
         target_route = next(
