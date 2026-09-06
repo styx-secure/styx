@@ -22,7 +22,7 @@ from typing import Any
 sys.dont_write_bytecode = True
 
 from canonical_json import CanonicalJsonError, dumps, loads
-from generate_seed_registry import REQUEST_SET_MANIFEST_SHA256
+from generate_seed_registry import REQUEST_SET_MANIFEST_SHA256, TERMINAL_IMPLEMENTATION_FILES
 from inventory import (
     BASE_SHA,
     InventoryError,
@@ -151,6 +151,523 @@ ACV049_BACKEND_ENTRY_POINTS = frozenset(
         "framed_hash",
     }
 )
+ACV049_RUNTIME_PROVENANCE_KINDS = (
+    "ambient_file",
+    "clock",
+    "environment",
+    "host_identity",
+    "network",
+    "process_identity",
+    "process_spawn",
+    "randomness",
+    "user_identity",
+)
+ACV049_RUNTIME_TRACE = Path("/usr/bin/strace")
+
+
+# This gate-owned bootstrap is passed with ``python -I -B -c``.  It is not a
+# repository or protocol input.  It installs the monitor before loading any
+# evaluator module and propagates itself across the one permitted validator
+# process tree.  The evaluator only sees its original argv.
+ACV049_PYTHON_RUNTIME_MONITOR = r'''import argparse as _argparse
+import _colorize as _colorize
+import base64 as _b64
+import builtins as _builtins
+import datetime as _datetime
+import getpass as _getpass
+import io as _io
+import json as _json
+import os as _os
+import pathlib as _pathlib
+import platform as _platform
+import random as _random
+import runpy as _runpy
+import secrets as _secrets
+import shutil as _shutil
+import socket as _socket
+import subprocess as _subprocess
+import sys as _sys
+import time as _time
+from jsonschema.validators import Draft202012Validator as _PinnedDraft202012Validator
+
+_POLICY = _json.loads(_b64.b64decode(_sys.argv[1]).decode("utf-8"))
+_LOG_FD = int(_sys.argv[2])
+_MODE = _sys.argv[3]
+_TARGET = _sys.argv[4] if len(_sys.argv) > 4 else ""
+_TARGET_ARGS = _sys.argv[5:]
+_MONITORED = tuple(_POLICY["monitored_roots"])
+_ALLOWED_READS = frozenset(_POLICY["allowed_reads"])
+_ALLOWED_WRITES = frozenset(_POLICY["allowed_writes"])
+_ALLOWED_METADATA = frozenset(_POLICY["allowed_metadata"])
+_ENUMERABLE_DIRECTORIES = frozenset(_POLICY["enumerable_directories"])
+_ORIGINAL_POPEN = _subprocess.Popen
+_ORIGINAL_ENVIRON = _os.environ
+_ORIGINAL_OS_WRITE = _os.write
+_ORIGINAL_OPEN = _builtins.open
+_FORCE = False
+_argparse._ = lambda message: message
+_colorize.can_colorize = lambda *args, **kwargs: False
+_shutil.get_terminal_size = lambda fallback=(80, 24): _os.terminal_size((80, 24))
+
+def _record(kind, disposition, justification, **detail):
+    row = {"detail": detail, "disposition": disposition,
+           "justification": justification, "kind": kind}
+    raw = (_json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    _ORIGINAL_OS_WRITE(_LOG_FD, raw)
+
+def _frame():
+    frame = _sys._getframe(2)
+    while frame is not None:
+        filename = frame.f_code.co_filename
+        if any(filename == root or filename.startswith(root + _os.sep)
+               for root in _MONITORED):
+            return filename, frame.f_code.co_name
+        frame = frame.f_back
+    return None
+
+def _active():
+    return _FORCE or _frame() is not None
+
+def _deny(kind, api):
+    if _active():
+        origin = _frame()
+        stack = []
+        current = _sys._getframe(1)
+        while current is not None and len(stack) < 16:
+            stack.append([current.f_code.co_filename, current.f_code.co_name])
+            current = current.f_back
+        _record(kind, "DENY", "host-runtime provenance is forbidden", api=api,
+                origin=list(origin) if origin is not None else None, stack=stack)
+        raise RuntimeError("ACV-049 runtime provenance violation: " + kind)
+
+class _GuardedEnviron:
+    def __getitem__(self, key):
+        _deny("environment", "os.environ.__getitem__")
+        return _ORIGINAL_ENVIRON[key]
+    def get(self, key, default=None):
+        _deny("environment", "os.environ.get")
+        return _ORIGINAL_ENVIRON.get(key, default)
+    def __contains__(self, key):
+        _deny("environment", "os.environ.__contains__")
+        return key in _ORIGINAL_ENVIRON
+    def __iter__(self):
+        _deny("environment", "os.environ.__iter__")
+        return iter(_ORIGINAL_ENVIRON)
+    def __len__(self):
+        _deny("environment", "os.environ.__len__")
+        return len(_ORIGINAL_ENVIRON)
+    def __setitem__(self, key, value):
+        _deny("environment", "os.environ.__setitem__")
+        _ORIGINAL_ENVIRON[key] = value
+    def __delitem__(self, key):
+        _deny("environment", "os.environ.__delitem__")
+        del _ORIGINAL_ENVIRON[key]
+    def keys(self):
+        _deny("environment", "os.environ.keys")
+        return _ORIGINAL_ENVIRON.keys()
+    def items(self):
+        _deny("environment", "os.environ.items")
+        return _ORIGINAL_ENVIRON.items()
+    def values(self):
+        _deny("environment", "os.environ.values")
+        return _ORIGINAL_ENVIRON.values()
+    def copy(self):
+        _deny("environment", "os.environ.copy")
+        return _ORIGINAL_ENVIRON.copy()
+
+_os.environ = _GuardedEnviron()
+_guarded_getenv_original = _os.getenv
+def _guarded_getenv(key, default=None):
+    _deny("environment", "os.getenv")
+    return _guarded_getenv_original(key, default)
+_os.getenv = _guarded_getenv
+
+def _guard(module, name, kind):
+    original = getattr(module, name, None)
+    if original is None:
+        return
+    def guarded(*args, **kwargs):
+        _deny(kind, module.__name__ + "." + name)
+        return original(*args, **kwargs)
+    setattr(module, name, guarded)
+
+for _name in ("getpid", "getppid"):
+    _guard(_os, _name, "process_identity")
+for _name in ("getlogin", "getuid", "geteuid", "uname"):
+    _guard(_os, _name, "user_identity")
+_guard(_os, "getcwd", "host_identity")
+_guard(_os, "urandom", "randomness")
+_guard(_getpass, "getuser", "user_identity")
+for _name in ("node", "platform", "processor", "release", "system", "uname"):
+    _guard(_platform, _name, "host_identity")
+for _name in ("getfqdn", "gethostbyaddr", "gethostbyname", "gethostname"):
+    _guard(_socket, _name, "host_identity")
+for _name in ("create_connection", "socketpair"):
+    _guard(_socket, _name, "network")
+_OriginalSocket = _socket.socket
+class _GuardedSocket(_OriginalSocket):
+    def __new__(cls, *args, **kwargs):
+        _deny("network", "socket.socket")
+        return _OriginalSocket.__new__(cls, *args, **kwargs)
+_socket.socket = _GuardedSocket
+for _name in ("monotonic", "monotonic_ns", "perf_counter", "perf_counter_ns",
+              "process_time", "process_time_ns", "time", "time_ns"):
+    _guard(_time, _name, "clock")
+for _name in ("choice", "choices", "getrandbits", "randbytes", "randint",
+              "random", "randrange", "sample", "shuffle", "uniform"):
+    _guard(_random, _name, "randomness")
+for _name in ("choice", "randbelow", "token_bytes", "token_hex", "token_urlsafe"):
+    _guard(_secrets, _name, "randomness")
+
+_OriginalDate = _datetime.date
+_OriginalDateTime = _datetime.datetime
+class _GuardedDate(_OriginalDate):
+    @classmethod
+    def today(cls):
+        _deny("clock", "datetime.date.today")
+        return _OriginalDate.today()
+class _GuardedDateTime(_OriginalDateTime):
+    @classmethod
+    def now(cls, tz=None):
+        _deny("clock", "datetime.datetime.now")
+        return _OriginalDateTime.now(tz)
+    @classmethod
+    def utcnow(cls):
+        _deny("clock", "datetime.datetime.utcnow")
+        return _OriginalDateTime.utcnow()
+    @classmethod
+    def today(cls):
+        _deny("clock", "datetime.datetime.today")
+        return _OriginalDateTime.today()
+_datetime.date = _GuardedDate
+_datetime.datetime = _GuardedDateTime
+
+def _import_loading():
+    current = _sys._getframe(2)
+    while current is not None:
+        if "importlib" in current.f_code.co_filename:
+            return True
+        current = current.f_back
+    return False
+
+def _absolute_path(value):
+    try:
+        lexical = _os.fspath(value)
+    except TypeError:
+        return None
+    if isinstance(lexical, bytes):
+        lexical = _os.fsdecode(lexical)
+    return _os.path.abspath(lexical)
+
+for _metadata_name in ("access", "listdir", "lstat", "readlink", "scandir", "stat"):
+    _metadata_original = getattr(_os, _metadata_name)
+    def _metadata_guard(target=".", *args, __name=_metadata_name,
+                        __original=_metadata_original, **kwargs):
+        if _active():
+            absolute = _absolute_path(target)
+            if absolute is None:
+                _record("ambient_file", "DENY", "non-path metadata target", api="os." + __name)
+                raise RuntimeError("ACV-049 runtime provenance violation: ambient_file")
+            enumerable = __name not in {"listdir", "scandir"} \
+                or absolute in _ENUMERABLE_DIRECTORIES
+            if enumerable and (absolute in _ALLOWED_METADATA or absolute in _ALLOWED_READS):
+                _record("filesystem", "PERMIT", "bound path metadata",
+                        api="os." + __name, path=absolute)
+            elif _import_loading():
+                _record("filesystem", "PERMIT", "interpreter module metadata",
+                        api="os." + __name, path=absolute)
+            else:
+                _record("ambient_file", "DENY", "filesystem metadata is not bound",
+                        api="os." + __name, path=absolute)
+                raise RuntimeError("ACV-049 runtime provenance violation: ambient_file")
+        return __original(target, *args, **kwargs)
+    setattr(_os, _metadata_name, _metadata_guard)
+
+def _audit(event, args):
+    if event in {"sys._getframe", "object.__getattr__"}:
+        return
+    if not _active():
+        return
+    if event == "open":
+        target = args[0]
+        if isinstance(target, int):
+            return
+        absolute = _absolute_path(target)
+        if absolute is None:
+            _record("ambient_file", "DENY", "non-path filesystem target", api="open")
+            raise RuntimeError("ACV-049 runtime provenance violation: ambient_file")
+        mode = args[1]
+        frame = _sys._getframe(1)
+        if absolute == _os.devnull:
+            current = frame
+            while current is not None:
+                if current.f_code.co_filename == _subprocess.__file__ \
+                        and current.f_code.co_name == "_get_devnull":
+                    _record("filesystem", "PERMIT", "permitted process plumbing",
+                            mode=str(mode), path=absolute)
+                    return
+                current = current.f_back
+        writing = isinstance(mode, str) and any(flag in mode for flag in "wax+")
+        allowed = absolute in (_ALLOWED_WRITES if writing else _ALLOWED_READS)
+        if allowed:
+            _record("filesystem", "PERMIT",
+                    "manifest-bound input" if not writing else "gate-owned output",
+                    mode=str(mode), path=absolute)
+            return
+        # Imports are interpreter/code loading, not evaluator data access.  The
+        # independent static closure fixes every first-party loaded module.
+        while frame is not None:
+            if "importlib" in frame.f_code.co_filename:
+                _record("filesystem", "PERMIT", "interpreter module load",
+                        mode=str(mode), path=absolute)
+                return
+            frame = frame.f_back
+        _record("ambient_file", "DENY", "filesystem input is not manifest-bound",
+                mode=str(mode), path=absolute)
+        raise RuntimeError("ACV-049 runtime provenance violation: ambient_file")
+    if event.startswith("socket."):
+        _record("network", "DENY", "network access is forbidden", api=event)
+        raise RuntimeError("ACV-049 runtime provenance violation: network")
+
+_sys.addaudithook(_audit)
+
+def _logical_python_target(argv):
+    if not isinstance(argv, (list, tuple)) or not argv:
+        return None
+    rendered = [_os.fspath(value) for value in argv]
+    executable = _os.path.basename(rendered[0])
+    if executable not in {"python", "python3", _os.path.basename(_sys.executable)}:
+        return None
+    offset = 1
+    if offset < len(rendered) and rendered[offset] == "-B":
+        offset += 1
+    if offset >= len(rendered) or rendered[offset].startswith("-"):
+        return None
+    return rendered, offset
+
+def _classify_spawn(argv):
+    caller = _frame()
+    if caller is None or not isinstance(argv, (list, tuple)) or not argv:
+        return None
+    filename, function = caller
+    rendered = [_os.fspath(value) for value in argv]
+    base = _os.path.basename(filename)
+    if base == "interface_model.py" and function == "verify_native_authority":
+        if rendered[0] == "git" and len(rendered) > 1 and rendered[1] in {
+            "cat-file", "hash-object", "ls-tree"}:
+            return "pinned native-authority Git verification"
+    if base == "inventory.py" and function == "run_ratified_package_validator":
+        target = _logical_python_target(rendered)
+        if target and _os.path.basename(target[0][target[1]]) == \
+                "validate_app_core_contract_candidates.py":
+            return "manifest-bound contract-package validator"
+    if base == "validate_app_core_contract_candidates.py":
+        if rendered[0] == "git" and "outcome-taxonomy.json" in " ".join(rendered):
+            return "Base O-10 taxonomy Git read"
+        target = _logical_python_target(rendered)
+        if target and _os.path.basename(target[0][target[1]]) in {
+            "derive_app_core_carrier_reachability.py",
+            "derive_app_core_native_dependencies.py",
+            "derive_interface_maxima.py",
+        }:
+            return "manifest-bound validator derivation"
+    if base == "derive_app_core_native_dependencies.py" and function == "git":
+        if rendered[0] == "git" and len(rendered) > 3 and rendered[1] == "-C" \
+                and rendered[3] in {"cat-file", "hash-object", "ls-tree", "rev-parse"}:
+            return "native-dependency Git derivation"
+    return None
+
+def _wrapped_python(argv):
+    target = _logical_python_target(argv)
+    if target is None:
+        return None
+    rendered, offset = target
+    encoded_policy = _b64.b64encode(
+        _json.dumps(_POLICY, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    return [_sys.executable, "-I", "-B", "-c", _POLICY["bootstrap"],
+            encoded_policy, str(_LOG_FD), "run",
+            rendered[offset], *rendered[offset + 1:]]
+
+def _guarded_popen(args, *positional, **keywords):
+    if not _active():
+        return _ORIGINAL_POPEN(args, *positional, **keywords)
+    justification = _classify_spawn(args)
+    if justification is None:
+        _record("process_spawn", "DENY", "process spawn is outside the closed allowlist",
+                argv=[str(value) for value in args] if isinstance(args, (list, tuple)) else str(args))
+        raise RuntimeError("ACV-049 runtime provenance violation: process_spawn")
+    rendered = [str(value) for value in args]
+    _record("process_spawn", "PERMIT", justification, argv=rendered)
+    wrapped = _wrapped_python(args)
+    if wrapped is not None:
+        inherited = tuple(keywords.get("pass_fds", ()))
+        keywords["pass_fds"] = tuple(sorted({*inherited, _LOG_FD}))
+        args = wrapped
+    elif isinstance(args, (list, tuple)) and args and args[0] == "git":
+        args = [_POLICY["git_executable"], *args[1:]]
+    return _ORIGINAL_POPEN(args, *positional, **keywords)
+
+_subprocess.Popen = _guarded_popen
+
+if _MODE == "negative":
+    _FORCE = True
+    _kind = _TARGET
+    try:
+        if _kind.startswith("environment:"):
+            _os.environ[_kind.split(":", 1)[1]]
+        elif _kind == "host_identity":
+            _socket.gethostname()
+        elif _kind == "user_identity":
+            _getpass.getuser()
+        elif _kind == "process_identity":
+            _os.getpid()
+        elif _kind == "clock":
+            _time.time()
+        elif _kind == "randomness":
+            _os.urandom(1)
+        elif _kind == "network":
+            _socket.socket()
+        elif _kind == "ambient_file":
+            _ORIGINAL_OPEN(_POLICY["negative_ambient_path"], "rb").close()
+        elif _kind == "process_spawn":
+            _subprocess.Popen(["unpermitted-acv049-process"])
+        else:
+            raise RuntimeError("unknown negative control")
+    except RuntimeError as error:
+        if str(error).startswith("ACV-049 runtime provenance violation:"):
+            raise SystemExit(73)
+        raise
+    raise SystemExit(0)
+
+if _MODE != "run" or not _TARGET:
+    raise SystemExit("invalid ACV-049 monitor invocation")
+_target = _os.path.abspath(_TARGET)
+_sys.path.insert(0, _os.path.dirname(_target))
+_sys.argv = [_target, *_TARGET_ARGS]
+_record("monitor", "PERMIT", "runtime monitor installed before evaluator load",
+        target=_target)
+try:
+    _runpy.run_path(_target, run_name="__main__")
+except SystemExit as _error:
+    if _error.code not in (None, 0):
+        _record("monitor", "DENY", "monitored process terminated",
+                error_type=type(_error).__name__, error_text=str(_error))
+    raise
+except BaseException as _error:
+    _record("monitor", "DENY", "monitored process terminated",
+            error_type=type(_error).__name__, error_text=str(_error))
+    raise
+'''
+
+
+ACV049_NODE_RUNTIME_MONITOR = r'''"use strict";
+const fs = require("node:fs");
+const os = require("node:os");
+const net = require("node:net");
+const dns = require("node:dns");
+const http = require("node:http");
+const https = require("node:https");
+const crypto = require("node:crypto");
+const childProcess = require("node:child_process");
+const policy = JSON.parse(Buffer.from("__POLICY_BASE64__", "base64").toString("utf8"));
+const logFd = Number("__LOG_FD__");
+const adapter = policy.node_adapter;
+const allowedReads = new Set(policy.allowed_reads);
+const allowedMetadata = new Set(policy.allowed_metadata);
+const originalWriteSync = fs.writeSync.bind(fs);
+function active() {
+  return String(new Error().stack || "").includes(adapter);
+}
+function record(kind, disposition, justification, detail = {}) {
+  originalWriteSync(logFd, JSON.stringify({detail, disposition, justification, kind}) + "\n");
+}
+function deny(kind, api) {
+  if (active()) {
+    record(kind, "DENY", "host-runtime provenance is forbidden", {api});
+    throw new Error(`ACV-049 runtime provenance violation: ${kind}`);
+  }
+}
+const originalEnv = process.env;
+const guardedEnv = new Proxy(originalEnv, {
+  get(target, property) { deny("environment", "process.env.get"); return Reflect.get(target, property); },
+  has(target, property) { deny("environment", "process.env.has"); return Reflect.has(target, property); },
+  ownKeys(target) { deny("environment", "process.env.keys"); return Reflect.ownKeys(target); },
+});
+Object.defineProperty(process, "env", {configurable: true, get() { deny("environment", "process.env"); return guardedEnv; }});
+const originalPid = process.pid;
+Object.defineProperty(process, "pid", {configurable: true, get() { deny("process_identity", "process.pid"); return originalPid; }});
+const originalCwd = process.cwd.bind(process);
+process.cwd = function() { deny("host_identity", "process.cwd"); return originalCwd(); };
+for (const name of ["hostname", "userInfo", "networkInterfaces"]) {
+  const original = os[name];
+  os[name] = function(...args) { deny(name === "userInfo" ? "user_identity" : "host_identity", `os.${name}`); return original.apply(this, args); };
+}
+for (const [module, names] of [[net, ["connect", "createConnection", "createServer"]], [dns, ["lookup", "resolve"]], [http, ["get", "request"]], [https, ["get", "request"]]]) {
+  for (const name of names) {
+    const original = module[name];
+    module[name] = function(...args) { deny("network", `${name}`); return original.apply(this, args); };
+  }
+}
+for (const name of ["exec", "execFile", "fork", "spawn", "spawnSync"]) {
+  const original = childProcess[name];
+  childProcess[name] = function(...args) { deny("process_spawn", `child_process.${name}`); return original.apply(this, args); };
+}
+const OriginalDate = Date;
+class GuardedDate extends OriginalDate {
+  constructor(...args) { if (args.length === 0) deny("clock", "Date.constructor"); super(...args); }
+  static now() { deny("clock", "Date.now"); return OriginalDate.now(); }
+}
+global.Date = GuardedDate;
+if (global.performance) {
+  const originalNow = global.performance.now.bind(global.performance);
+  Object.defineProperty(global.performance, "now", {configurable: true, value() { deny("clock", "performance.now"); return originalNow(); }});
+}
+const originalRandom = Math.random;
+Math.random = function() { deny("randomness", "Math.random"); return originalRandom(); };
+for (const name of ["randomBytes", "randomFill", "randomFillSync", "randomInt", "randomUUID"]) {
+  const original = crypto[name];
+  if (typeof original === "function") crypto[name] = function(...args) { deny("randomness", `crypto.${name}`); return original.apply(this, args); };
+}
+function normalizePath(value) {
+  if (typeof value !== "string" && !Buffer.isBuffer(value) && !(value instanceof URL)) return null;
+  return fs.realpathSync.native(String(value));
+}
+for (const name of ["openSync", "readFileSync", "realpathSync", "statSync"]) {
+  const original = fs[name];
+  if (name === "realpathSync") continue;
+  fs[name] = function(target, ...args) {
+    if (active() && typeof target !== "number") {
+      let resolved;
+      try { resolved = fs.realpathSync.native(String(target)); } catch (_) { resolved = require("node:path").resolve(String(target)); }
+      const allowed = name === "statSync"
+        ? (allowedMetadata.has(resolved) || allowedReads.has(resolved))
+        : allowedReads.has(resolved);
+      if (!allowed) {
+        record("ambient_file", "DENY", "filesystem input is not manifest-bound", {api: `fs.${name}`, path: resolved});
+        throw new Error("ACV-049 runtime provenance violation: ambient_file");
+      }
+      record("filesystem", "PERMIT", name === "statSync" ? "bound path metadata" : "manifest-bound input", {api: `fs.${name}`, path: resolved});
+    } else if (active() && target === 0) {
+      record("filesystem", "PERMIT", "gate-owned standard input", {api: `fs.${name}`});
+    }
+    return original.call(this, target, ...args);
+  };
+}
+const originalRealpathNative = fs.realpathSync.native.bind(fs.realpathSync);
+fs.realpathSync.native = function(target, ...args) {
+  const resolved = originalRealpathNative(target, ...args);
+  if (active()) {
+    if (!allowedReads.has(resolved) && !allowedMetadata.has(resolved)) {
+      record("ambient_file", "DENY", "filesystem input is not manifest-bound", {api: "fs.realpathSync.native", path: resolved});
+      throw new Error("ACV-049 runtime provenance violation: ambient_file");
+    }
+    record("filesystem", "PERMIT", "bound path metadata", {api: "fs.realpathSync.native", path: resolved});
+  }
+  return resolved;
+};
+record("monitor", "PERMIT", "runtime monitor installed before JavaScript reader load", {target: adapter});
+'''
 
 
 class FinalGateError(ValueError):
@@ -777,6 +1294,120 @@ def _run_acv049_javascript_reader(
     return dumps({"results": results})
 
 
+def _run_acv049_monitored_javascript_reader(
+    repo: Path,
+    node: Path,
+    contract: Path,
+    jobs_bytes: bytes,
+    environment: dict[str, str],
+    policy: dict[str, object],
+) -> tuple[bytes, list[dict[str, object]], list[bytes]]:
+    """Run each reader batch below a gate-owned Node provenance preloader."""
+
+    try:
+        value = loads(jobs_bytes)
+    except CanonicalJsonError as error:
+        raise FinalGateError("ACV-049 terminal jobs are not canonical") from error
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"jobs"}
+        or not isinstance(value["jobs"], list)
+        or len(value["jobs"]) != 507
+    ):
+        raise FinalGateError("ACV-049 terminal job set drift")
+    adapter = (
+        repo.resolve()
+        / "tools/causal-flow-simulator/app_core_iface0/node_adapter.mjs"
+    ).resolve()
+    if adapter != Path(str(policy.get("node_adapter", ""))) or not adapter.is_file():
+        raise FinalGateError("ACV-049 monitored JavaScript reader identity drift")
+    if not ACV049_RUNTIME_TRACE.is_file():
+        raise FinalGateError("ACV-049 runtime process tracer is unavailable")
+    results: list[object] = []
+    traces: list[bytes] = []
+    encoded_policy = base64.b64encode(dumps(policy)).decode("ascii")
+    with tempfile.TemporaryDirectory(prefix="styx-acv049-runtime-node-") as raw:
+        temporary = Path(raw)
+        log_path = temporary / "monitor.jsonl"
+        preloader = temporary / "monitor.cjs"
+        descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            source = ACV049_NODE_RUNTIME_MONITOR.replace(
+                "__POLICY_BASE64__", encoded_policy
+            ).replace("__LOG_FD__", str(descriptor))
+            preloader.write_text(source, encoding="utf-8")
+            for offset in range(0, len(value["jobs"]), 64):
+                batch = value["jobs"][offset:offset + 64]
+                trace_path = temporary / f"exec-{offset:04d}.trace"
+                with tempfile.TemporaryFile() as input_file:
+                    input_file.write(dumps({"jobs": batch}))
+                    input_file.seek(0)
+                    completed = subprocess.run(
+                        [
+                            str(ACV049_RUNTIME_TRACE),
+                            "-f",
+                            "-qq",
+                            "-e",
+                            "trace=execve",
+                            "-s",
+                            "256",
+                            "-o",
+                            str(trace_path),
+                            str(node),
+                            "--require",
+                            str(preloader),
+                            str(adapter),
+                            "--self-test-terminal-schema",
+                            "--contract",
+                            str(contract),
+                        ],
+                        cwd=repo.resolve(),
+                        env=dict(environment),
+                        stdin=input_file,
+                        pass_fds=(descriptor,),
+                        check=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=180,
+                    )
+                trace = trace_path.read_bytes()
+                traces.append(trace)
+                if completed.returncode != 0:
+                    raise FinalGateError("ACV-049 monitored JavaScript reader failed")
+                if _successful_exec_count(trace) != 1:
+                    raise FinalGateError("ACV-049 JavaScript process trace escaped the monitor")
+                for channel in ACV049_MUTANT_CHANNELS:
+                    encoded = channel.encode("ascii")
+                    if encoded in completed.stdout or encoded in completed.stderr:
+                        raise FinalGateError("ACV-049 mutant channel leaked from JavaScript runtime")
+                try:
+                    result = json.loads(completed.stdout)
+                except (UnicodeDecodeError, ValueError) as error:
+                    raise FinalGateError(
+                        "ACV-049 JavaScript reader emitted invalid JSON"
+                    ) from error
+                if (
+                    not isinstance(result, dict)
+                    or set(result) != {"results"}
+                    or not isinstance(result["results"], list)
+                    or len(result["results"]) != len(batch)
+                ):
+                    raise FinalGateError("ACV-049 JavaScript reader result drift")
+                results.extend(result["results"])
+        finally:
+            os.close(descriptor)
+        monitor_bytes = log_path.read_bytes()
+    if len(results) != 507:
+        raise FinalGateError("ACV-049 JavaScript reader result count drift")
+    for channel in ACV049_MUTANT_CHANNELS:
+        if channel.encode("ascii") in monitor_bytes:
+            raise FinalGateError("ACV-049 mutant channel leaked into runtime evidence")
+    rows = _decode_acv049_runtime_log(monitor_bytes)
+    if sum(row["kind"] == "monitor" for row in rows) != 8:
+        raise FinalGateError("ACV-049 JavaScript monitor batch count drift")
+    return dumps({"results": results}), rows, traces
+
+
 def _controlled_acv049_environment(channel: str) -> dict[str, str]:
     try:
         encoded = channel.encode("ascii")
@@ -788,6 +1419,391 @@ def _controlled_acv049_environment(channel: str) -> dict[str, str]:
         **ACV049_CONTROLLED_ENVIRONMENT,
         ACV049_MUTANT_CHANNEL: channel,
     }
+
+
+def _acv049_runtime_policy(
+    repo: Path,
+    contract: Path,
+    evidence: Path,
+    output: Path,
+) -> dict[str, object]:
+    """Derive the monitor policy only from already authenticated local bytes."""
+
+    root = repo.resolve()
+    contract_root = contract.resolve()
+    evidence_root = evidence.resolve()
+    output_path = output.resolve()
+    manifest_path = contract_root / "APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json"
+    try:
+        manifest = json.loads(manifest_path.read_bytes())
+    except (UnicodeError, ValueError, OSError) as error:
+        raise FinalGateError("ACV-049 runtime contract manifest is invalid") from error
+    rows = manifest.get("artifacts") if isinstance(manifest, dict) else None
+    if not isinstance(rows, list) or len(rows) != 27:
+        raise FinalGateError("ACV-049 runtime contract artifact relation drift")
+    contract_files = {manifest_path.resolve()}
+    for row in rows:
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("path"), str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", row["path"])
+            or not isinstance(row.get("sha256"), str)
+        ):
+            raise FinalGateError("ACV-049 runtime contract artifact row drift")
+        path = (contract_root / row["path"]).resolve()
+        if (
+            path.parent != contract_root
+            or not path.is_file()
+            or path.is_symlink()
+            or _sha256(path.read_bytes()) != row["sha256"]
+        ):
+            raise FinalGateError("ACV-049 runtime contract artifact identity drift")
+        contract_files.add(path)
+    if {path.resolve() for path in contract_root.iterdir()} != contract_files:
+        raise FinalGateError("ACV-049 runtime contract file set drift")
+
+    native_path = contract_root / "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
+    try:
+        native = json.loads(native_path.read_bytes())
+    except (UnicodeError, ValueError, OSError) as error:
+        raise FinalGateError("ACV-049 runtime native inventory is invalid") from error
+    dependencies = native.get("dependencies") if isinstance(native, dict) else None
+    if not isinstance(dependencies, list) or len(dependencies) != 65:
+        raise FinalGateError("ACV-049 runtime native dependency relation drift")
+    native_files: set[Path] = set()
+    for row in dependencies:
+        relative = row.get("path") if isinstance(row, dict) else None
+        digest = row.get("sha256") if isinstance(row, dict) else None
+        if (
+            not isinstance(relative, str)
+            or relative.startswith("/")
+            or ".." in Path(relative).parts
+            or not isinstance(digest, str)
+        ):
+            raise FinalGateError("ACV-049 runtime native dependency row drift")
+        path = (root / relative).resolve()
+        if (
+            root not in path.parents
+            or not path.is_file()
+            or path.is_symlink()
+        ):
+            raise FinalGateError("ACV-049 runtime native dependency path drift")
+        # The exact-repin dependency intentionally binds candidate bytes in its
+        # repin object; all others bind the Base bytes, which the validator has
+        # already compared to this clean checkout.
+        if row.get("mutationPolicy") == "RATIFIED_H12_H3_EXACT_REPIN":
+            repin = row.get("repin")
+            expected = repin.get("newSha256") if isinstance(repin, dict) else None
+        else:
+            expected = digest
+        if not isinstance(expected, str) or _sha256(path.read_bytes()) != expected:
+            raise FinalGateError("ACV-049 runtime native dependency digest drift")
+        native_files.add(path)
+
+    evidence_files = {
+        (evidence_root / relative).resolve()
+        for relative in _tree(evidence_root)
+    }
+    enumerable_directories = {contract_root, evidence_root}
+    enumerable_directories.update(
+        path.resolve()
+        for path in evidence_root.rglob("*")
+        if path.is_dir() and not path.is_symlink()
+    )
+    implementation = root / "tools/causal-flow-simulator/app_core_iface0"
+    source_files = {
+        (
+            root / relative
+            if relative.startswith("tools/")
+            else implementation / relative
+        ).resolve()
+        for relative in (
+            *ACV049_EVALUATOR_PYTHON_FILES,
+            *ACV049_VALIDATOR_PYTHON_FILES,
+            ACV049_BASE_PINNED_PYTHON_FILE,
+        )
+    }
+    source_files.add((implementation / "node_adapter.mjs").resolve())
+    source_files.update(
+        (implementation / relative).resolve()
+        for relative in TERMINAL_IMPLEMENTATION_FILES
+    )
+    git_executable = Path("/usr/bin/git").resolve()
+    if not git_executable.is_file():
+        raise FinalGateError("ACV-049 pinned Git executable is unavailable")
+    allowed_reads = contract_files | native_files | evidence_files | source_files
+    if any(not path.is_file() or path.is_symlink() for path in allowed_reads):
+        raise FinalGateError("ACV-049 runtime permitted input is invalid")
+    metadata_paths = {root, contract_root, evidence_root, output_path, output_path.parent}
+    for anchor in tuple(metadata_paths):
+        current = anchor
+        while current != current.parent:
+            metadata_paths.add(current)
+            current = current.parent
+        metadata_paths.add(current)
+    for path in allowed_reads:
+        current = path.parent
+        while current != current.parent:
+            metadata_paths.add(current)
+            if current in {root, evidence_root}:
+                break
+            current = current.parent
+    return {
+        "allowed_metadata": sorted(str(path) for path in metadata_paths),
+        "allowed_reads": sorted(str(path) for path in allowed_reads),
+        "allowed_writes": [str(output_path)],
+        "bootstrap": ACV049_PYTHON_RUNTIME_MONITOR,
+        "enumerable_directories": sorted(
+            str(path) for path in enumerable_directories
+        ),
+        "git_executable": str(git_executable),
+        "monitored_roots": [
+            str(implementation.resolve()),
+            str((root / ACV049_BASE_PINNED_PYTHON_FILE).resolve()),
+        ],
+        "negative_ambient_path": str((root / ".git/config").resolve()),
+        "node_adapter": str((implementation / "node_adapter.mjs").resolve()),
+    }
+
+
+def _decode_acv049_runtime_log(raw: bytes, *, allow_denial: bool = False) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    try:
+        lines = raw.decode("utf-8").splitlines()
+    except UnicodeError as error:
+        raise FinalGateError("ACV-049 runtime monitor log is not UTF-8") from error
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError as error:
+            raise FinalGateError("ACV-049 runtime monitor emitted invalid JSON") from error
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"detail", "disposition", "justification", "kind"}
+            or row["disposition"] not in {"DENY", "PERMIT"}
+            or not isinstance(row["detail"], dict)
+            or not isinstance(row["justification"], str)
+            or not isinstance(row["kind"], str)
+        ):
+            raise FinalGateError("ACV-049 runtime monitor row drift")
+        if row["disposition"] == "DENY" and not allow_denial:
+            api = row["detail"].get("api")
+            origin = row["detail"].get("origin")
+            stack = row["detail"].get("stack")
+            suffix = f" ({row['kind']}:{api}:{origin}:{stack})" if isinstance(api, str) else f" ({row['kind']})"
+            raise FinalGateError("ACV-049 runtime provenance access was denied" + suffix)
+        rows.append(row)
+    if not rows:
+        raise FinalGateError("ACV-049 runtime monitor emitted no evidence")
+    return rows
+
+
+def _successful_exec_count(trace: bytes) -> int:
+    try:
+        lines = trace.decode("utf-8", errors="strict").splitlines()
+    except UnicodeError as error:
+        raise FinalGateError("ACV-049 process trace is not UTF-8") from error
+    return sum("execve(" in line and re.search(r"=\s*0$", line) is not None for line in lines)
+
+
+def _run_acv049_monitored_python(
+    repo: Path,
+    relative_tool: str,
+    arguments: list[str],
+    *,
+    policy: dict[str, object],
+    environment: dict[str, str],
+    input_bytes: bytes | None = None,
+    timeout: int = 600,
+) -> tuple[subprocess.CompletedProcess[bytes], list[dict[str, object]], bytes]:
+    if not ACV049_RUNTIME_TRACE.is_file():
+        raise FinalGateError("ACV-049 runtime process tracer is unavailable")
+    tool = (repo.resolve() / relative_tool).resolve()
+    if not tool.is_file() or tool.is_symlink():
+        raise FinalGateError("ACV-049 monitored Python tool is invalid")
+    encoded_policy = base64.b64encode(dumps(policy)).decode("ascii")
+    with tempfile.TemporaryDirectory(prefix="styx-acv049-runtime-python-") as raw:
+        temporary = Path(raw)
+        log_path = temporary / "monitor.jsonl"
+        trace_path = temporary / "exec.trace"
+        descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        try:
+            completed = subprocess.run(
+                [
+                    str(ACV049_RUNTIME_TRACE),
+                    "-f",
+                    "-qq",
+                    "-e",
+                    "trace=execve",
+                    "-s",
+                    "256",
+                    "-o",
+                    str(trace_path),
+                    str(Path(sys.executable).resolve()),
+                    "-I",
+                    "-B",
+                    "-c",
+                    ACV049_PYTHON_RUNTIME_MONITOR,
+                    encoded_policy,
+                    str(descriptor),
+                    "run",
+                    str(tool),
+                    *arguments,
+                ],
+                cwd=repo.resolve(),
+                env=dict(environment),
+                input=input_bytes,
+                pass_fds=(descriptor,),
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout,
+            )
+        finally:
+            os.close(descriptor)
+        monitor_bytes = log_path.read_bytes()
+        trace_bytes = trace_path.read_bytes()
+    if completed.returncode != 0:
+        raise FinalGateError("ACV-049 monitored Python evaluator failed")
+    rows = _decode_acv049_runtime_log(monitor_bytes)
+    logical_spawns = sum(row["kind"] == "process_spawn" for row in rows)
+    if _successful_exec_count(trace_bytes) != logical_spawns + 1:
+        raise FinalGateError("ACV-049 Python process trace escaped the monitor")
+    for channel in ACV049_MUTANT_CHANNELS:
+        encoded = channel.encode("ascii")
+        if encoded in completed.stdout or encoded in completed.stderr or encoded in monitor_bytes:
+            raise FinalGateError("ACV-049 mutant channel leaked from Python runtime")
+    return completed, rows, trace_bytes
+
+
+def _run_acv049_runtime_negative_controls(
+    repo: Path,
+    policy: dict[str, object],
+    environment: dict[str, str],
+) -> list[dict[str, object]]:
+    controls = [
+        *(f"environment:{name}" for name in sorted(environment)),
+        *ACV049_RUNTIME_PROVENANCE_KINDS,
+    ]
+    # Environment controls above cover the environment kind itself.
+    controls = [value for value in controls if value != "environment"]
+    result: list[dict[str, object]] = []
+    encoded_policy = base64.b64encode(dumps(policy)).decode("ascii")
+    for control in controls:
+        with tempfile.TemporaryDirectory(prefix="styx-acv049-negative-") as raw:
+            log_path = Path(raw) / "monitor.jsonl"
+            descriptor = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            try:
+                completed = subprocess.run(
+                    [
+                        str(Path(sys.executable).resolve()),
+                        "-I",
+                        "-B",
+                        "-c",
+                        ACV049_PYTHON_RUNTIME_MONITOR,
+                        encoded_policy,
+                        str(descriptor),
+                        "negative",
+                        control,
+                    ],
+                    cwd=repo.resolve(),
+                    env=dict(environment),
+                    pass_fds=(descriptor,),
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                )
+            finally:
+                os.close(descriptor)
+            rows = _decode_acv049_runtime_log(log_path.read_bytes(), allow_denial=True)
+        if completed.returncode != 73 or not any(row["disposition"] == "DENY" for row in rows):
+            raise FinalGateError("ACV-049 runtime negative control survived")
+        result.append({"control": control, "verdict": "DETECTED"})
+    return result
+
+
+def _run_acv049_node_runtime_negative_controls(
+    repo: Path,
+    node: Path,
+    policy: dict[str, object],
+    environment: dict[str, str],
+) -> list[dict[str, object]]:
+    snippets = {
+        **{
+            f"environment:{name}": f"void process.env[{json.dumps(name)}];"
+            for name in sorted(environment)
+        },
+        "ambient_file": (
+            "require('node:fs').readFileSync("
+            + json.dumps(str(policy["negative_ambient_path"]))
+            + ");"
+        ),
+        "clock:date": "void Date.now();",
+        "clock:performance": "void performance.now();",
+        "host_identity": "void require('node:os').hostname();",
+        "network": "void require('node:net').createServer();",
+        "process_identity": "void process.pid;",
+        "process_spawn": "void require('node:child_process').spawnSync('/bin/true');",
+        "randomness:crypto": "void require('node:crypto').randomBytes(1);",
+        "randomness:math": "void Math.random();",
+        "user_identity": "void require('node:os').userInfo();",
+    }
+    result: list[dict[str, object]] = []
+    with tempfile.TemporaryDirectory(prefix="styx-acv049-node-negative-") as raw:
+        temporary = Path(raw)
+        for index, (control, snippet) in enumerate(sorted(snippets.items())):
+            log_path = temporary / f"monitor-{index:02d}.jsonl"
+            main_path = temporary / f"negative-{index:02d}.cjs"
+            preloader = temporary / f"monitor-{index:02d}.cjs"
+            control_policy = dict(policy)
+            control_policy["node_adapter"] = str(main_path.resolve())
+            encoded_policy = base64.b64encode(dumps(control_policy)).decode("ascii")
+            descriptor = os.open(
+                log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600
+            )
+            try:
+                source = ACV049_NODE_RUNTIME_MONITOR.replace(
+                    "__POLICY_BASE64__", encoded_policy
+                ).replace("__LOG_FD__", str(descriptor))
+                preloader.write_text(source, encoding="utf-8")
+                main_path.write_text('"use strict";\n' + snippet + "\n", encoding="utf-8")
+                completed = subprocess.run(
+                    [str(node), "--require", str(preloader), str(main_path)],
+                    cwd=repo.resolve(),
+                    env=dict(environment),
+                    pass_fds=(descriptor,),
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                )
+            finally:
+                os.close(descriptor)
+            rows = _decode_acv049_runtime_log(
+                log_path.read_bytes(), allow_denial=True
+            )
+            if completed.returncode == 0 or not any(
+                row["disposition"] == "DENY" for row in rows
+            ):
+                raise FinalGateError("ACV-049 Node runtime negative control survived")
+            result.append({"control": control, "verdict": "DETECTED"})
+    return result
+
+
+def _aggregate_acv049_runtime_rows(
+    rows: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    counts: dict[bytes, int] = {}
+    values: dict[bytes, dict[str, object]] = {}
+    for row in rows:
+        encoded = dumps(row)
+        counts[encoded] = counts.get(encoded, 0) + 1
+        values[encoded] = row
+    return [
+        {"access": values[encoded], "count": counts[encoded]}
+        for encoded in sorted(counts)
+    ]
 
 
 def _definition_name(
@@ -1015,8 +2031,11 @@ def _scan_acv049_python_source(
             if (
                 isinstance(node.func.value, ast.Name)
                 and node.func.value.id in subprocess_aliases
-                and node.func.attr in {"call", "check_call", "check_output", "Popen", "run"}
             ):
+                if node.func.attr not in {
+                    "call", "check_call", "check_output", "Popen", "run"
+                }:
+                    raise FinalGateError("ACV-049 unclassified subprocess call")
                 function = _definition_name(node, parents)
                 if function is None:
                     raise FinalGateError("ACV-049 module-level process spawn")
@@ -1264,7 +2283,7 @@ def run_acv049_e_baseline_gate(
     *,
     node: Path,
 ) -> dict[str, object]:
-    """Prove E baseline equality; provenance monitors remain a separate gate."""
+    """Prove E equality under conjunctive static and runtime provenance controls."""
 
     first, second = _verify_acv049_checkout_pair(
         repo_one, repo_two, candidate_head
@@ -1343,11 +2362,21 @@ def run_acv049_e_baseline_gate(
         output_two = temporary_root / "environment-two" / "semantic-acv049.json"
         output_one.parent.mkdir()
         output_two.parent.mkdir()
+        runtime_evidence: list[dict[str, object]] = []
         for repo, evidence, contract, output, environment in (
             (first, first_evidence, contract_one, output_one, environments[0]),
             (second, second_evidence, contract_two, output_two, environments[1]),
         ):
-            terminal_jobs = _run_checkout_tool(
+            policy = _acv049_runtime_policy(repo, contract, evidence, output)
+            negative_controls = {
+                "javascript": _run_acv049_node_runtime_negative_controls(
+                    repo, resolved_node, policy, environment
+                ),
+                "python": _run_acv049_runtime_negative_controls(
+                    repo, policy, environment
+                ),
+            }
+            emitter, emitter_rows, emitter_trace = _run_acv049_monitored_python(
                 repo,
                 "tools/causal-flow-simulator/app_core_iface0/run_semantic_acv049.py",
                 [
@@ -1359,17 +2388,22 @@ def run_acv049_e_baseline_gate(
                     str(evidence),
                     "--emit-terminal-jobs",
                 ],
+                policy=policy,
                 environment=environment,
                 timeout=600,
-            ).stdout
-            javascript_result = _run_acv049_javascript_reader(
+            )
+            terminal_jobs = emitter.stdout
+            javascript_result, javascript_rows, javascript_traces = (
+                _run_acv049_monitored_javascript_reader(
                 repo,
                 resolved_node,
                 contract,
                 terminal_jobs,
                 environment,
+                policy,
+                )
             )
-            _run_checkout_tool(
+            _builder, builder_rows, builder_trace = _run_acv049_monitored_python(
                 repo,
                 "tools/causal-flow-simulator/app_core_iface0/run_semantic_acv049.py",
                 [
@@ -1383,9 +2417,27 @@ def run_acv049_e_baseline_gate(
                     "--output",
                     str(output),
                 ],
+                policy=policy,
                 environment=environment,
                 input_bytes=javascript_result,
                 timeout=600,
+            )
+            permitted = [
+                row
+                for row in (*emitter_rows, *javascript_rows, *builder_rows)
+                if row["disposition"] == "PERMIT"
+            ]
+            runtime_evidence.append(
+                {
+                    "negativeControls": negative_controls,
+                    "permittedAccesses": _aggregate_acv049_runtime_rows(permitted),
+                    "processTraceSha256": [
+                        _sha256(emitter_trace),
+                        *(_sha256(trace) for trace in javascript_traces),
+                        _sha256(builder_trace),
+                    ],
+                    "verdict": "RUNTIME_PROVENANCE_PASS",
+                }
             )
         first_bytes = output_one.read_bytes()
         second_bytes = output_two.read_bytes()
@@ -1404,7 +2456,8 @@ def run_acv049_e_baseline_gate(
     return {
         "channelSha256": [_sha256(value.encode("ascii")) for value in channels],
         "eRelationCount": 77,
-        "provenanceControls": "STATIC_PASS_RUNTIME_PENDING",
+        "provenanceControls": "STATIC_AND_RUNTIME_PASS",
+        "runtimeProvenance": runtime_evidence,
         "semanticReportSha256": _sha256(first_bytes),
         "staticProvenance": first_static,
         "verdict": "TWO_ENVIRONMENT_BASELINE_IDENTITY_PASS",

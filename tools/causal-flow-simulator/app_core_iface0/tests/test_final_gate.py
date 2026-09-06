@@ -17,12 +17,15 @@ sys.path.insert(0, str(ROOT))
 
 from final_gate import (  # noqa: E402
     ACV049_MUTANT_CHANNEL,
+    ACV049_PYTHON_RUNTIME_MONITOR,
     COMBINED_BRANCH_REF,
     COMBINED_BRANCH_URL,
     FinalGateError,
     RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
+    _aggregate_acv049_runtime_rows,
     _carrier_subtree,
     _controlled_acv049_environment,
+    _decode_acv049_runtime_log,
     _fetch_json,
     _generate_phase_a_from_checkout,
     _historical_carrier_bytes,
@@ -33,6 +36,8 @@ from final_gate import (  # noqa: E402
     _scan_acv049_javascript_source,
     _scan_acv049_python_source,
     _scan_provider_authority,
+    _run_acv049_runtime_negative_controls,
+    _successful_exec_count,
     _tree,
     _validate_acv049_e_report,
     _validate_provider_authority,
@@ -126,6 +131,15 @@ def _acv049_semantic_report() -> dict[str, object]:
         "semantic_rule_id": "ACV-049",
         "status": "REMEDIATION_PARTIAL_EXECUTION",
         "verdict": "PARTIAL_EXECUTION_PASS",
+    }
+
+
+def _runtime_permit_row() -> dict[str, object]:
+    return {
+        "detail": {"api": "test"},
+        "disposition": "PERMIT",
+        "justification": "test permit",
+        "kind": "monitor",
     }
 
 
@@ -615,6 +629,53 @@ class FinalGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(FinalGateError, "canonical ASCII"):
                     _controlled_acv049_environment(invalid)
 
+    def test_acv049_runtime_log_is_closed_and_aggregation_is_lossless(self) -> None:
+        row = _runtime_permit_row()
+        raw = dumps(row) + dumps(row)
+        decoded = _decode_acv049_runtime_log(raw)
+        self.assertEqual(decoded, [row, row])
+        self.assertEqual(
+            _aggregate_acv049_runtime_rows(decoded),
+            [{"access": row, "count": 2}],
+        )
+        denied = dict(row, disposition="DENY")
+        with self.assertRaisesRegex(FinalGateError, "access was denied"):
+            _decode_acv049_runtime_log(dumps(denied))
+        self.assertEqual(
+            _successful_exec_count(
+                b'1 execve("/usr/bin/python3", [], []) = 0\n'
+                b'2 execve("/missing", [], []) = -1 ENOENT\n'
+            ),
+            1,
+        )
+
+    def test_acv049_python_runtime_monitor_detects_every_provenance_class(
+        self,
+    ) -> None:
+        environment = _controlled_acv049_environment("ACV049-NEGATIVE")
+        with tempfile.TemporaryDirectory() as raw:
+            temporary = Path(raw).resolve()
+            policy = {
+                "allowed_metadata": [str(temporary), str(temporary.parent)],
+                "allowed_reads": [],
+                "allowed_writes": [],
+                "bootstrap": ACV049_PYTHON_RUNTIME_MONITOR,
+                "enumerable_directories": [str(temporary)],
+                "git_executable": "/usr/bin/git",
+                "monitored_roots": [str(ROOT)],
+                "negative_ambient_path": str(temporary / "ambient"),
+                "node_adapter": str(ROOT / "node_adapter.mjs"),
+            }
+            controls = _run_acv049_runtime_negative_controls(
+                ROOT.parents[2], policy, environment
+            )
+        self.assertEqual(len(controls), 12)
+        self.assertEqual(
+            {row["control"] for row in controls if row["control"].startswith("environment:")},
+            {f"environment:{name}" for name in environment},
+        )
+        self.assertTrue(all(row["verdict"] == "DETECTED" for row in controls))
+
     def test_acv049_static_provenance_scan_closes_loaded_sources(self) -> None:
         report = run_acv049_static_provenance_scan(ROOT.parents[2])
         self.assertEqual(
@@ -639,6 +700,10 @@ class FinalGateTests(unittest.TestCase):
             "unclassified spawn": (
                 b"import subprocess\ndef value():\n"
                 b"    return subprocess.run(['git', 'status'])\n"
+            ),
+            "private subprocess escape": (
+                b"import subprocess\ndef value():\n"
+                b"    return subprocess._fork_exec([], [], True)\n"
             ),
         }
         for name, source in hostile.items():
@@ -689,21 +754,29 @@ class FinalGateTests(unittest.TestCase):
             _tool: str,
             arguments: list[str],
             *,
+            policy: dict[str, object],
             environment: dict[str, str] | None = None,
             input_bytes: bytes | None = None,
             timeout: int = 180,
-        ) -> subprocess.CompletedProcess[bytes]:
+        ) -> tuple[
+            subprocess.CompletedProcess[bytes], list[dict[str, object]], bytes
+        ]:
             self.assertEqual(timeout, 600)
+            self.assertEqual(policy, {"runtime": "policy"})
             self.assertIsNotNone(environment)
             environments.append(dict(environment or {}))
             if "--emit-terminal-jobs" in arguments:
                 self.assertIsNone(input_bytes)
                 jobs = [{"job": index} for index in range(507)]
-                return subprocess.CompletedProcess([], 0, dumps({"jobs": jobs}), b"")
+                completed = subprocess.CompletedProcess(
+                    [], 0, dumps({"jobs": jobs}), b""
+                )
+                return completed, [_runtime_permit_row()], b"emitter-trace"
             self.assertIsNotNone(input_bytes)
             output = Path(arguments[arguments.index("--output") + 1])
             output.write_bytes(dumps(report))
-            return subprocess.CompletedProcess([], 0, b"", b"")
+            completed = subprocess.CompletedProcess([], 0, b"", b"")
+            return completed, [_runtime_permit_row()], b"builder-trace"
 
         def javascript_reader(
             _repo: Path,
@@ -711,9 +784,15 @@ class FinalGateTests(unittest.TestCase):
             _contract: Path,
             _jobs_bytes: bytes,
             environment: dict[str, str],
-        ) -> bytes:
+            policy: dict[str, object],
+        ) -> tuple[bytes, list[dict[str, object]], list[bytes]]:
+            self.assertEqual(policy, {"runtime": "policy"})
             javascript_environments.append(dict(environment))
-            return dumps({"results": []})
+            return (
+                dumps({"results": []}),
+                [_runtime_permit_row()],
+                [b"javascript-trace"],
+            )
 
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -743,9 +822,23 @@ class FinalGateTests(unittest.TestCase):
                     "final_gate.derive_acv049_relation_members",
                     return_value={"ACV-049-E": sources},
                 ),
-                patch("final_gate._run_checkout_tool", side_effect=execute),
                 patch(
-                    "final_gate._run_acv049_javascript_reader",
+                    "final_gate._acv049_runtime_policy",
+                    return_value={"runtime": "policy"},
+                ),
+                patch(
+                    "final_gate._run_acv049_runtime_negative_controls",
+                    return_value=[{"control": "python", "verdict": "DETECTED"}],
+                ),
+                patch(
+                    "final_gate._run_acv049_node_runtime_negative_controls",
+                    return_value=[{"control": "javascript", "verdict": "DETECTED"}],
+                ),
+                patch(
+                    "final_gate._run_acv049_monitored_python", side_effect=execute
+                ),
+                patch(
+                    "final_gate._run_acv049_monitored_javascript_reader",
                     side_effect=javascript_reader,
                 ),
             ):
@@ -759,8 +852,9 @@ class FinalGateTests(unittest.TestCase):
                 )
         self.assertEqual(result["eRelationCount"], 77)
         self.assertEqual(
-            result["provenanceControls"], "STATIC_PASS_RUNTIME_PENDING"
+            result["provenanceControls"], "STATIC_AND_RUNTIME_PASS"
         )
+        self.assertEqual(len(result["runtimeProvenance"]), 2)
         self.assertEqual(
             result["staticProvenance"], {"verdict": "STATIC_PROVENANCE_PASS"}
         )

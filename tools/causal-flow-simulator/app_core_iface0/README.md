@@ -59,13 +59,16 @@ instances and kill every remaining named source mutant.
 Until both phases pass, this directory is an implementation in progress rather
 than complete conformance evidence.
 
-ACV-049 is intentionally not counted as executed. Its preflight expands the
-current 4,060 candidate pairs, identifies non-string `const` paths, classifies
-literal versus schema-admissible encoded provenance, records which paths exist
-in the nineteen frozen outputs using their exact labelled `oneOf` branch, and
-runs only live negative controls. It returns
-`AMEND_REQUIRED` and claims zero mutant kills because the current target-only
-isolation model is equivalent to existing schema rejection.
+ACV-049 remains a partial execution rather than a closure claim. Its ratified
+884-row relation now executes all 401 literal, 101 singleton, five non-string
+and 77 blind-request rows. The E baseline is run twice under distinct mutant
+channels by the outer gate: Python emits reader jobs, Node evaluates them, and
+Python validates the independently produced results. A closed static source
+scan and a runtime provenance monitor are conjunctive. The runtime monitor
+records manifest-bound filesystem reads and the exact permitted validator/Git
+spawn tree, rejects every other provenance source, and runs negative controls
+for every allowlisted environment name in both Python and Node. The remaining
+300 P rows and their source-mutant kills are not yet claimed.
 
 The six operations are:
 
@@ -142,7 +145,8 @@ python3 tools/causal-flow-simulator/app_core_iface0/run_semantic_acv048.py \
 # ACV-049 E is orchestrated only by the outer gate.  The Python evaluator and
 # JavaScript reader never spawn one another.  Both checkouts must be clean,
 # distinct clones of the exact candidate HEAD and both evidence roots must be
-# byte-identical Phase-A packages.
+# byte-identical Phase-A packages.  /usr/bin/strace is required to prove that
+# no evaluator or validator descendant escapes the monitored spawn tree.
 python3 tools/causal-flow-simulator/app_core_iface0/final_gate.py \
   --acv049-e-baseline \
   --repo-root-one /clean/checkout-one \
