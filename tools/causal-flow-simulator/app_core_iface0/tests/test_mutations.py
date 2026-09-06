@@ -58,6 +58,7 @@ from run_semantic_acv049 import (  # noqa: E402
     _mutated_source_tree,
     _pattern_values,
     _raw_report_logical_path,
+    _store_external_artifact,
     _tag_source_value,
     _terminal_execution_plan,
     _value_at_report_pointer,
@@ -93,6 +94,11 @@ class StructuralPlanTests(unittest.TestCase):
         )
         self.assertIsInstance(tagged["outer"][0], _SourceTaggedString)
         self.assertEqual(tagged["outer"][0].site_id, "PURITY-SITE-FIRST")
+        self.assertEqual(tagged["outer"][0].source_tokens, ("outer", 0))
+        self.assertEqual(
+            tagged["outer"][1]["inner"].source_tokens,
+            ("outer", 1, "inner"),
+        )
         retagged = _tag_source_value("PURITY-SITE-SECOND", tagged)
         self.assertEqual(retagged["outer"][0].site_id, "PURITY-SITE-FIRST")
         self.assertIs(copy.deepcopy(retagged["outer"][0]), retagged["outer"][0])
@@ -253,6 +259,23 @@ class StructuralPlanTests(unittest.TestCase):
                 {"PURITY-SITE-ABSENT": (((), ("one", "two")),)},
                 ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
             )
+
+    def test_acv049_external_artifacts_are_exclusive_and_outside_repository(
+        self,
+    ) -> None:
+        repository = ROOT.parents[2]
+        inside = ROOT / "forbidden-acv049-artifact.json"
+        with self.assertRaisesRegex(SemanticACV049Error, "path is invalid"):
+            _store_external_artifact(repository, inside, {"verdict": "PASS"})
+        self.assertFalse(inside.exists())
+        with tempfile.TemporaryDirectory() as raw:
+            output = Path(raw) / "acv049-artifact.json"
+            _store_external_artifact(repository, output, {"verdict": "PASS"})
+            self.assertEqual(
+                output.read_bytes(), canonical_dumps({"verdict": "PASS"})
+            )
+            with self.assertRaisesRegex(SemanticACV049Error, "path is invalid"):
+                _store_external_artifact(repository, output, {"verdict": "PASS"})
 
     def test_contract_derives_exact_closed_structural_plan(self) -> None:
         report = derive_structural_plan(ROOT / "contract")
@@ -623,8 +646,24 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(
             scalar_manifest["mutantCount"]
+            + scalar_manifest["o08BoundCandidateCount"]
+            + scalar_manifest["pendingGuardedCandidateCount"]
             + scalar_manifest["skippedEnumRouteCount"],
             596,
+        )
+        self.assertEqual(scalar_manifest["o08BoundCandidateCount"], 5)
+        self.assertEqual(scalar_manifest["pendingGuardedCandidateCount"], 48)
+        self.assertEqual(scalar_manifest["mutantCount"], 331)
+        self.assertEqual(scalar_manifest["skippedEnumRouteCount"], 212)
+        self.assertEqual(
+            {row["dimension"] for row in scalar_manifest["o08BoundCandidates"]},
+            {
+                "ACTIVATION_CAPABILITY_SET",
+                "CUSTODY_REDUNDANCY",
+                "DURABLE_RECORDS",
+                "DURABLE_REQUIRED_OCTETS",
+                "TRANSIENT_MEMORY_CAPABILITY",
+            },
         )
         self.assertEqual(
             len({row["mutantId"] for row in scalar_manifest["mutants"]}),
@@ -723,6 +762,37 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             )
             self.assertEqual(javascript.returncode, 0, javascript.stderr.decode())
             self.assertEqual(json.loads(javascript.stdout), {"verdict": "PASS"})
+        javascript_batch_input = canonical_dumps(
+            {"responses": [run["response"] for run in runs]}
+        )
+        javascript_batch = subprocess.run(
+            [
+                node,
+                str(ROOT / "node_adapter.mjs"),
+                "--validate-response-batch",
+                "--contract",
+                str(ROOT / "contract"),
+            ],
+            cwd=ROOT.parents[2],
+            check=False,
+            capture_output=True,
+            input=javascript_batch_input,
+            env={"LC_CTYPE": "C.UTF-8", "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(
+            javascript_batch.returncode, 0, javascript_batch.stderr.decode()
+        )
+        self.assertEqual(
+            json.loads(javascript_batch.stdout),
+            {
+                "responseCount": 2,
+                "responseSha256s": [
+                    hashlib.sha256(canonical_dumps(run["response"])).hexdigest()
+                    for run in runs
+                ],
+                "verdict": "PASS",
+            },
+        )
 
     def test_acv049_all_materialized_scalar_domains_have_finite_candidates(
         self,

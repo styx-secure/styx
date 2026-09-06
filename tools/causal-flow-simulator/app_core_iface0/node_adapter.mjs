@@ -1456,6 +1456,7 @@ function parseArguments(argv) {
   let graphProjectionMode = false;
   let credentialProjectionMode = false;
   let validateResponseMode = false;
+  let validateResponseBatchMode = false;
   let preflightCollectionsMode = false;
   let outcomeProjectionMode = false;
   let validateV2EvidenceMode = false;
@@ -1471,6 +1472,7 @@ function parseArguments(argv) {
     else if (argv[index] === "--graph-projection") graphProjectionMode = true;
     else if (argv[index] === "--credential-projection") credentialProjectionMode = true;
     else if (argv[index] === "--validate-response") validateResponseMode = true;
+    else if (argv[index] === "--validate-response-batch") validateResponseBatchMode = true;
     else if (argv[index] === "--preflight-collections") preflightCollectionsMode = true;
     else if (argv[index] === "--outcome-projection") outcomeProjectionMode = true;
     else if (argv[index] === "--validate-v2-evidence") validateV2EvidenceMode = true;
@@ -1484,7 +1486,8 @@ function parseArguments(argv) {
   requireCondition(
     Number(selfTest) + Number(deriveForkJoin) + Number(authorityMetricsMode)
       + Number(graphProjectionMode) + Number(credentialProjectionMode)
-      + Number(validateResponseMode) + Number(preflightCollectionsMode)
+      + Number(validateResponseMode) + Number(validateResponseBatchMode)
+      + Number(preflightCollectionsMode)
       + Number(outcomeProjectionMode) + Number(validateV2EvidenceMode)
       + Number(terminalSchemaMode) === 1,
     "exactly one adapter mode is required",
@@ -1498,7 +1501,8 @@ function parseArguments(argv) {
   return {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
     graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
-    schemaOverride, selfTest, trustedDirection, validateResponseMode,
+    schemaOverride, selfTest, trustedDirection, validateResponseBatchMode,
+    validateResponseMode,
     validateV2EvidenceMode, v1DetectorMutant, terminalSchemaMode,
   };
 }
@@ -1508,7 +1512,8 @@ try {
   const {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
     graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
-    schemaOverride, selfTest, trustedDirection, validateResponseMode,
+    schemaOverride, selfTest, trustedDirection, validateResponseBatchMode,
+    validateResponseMode,
     validateV2EvidenceMode, v1DetectorMutant, terminalSchemaMode,
   } = parseArguments(process.argv.slice(2));
   const authority = loadContractAuthority(contractPath);
@@ -1533,6 +1538,31 @@ try {
     const input = readCanonicalInput();
     validateCompleteResponseBeforeRelease(input, schema, relations);
     process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
+  } else if (validateResponseBatchMode) {
+    const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
+    const relations = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json");
+    const input = readCanonicalInput();
+    requireCondition(
+      objectValue(input)
+        && Object.keys(input).length === 1
+        && Array.isArray(input.responses)
+        && input.responses.length > 0,
+      "response batch input is malformed",
+    );
+    const responseSha256s = [];
+    for (const response of input.responses) {
+      validateCompleteResponseBeforeRelease(response, schema, relations);
+      responseSha256s.push(
+        crypto.createHash("sha256")
+          .update(`${canonicalStringify(response)}\n`, "utf8")
+          .digest("hex"),
+      );
+    }
+    process.stdout.write(`${JSON.stringify({
+      responseCount: input.responses.length,
+      responseSha256s,
+      verdict: "PASS",
+    })}\n`);
   } else if (terminalSchemaMode) {
     const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
     const relations = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json");

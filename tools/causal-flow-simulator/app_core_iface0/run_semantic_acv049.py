@@ -88,9 +88,15 @@ class SemanticACV049Error(ValueError):
 class _SourceTaggedString(str):
     """One immutable string carrying its nearest evaluator construction site."""
 
-    def __new__(cls, value: str, site_id: str) -> _SourceTaggedString:
+    def __new__(
+        cls,
+        value: str,
+        site_id: str,
+        source_tokens: tuple[str | int, ...] = (),
+    ) -> _SourceTaggedString:
         instance = super().__new__(cls, value)
         instance.site_id = site_id
+        instance.source_tokens = source_tokens
         return instance
 
     def __deepcopy__(self, memo: dict[int, Any]) -> _SourceTaggedString:
@@ -128,7 +134,12 @@ class _SourceTaggedTuple(tuple[Any, ...]):
         )
 
 
-def _tag_source_value(site_id: str, value: Any) -> Any:
+def _tag_source_value(
+    site_id: str,
+    value: Any,
+    *,
+    _source_tokens: tuple[str | int, ...] = (),
+) -> Any:
     """Tag unowned strings without changing their JSON-visible value or shape."""
 
     if isinstance(
@@ -137,27 +148,47 @@ def _tag_source_value(site_id: str, value: Any) -> Any:
     ):
         return value
     if isinstance(value, str):
-        return _SourceTaggedString(value, site_id)
+        return _SourceTaggedString(value, site_id, _source_tokens)
     if isinstance(value, list):
         return _SourceTaggedList(
-            [_tag_source_value(site_id, item) for item in value], site_id
+            [
+                _tag_source_value(
+                    site_id, item, _source_tokens=(*_source_tokens, index)
+                )
+                for index, item in enumerate(value)
+            ],
+            site_id,
         )
     if isinstance(value, tuple):
         return _SourceTaggedTuple(
-            tuple(_tag_source_value(site_id, item) for item in value), site_id
+            tuple(
+                _tag_source_value(
+                    site_id, item, _source_tokens=(*_source_tokens, index)
+                )
+                for index, item in enumerate(value)
+            ),
+            site_id,
         )
     if isinstance(value, dict):
         return _SourceTaggedDict(
             {
-                key: _tag_source_value(site_id, item)
+                key: _tag_source_value(
+                    site_id, item, _source_tokens=(*_source_tokens, key)
+                )
                 for key, item in value.items()
             },
             site_id,
         )
     if isinstance(value, set):
-        return {_tag_source_value(site_id, item) for item in value}
+        return {
+            _tag_source_value(site_id, item, _source_tokens=_source_tokens)
+            for item in value
+        }
     if isinstance(value, frozenset):
-        return frozenset(_tag_source_value(site_id, item) for item in value)
+        return frozenset(
+            _tag_source_value(site_id, item, _source_tokens=_source_tokens)
+            for item in value
+        )
     return value
 
 
@@ -555,25 +586,11 @@ def _pattern_source_values(
     value: Any,
     pattern: tuple[str | None, ...],
     prefix: tuple[str | int, ...] = (),
-    boundaries: tuple[tuple[str, tuple[str | int, ...]], ...] = (),
 ) -> list[tuple[tuple[str | int, ...], _SourceTaggedString, tuple[str | int, ...]]]:
-    site_id = getattr(value, "site_id", None)
-    if isinstance(
-        value, (_SourceTaggedDict, _SourceTaggedList, _SourceTaggedTuple)
-    ) and isinstance(site_id, str):
-        boundaries = (*boundaries, (site_id, prefix))
     if not pattern:
         if not isinstance(value, _SourceTaggedString):
             return []
-        owner_prefix = next(
-            (
-                boundary_prefix
-                for boundary_site, boundary_prefix in reversed(boundaries)
-                if boundary_site == value.site_id
-            ),
-            prefix,
-        )
-        return [(prefix, value, prefix[len(owner_prefix):])]
+        return [(prefix, value, value.source_tokens)]
     token, remaining = pattern[0], pattern[1:]
     if token is None:
         if not isinstance(value, list):
@@ -582,14 +599,12 @@ def _pattern_source_values(
             result
             for index, item in enumerate(value)
             for result in _pattern_source_values(
-                item, remaining, (*prefix, index), boundaries
+                item, remaining, (*prefix, index)
             )
         ]
     if not isinstance(value, dict) or token not in value:
         return []
-    return _pattern_source_values(
-        value[token], remaining, (*prefix, token), boundaries
-    )
+    return _pattern_source_values(value[token], remaining, (*prefix, token))
 
 
 def _controlled_channel_order(channels: tuple[str, str]) -> tuple[bytes, bytes]:
@@ -1086,7 +1101,22 @@ def build_phase_a_scalar_source_mutant_manifest(
 
     terminals: dict[str, LogicalTerminal] = {}
     specs = []
+    o08_bound_candidates = []
+    pending_guarded_candidates = []
     skipped_enum_routes = 0
+    capability_dimensions = frozenset(authority.capability_requirements())
+    guarded_site_ids = {
+        row["siteId"]
+        for row in site_map.get("usedSites", [])
+        if any(
+            member.get("function") == "_revalidate_prior_snapshot"
+            and member.get("kind") == "DICT-VALUE"
+            and member.get("label") in {"logicalEvent", "proposedGenesis"}
+            for member in row.get("astMembers", [])
+        )
+    }
+    if len(guarded_site_ids) != 2:
+        raise SemanticACV049Error("ACV-049 prior revalidation site drift")
     for route in site_map["routes"]:
         if not isinstance(route, dict):
             raise SemanticACV049Error("ACV-049 source-site route is malformed")
@@ -1094,6 +1124,52 @@ def build_phase_a_scalar_source_mutant_manifest(
         terminal = terminals.setdefault(
             logical_path, resolve_logical_terminal(authority.schema, logical_path)
         )
+        if (
+            len(terminal.data_tokens) == 5
+            and terminal.data_tokens[:3]
+            == ("result", "descriptor", "capabilityRequirements")
+            and terminal.data_tokens[3] in capability_dimensions
+            and terminal.data_tokens[4] == "selectedValue"
+        ):
+            selectors = route.get("sourceSelectors")
+            if not isinstance(selectors, list) or len(selectors) != 1:
+                raise SemanticACV049Error(
+                    "ACV-049 O-08-bound route selector is not exact"
+                )
+            selector = selectors[0]
+            o08_bound_candidates.append(
+                {
+                    "astSiteId": selector["astSiteId"],
+                    "candidateDisposition": "O08_BOUND",
+                    "concretePointer": selector["concretePointer"],
+                    "dimension": terminal.data_tokens[3],
+                    "evidenceStatus": "PENDING_NEGATIVE_CONTROL",
+                    "logicalPath": route["logicalPath"],
+                    "requestCaseId": route["requestCaseId"],
+                    "sourceSiteMapRouteSha256": sha256_bytes(dumps(route)),
+                }
+            )
+            continue
+        route_site_ids = set(route.get("astSiteIds", []))
+        if route_site_ids and route_site_ids <= guarded_site_ids:
+            selectors = route.get("sourceSelectors")
+            if not isinstance(selectors, list) or len(selectors) != 1:
+                raise SemanticACV049Error(
+                    "ACV-049 guarded pass-through selector is not exact"
+                )
+            selector = selectors[0]
+            pending_guarded_candidates.append(
+                {
+                    "astSiteId": selector["astSiteId"],
+                    "candidateDisposition": "PENDING_CONTRACT_CLASSIFICATION",
+                    "concretePointer": selector["concretePointer"],
+                    "guard": "PRIOR_SNAPSHOT_BYTE_EQUALITY",
+                    "logicalPath": route["logicalPath"],
+                    "requestCaseId": route["requestCaseId"],
+                    "sourceSiteMapRouteSha256": sha256_bytes(dumps(route)),
+                }
+            )
+            continue
         if any("enum" in node for node in terminal.nodes):
             skipped_enum_routes += 1
             continue
@@ -1113,8 +1189,16 @@ def build_phase_a_scalar_source_mutant_manifest(
         )
     if (
         not specs
-        or len(specs) + skipped_enum_routes != site_map["routeCount"]
+        or len(specs)
+        + len(o08_bound_candidates)
+        + len(pending_guarded_candidates)
+        + skipped_enum_routes
+        != site_map["routeCount"]
         or len({spec["mutantId"] for spec in specs}) != len(specs)
+        or len(o08_bound_candidates) != len(capability_dimensions)
+        or {row["dimension"] for row in o08_bound_candidates}
+        != capability_dimensions
+        or len(pending_guarded_candidates) != 48
     ):
         raise SemanticACV049Error("ACV-049 scalar mutant manifest is incomplete")
     return {
@@ -1123,6 +1207,10 @@ def build_phase_a_scalar_source_mutant_manifest(
             dumps([spec["mutantId"] for spec in specs])
         ),
         "mutants": specs,
+        "o08BoundCandidateCount": len(o08_bound_candidates),
+        "o08BoundCandidates": o08_bound_candidates,
+        "pendingGuardedCandidateCount": len(pending_guarded_candidates),
+        "pendingGuardedCandidates": pending_guarded_candidates,
         "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-manifest.v1",
         "skippedEnumRouteCount": skipped_enum_routes,
         "sourceSiteRouteCount": site_map["routeCount"],
@@ -1162,6 +1250,335 @@ def _validate_scalar_source_mutant_spec(spec: dict[str, Any]) -> None:
     expected = "ACV049-P-MUTANT-" + sha256_bytes(dumps(core))[:24].upper()
     if spec["mutantId"] != expected:
         raise SemanticACV049Error("ACV-049 scalar mutant identity drift")
+
+
+def _validate_scalar_source_mutant_manifest(manifest: dict[str, Any]) -> None:
+    fields = {
+        "mutantCount", "mutantSetSha256", "mutants", "schema",
+        "o08BoundCandidateCount", "o08BoundCandidates",
+        "pendingGuardedCandidateCount", "pendingGuardedCandidates",
+        "skippedEnumRouteCount", "sourceSiteRouteCount",
+        "sourceSiteRouteSetSha256", "verdict",
+    }
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != fields
+        or manifest.get("schema")
+        != "styx.app-core-iface0.acv049-scalar-source-mutant-manifest.v1"
+        or manifest.get("verdict") != "PHASE_A_SCALAR_MUTANT_MANIFEST_PASS"
+        or not isinstance(manifest.get("mutants"), list)
+        or not isinstance(manifest.get("o08BoundCandidates"), list)
+        or not isinstance(manifest.get("pendingGuardedCandidates"), list)
+        or manifest.get("mutantCount") != len(manifest["mutants"])
+        or manifest.get("o08BoundCandidateCount")
+        != len(manifest["o08BoundCandidates"])
+        or manifest["o08BoundCandidateCount"] != 5
+        or manifest.get("pendingGuardedCandidateCount")
+        != len(manifest["pendingGuardedCandidates"])
+        or manifest["pendingGuardedCandidateCount"] != 48
+        or not isinstance(manifest.get("skippedEnumRouteCount"), int)
+        or manifest["skippedEnumRouteCount"] < 0
+        or manifest.get("sourceSiteRouteCount")
+        != manifest["mutantCount"]
+        + manifest["o08BoundCandidateCount"]
+        + manifest["pendingGuardedCandidateCount"]
+        + manifest["skippedEnumRouteCount"]
+        or manifest["sourceSiteRouteCount"] != 596
+        or any(
+            not isinstance(manifest.get(field), str)
+            or len(manifest[field]) != 64
+            or any(character not in "0123456789abcdef" for character in manifest[field])
+            for field in ("mutantSetSha256", "sourceSiteRouteSetSha256")
+        )
+    ):
+        raise SemanticACV049Error("ACV-049 scalar mutant manifest is malformed")
+    for spec in manifest["mutants"]:
+        _validate_scalar_source_mutant_spec(spec)
+    o08_fields = {
+        "astSiteId", "candidateDisposition", "concretePointer", "dimension",
+        "evidenceStatus", "logicalPath", "requestCaseId",
+        "sourceSiteMapRouteSha256",
+    }
+    for row in manifest["o08BoundCandidates"]:
+        if (
+            not isinstance(row, dict)
+            or set(row) != o08_fields
+            or row.get("candidateDisposition") != "O08_BOUND"
+            or row.get("evidenceStatus") != "PENDING_NEGATIVE_CONTROL"
+            or any(
+                not isinstance(row.get(field), str) or not row[field]
+                for field in o08_fields
+            )
+        ):
+            raise SemanticACV049Error(
+                "ACV-049 O-08-bound candidate manifest is malformed"
+            )
+    if len({row["dimension"] for row in manifest["o08BoundCandidates"]}) != 5:
+        raise SemanticACV049Error("ACV-049 O-08-bound candidate set drift")
+    guarded_fields = {
+        "astSiteId", "candidateDisposition", "concretePointer", "guard",
+        "logicalPath", "requestCaseId", "sourceSiteMapRouteSha256",
+    }
+    for row in manifest["pendingGuardedCandidates"]:
+        if (
+            not isinstance(row, dict)
+            or set(row) != guarded_fields
+            or row.get("candidateDisposition")
+            != "PENDING_CONTRACT_CLASSIFICATION"
+            or row.get("guard") != "PRIOR_SNAPSHOT_BYTE_EQUALITY"
+            or any(
+                not isinstance(row.get(field), str) or not row[field]
+                for field in guarded_fields
+            )
+        ):
+            raise SemanticACV049Error(
+                "ACV-049 guarded candidate manifest is malformed"
+            )
+    if (
+        len(
+            {
+                (row["logicalPath"], row["requestCaseId"])
+                for row in manifest["pendingGuardedCandidates"]
+            }
+        )
+        != 48
+    ):
+        raise SemanticACV049Error("ACV-049 guarded candidate set drift")
+    mutant_ids = [spec["mutantId"] for spec in manifest["mutants"]]
+    if (
+        len(set(mutant_ids)) != len(mutant_ids)
+        or manifest.get("mutantSetSha256") != sha256_bytes(dumps(mutant_ids))
+    ):
+        raise SemanticACV049Error("ACV-049 scalar mutant set identity drift")
+
+
+def execute_scalar_source_mutant_batch(
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute every scalar route in one channel-bound evidence process."""
+
+    _validate_scalar_source_mutant_manifest(manifest)
+    expected_manifest = build_phase_a_scalar_source_mutant_manifest(
+        repo_root, contract, evidence_root
+    )
+    if dumps(expected_manifest) != dumps(manifest):
+        raise SemanticACV049Error("ACV-049 scalar mutant manifest is stale")
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    request_rows = {
+        case_id: (value, raw)
+        for case_id, (value, raw) in carriers.items()
+        if case_id.startswith("PCR-REQUEST-")
+    }
+    if len(request_rows) != 77:
+        raise SemanticACV049Error("ACV-049 scalar batch request set drift")
+    oracle_by_request = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    instrumented, ast_sites = _instrumented_interface_model(repo_root)
+    previous = sys.modules.get("interface_model")
+    sys.modules["interface_model"] = instrumented
+    tagged_responses: dict[str, dict[str, Any]] = {}
+    try:
+        instrumented_authority = instrumented.ContractAuthority.load(
+            repo_root, contract
+        )
+        for case_id, (request, raw) in request_rows.items():
+            response = _evaluate_fixture_request(
+                instrumented_authority, request, oracle_by_request.get(raw)
+            )
+            instrumented.validate_response_before_release(
+                instrumented_authority, response
+            )
+            tagged_responses[case_id] = response
+    finally:
+        if previous is None:
+            sys.modules.pop("interface_model", None)
+        else:
+            sys.modules["interface_model"] = previous
+
+    module_cache: dict[
+        bytes, tuple[types.ModuleType, Any, str]
+    ] = {}
+    terminal_cache: dict[str, LogicalTerminal] = {}
+    admission_failures: list[dict[str, str]] = []
+    execution_failures: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
+    for spec in manifest["mutants"]:
+        request, request_bytes = request_rows[spec["requestCaseId"]]
+        oracle = oracle_by_request.get(request_bytes)
+        expected_fault = (
+            "FIXED_INTERNAL_COLLISION_ORACLE" if oracle is not None else "NONE"
+        )
+        if spec["faultContext"] != expected_fault:
+            raise SemanticACV049Error("ACV-049 scalar batch fault-context drift")
+        logical_path = _raw_report_logical_path(spec["logicalPath"])
+        terminal = terminal_cache.setdefault(
+            logical_path,
+            resolve_logical_terminal(authority.schema, logical_path),
+        )
+        baseline_response = tagged_responses[spec["requestCaseId"]]
+        source_values = _pattern_source_values(
+            baseline_response, _logical_data_pattern(logical_path)
+        )
+        selected = [
+            value
+            for pointer, value, relative in source_values
+            if _report_pointer(_json_pointer(pointer)) == spec["concretePointer"]
+            and value.site_id == spec["astSiteId"]
+            and list(relative) == spec["relativeTokens"]
+        ]
+        if len(selected) != 1 or spec["astSiteId"] not in ast_sites:
+            raise SemanticACV049Error("ACV-049 scalar batch selector did not execute")
+        baseline = str(selected[0])
+        plan = _derive_schema_candidate_pair(
+            authority.schema, terminal, baseline, ACV049_MUTANT_CHANNELS
+        )
+        for key in (
+            "advanceCounts", "candidateValues", "domainClass", "twoStateRule"
+        ):
+            if spec[key] != plan[key]:
+                raise SemanticACV049Error("ACV-049 scalar batch candidate drift")
+        module_key = dumps(
+            {
+                "astSiteId": spec["astSiteId"],
+                "candidateValues": spec["candidateValues"],
+                "relativeTokens": spec["relativeTokens"],
+            }
+        )
+        cached = module_cache.get(module_key)
+        if cached is None:
+            mutated, _mutant_sites, mutant_source = _mutated_interface_model(
+                repo_root,
+                {
+                    spec["astSiteId"]: (
+                        (
+                            tuple(spec["relativeTokens"]),
+                            tuple(spec["candidateValues"]),
+                        ),
+                    )
+                },
+                ACV049_MUTANT_CHANNELS,
+            )
+            previous = sys.modules.get("interface_model")
+            sys.modules["interface_model"] = mutated
+            try:
+                mutated_authority = mutated.ContractAuthority.load(
+                    repo_root, contract
+                )
+            finally:
+                if previous is None:
+                    sys.modules.pop("interface_model", None)
+                else:
+                    sys.modules["interface_model"] = previous
+            cached = (
+                mutated,
+                mutated_authority,
+                sha256_bytes(mutant_source),
+            )
+            module_cache[module_key] = cached
+        mutated, mutated_authority, mutant_source_sha256 = cached
+        previous = sys.modules.get("interface_model")
+        sys.modules["interface_model"] = mutated
+        try:
+            try:
+                first = _evaluate_fixture_request(
+                    mutated_authority, request, oracle
+                )
+                second = _evaluate_fixture_request(
+                    mutated_authority, request, oracle
+                )
+                mutated.validate_response_before_release(
+                    mutated_authority, first
+                )
+                mutated.validate_response_before_release(
+                    mutated_authority, second
+                )
+            except Exception as error:
+                admission_failures.append(
+                    {
+                        "astSiteId": spec["astSiteId"],
+                        "failureClass": type(error).__name__,
+                        "mutantId": spec["mutantId"],
+                        "requestCaseId": spec["requestCaseId"],
+                    }
+                )
+                continue
+        finally:
+            if previous is None:
+                sys.modules.pop("interface_model", None)
+            else:
+                sys.modules["interface_model"] = previous
+        try:
+            if dumps(first) != dumps(second):
+                raise SemanticACV049Error(
+                    "ACV-049 scalar batch mutant is nondeterministic"
+                )
+            observed = _value_at_report_pointer(first, spec["concretePointer"])
+            if observed not in spec["candidateValues"] or observed == baseline:
+                raise SemanticACV049Error(
+                    "ACV-049 scalar batch target did not change"
+                )
+            normalized = copy.deepcopy(first)
+            _set_value_at_report_pointer(
+                normalized, spec["concretePointer"], baseline
+            )
+            if dumps(normalized) != dumps(baseline_response):
+                raise SemanticACV049Error(
+                    "ACV-049 scalar batch changed multiple targets"
+                )
+        except (KeyError, SemanticACV049Error) as error:
+            execution_failures.append(
+                {
+                    "astSiteId": spec["astSiteId"],
+                    "failureClass": type(error).__name__,
+                    "mutantId": spec["mutantId"],
+                    "requestCaseId": spec["requestCaseId"],
+                }
+            )
+            continue
+        rows.append(
+            {
+                "baselineResponseSha256": sha256_bytes(dumps(baseline_response)),
+                "mutantId": spec["mutantId"],
+                "mutantSourceSha256": mutant_source_sha256,
+                "observedCandidateIndex": spec["candidateValues"].index(observed),
+                "requestCaseId": spec["requestCaseId"],
+                "requestSha256": sha256_bytes(request_bytes),
+                "response": first,
+                "responseSha256": sha256_bytes(dumps(first)),
+                "sourceSiteExecuted": True,
+            }
+        )
+    if (
+        len(rows) + len(admission_failures) + len(execution_failures)
+        != manifest["mutantCount"]
+    ):
+        raise SemanticACV049Error("ACV-049 scalar batch result count drift")
+    return {
+        "admissionFailureCount": len(admission_failures),
+        "admissionFailures": admission_failures,
+        "executionFailureCount": len(execution_failures),
+        "executionFailures": execution_failures,
+        "moduleCount": len(module_cache),
+        "mutantSetSha256": manifest["mutantSetSha256"],
+        "passedMutantCount": len(rows),
+        "rows": rows,
+        "scheduledMutantCount": manifest["mutantCount"],
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-batch.v1",
+        "verdict": (
+            "PYTHON_RELEASE_SCALAR_MUTANT_BATCH_PASS"
+            if not admission_failures and not execution_failures
+            else "PYTHON_RELEASE_SCALAR_MUTANT_BATCH_FAIL"
+        ),
+    }
 
 
 def execute_scalar_source_mutant(
@@ -2107,6 +2524,27 @@ def build_report(
     }
 
 
+def _store_external_artifact(repo_root: Path, output: Path, value: Any) -> None:
+    repository = repo_root.resolve()
+    parent = output.parent.resolve(strict=True)
+    target = parent / output.name
+    if (
+        not output.name
+        or output.name in {".", ".."}
+        or target.exists()
+        or target.is_symlink()
+        or target == repository
+        or repository in target.parents
+    ):
+        raise SemanticACV049Error("ACV-049 external artifact path is invalid")
+    raw = dumps(value)
+    try:
+        with target.open("xb") as stream:
+            stream.write(raw)
+    except OSError as error:
+        raise SemanticACV049Error("ACV-049 external artifact write failed") from error
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
@@ -2115,7 +2553,9 @@ def main(argv: list[str] | None = None) -> int:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--emit-terminal-jobs", action="store_true")
     modes.add_argument("--emit-source-site-map", action="store_true")
+    modes.add_argument("--emit-scalar-source-mutant-manifest", action="store_true")
     modes.add_argument("--execute-scalar-source-mutant", type=Path)
+    modes.add_argument("--execute-scalar-source-mutant-batch", type=Path)
     parser.add_argument("--javascript-results-stdin", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -2146,6 +2586,62 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.emit_scalar_source_mutant_manifest:
+            if args.javascript_results_stdin or args.output is None:
+                raise SemanticACV049Error("source-mutant manifest mode argument drift")
+            manifest = build_phase_a_scalar_source_mutant_manifest(
+                args.repo_root.resolve(),
+                args.contract.resolve(),
+                args.evidence_root.resolve(),
+            )
+            _store_external_artifact(
+                args.repo_root.resolve(), args.output, manifest
+            )
+            print(
+                "APP-core ACV-049 scalar mutant manifest: PASS "
+                f"mutants={manifest['mutantCount']} "
+                f"sha256={sha256_bytes(dumps(manifest))}"
+            )
+            return 0
+        if args.execute_scalar_source_mutant_batch is not None:
+            if args.javascript_results_stdin or args.output is None:
+                raise SemanticACV049Error("source-mutant batch mode argument drift")
+            raw_manifest = args.execute_scalar_source_mutant_batch.read_bytes()
+            try:
+                manifest = json.loads(raw_manifest)
+            except (UnicodeDecodeError, ValueError) as error:
+                raise SemanticACV049Error(
+                    "ACV-049 scalar mutant manifest is not JSON"
+                ) from error
+            if not isinstance(manifest, dict) or dumps(manifest) != raw_manifest:
+                raise SemanticACV049Error(
+                    "ACV-049 scalar mutant manifest is not canonical"
+                )
+            result = execute_scalar_source_mutant_batch(
+                args.repo_root.resolve(),
+                args.contract.resolve(),
+                args.evidence_root.resolve(),
+                manifest,
+            )
+            _store_external_artifact(
+                args.repo_root.resolve(), args.output, result
+            )
+            print(
+                "APP-core ACV-049 scalar mutant batch: "
+                f"{'PASS' if result['verdict'].endswith('_PASS') else 'FAIL'} "
+                f"scheduled={result['scheduledMutantCount']} "
+                f"passed={result['passedMutantCount']} "
+                f"modules={result['moduleCount']} "
+                f"admission_failures={result['admissionFailureCount']} "
+                f"execution_failures={result['executionFailureCount']} "
+                f"sha256={sha256_bytes(dumps(result))}"
+            )
+            return (
+                0
+                if result["admissionFailureCount"] == 0
+                and result["executionFailureCount"] == 0
+                else 2
+            )
         if args.execute_scalar_source_mutant is not None:
             if args.javascript_results_stdin or args.output is not None:
                 raise SemanticACV049Error("source-mutant mode argument drift")
