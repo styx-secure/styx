@@ -24,6 +24,10 @@ from generate_structural_witnesses import (
     _load_phase_a,
     derive_structural_plan,
 )
+from generate_seed_registry import (  # noqa: E402
+    _evaluate_fixture_request,
+    _semantic_request_carriers,
+)
 from interface_model import (
     ContractAuthority,
     HarnessFailure,
@@ -350,6 +354,55 @@ def build_report(
         raise SemanticACV049Error("ACV-049 requires 19 frozen responses")
     if any(_python_rejects(authority, response) for _case_id, response in responses):
         raise SemanticACV049Error("ACV-049 negative control is rejected")
+
+    requests = sorted(
+        (
+            (case_id, value, raw)
+            for case_id, (value, raw) in carriers.items()
+            if case_id.startswith("PCR-REQUEST-")
+        ),
+        key=lambda row: row[0].encode("utf-8"),
+    )
+    if len(requests) != 77:
+        raise SemanticACV049Error("ACV-049 requires 77 frozen requests")
+    collision_oracle_by_request = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    if (
+        len(collision_oracle_by_request) != 3
+        or not set(collision_oracle_by_request).issubset({raw for _id, _value, raw in requests})
+    ):
+        raise SemanticACV049Error("ACV-049 collision-oracle identity drift")
+    response_carriers_by_bytes: dict[bytes, list[str]] = {}
+    for case_id, response in responses:
+        response_carriers_by_bytes.setdefault(dumps(response), []).append(case_id)
+    e_execution: dict[str, dict[str, Any]] = {}
+    for case_id, request, raw in requests:
+        collision_oracle = collision_oracle_by_request.get(raw)
+        response = _evaluate_fixture_request(
+            authority, request, collision_oracle
+        )
+        validate_response_before_release(authority, response)
+        response_bytes = dumps(response)
+        response_carrier_ids = response_carriers_by_bytes.get(response_bytes, [])
+        if not response_carrier_ids:
+            raise SemanticACV049Error(
+                f"ACV-049 blind response left the frozen carrier set: {case_id}"
+            )
+        e_execution[case_id] = {
+            "faultContext": (
+                "FIXED_INTERNAL_COLLISION_ORACLE"
+                if collision_oracle is not None
+                else "NONE"
+            ),
+            "requestOctets": len(raw),
+            "requestSha256": sha256_bytes(raw),
+            "responseCarrierCaseIds": response_carrier_ids,
+            "responseOctets": len(response_bytes),
+            "responseSha256": sha256_bytes(response_bytes),
+        }
 
     partition = derive_acv049_path_partition(contract)
     relation_members = derive_acv049_relation_members(contract)
@@ -695,8 +748,11 @@ def build_report(
             else:
                 row.update(
                     {
+                        **e_execution[source],
                         "executionPhase": "BLIND_INPUT_EXECUTION",
-                        "evidenceDisposition": "TWO_ENVIRONMENT_EXECUTION_PENDING",
+                        "evidenceDisposition": (
+                            "LOCAL_BLIND_EXECUTION_PASS_TWO_ENVIRONMENT_PENDING"
+                        ),
                     }
                 )
             rows.append(row)

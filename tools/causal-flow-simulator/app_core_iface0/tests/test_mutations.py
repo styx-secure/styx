@@ -237,9 +237,9 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 in {
                     "DOMAIN_CLOSURE_PASS",
                     "LITERAL_PROVENANCE_CLOSURE_PASS",
+                    "LOCAL_BLIND_EXECUTION_PASS_TWO_ENVIRONMENT_PENDING",
                     "NON_STRING_RECONCILIATION_PASS",
                     "SOURCE_SITE_EVIDENCE_PENDING",
-                    "TWO_ENVIRONMENT_EXECUTION_PENDING",
                 }
                 for row in report["rows"]
             )
@@ -282,6 +282,20 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 == [True, False, False]
                 and len(row["historicalStringProvenanceIdsRetired"]) == 10
                 for row in non_string_rows
+            )
+        )
+        evaluator_rows = [
+            row for row in report["rows"] if row["relationId"] == "ACV-049-E"
+        ]
+        self.assertEqual(len(evaluator_rows), 77)
+        self.assertTrue(
+            all(
+                len(row["requestSha256"]) == 64
+                and len(row["responseSha256"]) == 64
+                and row["responseCarrierCaseIds"]
+                and row["evidenceDisposition"]
+                == "LOCAL_BLIND_EXECUTION_PASS_TWO_ENVIRONMENT_PENDING"
+                for row in evaluator_rows
             )
         )
 
