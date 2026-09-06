@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,7 @@ from generate_structural_witnesses import (  # noqa: E402
     WitnessGenerationError,
 )
 from generate_seed_registry import generate_phase_a  # noqa: E402
+from canonical_json import dumps as canonical_dumps  # noqa: E402
 from canonical_report import canonical_bytes  # noqa: E402
 from run_mutations import build_report as build_phase_a_mutation_report  # noqa: E402
 from run_semantic_preflight import (  # noqa: E402
@@ -35,6 +37,7 @@ from run_semantic_acv048 import derive_python_report as derive_acv048_report  # 
 from run_semantic_acv049 import (  # noqa: E402
     REPORT_FIELDS as ACV049_REPORT_FIELDS,
     build_report as build_acv049_preflight,
+    build_terminal_jobs as build_acv049_terminal_jobs,
     derive_phase_a_materialized_paths,
 )
 
@@ -201,8 +204,34 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertTrue(all(row["mutantAccepted"] for row in report["rows"]))
 
     def test_acv049_replacement_registry_is_branch_faithful_and_non_authoritative(self) -> None:
+        jobs = build_acv049_terminal_jobs(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )["jobs"]
+        javascript_rows: list[object] = []
+        for offset in range(0, len(jobs), 64):
+            batch = jobs[offset:offset + 64]
+            with tempfile.TemporaryFile() as input_file:
+                input_file.write(canonical_dumps({"jobs": batch}))
+                input_file.seek(0)
+                completed = subprocess.run(
+                    [
+                        "node",
+                        str(ROOT / "node_adapter.mjs"),
+                        "--self-test-terminal-schema",
+                        "--contract",
+                        str(ROOT / "contract"),
+                    ],
+                    stdin=input_file,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            result = json.loads(completed.stdout)
+            self.assertEqual(set(result), {"results"})
+            javascript_rows.extend(result["results"])
         report = build_acv049_preflight(
-            ROOT.parents[2], ROOT / "contract", self.evidence, node="node"
+            ROOT.parents[2], ROOT / "contract", self.evidence,
+            javascript_result={"results": javascript_rows},
         )
         self.assertEqual(report["instance_count"], 884)
         self.assertEqual(report["path_count"], 406)

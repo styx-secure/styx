@@ -139,11 +139,18 @@ python3 tools/causal-flow-simulator/app_core_iface0/run_semantic_acv048.py \
   --python-output /external/path/semantic-acv048-python.json \
   --javascript-output /external/path/semantic-acv048-javascript.json
 
-python3 tools/causal-flow-simulator/app_core_iface0/run_semantic_acv049.py \
-  --repo-root . \
-  --contract tools/causal-flow-simulator/app_core_iface0/contract \
-  --evidence-root /external/path/app-core-phase-a \
-  --output /external/path/semantic-acv049-preflight.json
+# ACV-049 E is orchestrated only by the outer gate.  The Python evaluator and
+# JavaScript reader never spawn one another.  Both checkouts must be clean,
+# distinct clones of the exact candidate HEAD and both evidence roots must be
+# byte-identical Phase-A packages.
+python3 tools/causal-flow-simulator/app_core_iface0/final_gate.py \
+  --acv049-e-baseline \
+  --repo-root-one /clean/checkout-one \
+  --repo-root-two /clean/checkout-two \
+  --evidence-root-one /external/phase-a-one \
+  --evidence-root-two /external/phase-a-two \
+  --selection-head 0000000000000000000000000000000000000000 \
+  --node /absolute/path/to/node
 
 python3 tools/causal-flow-simulator/app_core_iface0/generate_structural_witnesses.py \
   --repo-root . \

@@ -30,6 +30,8 @@ from final_gate import (  # noqa: E402
     _next_link,
     _local_source_blobs,
     _frozen_semantic_fixture_slice,
+    _scan_acv049_javascript_source,
+    _scan_acv049_python_source,
     _scan_provider_authority,
     _tree,
     _validate_acv049_e_report,
@@ -37,6 +39,7 @@ from final_gate import (  # noqa: E402
     _verify_provider_source_slice,
     _verify_runtime_semantic_fixture,
     _verify_clean_checkout,
+    run_acv049_static_provenance_scan,
     run_acv049_e_baseline_gate,
     run_phase_a_gate,
 )
@@ -612,6 +615,57 @@ class FinalGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(FinalGateError, "canonical ASCII"):
                     _controlled_acv049_environment(invalid)
 
+    def test_acv049_static_provenance_scan_closes_loaded_sources(self) -> None:
+        report = run_acv049_static_provenance_scan(ROOT.parents[2])
+        self.assertEqual(
+            report,
+            {
+                "basePinnedModuleCount": 1,
+                "dormantBaseSpawnCount": 2,
+                "evaluatorModuleCount": 9,
+                "javascriptReaderCount": 1,
+                "permittedSpawnSiteCount": 10,
+                "validatorDescendantModuleCount": 4,
+                "verdict": "STATIC_PROVENANCE_PASS",
+            },
+        )
+
+    def test_acv049_static_python_scan_rejects_provenance_and_spawn_injection(
+        self,
+    ) -> None:
+        hostile = {
+            "denied import": b"import os\ndef value():\n    return 1\n",
+            "dynamic import": b"def value():\n    return __import__('os')\n",
+            "unclassified spawn": (
+                b"import subprocess\ndef value():\n"
+                b"    return subprocess.run(['git', 'status'])\n"
+            ),
+        }
+        for name, source in hostile.items():
+            with self.subTest(name=name):
+                with self.assertRaises(FinalGateError):
+                    _scan_acv049_python_source("canonical_json.py", source)
+
+    def test_acv049_static_javascript_scan_rejects_each_provenance_family(
+        self,
+    ) -> None:
+        hostile = (
+            "process.env.VALUE",
+            "process['pid']",
+            "new Date()",
+            "performance.now()",
+            "crypto.randomBytes(8)",
+            "Math.random()",
+            'import os from "node:os"',
+            'require("os")',
+            'import("node:os")',
+        )
+        for source in hostile:
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(FinalGateError, "JavaScript provenance"):
+                    _scan_acv049_javascript_source(source)
+        _scan_acv049_javascript_source("process.argv; process.stdout.write('ok')")
+
     def test_acv049_e_report_validation_is_exact_and_fail_closed(self) -> None:
         report = _acv049_semantic_report()
         sources = {
@@ -628,6 +682,7 @@ class FinalGateTests(unittest.TestCase):
         report = _acv049_semantic_report()
         sources = [f"PCR-REQUEST-X-{index:04d}" for index in range(77)]
         environments: list[dict[str, str]] = []
+        javascript_environments: list[dict[str, str]] = []
 
         def execute(
             _repo: Path,
@@ -635,14 +690,30 @@ class FinalGateTests(unittest.TestCase):
             arguments: list[str],
             *,
             environment: dict[str, str] | None = None,
+            input_bytes: bytes | None = None,
             timeout: int = 180,
         ) -> subprocess.CompletedProcess[bytes]:
             self.assertEqual(timeout, 600)
             self.assertIsNotNone(environment)
             environments.append(dict(environment or {}))
+            if "--emit-terminal-jobs" in arguments:
+                self.assertIsNone(input_bytes)
+                jobs = [{"job": index} for index in range(507)]
+                return subprocess.CompletedProcess([], 0, dumps({"jobs": jobs}), b"")
+            self.assertIsNotNone(input_bytes)
             output = Path(arguments[arguments.index("--output") + 1])
             output.write_bytes(dumps(report))
             return subprocess.CompletedProcess([], 0, b"", b"")
+
+        def javascript_reader(
+            _repo: Path,
+            _node: Path,
+            _contract: Path,
+            _jobs_bytes: bytes,
+            environment: dict[str, str],
+        ) -> bytes:
+            javascript_environments.append(dict(environment))
+            return dumps({"results": []})
 
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -658,6 +729,10 @@ class FinalGateTests(unittest.TestCase):
                     return_value=(repo_one, repo_two),
                 ),
                 patch(
+                    "final_gate.run_acv049_static_provenance_scan",
+                    return_value={"verdict": "STATIC_PROVENANCE_PASS"},
+                ),
+                patch(
                     "final_gate._git",
                     side_effect=[str(root / "git-one"), str(root / "git-two")],
                 ),
@@ -669,6 +744,10 @@ class FinalGateTests(unittest.TestCase):
                     return_value={"ACV-049-E": sources},
                 ),
                 patch("final_gate._run_checkout_tool", side_effect=execute),
+                patch(
+                    "final_gate._run_acv049_javascript_reader",
+                    side_effect=javascript_reader,
+                ),
             ):
                 result = run_acv049_e_baseline_gate(
                     repo_one,
@@ -679,16 +758,26 @@ class FinalGateTests(unittest.TestCase):
                     node=Path(sys.executable),
                 )
         self.assertEqual(result["eRelationCount"], 77)
-        self.assertEqual(result["provenanceControls"], "PENDING")
+        self.assertEqual(
+            result["provenanceControls"], "STATIC_PASS_RUNTIME_PENDING"
+        )
+        self.assertEqual(
+            result["staticProvenance"], {"verdict": "STATIC_PROVENANCE_PASS"}
+        )
         self.assertEqual(result["verdict"], "TWO_ENVIRONMENT_BASELINE_IDENTITY_PASS")
-        self.assertEqual(len(environments), 2)
-        self.assertEqual(set(environments[0]), set(environments[1]))
+        self.assertEqual(len(environments), 4)
+        self.assertEqual(len(javascript_environments), 2)
+        self.assertEqual(environments[0], environments[1])
+        self.assertEqual(environments[2], environments[3])
+        self.assertEqual(environments[0], javascript_environments[0])
+        self.assertEqual(environments[2], javascript_environments[1])
+        self.assertEqual(set(environments[0]), set(environments[2]))
         for name in environments[0]:
             if name != ACV049_MUTANT_CHANNEL:
-                self.assertEqual(environments[0][name], environments[1][name])
+                self.assertEqual(environments[0][name], environments[2][name])
         self.assertNotEqual(
             environments[0][ACV049_MUTANT_CHANNEL],
-            environments[1][ACV049_MUTANT_CHANNEL],
+            environments[2][ACV049_MUTANT_CHANNEL],
         )
 
     def test_authority_scan_rejects_withdrawal_and_supersession(self) -> None:

@@ -7,9 +7,7 @@ import argparse
 import copy
 import hashlib
 import json
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -123,70 +121,6 @@ def _terminal_test_values() -> list[str]:
         for family in ACV049_LITERAL_FAMILIES
         for value in (LITERAL_REPRESENTATIVES[family], *_encoded_representatives(family))
     ]
-
-
-def _javascript_terminal_results(
-    node: str, adapter: Path, contract: Path, jobs: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for offset in range(0, len(jobs), 64):
-        batch = jobs[offset:offset + 64]
-        with tempfile.TemporaryFile() as input_file:
-            input_file.write(dumps({"jobs": batch}))
-            input_file.seek(0)
-            completed = subprocess.run(
-                [
-                    node,
-                    str(adapter),
-                    "--self-test-terminal-schema",
-                    "--contract",
-                    str(contract),
-                ],
-                stdin=input_file,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=180,
-            )
-        if completed.returncode != 0:
-            raise SemanticACV049Error(
-                "JavaScript terminal-schema self-test failed: "
-                + completed.stderr.decode("utf-8", errors="replace").strip()
-            )
-        try:
-            result = json.loads(completed.stdout)
-        except (UnicodeDecodeError, ValueError) as error:
-            raise SemanticACV049Error(
-                "JavaScript terminal-schema self-test emitted invalid JSON"
-            ) from error
-        if (
-            not isinstance(result, dict)
-            or set(result) != {"results"}
-            or not isinstance(result["results"], list)
-            or len(result["results"]) != len(batch)
-        ):
-            raise SemanticACV049Error("JavaScript terminal-schema result drift")
-        for job, row in zip(batch, result["results"], strict=True):
-            expected_release_rows = len(job["baselines"])
-            if (
-                not isinstance(row, dict)
-                or set(row) != {"logicalPath", "releaseAccepted", "schemaAccepted"}
-                or row["logicalPath"] != job["logicalPath"]
-                or not isinstance(row["schemaAccepted"], list)
-                or len(row["schemaAccepted"]) != len(job["values"])
-                or any(not isinstance(value, bool) for value in row["schemaAccepted"])
-                or not isinstance(row["releaseAccepted"], list)
-                or len(row["releaseAccepted"]) != expected_release_rows
-                or any(
-                    not isinstance(releases, list)
-                    or len(releases) != len(job["values"])
-                    or any(not isinstance(value, bool) for value in releases)
-                    for releases in row["releaseAccepted"]
-                )
-            ):
-                raise SemanticACV049Error("JavaScript terminal-schema row drift")
-        rows.extend(result["results"])
-    return rows
 
 
 def _set_data_value(
@@ -350,8 +284,150 @@ def _python_rejects(authority: ContractAuthority, response: dict[str, Any]) -> b
     return False
 
 
+def _terminal_execution_plan(
+    authority: ContractAuthority,
+    responses: list[tuple[str, dict[str, Any]]],
+    partition: dict[str, list[str]],
+) -> tuple[
+    dict[str, LogicalTerminal],
+    dict[str, list[tuple[str, dict[str, Any], str]]],
+    list[tuple[str, str, list[Any], list[dict[str, Any]]]],
+]:
+    terminals = {
+        path: resolve_logical_terminal(authority.schema, path)
+        for path in partition["logical"]
+    }
+
+    def selected_carriers(path: str) -> list[tuple[str, dict[str, Any], str]]:
+        terminal = terminals[path]
+        found: list[tuple[str, dict[str, Any], str]] = []
+        for case_id, response in responses:
+            try:
+                target = _data_value(response, terminal.data_tokens)
+                selected = all(
+                    _validator(authority.schema, arm).is_valid(
+                        _data_value(response, prefix)
+                    )
+                    for prefix, arm in terminal.branches
+                )
+            except (KeyError, TypeError):
+                continue
+            if isinstance(target, str) and selected:
+                found.append((case_id, response, target))
+        return found
+
+    carriers_by_path = {
+        path: selected_carriers(path) for path in partition["literal"]
+    }
+    literal_values = _terminal_test_values()
+    job_specs: list[tuple[str, str, list[Any], list[dict[str, Any]]]] = []
+    for path in partition["literal"]:
+        job_specs.append(
+            (
+                "ACV-049-L",
+                path,
+                literal_values,
+                [response for _case_id, response, _value in carriers_by_path[path]],
+            )
+        )
+    for path in partition["singleton"]:
+        const_value = _const_value(terminals[path])
+        job_specs.append(
+            ("ACV-049-S", path, [const_value, _non_const_value(const_value)], [])
+        )
+    for path in partition["non_string"]:
+        const_value = _const_value(terminals[path])
+        job_specs.append(
+            (
+                "ACV-049-N",
+                path,
+                [const_value, "ACV049-STRING-HOSTILE", _non_const_value(const_value)],
+                [],
+            )
+        )
+    return terminals, carriers_by_path, job_specs
+
+
+def _terminal_jobs(
+    job_specs: list[tuple[str, str, list[Any], list[dict[str, Any]]]],
+) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "jobs": [
+            {"baselines": baselines, "logicalPath": path, "values": values}
+            for _relation_id, path, values, baselines in job_specs
+        ]
+    }
+
+
+def build_terminal_jobs(
+    repo_root: Path, contract: Path, evidence_root: Path
+) -> dict[str, list[dict[str, Any]]]:
+    """Build the blind JavaScript-reader input without executing a child."""
+
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    responses = sorted(
+        (
+            (case_id, value)
+            for case_id, (value, _raw) in carriers.items()
+            if case_id.startswith("PCR-RESPONSE-")
+        ),
+        key=lambda row: row[0].encode("utf-8"),
+    )
+    if len(responses) != 19:
+        raise SemanticACV049Error("ACV-049 requires 19 frozen responses")
+    if any(_python_rejects(authority, response) for _case_id, response in responses):
+        raise SemanticACV049Error("ACV-049 negative control is rejected")
+    partition = derive_acv049_path_partition(contract)
+    _terminals, _carriers_by_path, job_specs = _terminal_execution_plan(
+        authority, responses, partition
+    )
+    jobs = _terminal_jobs(job_specs)
+    if len(jobs["jobs"]) != 507:
+        raise SemanticACV049Error("ACV-049 terminal job count drift")
+    return jobs
+
+
+def _validate_javascript_terminal_results(
+    jobs: list[dict[str, Any]], result: object
+) -> list[dict[str, Any]]:
+    if (
+        not isinstance(result, dict)
+        or set(result) != {"results"}
+        or not isinstance(result["results"], list)
+        or len(result["results"]) != len(jobs)
+    ):
+        raise SemanticACV049Error("JavaScript terminal-schema result drift")
+    for job, row in zip(jobs, result["results"], strict=True):
+        expected_release_rows = len(job["baselines"])
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"logicalPath", "releaseAccepted", "schemaAccepted"}
+            or row["logicalPath"] != job["logicalPath"]
+            or not isinstance(row["schemaAccepted"], list)
+            or len(row["schemaAccepted"]) != len(job["values"])
+            or any(not isinstance(value, bool) for value in row["schemaAccepted"])
+            or not isinstance(row["releaseAccepted"], list)
+            or len(row["releaseAccepted"]) != expected_release_rows
+            or any(
+                not isinstance(releases, list)
+                or len(releases) != len(job["values"])
+                or any(not isinstance(value, bool) for value in releases)
+                for releases in row["releaseAccepted"]
+            )
+        ):
+            raise SemanticACV049Error("JavaScript terminal-schema row drift")
+    return result["results"]
+
+
 def build_report(
-    repo_root: Path, contract: Path, evidence_root: Path, *, node: str
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+    *,
+    javascript_result: object,
 ) -> dict[str, Any]:
     """Build the exact registry and execute its L/S/N evidence.
 
@@ -434,32 +510,9 @@ def build_report(
     if len(instance_by_relation_and_source) != 884:
         raise SemanticACV049Error("ACV-049 replacement instance identity drift")
 
-    terminals = {
-        path: resolve_logical_terminal(authority.schema, path)
-        for path in partition["logical"]
-    }
-
-    def selected_carriers(path: str) -> list[tuple[str, dict[str, Any], str]]:
-        terminal = terminals[path]
-        found: list[tuple[str, dict[str, Any], str]] = []
-        for case_id, response in responses:
-            try:
-                target = _data_value(response, terminal.data_tokens)
-                selected = all(
-                    _validator(authority.schema, arm).is_valid(
-                        _data_value(response, prefix)
-                    )
-                    for prefix, arm in terminal.branches
-                )
-            except (KeyError, TypeError):
-                continue
-            if isinstance(target, str) and selected:
-                found.append((case_id, response, target))
-        return found
-
-    carriers_by_path = {
-        path: selected_carriers(path) for path in partition["literal"]
-    }
+    terminals, carriers_by_path, job_specs = _terminal_execution_plan(
+        authority, responses, partition
+    )
     materialized = {
         path for path, carriers in carriers_by_path.items() if carriers
     }
@@ -469,41 +522,9 @@ def build_report(
     if materialized != derived_materialized:
         raise SemanticACV049Error("ACV-049 materialization derivations disagree")
 
-    literal_values = _terminal_test_values()
-    job_specs: list[tuple[str, str, list[Any], list[dict[str, Any]]]] = []
-    for path in partition["literal"]:
-        job_specs.append(
-            (
-                "ACV-049-L",
-                path,
-                literal_values,
-                [response for _case_id, response, _value in carriers_by_path[path]],
-            )
-        )
-    for path in partition["singleton"]:
-        const_value = _const_value(terminals[path])
-        job_specs.append(
-            ("ACV-049-S", path, [const_value, _non_const_value(const_value)], [])
-        )
-    for path in partition["non_string"]:
-        const_value = _const_value(terminals[path])
-        job_specs.append(
-            (
-                "ACV-049-N",
-                path,
-                [const_value, "ACV049-STRING-HOSTILE", _non_const_value(const_value)],
-                [],
-            )
-        )
-    adapter = repo_root / "tools/causal-flow-simulator/app_core_iface0/node_adapter.mjs"
-    javascript_rows = _javascript_terminal_results(
-        node,
-        adapter,
-        contract,
-        [
-            {"baselines": baselines, "logicalPath": path, "values": values}
-            for _relation_id, path, values, baselines in job_specs
-        ],
+    jobs = _terminal_jobs(job_specs)["jobs"]
+    javascript_rows = _validate_javascript_terminal_results(
+        jobs, javascript_result
     )
     execution_results: dict[tuple[str, str], dict[str, Any]] = {}
     for spec, javascript_row in zip(job_specs, javascript_rows, strict=True):
@@ -831,18 +852,40 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--evidence-root", required=True, type=Path)
-    parser.add_argument("--node", default="node")
-    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--emit-terminal-jobs", action="store_true")
+    parser.add_argument("--javascript-results-stdin", action="store_true")
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
+        if args.emit_terminal_jobs:
+            if args.javascript_results_stdin or args.output is not None:
+                raise SemanticACV049Error("terminal-job mode argument drift")
+            sys.stdout.buffer.write(
+                dumps(
+                    build_terminal_jobs(
+                        args.repo_root.resolve(),
+                        args.contract.resolve(),
+                        args.evidence_root.resolve(),
+                    )
+                )
+            )
+            return 0
+        if not args.javascript_results_stdin or args.output is None:
+            raise SemanticACV049Error("report mode requires JavaScript stdin and output")
+        try:
+            javascript_result = json.loads(sys.stdin.buffer.read())
+        except (UnicodeDecodeError, ValueError) as error:
+            raise SemanticACV049Error(
+                "JavaScript terminal-schema self-test emitted invalid JSON"
+            ) from error
         report = build_report(
             args.repo_root.resolve(), args.contract.resolve(),
-            args.evidence_root.resolve(), node=args.node,
+            args.evidence_root.resolve(), javascript_result=javascript_result,
         )
         store_report(args.output, report, allowed_fields=REPORT_FIELDS)
     except (
         InventoryError, OSError, ReportError, SemanticACV049Error,
-        subprocess.SubprocessError, WitnessGenerationError,
+        WitnessGenerationError,
     ) as error:
         print(f"APP-core semantic ACV-049 preflight: FAIL: {error}", file=sys.stderr)
         return 2

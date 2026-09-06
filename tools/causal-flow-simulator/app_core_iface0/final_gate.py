@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -109,6 +110,47 @@ ACV049_RELATION_COUNTS = {
     "ACV-049-P": 300,
     "ACV-049-S": 101,
 }
+ACV049_EVALUATOR_PYTHON_FILES = (
+    "authority_projection.py",
+    "canonical_json.py",
+    "canonical_report.py",
+    "generate_seed_registry.py",
+    "generate_structural_witnesses.py",
+    "interface_model.py",
+    "inventory.py",
+    "run_semantic_acv049.py",
+    "validate_inventory.py",
+)
+ACV049_VALIDATOR_PYTHON_FILES = (
+    "contract/derive_app_core_carrier_reachability.py",
+    "contract/derive_app_core_native_dependencies.py",
+    "contract/validate_app_core_contract_candidates.py",
+    "derive_interface_maxima.py",
+)
+ACV049_BASE_PINNED_PYTHON_FILE = "tools/causal-flow-simulator/c03/corpus_model.py"
+ACV049_DENIED_PYTHON_MODULES = frozenset(
+    {"datetime", "getpass", "os", "platform", "random", "socket", "time"}
+)
+ACV049_SPAWN_SITE_COUNTS = {
+    ("interface_model.py", "verify_native_authority"): 3,
+    ("inventory.py", "run_ratified_package_validator"): 1,
+    ("contract/derive_app_core_native_dependencies.py", "git"): 1,
+    ("contract/validate_app_core_contract_candidates.py", "validate_native_dependencies"): 1,
+    ("contract/validate_app_core_contract_candidates.py", "validate_schema_and_relations"): 1,
+    ("contract/validate_app_core_contract_candidates.py", "main"): 3,
+    (ACV049_BASE_PINNED_PYTHON_FILE, "BaseReader.read"): 1,
+    (ACV049_BASE_PINNED_PYTHON_FILE, "validate_base_inputs"): 1,
+}
+ACV049_BACKEND_ENTRY_POINTS = frozenset(
+    {
+        "ed25519_sign",
+        "ed25519_verify",
+        "encode_commitment",
+        "encode_event",
+        "encode_genesis",
+        "framed_hash",
+    }
+)
 
 
 class FinalGateError(ValueError):
@@ -641,6 +683,7 @@ def _run_checkout_tool(
     arguments: list[str],
     *,
     environment: dict[str, str] | None = None,
+    input_bytes: bytes | None = None,
     timeout: int = 180,
 ) -> subprocess.CompletedProcess[bytes]:
     tool = repo.resolve() / relative_tool
@@ -656,6 +699,7 @@ def _run_checkout_tool(
         [sys.executable, str(tool), *arguments],
         cwd=repo.resolve(),
         env=process_environment,
+        input=input_bytes,
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -664,6 +708,73 @@ def _run_checkout_tool(
     if completed.returncode != 0:
         raise FinalGateError("checkout-owned evidence tool failed")
     return completed
+
+
+def _run_acv049_javascript_reader(
+    repo: Path,
+    node: Path,
+    contract: Path,
+    jobs_bytes: bytes,
+    environment: dict[str, str],
+) -> bytes:
+    """Run the independent reader from the outer gate, never the evaluator."""
+
+    try:
+        value = loads(jobs_bytes)
+    except CanonicalJsonError as error:
+        raise FinalGateError("ACV-049 terminal jobs are not canonical") from error
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"jobs"}
+        or not isinstance(value["jobs"], list)
+        or len(value["jobs"]) != 507
+    ):
+        raise FinalGateError("ACV-049 terminal job set drift")
+    adapter = (
+        repo.resolve()
+        / "tools/causal-flow-simulator/app_core_iface0/node_adapter.mjs"
+    )
+    if not adapter.is_file() or adapter.is_symlink():
+        raise FinalGateError("ACV-049 JavaScript reader is absent or non-regular")
+    results: list[object] = []
+    for offset in range(0, len(value["jobs"]), 64):
+        batch = value["jobs"][offset:offset + 64]
+        with tempfile.TemporaryFile() as input_file:
+            input_file.write(dumps({"jobs": batch}))
+            input_file.seek(0)
+            completed = subprocess.run(
+                [
+                    str(node),
+                    str(adapter),
+                    "--self-test-terminal-schema",
+                    "--contract",
+                    str(contract),
+                ],
+                cwd=repo.resolve(),
+                env=dict(environment),
+                stdin=input_file,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=180,
+            )
+        if completed.returncode != 0:
+            raise FinalGateError("ACV-049 JavaScript reader failed")
+        try:
+            result = json.loads(completed.stdout)
+        except (UnicodeDecodeError, ValueError) as error:
+            raise FinalGateError("ACV-049 JavaScript reader emitted invalid JSON") from error
+        if (
+            not isinstance(result, dict)
+            or set(result) != {"results"}
+            or not isinstance(result["results"], list)
+            or len(result["results"]) != len(batch)
+        ):
+            raise FinalGateError("ACV-049 JavaScript reader result drift")
+        results.extend(result["results"])
+    if len(results) != 507:
+        raise FinalGateError("ACV-049 JavaScript reader result count drift")
+    return dumps({"results": results})
 
 
 def _controlled_acv049_environment(channel: str) -> dict[str, str]:
@@ -676,6 +787,356 @@ def _controlled_acv049_environment(channel: str) -> dict[str, str]:
     return {
         **ACV049_CONTROLLED_ENVIRONMENT,
         ACV049_MUTANT_CHANNEL: channel,
+    }
+
+
+def _definition_name(
+    node: ast.AST, parents: dict[ast.AST, ast.AST]
+) -> str | None:
+    names: list[str] = []
+    current = parents.get(node)
+    while current is not None:
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(current.name)
+        current = parents.get(current)
+    if not names:
+        return None
+    return ".".join(reversed(names))
+
+
+def _command_prefix(node: ast.AST) -> tuple[str, ...]:
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return ()
+    result: list[str] = []
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            break
+        result.append(item.value)
+    return tuple(result)
+
+
+def _has_ancestor_test(
+    node: ast.AST, parents: dict[ast.AST, ast.AST], expected: str
+) -> bool:
+    current = parents.get(node)
+    while current is not None:
+        if isinstance(current, ast.If) and ast.unparse(current.test) == expected:
+            return True
+        current = parents.get(current)
+    return False
+
+
+def _validate_acv049_spawn_arguments(
+    relative: str,
+    function: str,
+    calls: list[ast.Call],
+    parents: dict[ast.AST, ast.AST],
+    source: str,
+) -> None:
+    prefixes = [_command_prefix(call.args[0]) if call.args else () for call in calls]
+    if relative == "interface_model.py":
+        if sorted(prefix[:2] for prefix in prefixes) != sorted(
+            [("git", "cat-file"), ("git", "hash-object"), ("git", "ls-tree")]
+        ):
+            raise FinalGateError("ACV-049 native-authority Git argv drift")
+    elif relative == "inventory.py":
+        if prefixes != [()] or not isinstance(calls[0].args[0], ast.Name):
+            raise FinalGateError("ACV-049 contract-validator argv indirection drift")
+        required = (
+            "sys.executable",
+            "'-B'",
+            "'validate_app_core_contract_candidates.py'",
+            "'--repository'",
+            "'--base-ref'",
+        )
+        function_node = parents[calls[0]]
+        while not isinstance(function_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function_node = parents[function_node]
+        rendered = ast.unparse(function_node)
+        if any(value not in rendered for value in required):
+            raise FinalGateError("ACV-049 contract-validator argv drift")
+    elif relative == "contract/derive_app_core_native_dependencies.py":
+        if prefixes != [("git", "-C")]:
+            raise FinalGateError("ACV-049 validator Git wrapper argv drift")
+        allowed_git_commands = {
+            "cat-file", "hash-object", "ls-tree", "rev-parse"
+        }
+        tree = ast.parse(source)
+        observed = {
+            call.args[1].value
+            for call in ast.walk(tree)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == "git"
+            and len(call.args) >= 2
+            and isinstance(call.args[1], ast.Constant)
+            and isinstance(call.args[1].value, str)
+        }
+        if observed != allowed_git_commands:
+            raise FinalGateError("ACV-049 validator Git command set drift")
+    elif relative == "contract/validate_app_core_contract_candidates.py":
+        rendered = [ast.unparse(call) for call in calls]
+        if function == "validate_native_dependencies":
+            if (
+                len(rendered) != 1
+                or "derive_app_core_native_dependencies.py" not in rendered[0]
+                or "'--check'" not in rendered[0]
+            ):
+                raise FinalGateError("ACV-049 native derivation argv drift")
+        elif function == "validate_schema_and_relations":
+            if (
+                len(prefixes) != 1
+                or prefixes[0][:4] != ("git", "-C")
+                or "outcome-taxonomy.json" not in rendered[0]
+                or "'show'" not in rendered[0]
+            ):
+                raise FinalGateError("ACV-049 Base O-10 taxonomy argv drift")
+        else:
+            scripts = {
+                name: [call for call, text in zip(calls, rendered, strict=True) if name in text]
+                for name in (
+                    "derive_app_core_carrier_reachability.py",
+                    "derive_interface_maxima.py",
+                    "validate_app_core_provider_bindings.py",
+                )
+            }
+            if any(len(found) != 1 for found in scripts.values()):
+                raise FinalGateError("ACV-049 validator descendant argv drift")
+            provider_call = scripts["validate_app_core_provider_bindings.py"][0]
+            if not _has_ancestor_test(provider_call, parents, "args.verify_provider"):
+                raise FinalGateError("ACV-049 provider-only descendant became reachable")
+            if any(
+                "'--check'" not in ast.unparse(found[0])
+                for name, found in scripts.items()
+                if name != "validate_app_core_provider_bindings.py"
+            ):
+                raise FinalGateError("ACV-049 validator check argv drift")
+    elif relative == ACV049_BASE_PINNED_PYTHON_FILE:
+        expected = {
+            "BaseReader.read": [("git", "show")],
+            "validate_base_inputs": [("git", "cat-file")],
+        }[function]
+        if [prefix[:2] for prefix in prefixes] != expected:
+            raise FinalGateError("ACV-049 dormant Base spawn argv drift")
+    else:
+        raise FinalGateError("ACV-049 unclassified process-spawn site")
+
+
+def _corpus_reachable_functions(tree: ast.Module) -> set[str]:
+    definitions = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    edges: dict[str, set[str]] = {name: set() for name in definitions}
+    for name, definition in definitions.items():
+        edges[name] = {
+            call.func.id
+            for call in ast.walk(definition)
+            if isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id in definitions
+        }
+    reachable = set(ACV049_BACKEND_ENTRY_POINTS)
+    pending = list(reachable)
+    if not reachable <= set(definitions):
+        raise FinalGateError("ACV-049 Base backend entry point drift")
+    while pending:
+        current = pending.pop()
+        for callee in edges[current] - reachable:
+            reachable.add(callee)
+            pending.append(callee)
+    return reachable
+
+
+def _scan_acv049_python_source(
+    relative: str, source_bytes: bytes
+) -> tuple[ast.Module, list[tuple[str, ast.Call]], set[str]]:
+    try:
+        source = source_bytes.decode("utf-8")
+        tree = ast.parse(source)
+    except (UnicodeDecodeError, SyntaxError, ValueError) as error:
+        raise FinalGateError("ACV-049 provenance source is not canonical Python") from error
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    subprocess_aliases: set[str] = set()
+    subprocess_call_aliases: set[str] = set()
+    local_imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root in ACV049_DENIED_PYTHON_MODULES:
+                    raise FinalGateError("ACV-049 denied Python import")
+                if root == "subprocess":
+                    subprocess_aliases.add(alias.asname or root)
+                local_imports.add(root)
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".", 1)[0]
+            if any(alias.name == "*" for alias in node.names):
+                raise FinalGateError("ACV-049 wildcard import is not closed")
+            if root in ACV049_DENIED_PYTHON_MODULES:
+                raise FinalGateError("ACV-049 denied Python import")
+            if root == "subprocess":
+                for alias in node.names:
+                    if alias.name in {"call", "check_call", "check_output", "Popen", "run"}:
+                        subprocess_call_aliases.add(alias.asname or alias.name)
+            local_imports.add(root)
+
+    spawn_calls: list[tuple[str, ast.Call]] = []
+    denied_direct_calls = {
+        "getenv", "getpass", "gethostname", "getuser", "getpid", "urandom",
+        "monotonic", "monotonic_ns", "perf_counter", "perf_counter_ns",
+        "process_time", "process_time_ns", "randbytes",
+    }
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            if node.func.id == "__import__" or node.func.id in subprocess_call_aliases:
+                if node.func.id == "__import__":
+                    raise FinalGateError("ACV-049 dynamic Python import")
+                function = _definition_name(node, parents)
+                if function is None:
+                    raise FinalGateError("ACV-049 module-level process spawn")
+                spawn_calls.append((function, node))
+            elif node.func.id in denied_direct_calls:
+                raise FinalGateError("ACV-049 denied Python provenance call")
+        elif isinstance(node.func, ast.Attribute):
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "importlib"
+                and node.func.attr == "import_module"
+            ):
+                raise FinalGateError("ACV-049 dynamic Python import")
+            if (
+                isinstance(node.func.value, ast.Name)
+                and node.func.value.id in subprocess_aliases
+                and node.func.attr in {"call", "check_call", "check_output", "Popen", "run"}
+            ):
+                function = _definition_name(node, parents)
+                if function is None:
+                    raise FinalGateError("ACV-049 module-level process spawn")
+                spawn_calls.append((function, node))
+
+    grouped: dict[str, list[ast.Call]] = {}
+    for function, call in spawn_calls:
+        grouped.setdefault(function, []).append(call)
+    for function, calls in grouped.items():
+        expected = ACV049_SPAWN_SITE_COUNTS.get((relative, function))
+        if expected != len(calls):
+            raise FinalGateError("ACV-049 process-spawn count drift")
+        _validate_acv049_spawn_arguments(
+            relative, function, calls, parents, source
+        )
+    expected_functions = {
+        function
+        for (path, function), _count in ACV049_SPAWN_SITE_COUNTS.items()
+        if path == relative
+    }
+    if set(grouped) != expected_functions:
+        raise FinalGateError("ACV-049 process-spawn site set drift")
+    return tree, spawn_calls, local_imports
+
+
+def _scan_acv049_javascript_source(source: str) -> None:
+    denied_javascript = (
+        r"\bprocess\s*(?:\.\s*env|\[\s*['\"]env['\"]\s*\])",
+        r"\bprocess\s*(?:\.\s*pid|\[\s*['\"]pid['\"]\s*\])",
+        r"\b(?:new\s+)?Date\b",
+        r"\bperformance\b",
+        r"\bcrypto\s*\.\s*random",
+        r"\bMath\s*\.\s*random",
+        r"\bfrom\s*['\"](?:node:)?os['\"]",
+        r"\brequire\s*\(\s*['\"](?:node:)?os['\"]",
+        r"\bimport\s*\(",
+    )
+    if any(re.search(pattern, source) for pattern in denied_javascript):
+        raise FinalGateError("ACV-049 denied JavaScript provenance access")
+
+
+def run_acv049_static_provenance_scan(repo: Path) -> dict[str, object]:
+    """Fail closed over the exact evaluator, readers and validator descendants."""
+
+    root = repo.resolve()
+    implementation = root / "tools/causal-flow-simulator/app_core_iface0"
+    module_by_name = {
+        Path(relative).stem: relative for relative in ACV049_EVALUATOR_PYTHON_FILES
+    }
+    imports_by_module: dict[str, set[str]] = {}
+    spawn_count = 0
+    corpus_tree: ast.Module | None = None
+    for relative in (
+        *ACV049_EVALUATOR_PYTHON_FILES,
+        *ACV049_VALIDATOR_PYTHON_FILES,
+        ACV049_BASE_PINNED_PYTHON_FILE,
+    ):
+        path = root / relative if relative.startswith("tools/") else implementation / relative
+        if not path.is_file() or path.is_symlink():
+            raise FinalGateError("ACV-049 provenance source is absent or non-regular")
+        tree, spawns, imports = _scan_acv049_python_source(relative, path.read_bytes())
+        spawn_count += len(spawns)
+        if relative in ACV049_EVALUATOR_PYTHON_FILES:
+            imports_by_module[Path(relative).stem] = {
+                module_by_name[name] for name in imports if name in module_by_name
+            }
+        if relative == ACV049_BASE_PINNED_PYTHON_FILE:
+            corpus_tree = tree
+
+    reachable_modules = {"run_semantic_acv049.py"}
+    pending_modules = ["run_semantic_acv049"]
+    while pending_modules:
+        module = pending_modules.pop()
+        for relative in imports_by_module.get(module, set()):
+            if relative not in reachable_modules:
+                reachable_modules.add(relative)
+                pending_modules.append(Path(relative).stem)
+    if reachable_modules != set(ACV049_EVALUATOR_PYTHON_FILES):
+        raise FinalGateError("ACV-049 loaded first-party module closure drift")
+
+    if corpus_tree is None:
+        raise FinalGateError("ACV-049 Base backend was not scanned")
+    reachable_corpus = _corpus_reachable_functions(corpus_tree)
+    if {"validate_base_inputs", "validate_inventory", "validate_sources"} & reachable_corpus:
+        raise FinalGateError("ACV-049 dormant Base provenance path became reachable")
+
+    backend_calls: set[str] = set()
+    for relative in ("generate_seed_registry.py", "interface_model.py"):
+        tree = ast.parse((implementation / relative).read_bytes())
+        backend_calls.update(
+            node.func.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "backend"
+        )
+    if backend_calls != ACV049_BACKEND_ENTRY_POINTS:
+        raise FinalGateError("ACV-049 Base backend call set drift")
+
+    javascript = implementation / "node_adapter.mjs"
+    if not javascript.is_file() or javascript.is_symlink():
+        raise FinalGateError("ACV-049 JavaScript reader is absent or non-regular")
+    try:
+        javascript_source = javascript.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise FinalGateError("ACV-049 JavaScript reader is not UTF-8") from error
+    _scan_acv049_javascript_source(javascript_source)
+
+    expected_spawn_count = sum(ACV049_SPAWN_SITE_COUNTS.values())
+    if spawn_count != expected_spawn_count:
+        raise FinalGateError("ACV-049 total process-spawn count drift")
+    return {
+        "basePinnedModuleCount": 1,
+        "dormantBaseSpawnCount": 2,
+        "evaluatorModuleCount": len(ACV049_EVALUATOR_PYTHON_FILES),
+        "javascriptReaderCount": 1,
+        "permittedSpawnSiteCount": expected_spawn_count - 2,
+        "validatorDescendantModuleCount": len(ACV049_VALIDATOR_PYTHON_FILES),
+        "verdict": "STATIC_PROVENANCE_PASS",
     }
 
 
@@ -808,6 +1269,10 @@ def run_acv049_e_baseline_gate(
     first, second = _verify_acv049_checkout_pair(
         repo_one, repo_two, candidate_head
     )
+    first_static = run_acv049_static_provenance_scan(first)
+    second_static = run_acv049_static_provenance_scan(second)
+    if first_static != second_static:
+        raise FinalGateError("the two ACV-049 static provenance scans disagree")
     resolved_node = node.resolve()
     if not node.is_absolute() or not resolved_node.is_file():
         raise FinalGateError("ACV-049 Node runtime must be an absolute regular file")
@@ -882,6 +1347,28 @@ def run_acv049_e_baseline_gate(
             (first, first_evidence, contract_one, output_one, environments[0]),
             (second, second_evidence, contract_two, output_two, environments[1]),
         ):
+            terminal_jobs = _run_checkout_tool(
+                repo,
+                "tools/causal-flow-simulator/app_core_iface0/run_semantic_acv049.py",
+                [
+                    "--repo-root",
+                    str(repo),
+                    "--contract",
+                    str(contract),
+                    "--evidence-root",
+                    str(evidence),
+                    "--emit-terminal-jobs",
+                ],
+                environment=environment,
+                timeout=600,
+            ).stdout
+            javascript_result = _run_acv049_javascript_reader(
+                repo,
+                resolved_node,
+                contract,
+                terminal_jobs,
+                environment,
+            )
             _run_checkout_tool(
                 repo,
                 "tools/causal-flow-simulator/app_core_iface0/run_semantic_acv049.py",
@@ -892,12 +1379,12 @@ def run_acv049_e_baseline_gate(
                     str(contract),
                     "--evidence-root",
                     str(evidence),
-                    "--node",
-                    str(resolved_node),
+                    "--javascript-results-stdin",
                     "--output",
                     str(output),
                 ],
                 environment=environment,
+                input_bytes=javascript_result,
                 timeout=600,
             )
         first_bytes = output_one.read_bytes()
@@ -917,8 +1404,9 @@ def run_acv049_e_baseline_gate(
     return {
         "channelSha256": [_sha256(value.encode("ascii")) for value in channels],
         "eRelationCount": 77,
-        "provenanceControls": "PENDING",
+        "provenanceControls": "STATIC_PASS_RUNTIME_PENDING",
         "semanticReportSha256": _sha256(first_bytes),
+        "staticProvenance": first_static,
         "verdict": "TWO_ENVIRONMENT_BASELINE_IDENTITY_PASS",
     }
 

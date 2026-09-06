@@ -6,8 +6,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import platform
-import importlib.metadata
 import subprocess
 import sys
 from pathlib import Path
@@ -54,6 +52,10 @@ REPORT_FIELDS = frozenset(
         "verdict",
     }
 )
+EXPECTED_REFERENCE_TOOLCHAIN = {
+    "jsonschemaVersion": "4.19.2",
+    "pythonVersion": "3.14.4",
+}
 
 
 class PhaseAValidationError(ValueError):
@@ -314,10 +316,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     )
 
     toolchain = _load_canonical(root / "reference-toolchain.json")
-    if toolchain != {
-        "jsonschemaVersion": importlib.metadata.version("jsonschema"),
-        "pythonVersion": platform.python_version(),
-    }:
+    if toolchain != EXPECTED_REFERENCE_TOOLCHAIN:
         raise PhaseAValidationError("reference toolchain drift")
 
     package_path = root / "phase-a-package-report.json"

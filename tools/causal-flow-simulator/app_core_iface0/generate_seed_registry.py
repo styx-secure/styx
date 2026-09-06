@@ -13,7 +13,6 @@ import copy
 import hashlib
 import importlib.metadata
 import json
-import platform
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -2156,7 +2155,10 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
 
     toolchain = {
         "jsonschemaVersion": importlib.metadata.version("jsonschema"),
-        "pythonVersion": platform.python_version(),
+        "pythonVersion": (
+            f"{sys.version_info.major}.{sys.version_info.minor}."
+            f"{sys.version_info.micro}"
+        ),
     }
     toolchain_bytes = dumps(toolchain)
     toolchain_sha = _sha256(toolchain_bytes)
