@@ -25,6 +25,7 @@ from generate_structural_witnesses import (  # noqa: E402
     WitnessGenerationError,
 )
 from generate_seed_registry import generate_phase_a  # noqa: E402
+from canonical_report import canonical_bytes  # noqa: E402
 from run_mutations import build_report as build_phase_a_mutation_report  # noqa: E402
 from run_semantic_preflight import (  # noqa: E402
     SemanticPreflightError,
@@ -32,6 +33,7 @@ from run_semantic_preflight import (  # noqa: E402
 )
 from run_semantic_acv048 import derive_python_report as derive_acv048_report  # noqa: E402
 from run_semantic_acv049 import (  # noqa: E402
+    REPORT_FIELDS as ACV049_REPORT_FIELDS,
     build_report as build_acv049_preflight,
     derive_phase_a_materialized_paths,
 )
@@ -212,6 +214,7 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertEqual(report["historical_reconciliation_count"], 4060)
         self.assertEqual(report["status"], "REMEDIATION_PARTIAL_EXECUTION")
         self.assertEqual(report["verdict"], "PARTIAL_EXECUTION_PASS")
+        self.assertTrue(canonical_bytes(report, allowed_fields=ACV049_REPORT_FIELDS))
         self.assertEqual(
             report["executed_relation_counts"],
             {"ACV-049-L": 401, "ACV-049-N": 5, "ACV-049-S": 101},
@@ -249,14 +252,21 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         ]
         self.assertTrue(
             all(
-                [member["family"] for member in row["literalFamilyVector"]]
-                == [
-                    "PATH", "HOST", "USER", "PID", "TIMESTAMP", "DURATION",
-                    "ELAPSED", "ENVIRONMENT", "EXCEPTION", "STACK",
-                ]
+                [member["familyId"] for member in row["literalFamilyVector"]]
+                == [f"LITERAL-FAMILY-{index:02d}" for index in range(10)]
                 and all(
                     len(member["encodedRepresentatives"]) == 3
                     for member in row["literalFamilyVector"]
+                )
+                for row in literal_rows
+            )
+        )
+        self.assertTrue(
+            all(
+                row["dataPointer"].startswith("JSON_POINTER:")
+                and all(
+                    occurrence.startswith("JSON_POINTER:")
+                    for occurrence in row["terminalSchemaOccurrences"]
                 )
                 for row in literal_rows
             )

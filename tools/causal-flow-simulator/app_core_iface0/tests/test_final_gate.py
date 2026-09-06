@@ -16,11 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from final_gate import (  # noqa: E402
+    ACV049_MUTANT_CHANNEL,
     COMBINED_BRANCH_REF,
     COMBINED_BRANCH_URL,
     FinalGateError,
     RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
     _carrier_subtree,
+    _controlled_acv049_environment,
     _fetch_json,
     _generate_phase_a_from_checkout,
     _historical_carrier_bytes,
@@ -30,10 +32,12 @@ from final_gate import (  # noqa: E402
     _frozen_semantic_fixture_slice,
     _scan_provider_authority,
     _tree,
+    _validate_acv049_e_report,
     _validate_provider_authority,
     _verify_provider_source_slice,
     _verify_runtime_semantic_fixture,
     _verify_clean_checkout,
+    run_acv049_e_baseline_gate,
     run_phase_a_gate,
 )
 from canonical_json import dumps  # noqa: E402
@@ -68,6 +72,58 @@ class _Opener:
         if timeout != 30:
             raise AssertionError("provider timeout drift")
         return self.response
+
+
+def _acv049_semantic_report() -> dict[str, object]:
+    counts = {
+        "ACV-049-E": 77,
+        "ACV-049-L": 401,
+        "ACV-049-N": 5,
+        "ACV-049-P": 300,
+        "ACV-049-S": 101,
+    }
+    rows: list[dict[str, object]] = []
+    for relation_id, count in counts.items():
+        for index in range(count):
+            source = (
+                f"PCR-REQUEST-X-{index:04d}"
+                if relation_id == "ACV-049-E"
+                else f"{relation_id}-SOURCE-{index:04d}"
+            )
+            row: dict[str, object] = {
+                "relationId": relation_id,
+                "sourceIdentity": source,
+            }
+            if relation_id == "ACV-049-E":
+                row.update(
+                    {
+                        "assertionId": f"ASSERT-{index:04d}",
+                        "detectorId": f"DETECT-{index:04d}",
+                        "evidenceDisposition": (
+                            "LOCAL_BLIND_EXECUTION_PASS_TWO_ENVIRONMENT_PENDING"
+                        ),
+                        "executionPhase": "BLIND_INPUT_EXECUTION",
+                        "faultContext": "NONE",
+                        "instanceId": f"INSTANCE-{index:04d}",
+                        "observationId": f"OBSERVE-{index:04d}",
+                        "requestOctets": 1,
+                        "requestSha256": "a" * 64,
+                        "responseCarrierCaseIds": ["PCR-RESPONSE-X-0000"],
+                        "responseOctets": 1,
+                        "responseSha256": "b" * 64,
+                    }
+                )
+            rows.append(row)
+    return {
+        "instance_count": 884,
+        "pending_relation_counts": {"ACV-049-E": 77, "ACV-049-P": 300},
+        "relation_counts": counts,
+        "rows": rows,
+        "schema": "styx.app-core-iface0.semantic-acv049-partial-execution.v3",
+        "semantic_rule_id": "ACV-049",
+        "status": "REMEDIATION_PARTIAL_EXECUTION",
+        "verdict": "PARTIAL_EXECUTION_PASS",
+    }
 
 
 class FinalGateTests(unittest.TestCase):
@@ -529,6 +585,111 @@ class FinalGateTests(unittest.TestCase):
             "43a75ca967bf95991692ad07c3944b5792456b4c958df2ff663b2b9ec6b8145d",
         )
         self.assertRegex(result["phaseAPackageReportSha256"], r"^[0-9a-f]{64}$")
+
+    def test_acv049_controlled_environment_is_closed_and_channel_only(self) -> None:
+        first = _controlled_acv049_environment("ACV049-ONE")
+        second = _controlled_acv049_environment("ACV049-TWO")
+        self.assertEqual(
+            set(first),
+            {
+                "LC_CTYPE",
+                "PATH",
+                "PYTHONDONTWRITEBYTECODE",
+                ACV049_MUTANT_CHANNEL,
+            },
+        )
+        self.assertEqual(set(first), set(second))
+        self.assertEqual(first["PATH"], second["PATH"])
+        self.assertEqual(
+            first["PYTHONDONTWRITEBYTECODE"],
+            second["PYTHONDONTWRITEBYTECODE"],
+        )
+        self.assertNotEqual(
+            first[ACV049_MUTANT_CHANNEL], second[ACV049_MUTANT_CHANNEL]
+        )
+        for invalid in ("", " leading", "trailing ", "non-ascii-è"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(FinalGateError, "canonical ASCII"):
+                    _controlled_acv049_environment(invalid)
+
+    def test_acv049_e_report_validation_is_exact_and_fail_closed(self) -> None:
+        report = _acv049_semantic_report()
+        sources = {
+            f"PCR-REQUEST-X-{index:04d}" for index in range(77)
+        }
+        self.assertEqual(len(_validate_acv049_e_report(report, sources)), 77)
+        report["rows"][0]["responseSha256"] = "not-a-digest"
+        with self.assertRaisesRegex(FinalGateError, "execution row drift"):
+            _validate_acv049_e_report(report, sources)
+
+    def test_acv049_e_baseline_runs_two_closed_environments_and_compares_bytes(
+        self,
+    ) -> None:
+        report = _acv049_semantic_report()
+        sources = [f"PCR-REQUEST-X-{index:04d}" for index in range(77)]
+        environments: list[dict[str, str]] = []
+
+        def execute(
+            _repo: Path,
+            _tool: str,
+            arguments: list[str],
+            *,
+            environment: dict[str, str] | None = None,
+            timeout: int = 180,
+        ) -> subprocess.CompletedProcess[bytes]:
+            self.assertEqual(timeout, 600)
+            self.assertIsNotNone(environment)
+            environments.append(dict(environment or {}))
+            output = Path(arguments[arguments.index("--output") + 1])
+            output.write_bytes(dumps(report))
+            return subprocess.CompletedProcess([], 0, b"", b"")
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            repo_one = root / "repo-one"
+            repo_two = root / "repo-two"
+            evidence_one = root / "evidence-one"
+            evidence_two = root / "evidence-two"
+            for path in (repo_one, repo_two, evidence_one, evidence_two):
+                path.mkdir()
+            with (
+                patch(
+                    "final_gate._verify_acv049_checkout_pair",
+                    return_value=(repo_one, repo_two),
+                ),
+                patch(
+                    "final_gate._git",
+                    side_effect=[str(root / "git-one"), str(root / "git-two")],
+                ),
+                patch("final_gate._verify_clean_checkout"),
+                patch("final_gate._validate_external_root", return_value={"ok": True}),
+                patch("final_gate._tree", return_value={"carrier": b"bytes"}),
+                patch(
+                    "final_gate.derive_acv049_relation_members",
+                    return_value={"ACV-049-E": sources},
+                ),
+                patch("final_gate._run_checkout_tool", side_effect=execute),
+            ):
+                result = run_acv049_e_baseline_gate(
+                    repo_one,
+                    repo_two,
+                    evidence_one,
+                    evidence_two,
+                    "c" * 40,
+                    node=Path(sys.executable),
+                )
+        self.assertEqual(result["eRelationCount"], 77)
+        self.assertEqual(result["provenanceControls"], "PENDING")
+        self.assertEqual(result["verdict"], "TWO_ENVIRONMENT_BASELINE_IDENTITY_PASS")
+        self.assertEqual(len(environments), 2)
+        self.assertEqual(set(environments[0]), set(environments[1]))
+        for name in environments[0]:
+            if name != ACV049_MUTANT_CHANNEL:
+                self.assertEqual(environments[0][name], environments[1][name])
+        self.assertNotEqual(
+            environments[0][ACV049_MUTANT_CHANNEL],
+            environments[1][ACV049_MUTANT_CHANNEL],
+        )
 
     def test_authority_scan_rejects_withdrawal_and_supersession(self) -> None:
         selection_head = "a" * 40

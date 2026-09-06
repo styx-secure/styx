@@ -22,7 +22,11 @@ sys.dont_write_bytecode = True
 
 from canonical_json import CanonicalJsonError, dumps, loads
 from generate_seed_registry import REQUEST_SET_MANIFEST_SHA256
-from inventory import BASE_SHA, InventoryError
+from inventory import (
+    BASE_SHA,
+    InventoryError,
+    derive_acv049_relation_members,
+)
 
 
 RATIFIED_CARRIER_AUTHORITY_V3_SHA256 = (
@@ -88,6 +92,23 @@ BANNED_PROVIDER_ENVIRONMENT = frozenset(
         "SSL_CERT_DIR",
     }
 )
+ACV049_CONTROLLED_ENVIRONMENT = {
+    "LC_CTYPE": "C.UTF-8",
+    "PATH": "/usr/bin:/bin",
+    "PYTHONDONTWRITEBYTECODE": "1",
+}
+ACV049_MUTANT_CHANNEL = "STYX_ACV049_MUTANT_CHANNEL"
+ACV049_MUTANT_CHANNELS = (
+    "ACV049-CONTROL-CHANNEL-ALPHA",
+    "ACV049-CONTROL-CHANNEL-BRAVO",
+)
+ACV049_RELATION_COUNTS = {
+    "ACV-049-E": 77,
+    "ACV-049-L": 401,
+    "ACV-049-N": 5,
+    "ACV-049-P": 300,
+    "ACV-049-S": 101,
+}
 
 
 class FinalGateError(ValueError):
@@ -619,17 +640,22 @@ def _run_checkout_tool(
     relative_tool: str,
     arguments: list[str],
     *,
+    environment: dict[str, str] | None = None,
     timeout: int = 180,
 ) -> subprocess.CompletedProcess[bytes]:
     tool = repo.resolve() / relative_tool
     if not tool.is_file() or tool.is_symlink():
         raise FinalGateError("checkout evidence tool is absent or non-regular")
-    environment = dict(os.environ)
-    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    process_environment = (
+        dict(os.environ)
+        if environment is None
+        else dict(environment)
+    )
+    process_environment["PYTHONDONTWRITEBYTECODE"] = "1"
     completed = subprocess.run(
         [sys.executable, str(tool), *arguments],
         cwd=repo.resolve(),
-        env=environment,
+        env=process_environment,
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -638,6 +664,263 @@ def _run_checkout_tool(
     if completed.returncode != 0:
         raise FinalGateError("checkout-owned evidence tool failed")
     return completed
+
+
+def _controlled_acv049_environment(channel: str) -> dict[str, str]:
+    try:
+        encoded = channel.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise FinalGateError("ACV-049 mutant channel is not canonical ASCII") from error
+    if not encoded or b"\x00" in encoded or channel.strip() != channel:
+        raise FinalGateError("ACV-049 mutant channel is not canonical ASCII")
+    return {
+        **ACV049_CONTROLLED_ENVIRONMENT,
+        ACV049_MUTANT_CHANNEL: channel,
+    }
+
+
+def _verify_acv049_checkout_pair(
+    repo_one: Path, repo_two: Path, candidate_head: str
+) -> tuple[Path, Path]:
+    if (
+        len(candidate_head) != 40
+        or any(ch not in "0123456789abcdef" for ch in candidate_head)
+    ):
+        raise FinalGateError("candidate HEAD is not a full lowercase Git identity")
+    first_absolute = Path(os.path.abspath(repo_one))
+    second_absolute = Path(os.path.abspath(repo_two))
+    first = repo_one.resolve()
+    second = repo_two.resolve()
+    if first_absolute != first or second_absolute != second:
+        raise FinalGateError("the ACV-049 checkout roots contain a symlink")
+    if first == second:
+        raise FinalGateError("the two checkout roots are not distinct")
+    _verify_clean_checkout(first, candidate_head)
+    _verify_clean_checkout(second, candidate_head)
+    first_git = Path(
+        _git(first, "rev-parse", "--absolute-git-dir").strip()
+    ).resolve()
+    second_git = Path(
+        _git(second, "rev-parse", "--absolute-git-dir").strip()
+    ).resolve()
+    if first_git == second_git:
+        raise FinalGateError("the two checkout Git metadata roots are not distinct")
+    return first, second
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return first == second or first in second.parents or second in first.parents
+
+
+def _validate_acv049_e_report(
+    report: object, expected_sources: set[str]
+) -> list[dict[str, Any]]:
+    if not isinstance(report, dict):
+        raise FinalGateError("ACV-049 semantic report is not an object")
+    required = {
+        "instance_count": 884,
+        "pending_relation_counts": {"ACV-049-E": 77, "ACV-049-P": 300},
+        "relation_counts": ACV049_RELATION_COUNTS,
+        "schema": "styx.app-core-iface0.semantic-acv049-partial-execution.v3",
+        "semantic_rule_id": "ACV-049",
+        "status": "REMEDIATION_PARTIAL_EXECUTION",
+        "verdict": "PARTIAL_EXECUTION_PASS",
+    }
+    if any(report.get(key) != value for key, value in required.items()):
+        raise FinalGateError("ACV-049 semantic report identity drift")
+    rows = report.get("rows")
+    if not isinstance(rows, list) or len(rows) != 884:
+        raise FinalGateError("ACV-049 semantic report row count drift")
+    observed_counts = {
+        relation_id: sum(
+            isinstance(row, dict) and row.get("relationId") == relation_id
+            for row in rows
+        )
+        for relation_id in ACV049_RELATION_COUNTS
+    }
+    if observed_counts != ACV049_RELATION_COUNTS:
+        raise FinalGateError("ACV-049 semantic report relation count drift")
+    e_rows = [
+        row
+        for row in rows
+        if isinstance(row, dict) and row.get("relationId") == "ACV-049-E"
+    ]
+    e_fields = {
+        "assertionId",
+        "detectorId",
+        "evidenceDisposition",
+        "executionPhase",
+        "faultContext",
+        "instanceId",
+        "observationId",
+        "relationId",
+        "requestOctets",
+        "requestSha256",
+        "responseCarrierCaseIds",
+        "responseOctets",
+        "responseSha256",
+        "sourceIdentity",
+    }
+    if {row.get("sourceIdentity") for row in e_rows} != expected_sources:
+        raise FinalGateError("ACV-049 E source relation drift")
+    for row in e_rows:
+        response_carriers = row.get("responseCarrierCaseIds")
+        if (
+            set(row) != e_fields
+            or row.get("executionPhase") != "BLIND_INPUT_EXECUTION"
+            or row.get("evidenceDisposition")
+            != "LOCAL_BLIND_EXECUTION_PASS_TWO_ENVIRONMENT_PENDING"
+            or row.get("faultContext")
+            not in {"NONE", "FIXED_INTERNAL_COLLISION_ORACLE"}
+            or not isinstance(row.get("requestOctets"), int)
+            or row["requestOctets"] <= 0
+            or not isinstance(row.get("responseOctets"), int)
+            or row["responseOctets"] <= 0
+            or not isinstance(row.get("requestSha256"), str)
+            or len(row["requestSha256"]) != 64
+            or any(ch not in "0123456789abcdef" for ch in row["requestSha256"])
+            or not isinstance(row.get("responseSha256"), str)
+            or len(row["responseSha256"]) != 64
+            or any(ch not in "0123456789abcdef" for ch in row["responseSha256"])
+            or not isinstance(response_carriers, list)
+            or not response_carriers
+            or any(
+                not isinstance(value, str)
+                or not value.startswith("PCR-RESPONSE-")
+                for value in response_carriers
+            )
+        ):
+            raise FinalGateError("ACV-049 E execution row drift")
+    return e_rows
+
+
+def run_acv049_e_baseline_gate(
+    repo_one: Path,
+    repo_two: Path,
+    evidence_one: Path,
+    evidence_two: Path,
+    candidate_head: str,
+    *,
+    node: Path,
+) -> dict[str, object]:
+    """Prove E baseline equality; provenance monitors remain a separate gate."""
+
+    first, second = _verify_acv049_checkout_pair(
+        repo_one, repo_two, candidate_head
+    )
+    resolved_node = node.resolve()
+    if not node.is_absolute() or not resolved_node.is_file():
+        raise FinalGateError("ACV-049 Node runtime must be an absolute regular file")
+    first_evidence_absolute = Path(os.path.abspath(evidence_one))
+    second_evidence_absolute = Path(os.path.abspath(evidence_two))
+    first_evidence = evidence_one.resolve()
+    second_evidence = evidence_two.resolve()
+    if (
+        first_evidence_absolute != first_evidence
+        or second_evidence_absolute != second_evidence
+    ):
+        raise FinalGateError("the ACV-049 evidence roots contain a symlink")
+    first_git = Path(
+        _git(first, "rev-parse", "--absolute-git-dir").strip()
+    ).resolve()
+    second_git = Path(
+        _git(second, "rev-parse", "--absolute-git-dir").strip()
+    ).resolve()
+    if _paths_overlap(first_evidence, second_evidence):
+        raise FinalGateError("the two ACV-049 evidence roots overlap")
+    if any(
+        _paths_overlap(evidence, protected)
+        for evidence in (first_evidence, second_evidence)
+        for protected in (first, second, first_git, second_git)
+    ):
+        raise FinalGateError("ACV-049 evidence overlaps checkout or Git metadata")
+    first_validation = _validate_external_root(first, first_evidence)
+    second_validation = _validate_external_root(second, second_evidence)
+    if first_validation != second_validation:
+        raise FinalGateError("the two Phase-A evidence roots disagree")
+    if _tree(first_evidence) != _tree(second_evidence):
+        raise FinalGateError("the two Phase-A evidence trees are not byte-identical")
+
+    channels = ACV049_MUTANT_CHANNELS
+    if channels[0] == channels[1]:
+        raise FinalGateError("the two ACV-049 mutant channels are equal")
+    environments = tuple(_controlled_acv049_environment(value) for value in channels)
+    if (
+        set(environments[0]) != set(environments[1])
+        or any(
+            environments[0][name] != environments[1][name]
+            for name in environments[0]
+            if name != ACV049_MUTANT_CHANNEL
+        )
+    ):
+        raise FinalGateError("the controlled ACV-049 environments drift")
+
+    contract_one = first / "tools/causal-flow-simulator/app_core_iface0/contract"
+    contract_two = second / "tools/causal-flow-simulator/app_core_iface0/contract"
+    expected_sources = set(
+        derive_acv049_relation_members(contract_one)["ACV-049-E"]
+    )
+    with tempfile.TemporaryDirectory(prefix="styx-app-core-acv049-e-") as temporary:
+        temporary_root = Path(temporary).resolve()
+        if any(
+            _paths_overlap(temporary_root, protected)
+            for protected in (
+                first,
+                second,
+                first_git,
+                second_git,
+                first_evidence,
+                second_evidence,
+            )
+        ):
+            raise FinalGateError("ACV-049 gate temporary root overlaps protected input")
+        output_one = temporary_root / "environment-one" / "semantic-acv049.json"
+        output_two = temporary_root / "environment-two" / "semantic-acv049.json"
+        output_one.parent.mkdir()
+        output_two.parent.mkdir()
+        for repo, evidence, contract, output, environment in (
+            (first, first_evidence, contract_one, output_one, environments[0]),
+            (second, second_evidence, contract_two, output_two, environments[1]),
+        ):
+            _run_checkout_tool(
+                repo,
+                "tools/causal-flow-simulator/app_core_iface0/run_semantic_acv049.py",
+                [
+                    "--repo-root",
+                    str(repo),
+                    "--contract",
+                    str(contract),
+                    "--evidence-root",
+                    str(evidence),
+                    "--node",
+                    str(resolved_node),
+                    "--output",
+                    str(output),
+                ],
+                environment=environment,
+                timeout=600,
+            )
+        first_bytes = output_one.read_bytes()
+        second_bytes = output_two.read_bytes()
+        try:
+            first_report = loads(first_bytes)
+            second_report = loads(second_bytes)
+        except (CanonicalJsonError, OSError) as error:
+            raise FinalGateError("ACV-049 semantic report is invalid") from error
+        first_e_rows = _validate_acv049_e_report(first_report, expected_sources)
+        second_e_rows = _validate_acv049_e_report(second_report, expected_sources)
+        if first_bytes != second_bytes or first_e_rows != second_e_rows:
+            raise FinalGateError("ACV-049 E responses differ across environments")
+
+    _verify_clean_checkout(first, candidate_head)
+    _verify_clean_checkout(second, candidate_head)
+    return {
+        "channelSha256": [_sha256(value.encode("ascii")) for value in channels],
+        "eRelationCount": 77,
+        "provenanceControls": "PENDING",
+        "semanticReportSha256": _sha256(first_bytes),
+        "verdict": "TWO_ENVIRONMENT_BASELINE_IDENTITY_PASS",
+    }
 
 
 def _generate_phase_a_from_checkout(repo: Path, root: Path) -> None:
@@ -1237,12 +1520,14 @@ def main(argv: list[str] | None = None) -> int:
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--phase-a", action="store_true")
     modes.add_argument("--phase-b-entry", action="store_true")
+    modes.add_argument("--acv049-e-baseline", action="store_true")
     parser.add_argument("--repo-root-one", required=True, type=Path)
     parser.add_argument("--repo-root-two", type=Path)
     parser.add_argument("--evidence-root-one", type=Path)
     parser.add_argument("--evidence-root-two", type=Path)
     parser.add_argument("--selection-head")
     parser.add_argument("--provider-comment-id")
+    parser.add_argument("--node", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.phase_a:
@@ -1259,6 +1544,25 @@ def main(argv: list[str] | None = None) -> int:
                 args.evidence_root_one,
                 args.evidence_root_two,
                 args.selection_head,
+            )
+        elif args.acv049_e_baseline:
+            if (
+                args.repo_root_two is None
+                or args.evidence_root_one is None
+                or args.evidence_root_two is None
+                or args.selection_head is None
+                or args.node is None
+            ):
+                raise FinalGateError(
+                    "ACV-049 E baseline requires two roots, evidence, candidate HEAD and Node"
+                )
+            result = run_acv049_e_baseline_gate(
+                args.repo_root_one,
+                args.repo_root_two,
+                args.evidence_root_one,
+                args.evidence_root_two,
+                args.selection_head,
+                node=args.node,
             )
         else:
             if args.provider_comment_id is None:

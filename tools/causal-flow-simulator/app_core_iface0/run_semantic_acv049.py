@@ -213,6 +213,25 @@ def _json_pointer(tokens: tuple[str | int, ...]) -> str:
     )
 
 
+def _report_pointer(pointer: str) -> str:
+    if not pointer.startswith("/") or pointer == "/":
+        raise SemanticACV049Error("ACV-049 report pointer is not rooted")
+    return "JSON_POINTER:" + pointer[1:].replace("%", "%25").replace("/", "%2F")
+
+
+def _raw_report_pointer(pointer: str) -> str:
+    prefix = "JSON_POINTER:"
+    if not pointer.startswith(prefix):
+        raise SemanticACV049Error("ACV-049 report pointer encoding drift")
+    return "/" + pointer[len(prefix):].replace("%2F", "/").replace("%25", "%")
+
+
+def _report_logical_path(path: str) -> str:
+    if not path or path.startswith("/"):
+        raise SemanticACV049Error("ACV-049 logical path identity drift")
+    return "LOGICAL_PATH:" + path.replace("%", "%25").replace("/", "%2F")
+
+
 def _constraint_occurrences(terminal: LogicalTerminal) -> list[dict[str, Any]]:
     constraint_keywords = {
         "$ref", "allOf", "anyOf", "const", "enum", "items", "maxItems",
@@ -222,7 +241,9 @@ def _constraint_occurrences(terminal: LogicalTerminal) -> list[dict[str, Any]]:
     rows = [
         {
             "keyword": keyword,
-            "occurrence": f"{pointer}/{keyword.replace('~', '~0').replace('/', '~1')}",
+            "occurrence": _report_pointer(
+                f"{pointer}/{keyword.replace('~', '~0').replace('/', '~1')}"
+            ),
             "valueSha256": sha256_bytes(dumps(node[keyword])),
         }
         for pointer, node in zip(
@@ -532,7 +553,8 @@ def build_report(
                 witness_id
                 for occurrence in occurrences
                 for witness_id in structural_by_occurrence.get(
-                    occurrence["occurrence"], []
+                    _raw_report_pointer(occurrence["occurrence"]),
+                    [],
                 )
             },
             key=lambda value: value.encode("utf-8"),
@@ -548,9 +570,11 @@ def build_report(
                 if part.startswith("<") and part.endswith(">")
             ],
             "coConstrainingKeywordOccurrences": occurrences,
-            "dataPointer": _json_pointer(terminal.data_tokens),
+            "dataPointer": _report_pointer(_json_pointer(terminal.data_tokens)),
             "structuralWitnessIds": witness_ids,
-            "terminalSchemaOccurrences": list(terminal.node_pointers),
+            "terminalSchemaOccurrences": [
+                _report_pointer(pointer) for pointer in terminal.node_pointers
+            ],
             "terminalSchemaSha256": sha256_bytes(dumps(list(terminal.nodes))),
         }
 
@@ -622,14 +646,14 @@ def build_report(
                         "pythonSchemaAccepted": evidence["pythonSchemaAccepted"][
                             global_index
                         ],
-                        "value": value,
+                        "representativeSha256": sha256_bytes(dumps(value)),
                     }
                 )
             vector.append(
                 {
                     "detector": detector_ids,
                     "encodedRepresentatives": representations[1:],
-                    "family": family,
+                    "familyId": f"LITERAL-FAMILY-{family_index:02d}",
                     "literalRepresentative": representations[0],
                 }
             )
@@ -651,7 +675,10 @@ def build_report(
                 "instanceId": instance.instance_id,
                 "observationId": instance.observation_id,
                 "relationId": relation_id,
-                "sourceIdentity": source,
+                "sourceIdentity": (
+                    source if relation_id == "ACV-049-E"
+                    else _report_logical_path(source)
+                ),
             }
             if relation_id == "ACV-049-L":
                 binding = terminal_binding(source)

@@ -139,6 +139,7 @@ def verify_contract_package(contract: Path) -> dict[str, Any]:
 def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
     command = [
         sys.executable,
+        "-B",
         str(contract / "validate_app_core_contract_candidates.py"),
         "--repository",
         str(repo_root),
@@ -153,7 +154,6 @@ def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
         stderr=subprocess.STDOUT,
         text=True,
         timeout=120,
-        env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
     if completed.returncode != 0 or "total=3912" not in completed.stdout:
         raise InventoryError("ratified contract validator failed")
