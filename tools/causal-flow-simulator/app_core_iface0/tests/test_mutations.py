@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from generate_structural_witnesses import (  # noqa: E402
     _PARENT_RESOLVED_ARRAY_INSERTION_FAMILIES,
+    _load_phase_a,
     _resolve_data_pointer,
     derive_phase_b_registries,
     derive_seed_registry,
@@ -29,6 +31,8 @@ from generate_structural_witnesses import (  # noqa: E402
 from generate_seed_registry import generate_phase_a  # noqa: E402
 from canonical_json import dumps as canonical_dumps  # noqa: E402
 from canonical_report import canonical_bytes  # noqa: E402
+from inventory import LogicalTerminal, derive_acv049_path_partition  # noqa: E402
+from interface_model import ContractAuthority  # noqa: E402
 from run_mutations import build_report as build_phase_a_mutation_report  # noqa: E402
 from run_semantic_preflight import (  # noqa: E402
     SemanticPreflightError,
@@ -40,8 +44,10 @@ from run_semantic_acv049 import (  # noqa: E402
     SemanticACV049Error,
     _SourceSiteInstrumenter,
     _SourceTaggedString,
+    _derive_schema_candidate_pair,
     _pattern_values,
     _tag_source_value,
+    _terminal_execution_plan,
     build_report as build_acv049_preflight,
     build_terminal_jobs as build_acv049_terminal_jobs,
     derive_phase_a_materialized_paths,
@@ -50,6 +56,15 @@ from run_semantic_acv049 import (  # noqa: E402
 
 
 class StructuralPlanTests(unittest.TestCase):
+    _MINIMAL_SCHEMA = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {},
+    }
+
+    @staticmethod
+    def _terminal(*nodes: dict[str, object]) -> LogicalTerminal:
+        return LogicalTerminal((), nodes, tuple(f"/node/{i}" for i in range(len(nodes))), ())
+
     def test_acv049_source_tagging_is_value_preserving_and_nearest_site_wins(
         self,
     ) -> None:
@@ -90,6 +105,86 @@ class StructuralPlanTests(unittest.TestCase):
             SemanticACV049Error, "duplicate ACV-049 construction site"
         ):
             _SourceSiteInstrumenter().visit(tree)
+
+    def test_acv049_schema_candidate_recipes_are_finite_and_ordered(self) -> None:
+        channels = ("CHANNEL-ZULU", "CHANNEL-ALPHA")
+        ordered = sorted(channel.encode("ascii") for channel in channels)
+        hex_pair = _derive_schema_candidate_pair(
+            self._MINIMAL_SCHEMA,
+            self._terminal({"type": "string", "pattern": "^[0-9a-f]{64}$"}),
+            "0" * 64,
+            channels,
+        )
+        self.assertEqual(
+            hex_pair["candidateValues"],
+            [hashlib.sha256(channel).hexdigest() for channel in ordered],
+        )
+        self.assertEqual(hex_pair["domainClass"], "HEX64")
+
+        decimal_terminal = self._terminal(
+            {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            {"maxLength": 5},
+        )
+        initial = _derive_schema_candidate_pair(
+            self._MINIMAL_SCHEMA, decimal_terminal, "99999", channels
+        )
+        collided = _derive_schema_candidate_pair(
+            self._MINIMAL_SCHEMA,
+            decimal_terminal,
+            initial["candidateValues"][0],
+            channels,
+        )
+        self.assertEqual(collided["advanceCounts"], [1, 0])
+        self.assertNotIn(
+            initial["candidateValues"][0], collided["candidateValues"]
+        )
+        self.assertTrue(
+            all(len(value) <= 5 for value in collided["candidateValues"])
+        )
+
+    def test_acv049_enum_candidate_recipe_respects_reserved_and_singleton(
+        self,
+    ) -> None:
+        terminal = self._terminal({"enum": ["B", "A", "C"]})
+        two_state = _derive_schema_candidate_pair(
+            self._MINIMAL_SCHEMA,
+            terminal,
+            "B",
+            ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
+            reserved_values=frozenset({"C"}),
+        )
+        self.assertEqual(two_state["candidateValues"], ["A", "B"])
+        self.assertTrue(two_state["twoStateRule"])
+        singleton = _derive_schema_candidate_pair(
+            self._MINIMAL_SCHEMA,
+            terminal,
+            "B",
+            ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
+            reserved_values=frozenset({"A", "C"}),
+        )
+        self.assertEqual(singleton["candidateValues"], [])
+        self.assertEqual(singleton["evidenceDisposition"], "RELATION_SINGLETON")
+
+    def test_acv049_candidate_recipe_rejects_unratified_channels_and_patterns(
+        self,
+    ) -> None:
+        terminal = self._terminal({"type": "string", "pattern": "^open$"})
+        for channels, message in (
+            (("SAME", "SAME"), "not distinct"),
+            (("CHANNEL-ALPHA", "line\nfeed"), "canonical ASCII"),
+        ):
+            with self.subTest(channels=channels):
+                with self.assertRaisesRegex(SemanticACV049Error, message):
+                    _derive_schema_candidate_pair(
+                        self._MINIMAL_SCHEMA, terminal, "open", channels
+                    )
+        with self.assertRaisesRegex(SemanticACV049Error, "no ratified recipe"):
+            _derive_schema_candidate_pair(
+                self._MINIMAL_SCHEMA,
+                terminal,
+                "open",
+                ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
+            )
 
     def test_contract_derives_exact_closed_structural_plan(self) -> None:
         report = derive_structural_plan(ROOT / "contract")
@@ -435,6 +530,57 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 in {"ORDINARY_ROUTE", "FAULT_INJECTED_ROUTE"}
                 for row in report["routes"]
             )
+        )
+
+    def test_acv049_all_materialized_scalar_domains_have_finite_candidates(
+        self,
+    ) -> None:
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        _inventory, _inventory_bytes, carriers = _load_phase_a(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        responses = sorted(
+            (
+                (case_id, value)
+                for case_id, (value, _raw) in carriers.items()
+                if case_id.startswith("PCR-RESPONSE-")
+            ),
+            key=lambda row: row[0].encode("utf-8"),
+        )
+        partition = derive_acv049_path_partition(ROOT / "contract")
+        terminals, carriers_by_path, _jobs = _terminal_execution_plan(
+            authority, responses, partition
+        )
+        class_counts: dict[str, int] = {}
+        candidate_pair_count = 0
+        for path in partition["mutable"]:
+            if not carriers_by_path[path]:
+                continue
+            terminal = terminals[path]
+            if any("enum" in node for node in terminal.nodes):
+                continue
+            for baseline in sorted(
+                {value for _case_id, _response, value in carriers_by_path[path]}
+            ):
+                plan = _derive_schema_candidate_pair(
+                    authority.schema,
+                    terminal,
+                    baseline,
+                    (
+                        "ACV049-CONTROL-CHANNEL-ALPHA",
+                        "ACV049-CONTROL-CHANNEL-BRAVO",
+                    ),
+                )
+                self.assertEqual(plan["evidenceDisposition"], "KILLED")
+                self.assertEqual(len(set(plan["candidateValues"])), 2)
+                self.assertNotIn(baseline, plan["candidateValues"])
+                candidate_pair_count += 1
+                domain_class = plan["domainClass"]
+                class_counts[domain_class] = class_counts.get(domain_class, 0) + 1
+        self.assertEqual(candidate_pair_count, 166)
+        self.assertEqual(
+            class_counts,
+            {"CANONICAL_DECIMAL": 76, "EVEN_LOWER_HEX": 19, "HEX64": 71},
         )
 
     def test_phase_b_seed_registry_selects_all_87_objects_deterministically(self) -> None:

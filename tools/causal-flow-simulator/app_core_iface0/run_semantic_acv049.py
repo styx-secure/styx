@@ -328,6 +328,166 @@ def _pattern_values(
     return _pattern_values(value[token], remaining, (*prefix, token))
 
 
+def _controlled_channel_order(channels: tuple[str, str]) -> tuple[bytes, bytes]:
+    encoded: list[bytes] = []
+    for channel in channels:
+        try:
+            raw = channel.encode("ascii")
+        except UnicodeEncodeError as error:
+            raise SemanticACV049Error("ACV-049 mutant channel is not ASCII") from error
+        if not raw or any(octet < 0x21 or octet > 0x7E for octet in raw):
+            raise SemanticACV049Error("ACV-049 mutant channel is not canonical ASCII")
+        encoded.append(raw)
+    if encoded[0] == encoded[1]:
+        raise SemanticACV049Error("ACV-049 mutant channels are not distinct")
+    ordered = sorted(encoded)
+    return ordered[0], ordered[1]
+
+
+def _terminal_constraints(terminal: LogicalTerminal) -> dict[str, Any]:
+    constraints: dict[str, Any] = {}
+    for node in terminal.nodes:
+        for keyword in (
+            "enum", "maxLength", "minLength", "pattern",
+            "x-styx-unsigned-maximum", "x-styx-unsigned-minimum",
+        ):
+            if keyword not in node:
+                continue
+            value = node[keyword]
+            if keyword in constraints and constraints[keyword] != value:
+                raise SemanticACV049Error(
+                    f"ACV-049 terminal constraint is ambiguous: {keyword}"
+                )
+            constraints[keyword] = copy.deepcopy(value)
+    return constraints
+
+
+def _derive_schema_candidate_pair(
+    schema: dict[str, Any],
+    terminal: LogicalTerminal,
+    baseline: str,
+    channels: tuple[str, str],
+    *,
+    reserved_values: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Derive the closed V26--V28 candidate pair without evaluator output."""
+
+    ordered_channels = _controlled_channel_order(channels)
+    constraints = _terminal_constraints(terminal)
+    enum = constraints.get("enum")
+    if enum is not None:
+        if (
+            not isinstance(enum, list)
+            or not enum
+            or any(not isinstance(value, str) for value in enum)
+            or len(set(enum)) != len(enum)
+            or baseline not in enum
+            or not reserved_values <= set(enum)
+        ):
+            raise SemanticACV049Error("ACV-049 enum domain is malformed")
+        eligible = sorted(
+            set(enum) - {baseline} - set(reserved_values),
+            key=lambda value: value.encode("utf-8"),
+        )
+        if not eligible:
+            return {
+                "advanceCounts": [0, 0],
+                "candidateValues": [],
+                "domainClass": "ENUM",
+                "evidenceDisposition": "RELATION_SINGLETON",
+                "twoStateRule": False,
+            }
+        if len(eligible) == 1:
+            candidates = [eligible[0], baseline]
+            two_state = True
+        else:
+            candidates = eligible[:2]
+            two_state = False
+        validator = _subschema_validator(schema, terminal.nodes)
+        if any(not validator.is_valid(value) for value in candidates):
+            raise SemanticACV049Error("ACV-049 enum candidate is not admitted")
+        return {
+            "advanceCounts": [0, 0],
+            "candidateValues": candidates,
+            "domainClass": "ENUM",
+            "evidenceDisposition": "KILLED",
+            "twoStateRule": two_state,
+        }
+
+    pattern = constraints.get("pattern")
+    advance_counts = [0, 0]
+    if pattern in {"^[0-9a-f]{64}$", "^(?:[0-9a-f]{2})*$"}:
+        candidates = [
+            hashlib.sha256(channel).hexdigest() for channel in ordered_channels
+        ]
+        domain_class = (
+            "HEX64" if pattern == "^[0-9a-f]{64}$" else "EVEN_LOWER_HEX"
+        )
+        cardinality = 1 << 256
+
+        def advance(value: str) -> str:
+            return f"{(int(value, 16) + 1) % cardinality:064x}"
+
+    elif pattern in {"^(0|[1-9][0-9]*)$", "^(0|[1-9][0-9]{0,19})$"}:
+        maximum_length = constraints.get("maxLength", 20)
+        if not isinstance(maximum_length, int) or maximum_length < 1:
+            raise SemanticACV049Error("ACV-049 decimal length is malformed")
+        minimum = int(constraints.get("x-styx-unsigned-minimum", "0"))
+        if "x-styx-unsigned-maximum" in constraints:
+            maximum = int(constraints["x-styx-unsigned-maximum"])
+        else:
+            maximum = minimum + (10 ** min(maximum_length, 4)) - 1
+        if minimum < 0 or maximum < minimum:
+            raise SemanticACV049Error("ACV-049 decimal bounds are malformed")
+        cardinality = maximum - minimum + 1
+        candidates = [
+            str(
+                minimum
+                + (
+                    int.from_bytes(hashlib.sha256(channel).digest(), "big")
+                    % cardinality
+                )
+            )
+            for channel in ordered_channels
+        ]
+        domain_class = "CANONICAL_DECIMAL"
+
+        def advance(value: str) -> str:
+            return str(minimum + ((int(value) - minimum + 1) % cardinality))
+
+    else:
+        raise SemanticACV049Error("ACV-049 string pattern has no ratified recipe")
+
+    for _iteration in range(cardinality + 1):
+        changed = False
+        if candidates[0] == baseline:
+            candidates[0] = advance(candidates[0])
+            advance_counts[0] += 1
+            changed = True
+        if candidates[1] == baseline or candidates[1] == candidates[0]:
+            candidates[1] = advance(candidates[1])
+            advance_counts[1] += 1
+            changed = True
+        if not changed:
+            break
+    else:
+        raise SemanticACV049Error("ACV-049 candidate domain is exhausted")
+    validator = _subschema_validator(schema, terminal.nodes)
+    if (
+        candidates[0] == candidates[1]
+        or baseline in candidates
+        or any(not validator.is_valid(value) for value in candidates)
+    ):
+        raise SemanticACV049Error("ACV-049 derived candidate pair is invalid")
+    return {
+        "advanceCounts": advance_counts,
+        "candidateValues": candidates,
+        "domainClass": domain_class,
+        "evidenceDisposition": "KILLED",
+        "twoStateRule": False,
+    }
+
+
 def _semantic_construction_site(path: str, ast_site_id: str) -> str:
     """Collapse only the five tuple sites named by the ratified amendment."""
 
