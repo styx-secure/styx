@@ -313,6 +313,37 @@ class StructuralPlanTests(unittest.TestCase):
             ):
                 self.assertEqual(build(), {"tuple": expected})  # type: ignore[operator]
 
+    def test_acv049_dict_comprehension_mutant_targets_one_runtime_key(self) -> None:
+        source = (
+            "def sample():\n"
+            "    return {f'item-{index}': 'BASE' for index in range(2)}\n"
+        )
+        site_id = "PURITY-SITE-AST-SAMPLE-DICT-COMPREHENSION-VALUE-001"
+        tree, _sites, _canonical = _mutated_source_tree(
+            source,
+            "synthetic.py",
+            {site_id: ((("item-1",), ("ALPHA", "BRAVO")),)},
+            (
+                "ACV049-CONTROL-CHANNEL-ALPHA",
+                "ACV049-CONTROL-CHANNEL-BRAVO",
+            ),
+        )
+        namespace: dict[str, object] = {}
+        exec(compile(tree, "synthetic.py", "exec"), namespace)
+        sample = namespace["sample"]
+        self.assertTrue(callable(sample))
+        for channel, expected in (
+            ("ACV049-CONTROL-CHANNEL-ALPHA", "ALPHA"),
+            ("ACV049-CONTROL-CHANNEL-BRAVO", "BRAVO"),
+        ):
+            with mock.patch.dict(
+                "os.environ", {"STYX_ACV049_MUTANT_CHANNEL": channel}
+            ):
+                self.assertEqual(
+                    sample(),  # type: ignore[operator]
+                    {"item-0": "BASE", "item-1": expected},
+                )
+
     def test_acv049_external_artifacts_are_exclusive_and_outside_repository(
         self,
     ) -> None:

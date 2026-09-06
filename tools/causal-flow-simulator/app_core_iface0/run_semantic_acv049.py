@@ -192,6 +192,14 @@ def _tag_source_value(
     return value
 
 
+def _acv049_single_dict_value(value: dict[Any, Any]) -> Any:
+    """Return the value of an instrumented one-entry comprehension fragment."""
+
+    if not isinstance(value, dict) or len(value) != 1:
+        raise SemanticACV049Error("ACV-049 comprehension fragment is not singular")
+    return next(iter(value.values()))
+
+
 def _site_token(value: str) -> str:
     token = "".join(character if character.isalnum() else "-" for character in value)
     token = "-".join(part for part in token.upper().split("-") if part)
@@ -251,6 +259,11 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
             keywords=[],
         )
 
+    def _tag_dict_comprehension(
+        self, site_id: str, fragment: ast.Dict
+    ) -> ast.expr:
+        return self._tag(site_id, fragment)
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
         self.function_names.append(node.name)
         try:
@@ -286,7 +299,19 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
         if self.function_name is None:
             return node
         site_id = self._site(node.value, "DICT-COMPREHENSION", "VALUE")
-        node.value = ast.copy_location(self._tag(site_id, node.value), node.value)
+        fragment = ast.Dict(
+            keys=[copy.deepcopy(node.key)],
+            values=[node.value],
+        )
+        tagged = self._tag_dict_comprehension(site_id, fragment)
+        node.value = ast.copy_location(
+            ast.Call(
+                func=ast.Name(id="_acv049_single_dict_value", ctx=ast.Load()),
+                args=[tagged],
+                keywords=[],
+            ),
+            node.value,
+        )
         return node
 
     def visit_Assign(self, node: ast.Assign) -> ast.AST:
@@ -405,6 +430,49 @@ class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
             keywords=[],
         )
 
+    def _tag_dict_comprehension(
+        self, site_id: str, fragment: ast.Dict
+    ) -> ast.expr:
+        patches = self.mutations.get(site_id)
+        if patches is None:
+            return fragment
+        self.mutated_sites.add(site_id)
+        mutated: ast.expr = fragment
+        for selector, candidates in patches:
+            channel_read = ast.Subscript(
+                value=ast.Name(id="_acv049_mutant_environ", ctx=ast.Load()),
+                slice=ast.Constant(ACV049_MUTANT_CHANNEL_NAME),
+                ctx=ast.Load(),
+            )
+            replacement = ast.Subscript(
+                value=ast.Dict(
+                    keys=[ast.Constant(channel) for channel in self.channels],
+                    values=[ast.Constant(candidate) for candidate in candidates],
+                ),
+                slice=channel_read,
+                ctx=ast.Load(),
+            )
+            mutated = ast.Call(
+                func=ast.Name(
+                    id="_acv049_replace_comprehension_source_value",
+                    ctx=ast.Load(),
+                ),
+                args=[
+                    mutated,
+                    ast.Tuple(
+                        elts=[ast.Constant(token) for token in selector],
+                        ctx=ast.Load(),
+                    ),
+                    replacement,
+                ],
+                keywords=[],
+            )
+        return ast.Call(
+            func=ast.Name(id="_acv049_record_mutated_site", ctx=ast.Load()),
+            args=[ast.Constant(site_id), mutated],
+            keywords=[],
+        )
+
     def visit_Module(self, node: ast.Module) -> ast.AST:
         node = self.generic_visit(node)
         insertion = 0
@@ -445,6 +513,18 @@ class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
             "        result[head] = _acv049_replace_source_value(value[head], tuple(tail), replacement)\n"
             "        return result\n"
             "    raise RuntimeError('ACV-049 source selector drift')\n"
+            "\n"
+            "def _acv049_replace_comprehension_source_value(value, path, replacement):\n"
+            "    if not isinstance(value, dict) or len(value) != 1 or not path:\n"
+            "        raise RuntimeError('ACV-049 comprehension selector drift')\n"
+            "    if path[0] not in value:\n"
+            "        return value\n"
+            "    return _acv049_replace_source_value(value, path, replacement)\n"
+            "\n"
+            "def _acv049_single_dict_value(value):\n"
+            "    if not isinstance(value, dict) or len(value) != 1:\n"
+            "        raise RuntimeError('ACV-049 comprehension fragment is not singular')\n"
+            "    return next(iter(value.values()))\n"
             "\n"
             "_acv049_mutated_sites_executed = set()\n"
             "def _acv049_record_mutated_site(site_id, value):\n"
@@ -543,6 +623,7 @@ def _instrumented_interface_model(
     module = types.ModuleType("interface_model")
     module.__file__ = str(source_path)
     module.__dict__["_acv049_tag_source_value"] = _tag_source_value
+    module.__dict__["_acv049_single_dict_value"] = _acv049_single_dict_value
     previous = sys.modules.get("interface_model")
     sys.modules["interface_model"] = module
     try:
