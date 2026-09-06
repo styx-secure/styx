@@ -2184,6 +2184,7 @@ def execute_enum_tuple_source_mutant_batch(
             except Exception as error:
                 admission_failures.append({
                     "failureClass": type(error).__name__,
+                    "failureMessage": str(error),
                     "mutantId": spec["mutantId"],
                     "requestCaseId": spec["requestCaseId"],
                     "siteId": spec["siteId"],
@@ -2236,7 +2237,11 @@ def execute_enum_tuple_source_mutant_batch(
                 )
         except (KeyError, SemanticACV049Error) as error:
             execution_failures.append({
+                "changedPointers": _changed_json_pointers(
+                    baseline_response, first
+                ),
                 "failureClass": type(error).__name__,
+                "failureMessage": str(error),
                 "mutantId": spec["mutantId"],
                 "requestCaseId": spec["requestCaseId"],
                 "siteId": spec["siteId"],
@@ -2474,6 +2479,34 @@ def _json_pointer(tokens: tuple[str | int, ...]) -> str:
         "/" + str(token).replace("~", "~0").replace("/", "~1")
         for token in tokens
     )
+
+
+def _changed_json_pointers(
+    baseline: Any,
+    candidate: Any,
+    prefix: tuple[str | int, ...] = (),
+) -> list[str]:
+    """Return a closed leaf-level diff for external mutant diagnostics."""
+
+    if isinstance(baseline, dict) and isinstance(candidate, dict):
+        if set(baseline) != set(candidate):
+            return [_report_pointer(_json_pointer(prefix))]
+        return [
+            pointer
+            for key in sorted(baseline)
+            for pointer in _changed_json_pointers(
+                baseline[key], candidate[key], (*prefix, key)
+            )
+        ]
+    if isinstance(baseline, list) and isinstance(candidate, list):
+        if len(baseline) != len(candidate):
+            return [_report_pointer(_json_pointer(prefix))]
+        return [
+            pointer
+            for index, (left, right) in enumerate(zip(baseline, candidate, strict=True))
+            for pointer in _changed_json_pointers(left, right, (*prefix, index))
+        ]
+    return [] if baseline == candidate else [_report_pointer(_json_pointer(prefix))]
 
 
 def _report_pointer(pointer: str) -> str:

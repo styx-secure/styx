@@ -54,6 +54,7 @@ from run_semantic_acv049 import (  # noqa: E402
     SemanticACV049Error,
     _SourceSiteInstrumenter,
     _SourceTaggedString,
+    _changed_json_pointers,
     _derive_schema_candidate_pair,
     _mutated_source_tree,
     _pattern_values,
@@ -114,6 +115,21 @@ class StructuralPlanTests(unittest.TestCase):
             ],
         )
         self.assertEqual(_pattern_values(value, ("missing",)), [])
+
+    def test_acv049_external_diagnostics_report_exact_changed_leaves(self) -> None:
+        baseline = {"result": {"items": [{"state": "READY"}], "count": 1}}
+        candidate = {"result": {"items": [{"state": "REJECTED"}], "count": 2}}
+        self.assertEqual(
+            _changed_json_pointers(baseline, candidate),
+            [
+                "JSON_POINTER:result%2Fcount",
+                "JSON_POINTER:result%2Fitems%2F0%2Fstate",
+            ],
+        )
+        self.assertEqual(
+            _changed_json_pointers({"result": {}}, {"result": {"new": True}}),
+            ["JSON_POINTER:result"],
+        )
 
     def test_acv049_duplicate_explicit_removal_site_fails_closed(self) -> None:
         tree = ast.parse(
