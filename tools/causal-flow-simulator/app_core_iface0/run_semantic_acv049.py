@@ -74,6 +74,12 @@ LITERAL_REPRESENTATIVES = {
     "USER": "username=operator",
 }
 
+ACV049_MUTANT_CHANNEL_NAME = "STYX_ACV049_MUTANT_CHANNEL"
+ACV049_MUTANT_CHANNELS = (
+    "ACV049-CONTROL-CHANNEL-ALPHA",
+    "ACV049-CONTROL-CHANNEL-BRAVO",
+)
+
 
 class SemanticACV049Error(ValueError):
     """The ACV-049 preflight relation is malformed or overclaims evidence."""
@@ -339,7 +345,7 @@ class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
         for selector, candidates in patches:
             channel_read = ast.Subscript(
                 value=ast.Name(id="_acv049_mutant_environ", ctx=ast.Load()),
-                slice=ast.Constant("STYX_ACV049_MUTANT_CHANNEL"),
+                slice=ast.Constant(ACV049_MUTANT_CHANNEL_NAME),
                 ctx=ast.Load(),
             )
             replacement = ast.Subscript(
@@ -986,6 +992,298 @@ def derive_phase_a_source_site_map(
     }
 
 
+def build_scalar_source_mutant_spec(
+    schema: dict[str, Any],
+    route: dict[str, Any],
+    terminal: LogicalTerminal,
+    baseline: str,
+) -> dict[str, Any]:
+    if any("enum" in node for node in terminal.nodes):
+        raise SemanticACV049Error("ACV-049 scalar mutant cannot own an enum")
+    selectors = route.get("sourceSelectors")
+    if (
+        not isinstance(selectors, list)
+        or len(selectors) != 1
+        or not isinstance(selectors[0], dict)
+        or set(selectors[0])
+        != {
+            "astSiteId",
+            "concretePointer",
+            "relativePointer",
+            "relativeTokens",
+        }
+        or route.get("astSiteIds") != [selectors[0]["astSiteId"]]
+        or route.get("concretePointers") != [selectors[0]["concretePointer"]]
+    ):
+        raise SemanticACV049Error("ACV-049 scalar source selector is not exact")
+    candidate_plan = _derive_schema_candidate_pair(
+        schema, terminal, baseline, ACV049_MUTANT_CHANNELS
+    )
+    core = {
+        "advanceCounts": candidate_plan["advanceCounts"],
+        "astSiteId": selectors[0]["astSiteId"],
+        "candidateValues": candidate_plan["candidateValues"],
+        "concretePointer": selectors[0]["concretePointer"],
+        "domainClass": candidate_plan["domainClass"],
+        "faultContext": route["faultContext"],
+        "logicalPath": route["logicalPath"],
+        "relativePointer": selectors[0]["relativePointer"],
+        "relativeTokens": selectors[0]["relativeTokens"],
+        "requestCaseId": route["requestCaseId"],
+        "routeClass": route["routeClass"],
+        "siteId": route["siteId"],
+        "sourceSiteMapRouteSha256": sha256_bytes(dumps(route)),
+        "twoStateRule": candidate_plan["twoStateRule"],
+    }
+    return {
+        **core,
+        "mutantId": "ACV049-P-MUTANT-" + sha256_bytes(dumps(core))[:24].upper(),
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+    }
+
+
+def build_phase_a_scalar_source_mutant_manifest(
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+    *,
+    source_site_map: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    site_map = (
+        derive_phase_a_source_site_map(repo_root, contract, evidence_root)
+        if source_site_map is None
+        else copy.deepcopy(source_site_map)
+    )
+    if (
+        site_map.get("schema")
+        != "styx.app-core-iface0.acv049-source-site-map.v1"
+        or site_map.get("verdict") != "PHASE_A_SOURCE_SITE_MAP_PASS"
+        or site_map.get("routeCount") != 596
+        or not isinstance(site_map.get("routes"), list)
+    ):
+        raise SemanticACV049Error("ACV-049 source-site map is not final")
+    request_rows = {
+        case_id: (value, raw)
+        for case_id, (value, raw) in carriers.items()
+        if case_id.startswith("PCR-REQUEST-")
+    }
+    oracle_by_request = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    responses: dict[str, dict[str, Any]] = {}
+    for case_id, (request, raw) in request_rows.items():
+        response = _evaluate_fixture_request(
+            authority, request, oracle_by_request.get(raw)
+        )
+        validate_response_before_release(authority, response)
+        responses[case_id] = response
+
+    terminals: dict[str, LogicalTerminal] = {}
+    specs = []
+    skipped_enum_routes = 0
+    for route in site_map["routes"]:
+        if not isinstance(route, dict):
+            raise SemanticACV049Error("ACV-049 source-site route is malformed")
+        logical_path = _raw_report_logical_path(route.get("logicalPath", ""))
+        terminal = terminals.setdefault(
+            logical_path, resolve_logical_terminal(authority.schema, logical_path)
+        )
+        if any("enum" in node for node in terminal.nodes):
+            skipped_enum_routes += 1
+            continue
+        response = responses.get(route.get("requestCaseId"))
+        if response is None:
+            raise SemanticACV049Error("ACV-049 scalar route request is absent")
+        pointers = route.get("concretePointers")
+        if not isinstance(pointers, list) or len(pointers) != 1:
+            raise SemanticACV049Error("ACV-049 scalar route pointer is not exact")
+        baseline = _value_at_report_pointer(response, pointers[0])
+        if not isinstance(baseline, str):
+            raise SemanticACV049Error("ACV-049 scalar route is not a string")
+        specs.append(
+            build_scalar_source_mutant_spec(
+                authority.schema, route, terminal, baseline
+            )
+        )
+    if (
+        not specs
+        or len(specs) + skipped_enum_routes != site_map["routeCount"]
+        or len({spec["mutantId"] for spec in specs}) != len(specs)
+    ):
+        raise SemanticACV049Error("ACV-049 scalar mutant manifest is incomplete")
+    return {
+        "mutantCount": len(specs),
+        "mutantSetSha256": sha256_bytes(
+            dumps([spec["mutantId"] for spec in specs])
+        ),
+        "mutants": specs,
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-manifest.v1",
+        "skippedEnumRouteCount": skipped_enum_routes,
+        "sourceSiteRouteCount": site_map["routeCount"],
+        "sourceSiteRouteSetSha256": site_map["routeSetSha256"],
+        "verdict": "PHASE_A_SCALAR_MUTANT_MANIFEST_PASS",
+    }
+
+
+def _validate_scalar_source_mutant_spec(spec: dict[str, Any]) -> None:
+    fields = {
+        "advanceCounts", "astSiteId", "candidateValues", "concretePointer",
+        "domainClass", "faultContext", "logicalPath", "mutantId",
+        "relativePointer", "relativeTokens", "requestCaseId", "routeClass",
+        "schema", "siteId", "sourceSiteMapRouteSha256", "twoStateRule",
+    }
+    if (
+        not isinstance(spec, dict)
+        or set(spec) != fields
+        or spec.get("schema")
+        != "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1"
+        or not isinstance(spec.get("candidateValues"), list)
+        or len(spec["candidateValues"]) != 2
+        or any(not isinstance(value, str) for value in spec["candidateValues"])
+        or len(set(spec["candidateValues"])) != 2
+        or not isinstance(spec.get("relativeTokens"), list)
+        or any(not isinstance(token, (str, int)) for token in spec["relativeTokens"])
+        or not isinstance(spec.get("advanceCounts"), list)
+        or len(spec["advanceCounts"]) != 2
+        or any(not isinstance(value, int) or value < 0 for value in spec["advanceCounts"])
+        or spec.get("routeClass")
+        not in {"ORDINARY_ROUTE", "FAULT_INJECTED_ROUTE"}
+        or spec.get("faultContext")
+        not in {"NONE", "FIXED_INTERNAL_COLLISION_ORACLE"}
+    ):
+        raise SemanticACV049Error("ACV-049 scalar mutant spec is malformed")
+    core = {key: value for key, value in spec.items() if key not in {"mutantId", "schema"}}
+    expected = "ACV049-P-MUTANT-" + sha256_bytes(dumps(core))[:24].upper()
+    if spec["mutantId"] != expected:
+        raise SemanticACV049Error("ACV-049 scalar mutant identity drift")
+
+
+def execute_scalar_source_mutant(
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Execute one frozen scalar source mutant without reading its channel."""
+
+    _validate_scalar_source_mutant_spec(spec)
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    carrier = carriers.get(spec["requestCaseId"])
+    if carrier is None or not spec["requestCaseId"].startswith("PCR-REQUEST-"):
+        raise SemanticACV049Error("ACV-049 source-mutant request is absent")
+    request, request_bytes = carrier
+    oracle_by_request = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    oracle = oracle_by_request.get(request_bytes)
+    expected_fault = (
+        "FIXED_INTERNAL_COLLISION_ORACLE" if oracle is not None else "NONE"
+    )
+    if spec["faultContext"] != expected_fault:
+        raise SemanticACV049Error("ACV-049 source-mutant fault context drift")
+
+    logical_path = _raw_report_logical_path(spec["logicalPath"])
+    terminal = resolve_logical_terminal(authority.schema, logical_path)
+    instrumented, ast_sites = _instrumented_interface_model(repo_root)
+    previous = sys.modules.get("interface_model")
+    sys.modules["interface_model"] = instrumented
+    try:
+        instrumented_authority = instrumented.ContractAuthority.load(
+            repo_root, contract
+        )
+        baseline_response = _evaluate_fixture_request(
+            instrumented_authority, request, oracle
+        )
+        instrumented.validate_response_before_release(
+            instrumented_authority, baseline_response
+        )
+    finally:
+        if previous is None:
+            sys.modules.pop("interface_model", None)
+        else:
+            sys.modules["interface_model"] = previous
+    if spec["astSiteId"] not in ast_sites:
+        raise SemanticACV049Error("ACV-049 scalar mutant AST site is absent")
+    source_values = _pattern_source_values(
+        baseline_response, _logical_data_pattern(logical_path)
+    )
+    selected = [
+        value
+        for pointer, value, relative in source_values
+        if _report_pointer(_json_pointer(pointer)) == spec["concretePointer"]
+        and value.site_id == spec["astSiteId"]
+        and list(relative) == spec["relativeTokens"]
+    ]
+    if len(selected) != 1:
+        raise SemanticACV049Error("ACV-049 scalar source selector did not execute")
+    baseline = str(selected[0])
+    candidate_plan = _derive_schema_candidate_pair(
+        authority.schema, terminal, baseline, ACV049_MUTANT_CHANNELS
+    )
+    for key in ("advanceCounts", "candidateValues", "domainClass", "twoStateRule"):
+        if spec[key] != candidate_plan[key]:
+            raise SemanticACV049Error("ACV-049 scalar candidate-plan drift")
+
+    mutated, _mutant_sites, mutant_source = _mutated_interface_model(
+        repo_root,
+        {
+            spec["astSiteId"]: (
+                (
+                    tuple(spec["relativeTokens"]),
+                    tuple(spec["candidateValues"]),
+                ),
+            )
+        },
+        ACV049_MUTANT_CHANNELS,
+    )
+    previous = sys.modules.get("interface_model")
+    sys.modules["interface_model"] = mutated
+    try:
+        mutated_authority = mutated.ContractAuthority.load(repo_root, contract)
+        first = _evaluate_fixture_request(mutated_authority, request, oracle)
+        second = _evaluate_fixture_request(mutated_authority, request, oracle)
+        mutated.validate_response_before_release(mutated_authority, first)
+        mutated.validate_response_before_release(mutated_authority, second)
+    finally:
+        if previous is None:
+            sys.modules.pop("interface_model", None)
+        else:
+            sys.modules["interface_model"] = previous
+    if dumps(first) != dumps(second):
+        raise SemanticACV049Error("ACV-049 scalar mutant is nondeterministic")
+    observed = _value_at_report_pointer(first, spec["concretePointer"])
+    if observed not in spec["candidateValues"] or observed == baseline:
+        raise SemanticACV049Error("ACV-049 scalar mutant target did not change")
+    normalized = copy.deepcopy(first)
+    _set_value_at_report_pointer(normalized, spec["concretePointer"], baseline)
+    if dumps(normalized) != dumps(baseline_response):
+        raise SemanticACV049Error("ACV-049 scalar mutant changed multiple targets")
+    return {
+        "baselineResponseSha256": sha256_bytes(dumps(baseline_response)),
+        "mutantId": spec["mutantId"],
+        "mutantSourceSha256": sha256_bytes(mutant_source),
+        "observedCandidateIndex": spec["candidateValues"].index(observed),
+        "requestCaseId": spec["requestCaseId"],
+        "requestSha256": sha256_bytes(request_bytes),
+        "response": first,
+        "responseSha256": sha256_bytes(dumps(first)),
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-run.v1",
+        "sourceSiteExecuted": True,
+        "verdict": "PYTHON_RELEASE_MUTANT_PASS",
+    }
+
+
 def _data_value(value: Any, tokens: tuple[str | int, ...]) -> Any:
     current = value
     for token in tokens:
@@ -1083,6 +1381,33 @@ def _value_at_report_pointer(value: Any, pointer: str) -> Any:
         else:
             raise SemanticACV049Error("ACV-049 report object pointer drift")
     return current
+
+
+def _set_value_at_report_pointer(value: Any, pointer: str, replacement: Any) -> None:
+    raw = _raw_report_pointer(pointer)
+    encoded_tokens = raw.removeprefix("/").split("/")
+    if not encoded_tokens:
+        raise SemanticACV049Error("ACV-049 report pointer targets the root")
+    current = value
+    for encoded in encoded_tokens[:-1]:
+        token = encoded.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, list):
+            if not token.isdecimal() or int(token) >= len(current):
+                raise SemanticACV049Error("ACV-049 report array pointer drift")
+            current = current[int(token)]
+        elif isinstance(current, dict) and token in current:
+            current = current[token]
+        else:
+            raise SemanticACV049Error("ACV-049 report object pointer drift")
+    final = encoded_tokens[-1].replace("~1", "/").replace("~0", "~")
+    if isinstance(current, list):
+        if not final.isdecimal() or int(final) >= len(current):
+            raise SemanticACV049Error("ACV-049 report array pointer drift")
+        current[int(final)] = replacement
+    elif isinstance(current, dict) and final in current:
+        current[final] = replacement
+    else:
+        raise SemanticACV049Error("ACV-049 report object pointer drift")
 
 
 def _report_logical_path(path: str) -> str:
@@ -1790,6 +2115,7 @@ def main(argv: list[str] | None = None) -> int:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--emit-terminal-jobs", action="store_true")
     modes.add_argument("--emit-source-site-map", action="store_true")
+    modes.add_argument("--execute-scalar-source-mutant", type=Path)
     parser.add_argument("--javascript-results-stdin", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -1816,6 +2142,31 @@ def main(argv: list[str] | None = None) -> int:
                         args.repo_root.resolve(),
                         args.contract.resolve(),
                         args.evidence_root.resolve(),
+                    )
+                )
+            )
+            return 0
+        if args.execute_scalar_source_mutant is not None:
+            if args.javascript_results_stdin or args.output is not None:
+                raise SemanticACV049Error("source-mutant mode argument drift")
+            raw_spec = args.execute_scalar_source_mutant.read_bytes()
+            try:
+                spec = json.loads(raw_spec)
+            except (UnicodeDecodeError, ValueError) as error:
+                raise SemanticACV049Error(
+                    "ACV-049 source-mutant spec is not JSON"
+                ) from error
+            if not isinstance(spec, dict) or dumps(spec) != raw_spec:
+                raise SemanticACV049Error(
+                    "ACV-049 source-mutant spec is not canonical"
+                )
+            sys.stdout.buffer.write(
+                dumps(
+                    execute_scalar_source_mutant(
+                        args.repo_root.resolve(),
+                        args.contract.resolve(),
+                        args.evidence_root.resolve(),
+                        spec,
                     )
                 )
             )

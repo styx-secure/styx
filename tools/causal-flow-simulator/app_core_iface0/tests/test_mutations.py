@@ -4,6 +4,7 @@ import ast
 import copy
 import hashlib
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -54,15 +55,15 @@ from run_semantic_acv049 import (  # noqa: E402
     _SourceSiteInstrumenter,
     _SourceTaggedString,
     _derive_schema_candidate_pair,
-    _mutated_interface_model,
     _mutated_source_tree,
     _pattern_values,
     _raw_report_logical_path,
-    _set_data_value,
     _tag_source_value,
     _terminal_execution_plan,
     _value_at_report_pointer,
     build_report as build_acv049_preflight,
+    build_phase_a_scalar_source_mutant_manifest,
+    build_scalar_source_mutant_spec,
     build_terminal_jobs as build_acv049_terminal_jobs,
     derive_phase_a_materialized_paths,
     derive_phase_a_source_site_map,
@@ -610,6 +611,26 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             )
         )
 
+        scalar_manifest = build_phase_a_scalar_source_mutant_manifest(
+            ROOT.parents[2],
+            ROOT / "contract",
+            self.evidence,
+            source_site_map=report,
+        )
+        self.assertEqual(
+            scalar_manifest["verdict"],
+            "PHASE_A_SCALAR_MUTANT_MANIFEST_PASS",
+        )
+        self.assertEqual(
+            scalar_manifest["mutantCount"]
+            + scalar_manifest["skippedEnumRouteCount"],
+            596,
+        )
+        self.assertEqual(
+            len({row["mutantId"] for row in scalar_manifest["mutants"]}),
+            scalar_manifest["mutantCount"],
+        )
+
         target_route = next(
             row
             for row in report["routes"]
@@ -636,57 +657,72 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         pointer = target_route["concretePointers"][0]
         baseline_value = _value_at_report_pointer(baseline_response, pointer)
         self.assertIsInstance(baseline_value, str)
-        channels = (
-            "ACV049-CONTROL-CHANNEL-ALPHA",
-            "ACV049-CONTROL-CHANNEL-BRAVO",
+        spec = build_scalar_source_mutant_spec(
+            authority.schema, target_route, terminal, baseline_value
         )
-        candidate_plan = _derive_schema_candidate_pair(
-            authority.schema, terminal, baseline_value, channels
-        )
-        mutated, _sites, mutant_source = _mutated_interface_model(
-            ROOT.parents[2],
-            {
-                target_route["astSiteIds"][0]: (
-                    (
-                        tuple(target_route["sourceSelectors"][0]["relativeTokens"]),
-                        tuple(candidate_plan["candidateValues"]),
-                    ),
+        runs = []
+        with tempfile.TemporaryDirectory() as raw:
+            spec_path = Path(raw) / "scalar-mutant-spec.json"
+            spec_path.write_bytes(canonical_dumps(spec))
+            for expected_index, channel in enumerate(
+                (
+                    "ACV049-CONTROL-CHANNEL-ALPHA",
+                    "ACV049-CONTROL-CHANNEL-BRAVO",
                 )
-            },
-            channels,
-        )
-        self.assertEqual(len(hashlib.sha256(mutant_source).hexdigest()), 64)
-        previous = sys.modules.get("interface_model")
-        sys.modules["interface_model"] = mutated
-        try:
-            mutated_authority = mutated.ContractAuthority.load(
-                ROOT.parents[2], ROOT / "contract"
-            )
-            for channel, candidate in zip(
-                sorted(channels), candidate_plan["candidateValues"], strict=True
             ):
-                with mock.patch.dict(
-                    "os.environ",
-                    {"STYX_ACV049_MUTANT_CHANNEL": channel},
-                    clear=False,
-                ):
-                    mutant_response = _evaluate_fixture_request(
-                        mutated_authority, request, oracle
-                    )
-                mutated.validate_response_before_release(
-                    mutated_authority, mutant_response
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "run_semantic_acv049.py"),
+                        "--repo-root",
+                        str(ROOT.parents[2]),
+                        "--contract",
+                        str(ROOT / "contract"),
+                        "--evidence-root",
+                        str(self.evidence),
+                        "--execute-scalar-source-mutant",
+                        str(spec_path),
+                    ],
+                    check=False,
+                    capture_output=True,
+                    env={
+                        "LC_CTYPE": "C.UTF-8",
+                        "PATH": "/usr/bin:/bin",
+                        "PYTHONDONTWRITEBYTECODE": "1",
+                        "STYX_ACV049_MUTANT_CHANNEL": channel,
+                    },
                 )
-                self.assertEqual(
-                    _value_at_report_pointer(mutant_response, pointer), candidate
-                )
-                normalized = copy.deepcopy(mutant_response)
-                _set_data_value(normalized, terminal.data_tokens, baseline_value)
-                self.assertEqual(normalized, baseline_response)
-        finally:
-            if previous is None:
-                sys.modules.pop("interface_model", None)
-            else:
-                sys.modules["interface_model"] = previous
+                self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                run = json.loads(completed.stdout)
+                self.assertEqual(canonical_dumps(run), completed.stdout)
+                self.assertEqual(run["verdict"], "PYTHON_RELEASE_MUTANT_PASS")
+                self.assertEqual(run["observedCandidateIndex"], expected_index)
+                self.assertTrue(run["sourceSiteExecuted"])
+                runs.append(run)
+        self.assertEqual(runs[0]["mutantSourceSha256"], runs[1]["mutantSourceSha256"])
+        self.assertNotEqual(runs[0]["responseSha256"], runs[1]["responseSha256"])
+        node = shutil.which("node")
+        self.assertIsNotNone(node)
+        for run in runs:
+            javascript = subprocess.run(
+                [
+                    node,
+                    str(ROOT / "node_adapter.mjs"),
+                    "--validate-response",
+                    "--contract",
+                    str(ROOT / "contract"),
+                ],
+                cwd=ROOT.parents[2],
+                check=False,
+                capture_output=True,
+                input=canonical_dumps(run["response"]),
+                env={
+                    "LC_CTYPE": "C.UTF-8",
+                    "PATH": "/usr/bin:/bin",
+                },
+            )
+            self.assertEqual(javascript.returncode, 0, javascript.stderr.decode())
+            self.assertEqual(json.loads(javascript.stdout), {"verdict": "PASS"})
 
     def test_acv049_all_materialized_scalar_domains_have_finite_candidates(
         self,
