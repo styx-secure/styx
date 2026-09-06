@@ -585,6 +585,71 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(rejected.returncode, 2)
         self.assertIn(b"reserved F13", rejected.stderr)
 
+    def test_independent_javascript_terminal_schema_self_test_is_closed(self) -> None:
+        command = [
+            "node",
+            str(ROOT / "node_adapter.mjs"),
+            "--self-test-terminal-schema",
+            "--contract",
+            str(ROOT / "contract"),
+        ]
+        jobs = [
+            {
+                "baselines": [],
+                "logicalPath": (
+                    "InterfaceResponseV0/<OperationResponseDescribeProfileV0>"
+                    "/profile/applicationProfileId"
+                ),
+                "values": ["1", "path=/"],
+            },
+            {
+                "baselines": [],
+                "logicalPath": (
+                    "InterfaceResponseV0/<OperationResponseDescribeProfileV0>"
+                    "/interfaceVersion"
+                ),
+                "values": ["0", "1"],
+            },
+            {
+                "baselines": [],
+                "logicalPath": (
+                    "InterfaceResponseV0/<OperationResponseDescribeProfileV0>"
+                    "/result/<DescribeProfileResultSupportedV0>/descriptor"
+                    "/externalBoundaries"
+                ),
+                "values": [
+                    ["GENESIS_CEREMONY_PROMOTION", "DURABLE_COMMIT_FINALIZATION"],
+                    "GENESIS_CEREMONY_PROMOTION",
+                ],
+            },
+        ]
+        accepted = subprocess.run(
+            command,
+            input=dumps({"jobs": jobs}),
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(
+            [row["schemaAccepted"] for row in json.loads(accepted.stdout)["results"]],
+            [[True, False], [True, False], [True, False]],
+        )
+
+        malformed_inputs = [
+            {"jobs": [{"logicalPath": jobs[0]["logicalPath"], "values": ["1"]}]},
+            {"jobs": [{**jobs[0], "logicalPath": "InterfaceResponseV0/absent"}]},
+            {"jobs": [jobs[0]] * 513},
+        ]
+        for malformed in malformed_inputs:
+            with self.subTest(malformed=list(malformed)):
+                rejected = subprocess.run(
+                    command,
+                    input=dumps(malformed),
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(rejected.returncode, 2)
+                self.assertEqual(rejected.stdout, b"")
+
     def test_independent_javascript_preflights_closed_collection_bounds(self) -> None:
         command = [
             "node",

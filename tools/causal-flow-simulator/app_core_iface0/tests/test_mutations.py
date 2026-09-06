@@ -210,8 +210,16 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertEqual(report["unmaterialized_path_count"], 80)
         self.assertEqual(report["claimed_mutant_kills"], 0)
         self.assertEqual(report["historical_reconciliation_count"], 4060)
-        self.assertEqual(report["status"], "REMEDIATION_RELATION_REGISTRY")
-        self.assertEqual(report["verdict"], "RELATION_DERIVATION_PASS")
+        self.assertEqual(report["status"], "REMEDIATION_PARTIAL_EXECUTION")
+        self.assertEqual(report["verdict"], "PARTIAL_EXECUTION_PASS")
+        self.assertEqual(
+            report["executed_relation_counts"],
+            {"ACV-049-L": 401, "ACV-049-N": 5, "ACV-049-S": 101},
+        )
+        self.assertEqual(
+            report["pending_relation_counts"],
+            {"ACV-049-E": 77, "ACV-049-P": 300},
+        )
         self.assertEqual(
             report["relation_counts"],
             {
@@ -227,12 +235,53 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             all(
                 row.get("evidenceDisposition")
                 in {
-                    None,
+                    "DOMAIN_CLOSURE_PASS",
+                    "LITERAL_PROVENANCE_CLOSURE_PASS",
+                    "NON_STRING_RECONCILIATION_PASS",
                     "SOURCE_SITE_EVIDENCE_PENDING",
-                    "DOMAIN_CLOSURE_PENDING",
                     "TWO_ENVIRONMENT_EXECUTION_PENDING",
                 }
                 for row in report["rows"]
+            )
+        )
+        literal_rows = [
+            row for row in report["rows"] if row["relationId"] == "ACV-049-L"
+        ]
+        self.assertTrue(
+            all(
+                [member["family"] for member in row["literalFamilyVector"]]
+                == [
+                    "PATH", "HOST", "USER", "PID", "TIMESTAMP", "DURATION",
+                    "ELAPSED", "ENVIRONMENT", "EXCEPTION", "STACK",
+                ]
+                and all(
+                    len(member["encodedRepresentatives"]) == 3
+                    for member in row["literalFamilyVector"]
+                )
+                for row in literal_rows
+            )
+        )
+        singleton_rows = [
+            row for row in report["rows"] if row["relationId"] == "ACV-049-S"
+        ]
+        non_string_rows = [
+            row for row in report["rows"] if row["relationId"] == "ACV-049-N"
+        ]
+        self.assertTrue(
+            all(
+                row["pythonSchemaAccepted"]
+                == row["javascriptSchemaAccepted"]
+                == [True, False]
+                for row in singleton_rows
+            )
+        )
+        self.assertTrue(
+            all(
+                row["pythonSchemaAccepted"]
+                == row["javascriptSchemaAccepted"]
+                == [True, False, False]
+                and len(row["historicalStringProvenanceIdsRetired"]) == 10
+                for row in non_string_rows
             )
         )
 

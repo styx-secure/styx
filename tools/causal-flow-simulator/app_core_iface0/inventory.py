@@ -86,6 +86,7 @@ class LogicalTerminal:
 
     data_tokens: tuple[str | int, ...]
     nodes: tuple[dict[str, Any], ...]
+    node_pointers: tuple[str, ...]
     branches: tuple[tuple[tuple[str | int, ...], dict[str, Any]], ...]
 
 
@@ -519,6 +520,7 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
 
     def walk(
         node: Any,
+        pointer: str,
         remaining: tuple[str, ...],
         data_tokens: tuple[str | int, ...],
         branches: tuple[tuple[tuple[str | int, ...], dict[str, Any]], ...],
@@ -534,14 +536,18 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
             if name in stack or not isinstance(definitions.get(name), dict):
                 raise InventoryError("ACV-049 reference is cyclic or absent")
             return walk(
-                definitions[name], remaining, data_tokens, branches, stack + (name,)
+                definitions[name], f"/$defs/{_escape_pointer(name)}", remaining,
+                data_tokens, branches, stack + (name,)
             )
         all_of = node.get("allOf")
         if isinstance(all_of, list):
             results = [
                 result
-                for arm in all_of
-                for result in walk(arm, remaining, data_tokens, branches, stack)
+                for index, arm in enumerate(all_of)
+                for result in walk(
+                    arm, f"{pointer}/allOf/{index}", remaining, data_tokens,
+                    branches, stack,
+                )
             ]
             if not results:
                 return []
@@ -555,6 +561,7 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
                 LogicalTerminal(
                     first.data_tokens,
                     tuple(item for row in results for item in row.nodes),
+                    tuple(item for row in results for item in row.node_pointers),
                     first.branches,
                 )
             ]
@@ -563,7 +570,7 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
             if not remaining:
                 return []
             label = remaining[0]
-            matches: list[dict[str, Any]] = []
+            matches: list[tuple[int, dict[str, Any]]] = []
             for index, arm in enumerate(one_of):
                 if not isinstance(arm, dict):
                     continue
@@ -574,12 +581,13 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
                     else str(index)
                 )
                 if label == f"<{arm_label}>":
-                    matches.append(arm)
+                    matches.append((index, arm))
             if len(matches) != 1:
                 raise InventoryError("ACV-049 oneOf label is ambiguous")
-            selected = matches[0]
+            selected_index, selected = matches[0]
             return walk(
                 selected,
+                f"{pointer}/oneOf/{selected_index}",
                 remaining[1:],
                 data_tokens,
                 branches + ((data_tokens, selected),),
@@ -592,6 +600,7 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
             name = remaining[0]
             return walk(
                 properties[name],
+                f"{pointer}/properties/{_escape_pointer(name)}",
                 remaining[1:],
                 data_tokens + (name,),
                 branches,
@@ -602,6 +611,7 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
                 return []
             return walk(
                 node.get("items"),
+                f"{pointer}/items",
                 remaining[1:],
                 data_tokens + (0,),
                 branches,
@@ -609,10 +619,11 @@ def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerm
             )
         if remaining:
             return []
-        return [LogicalTerminal(data_tokens, (node,), branches)]
+        return [LogicalTerminal(data_tokens, (node,), (pointer,), branches)]
 
     results = walk(
         definitions["InterfaceResponseV0"],
+        "/$defs/InterfaceResponseV0",
         tuple(parts[1:]),
         (),
         (),

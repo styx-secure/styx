@@ -730,6 +730,135 @@ function schemaMatches(value, schema, root, branchTrace = null) {
 }
 
 
+function resolveLogicalTerminal(root, logicalPath) {
+  requireCondition(typeof logicalPath === "string", "logical path is not a string");
+  const parts = logicalPath.split("/");
+  requireCondition(parts.shift() === "InterfaceResponseV0", "logical path root drift");
+  const definitions = root.$defs;
+  requireCondition(objectValue(definitions?.InterfaceResponseV0), "response definition is absent");
+
+  function walk(node, remaining, stack) {
+    requireCondition(objectValue(node), "logical path entered a non-schema node");
+    if (typeof node.$ref === "string") {
+      requireCondition(node.$ref.startsWith("#/$defs/"), "logical path has a non-local reference");
+      const name = node.$ref.split("/").at(-1).replaceAll("~1", "/").replaceAll("~0", "~");
+      requireCondition(!stack.includes(name) && objectValue(definitions[name]), "logical path reference is cyclic or absent");
+      return walk(definitions[name], remaining, [...stack, name]);
+    }
+    if (Array.isArray(node.allOf)) {
+      const results = node.allOf.flatMap((arm) => walk(arm, remaining, stack));
+      if (results.length === 0) return [];
+      return results;
+    }
+    if (Array.isArray(node.oneOf)) {
+      if (remaining.length === 0) return [];
+      const label = remaining[0];
+      const matches = node.oneOf.filter((arm, index) => {
+        const armLabel = typeof arm?.$ref === "string" ? arm.$ref.split("/").at(-1) : String(index);
+        return label === `<${armLabel}>`;
+      });
+      requireCondition(matches.length === 1, "logical path oneOf label is ambiguous");
+      return walk(matches[0], remaining.slice(1), stack);
+    }
+    if (objectValue(node.properties)) {
+      if (remaining.length === 0 || !Object.prototype.hasOwnProperty.call(node.properties, remaining[0])) return [];
+      return walk(node.properties[remaining[0]], remaining.slice(1), stack);
+    }
+    if (node.type === "array") {
+      if (remaining[0] !== "*" || !objectValue(node.items)) return [];
+      return walk(node.items, remaining.slice(1), stack);
+    }
+    if (remaining.length !== 0) return [];
+    return [node];
+  }
+
+  const nodes = walk(definitions.InterfaceResponseV0, parts, ["InterfaceResponseV0"]);
+  requireCondition(nodes.length > 0, "logical path resolved no terminal schema");
+  return nodes;
+}
+
+
+function logicalDataTokens(logicalPath) {
+  return logicalPath
+    .split("/")
+    .slice(1)
+    .filter((part) => !(part.startsWith("<") && part.endsWith(">")))
+    .map((part) => part === "*" ? 0 : part);
+}
+
+
+function replaceLogicalValue(value, tokens, replacement) {
+  requireCondition(tokens.length > 0, "logical path cannot replace the response root");
+  let parent = value;
+  for (const token of tokens.slice(0, -1)) {
+    requireCondition(
+      (typeof token === "number" && Array.isArray(parent) && token < parent.length)
+        || (typeof token === "string" && objectValue(parent) && Object.prototype.hasOwnProperty.call(parent, token)),
+      "logical path is absent from baseline response",
+    );
+    parent = parent[token];
+  }
+  const final = tokens.at(-1);
+  requireCondition(
+    (typeof final === "number" && Array.isArray(parent) && final < parent.length)
+      || (typeof final === "string" && objectValue(parent) && Object.prototype.hasOwnProperty.call(parent, final)),
+    "logical terminal is absent from baseline response",
+  );
+  parent[final] = replacement;
+}
+
+
+function releaseAccepts(response, schema, relations) {
+  try {
+    validateCompleteResponseBeforeRelease(response, schema, relations);
+    return true;
+  } catch (error) {
+    if (!(error instanceof AdapterFailure)) throw error;
+    return false;
+  }
+}
+
+
+function selfTestOneTerminalSchema(input, schema, relations) {
+  exactKeys(input, ["baselines", "logicalPath", "values"], "terminal-schema self-test job");
+  requireCondition(
+    objectValue(input)
+      && typeof input.logicalPath === "string"
+      && Array.isArray(input.values)
+      && input.values.length > 0
+      && input.values.length <= 64
+      && Array.isArray(input.baselines)
+      && input.baselines.length <= 32
+      && input.baselines.every((baseline) => objectValue(baseline)),
+    "terminal-schema self-test input is malformed",
+  );
+  const nodes = resolveLogicalTerminal(schema, input.logicalPath);
+  const dataTokens = logicalDataTokens(input.logicalPath);
+  for (const baseline of input.baselines) {
+    requireCondition(releaseAccepts(baseline, schema, relations), "terminal-schema baseline response is invalid");
+  }
+  return {
+    releaseAccepted: input.baselines.map((baseline) => input.values.map((value) => {
+      const candidate = structuredClone(baseline);
+      replaceLogicalValue(candidate, dataTokens, value);
+      return releaseAccepts(candidate, schema, relations);
+    })),
+    schemaAccepted: input.values.map((value) => nodes.every((node) => schemaMatches(value, node, schema))),
+    logicalPath: input.logicalPath,
+  };
+}
+
+
+function selfTestTerminalSchema(input, schema, relations) {
+  if (objectValue(input) && Array.isArray(input.jobs)) {
+    exactKeys(input, ["jobs"], "terminal-schema self-test input");
+    requireCondition(input.jobs.length > 0 && input.jobs.length <= 512, "terminal-schema job count drift");
+    return { results: input.jobs.map((job) => selfTestOneTerminalSchema(job, schema, relations)) };
+  }
+  return selfTestOneTerminalSchema(input, schema, relations);
+}
+
+
 function validateSchema(value, schema, root, branchTrace = null) {
   requireCondition(objectValue(schema), "schema node is not an object");
   if (typeof schema.$ref === "string") validateSchema(value, schemaPointer(root, schema.$ref), root, branchTrace);
@@ -1330,6 +1459,7 @@ function parseArguments(argv) {
   let preflightCollectionsMode = false;
   let outcomeProjectionMode = false;
   let validateV2EvidenceMode = false;
+  let terminalSchemaMode = false;
   let v1DetectorMutant = false;
   let contractPath = null;
   let trustedDirection = null;
@@ -1344,6 +1474,7 @@ function parseArguments(argv) {
     else if (argv[index] === "--preflight-collections") preflightCollectionsMode = true;
     else if (argv[index] === "--outcome-projection") outcomeProjectionMode = true;
     else if (argv[index] === "--validate-v2-evidence") validateV2EvidenceMode = true;
+    else if (argv[index] === "--self-test-terminal-schema") terminalSchemaMode = true;
     else if (argv[index] === "--v1-detector-mutant") v1DetectorMutant = true;
     else if (argv[index] === "--direction") trustedDirection = argv[++index];
     else if (argv[index] === "--schema-override") schemaOverride = argv[++index];
@@ -1354,7 +1485,8 @@ function parseArguments(argv) {
     Number(selfTest) + Number(deriveForkJoin) + Number(authorityMetricsMode)
       + Number(graphProjectionMode) + Number(credentialProjectionMode)
       + Number(validateResponseMode) + Number(preflightCollectionsMode)
-      + Number(outcomeProjectionMode) + Number(validateV2EvidenceMode) === 1,
+      + Number(outcomeProjectionMode) + Number(validateV2EvidenceMode)
+      + Number(terminalSchemaMode) === 1,
     "exactly one adapter mode is required",
   );
   requireCondition(contractPath, "--contract is required");
@@ -1367,7 +1499,7 @@ function parseArguments(argv) {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
     graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
     schemaOverride, selfTest, trustedDirection, validateResponseMode,
-    validateV2EvidenceMode, v1DetectorMutant,
+    validateV2EvidenceMode, v1DetectorMutant, terminalSchemaMode,
   };
 }
 
@@ -1377,7 +1509,7 @@ try {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
     graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
     schemaOverride, selfTest, trustedDirection, validateResponseMode,
-    validateV2EvidenceMode, v1DetectorMutant,
+    validateV2EvidenceMode, v1DetectorMutant, terminalSchemaMode,
   } = parseArguments(process.argv.slice(2));
   const authority = loadContractAuthority(contractPath);
   if (selfTest) {
@@ -1401,6 +1533,11 @@ try {
     const input = readCanonicalInput();
     validateCompleteResponseBeforeRelease(input, schema, relations);
     process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
+  } else if (terminalSchemaMode) {
+    const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
+    const relations = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json");
+    const input = readCanonicalInput();
+    process.stdout.write(`${JSON.stringify(selfTestTerminalSchema(input, schema, relations))}\n`);
   } else if (preflightCollectionsMode) {
     const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
     const semantics = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json");
