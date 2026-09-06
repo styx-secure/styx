@@ -92,21 +92,62 @@ class _SourceTaggedString(str):
         return self
 
 
+class _SourceTaggedDict(dict[Any, Any]):
+    def __init__(self, value: dict[Any, Any], site_id: str) -> None:
+        super().__init__(value)
+        self.site_id = site_id
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _SourceTaggedDict:
+        return _SourceTaggedDict(copy.deepcopy(dict(self), memo), self.site_id)
+
+
+class _SourceTaggedList(list[Any]):
+    def __init__(self, value: list[Any], site_id: str) -> None:
+        super().__init__(value)
+        self.site_id = site_id
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _SourceTaggedList:
+        return _SourceTaggedList(copy.deepcopy(list(self), memo), self.site_id)
+
+
+class _SourceTaggedTuple(tuple[Any, ...]):
+    def __new__(cls, value: tuple[Any, ...], site_id: str) -> _SourceTaggedTuple:
+        instance = super().__new__(cls, value)
+        instance.site_id = site_id
+        return instance
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _SourceTaggedTuple:
+        return _SourceTaggedTuple(
+            tuple(copy.deepcopy(item, memo) for item in self), self.site_id
+        )
+
+
 def _tag_source_value(site_id: str, value: Any) -> Any:
     """Tag unowned strings without changing their JSON-visible value or shape."""
 
-    if isinstance(value, _SourceTaggedString):
+    if isinstance(
+        value,
+        (_SourceTaggedString, _SourceTaggedDict, _SourceTaggedList, _SourceTaggedTuple),
+    ):
         return value
     if isinstance(value, str):
         return _SourceTaggedString(value, site_id)
     if isinstance(value, list):
-        return [_tag_source_value(site_id, item) for item in value]
+        return _SourceTaggedList(
+            [_tag_source_value(site_id, item) for item in value], site_id
+        )
     if isinstance(value, tuple):
-        return tuple(_tag_source_value(site_id, item) for item in value)
+        return _SourceTaggedTuple(
+            tuple(_tag_source_value(site_id, item) for item in value), site_id
+        )
     if isinstance(value, dict):
-        return {
-            key: _tag_source_value(site_id, item) for key, item in value.items()
-        }
+        return _SourceTaggedDict(
+            {
+                key: _tag_source_value(site_id, item)
+                for key, item in value.items()
+            },
+            site_id,
+        )
     if isinstance(value, set):
         return {_tag_source_value(site_id, item) for item in value}
     if isinstance(value, frozenset):
@@ -259,6 +300,182 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
         return node
 
 
+class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
+    """Replace only named string construction sites with a frozen pair."""
+
+    def __init__(
+        self,
+        mutations: dict[
+            str,
+            tuple[tuple[tuple[str | int, ...], tuple[str, str]], ...],
+        ],
+        channels: tuple[str, str],
+    ) -> None:
+        super().__init__()
+        if not mutations or any(
+            not site_id.startswith("PURITY-SITE-")
+            or not patches
+            or len({selector for selector, _candidates in patches}) != len(patches)
+            or any(
+                any(not isinstance(token, (str, int)) for token in selector)
+                or len(candidates) != 2
+                or any(not isinstance(value, str) for value in candidates)
+                for selector, candidates in patches
+            )
+            for site_id, patches in mutations.items()
+        ):
+            raise SemanticACV049Error("ACV-049 source mutation map is malformed")
+        ordered_channels = _controlled_channel_order(channels)
+        self.channels = tuple(channel.decode("ascii") for channel in ordered_channels)
+        self.mutations = dict(mutations)
+        self.mutated_sites: set[str] = set()
+
+    def _tag(self, site_id: str, value: ast.expr) -> ast.expr:
+        patches = self.mutations.get(site_id)
+        if patches is None:
+            return value
+        self.mutated_sites.add(site_id)
+        mutated = value
+        for selector, candidates in patches:
+            channel_read = ast.Subscript(
+                value=ast.Name(id="_acv049_mutant_environ", ctx=ast.Load()),
+                slice=ast.Constant("STYX_ACV049_MUTANT_CHANNEL"),
+                ctx=ast.Load(),
+            )
+            replacement = ast.Subscript(
+                value=ast.Dict(
+                    keys=[ast.Constant(channel) for channel in self.channels],
+                    values=[ast.Constant(candidate) for candidate in candidates],
+                ),
+                slice=channel_read,
+                ctx=ast.Load(),
+            )
+            mutated = ast.Call(
+                func=ast.Name(id="_acv049_replace_source_value", ctx=ast.Load()),
+                args=[
+                    mutated,
+                    ast.Tuple(
+                        elts=[ast.Constant(token) for token in selector],
+                        ctx=ast.Load(),
+                    ),
+                    replacement,
+                ],
+                keywords=[],
+            )
+        return mutated
+
+    def visit_Module(self, node: ast.Module) -> ast.AST:
+        node = self.generic_visit(node)
+        insertion = 0
+        if (
+            node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+        ):
+            insertion = 1
+        while (
+            insertion < len(node.body)
+            and isinstance(node.body[insertion], ast.ImportFrom)
+            and node.body[insertion].module == "__future__"
+        ):
+            insertion += 1
+        node.body.insert(
+            insertion,
+            ast.ImportFrom(
+                module="os",
+                names=[
+                    ast.alias(name="environ", asname="_acv049_mutant_environ")
+                ],
+                level=0,
+            ),
+        )
+        helper = ast.parse(
+            "def _acv049_replace_source_value(value, path, replacement):\n"
+            "    if not path:\n"
+            "        return replacement\n"
+            "    head, *tail = path\n"
+            "    if isinstance(value, dict) and isinstance(head, str) and head in value:\n"
+            "        result = dict(value)\n"
+            "        result[head] = _acv049_replace_source_value(value[head], tuple(tail), replacement)\n"
+            "        return result\n"
+            "    if isinstance(value, list) and isinstance(head, int) and 0 <= head < len(value):\n"
+            "        result = list(value)\n"
+            "        result[head] = _acv049_replace_source_value(value[head], tuple(tail), replacement)\n"
+            "        return result\n"
+            "    raise RuntimeError('ACV-049 source selector drift')\n"
+        ).body[0]
+        node.body.insert(insertion + 1, helper)
+        return node
+
+
+def _mutated_source_tree(
+    source: str,
+    filename: str,
+    mutations: dict[
+        str,
+        tuple[tuple[tuple[str | int, ...], tuple[str, str]], ...],
+    ],
+    channels: tuple[str, str],
+) -> tuple[ast.Module, dict[str, dict[str, Any]], bytes]:
+    try:
+        tree = ast.parse(source, filename=filename)
+    except (SyntaxError, ValueError) as error:
+        raise SemanticACV049Error("ACV-049 evaluator AST is unavailable") from error
+    instrumenter = _SourceMutationInstrumenter(mutations, channels)
+    transformed = instrumenter.visit(tree)
+    if not isinstance(transformed, ast.Module):
+        raise SemanticACV049Error("ACV-049 mutated evaluator root drift")
+    ast.fix_missing_locations(transformed)
+    if instrumenter.mutated_sites != set(mutations):
+        raise SemanticACV049Error("ACV-049 source mutation site is absent or dead")
+    canonical_source = (ast.unparse(transformed) + "\n").encode("utf-8")
+    reparsed = ast.parse(canonical_source, filename=filename)
+    if ast.dump(reparsed, include_attributes=False) != ast.dump(
+        transformed, include_attributes=False
+    ):
+        raise SemanticACV049Error("ACV-049 mutant source round-trip drift")
+    return transformed, instrumenter.sites, canonical_source
+
+
+def _mutated_interface_model(
+    repo_root: Path,
+    mutations: dict[
+        str,
+        tuple[tuple[tuple[str | int, ...], tuple[str, str]], ...],
+    ],
+    channels: tuple[str, str],
+) -> tuple[types.ModuleType, dict[str, dict[str, Any]], bytes]:
+    source_path = (
+        repo_root
+        / "tools/causal-flow-simulator/app_core_iface0/interface_model.py"
+    )
+    try:
+        source = source_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise SemanticACV049Error("ACV-049 evaluator source is unavailable") from error
+    tree, sites, canonical_source = _mutated_source_tree(
+        source, str(source_path), mutations, channels
+    )
+    module = types.ModuleType("interface_model")
+    module.__file__ = str(source_path)
+    previous = sys.modules.get("interface_model")
+    sys.modules["interface_model"] = module
+    try:
+        exec(compile(tree, str(source_path), "exec"), module.__dict__)
+    except Exception:
+        if previous is None:
+            sys.modules.pop("interface_model", None)
+        else:
+            sys.modules["interface_model"] = previous
+        raise
+    if previous is None:
+        sys.modules.pop("interface_model", None)
+    else:
+        sys.modules["interface_model"] = previous
+    return module, sites, canonical_source
+
+
 def _instrumented_interface_model(
     repo_root: Path,
 ) -> tuple[types.ModuleType, dict[str, dict[str, Any]]]:
@@ -326,6 +543,47 @@ def _pattern_values(
     if not isinstance(value, dict) or token not in value:
         return []
     return _pattern_values(value[token], remaining, (*prefix, token))
+
+
+def _pattern_source_values(
+    value: Any,
+    pattern: tuple[str | None, ...],
+    prefix: tuple[str | int, ...] = (),
+    boundaries: tuple[tuple[str, tuple[str | int, ...]], ...] = (),
+) -> list[tuple[tuple[str | int, ...], _SourceTaggedString, tuple[str | int, ...]]]:
+    site_id = getattr(value, "site_id", None)
+    if isinstance(
+        value, (_SourceTaggedDict, _SourceTaggedList, _SourceTaggedTuple)
+    ) and isinstance(site_id, str):
+        boundaries = (*boundaries, (site_id, prefix))
+    if not pattern:
+        if not isinstance(value, _SourceTaggedString):
+            return []
+        owner_prefix = next(
+            (
+                boundary_prefix
+                for boundary_site, boundary_prefix in reversed(boundaries)
+                if boundary_site == value.site_id
+            ),
+            prefix,
+        )
+        return [(prefix, value, prefix[len(owner_prefix):])]
+    token, remaining = pattern[0], pattern[1:]
+    if token is None:
+        if not isinstance(value, list):
+            return []
+        return [
+            result
+            for index, item in enumerate(value)
+            for result in _pattern_source_values(
+                item, remaining, (*prefix, index), boundaries
+            )
+        ]
+    if not isinstance(value, dict) or token not in value:
+        return []
+    return _pattern_source_values(
+        value[token], remaining, (*prefix, token), boundaries
+    )
 
 
 def _controlled_channel_order(channels: tuple[str, str]) -> tuple[bytes, bytes]:
@@ -565,7 +823,7 @@ def derive_phase_a_source_site_map(
         for path in partition["mutable"]
     }
     route_groups: dict[
-        tuple[str, str, str, str], dict[str, set[str]]
+        tuple[str, str, str, str], dict[str, set[Any]]
     ] = {}
     materialized: set[str] = set()
     used_sites: set[str] = set()
@@ -584,15 +842,11 @@ def derive_phase_a_source_site_map(
                 continue
             if not selected:
                 continue
-            values = _pattern_values(response, pattern)
+            values = _pattern_source_values(response, pattern)
             if not values:
                 continue
             materialized.add(path)
-            for pointer, value in values:
-                if not isinstance(value, _SourceTaggedString):
-                    raise SemanticACV049Error(
-                        f"ACV-049 materialized leaf has no AST site: {path}"
-                    )
+            for pointer, value, relative_pointer in values:
                 if value.site_id not in ast_sites:
                     raise SemanticACV049Error("ACV-049 reported an unknown AST site")
                 semantic_site = _semantic_construction_site(path, value.site_id)
@@ -602,11 +856,27 @@ def derive_phase_a_source_site_map(
                 )
                 key = (path, semantic_site, case_id, fault_context)
                 group = route_groups.setdefault(
-                    key, {"astSiteIds": set(), "concretePointers": set()}
+                    key,
+                    {
+                        "astSiteIds": set(),
+                        "concretePointers": set(),
+                        "sourceSelectors": set(),
+                    },
                 )
                 group["astSiteIds"].add(value.site_id)
-                group["concretePointers"].add(
-                    _report_pointer(_json_pointer(pointer))
+                concrete_pointer = _report_pointer(_json_pointer(pointer))
+                relative = _json_pointer(relative_pointer)
+                relative_report_pointer = (
+                    "SELF" if not relative else _report_pointer(relative)
+                )
+                group["concretePointers"].add(concrete_pointer)
+                group["sourceSelectors"].add(
+                    (
+                        value.site_id,
+                        concrete_pointer,
+                        relative_report_pointer,
+                        relative_pointer,
+                    )
                 )
     expected_materialized = derive_phase_a_materialized_paths(
         repo_root, contract, evidence_root
@@ -628,6 +898,23 @@ def derive_phase_a_source_site_map(
                 else "ORDINARY_ROUTE"
             ),
             "siteId": site_id,
+            "sourceSelectors": [
+                {
+                    "astSiteId": ast_site_id,
+                    "concretePointer": concrete_pointer,
+                    "relativePointer": relative_pointer,
+                    "relativeTokens": list(relative_tokens),
+                }
+                for (
+                    ast_site_id,
+                    concrete_pointer,
+                    relative_pointer,
+                    relative_tokens,
+                ) in sorted(
+                    group["sourceSelectors"],
+                    key=lambda item: dumps(list(item[:3]) + [list(item[3])]),
+                )
+            ],
         }
         for (path, site_id, case_id, fault_context), group in route_groups.items()
     ]
@@ -782,10 +1069,36 @@ def _raw_report_pointer(pointer: str) -> str:
     return "/" + pointer[len(prefix):].replace("%2F", "/").replace("%25", "%")
 
 
+def _value_at_report_pointer(value: Any, pointer: str) -> Any:
+    raw = _raw_report_pointer(pointer)
+    current = value
+    for encoded in raw.removeprefix("/").split("/"):
+        token = encoded.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, list):
+            if not token.isdecimal() or int(token) >= len(current):
+                raise SemanticACV049Error("ACV-049 report array pointer drift")
+            current = current[int(token)]
+        elif isinstance(current, dict) and token in current:
+            current = current[token]
+        else:
+            raise SemanticACV049Error("ACV-049 report object pointer drift")
+    return current
+
+
 def _report_logical_path(path: str) -> str:
     if not path or path.startswith("/"):
         raise SemanticACV049Error("ACV-049 logical path identity drift")
     return "LOGICAL_PATH:" + path.replace("%", "%25").replace("/", "%2F")
+
+
+def _raw_report_logical_path(path: str) -> str:
+    prefix = "LOGICAL_PATH:"
+    if not path.startswith(prefix):
+        raise SemanticACV049Error("ACV-049 report logical path encoding drift")
+    decoded = path[len(prefix):].replace("%2F", "/").replace("%25", "%")
+    if not decoded or decoded.startswith("/"):
+        raise SemanticACV049Error("ACV-049 report logical path identity drift")
+    return decoded
 
 
 def _constraint_occurrences(terminal: LogicalTerminal) -> list[dict[str, Any]]:

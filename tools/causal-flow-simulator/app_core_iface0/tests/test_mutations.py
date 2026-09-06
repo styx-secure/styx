@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from jsonschema.validators import Draft202012Validator
 
@@ -28,10 +29,18 @@ from generate_structural_witnesses import (  # noqa: E402
     validate_structural_witness_identifiers,
     WitnessGenerationError,
 )
-from generate_seed_registry import generate_phase_a  # noqa: E402
+from generate_seed_registry import (  # noqa: E402
+    _evaluate_fixture_request,
+    _semantic_request_carriers,
+    generate_phase_a,
+)
 from canonical_json import dumps as canonical_dumps  # noqa: E402
 from canonical_report import canonical_bytes  # noqa: E402
-from inventory import LogicalTerminal, derive_acv049_path_partition  # noqa: E402
+from inventory import (  # noqa: E402
+    LogicalTerminal,
+    derive_acv049_path_partition,
+    resolve_logical_terminal,
+)
 from interface_model import ContractAuthority  # noqa: E402
 from run_mutations import build_report as build_phase_a_mutation_report  # noqa: E402
 from run_semantic_preflight import (  # noqa: E402
@@ -45,9 +54,14 @@ from run_semantic_acv049 import (  # noqa: E402
     _SourceSiteInstrumenter,
     _SourceTaggedString,
     _derive_schema_candidate_pair,
+    _mutated_interface_model,
+    _mutated_source_tree,
     _pattern_values,
+    _raw_report_logical_path,
+    _set_data_value,
     _tag_source_value,
     _terminal_execution_plan,
+    _value_at_report_pointer,
     build_report as build_acv049_preflight,
     build_terminal_jobs as build_acv049_terminal_jobs,
     derive_phase_a_materialized_paths,
@@ -183,6 +197,59 @@ class StructuralPlanTests(unittest.TestCase):
                 self._MINIMAL_SCHEMA,
                 terminal,
                 "open",
+                ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
+            )
+
+    def test_acv049_source_mutant_changes_only_the_exact_ast_site(self) -> None:
+        source = (
+            '"""fixture"""\n'
+            "from __future__ import annotations\n"
+            "def build():\n"
+            "    return {'value': 'baseline', 'control': 'unchanged'}\n"
+        )
+        mapper = _SourceSiteInstrumenter()
+        mapper.visit(ast.parse(source))
+        target = next(
+            site_id
+            for site_id, row in mapper.sites.items()
+            if row["label"] == "value"
+        )
+        channels = ("CHANNEL-BRAVO", "CHANNEL-ALPHA")
+        transformed, sites, canonical_source = _mutated_source_tree(
+            source,
+            "fixture.py",
+            {target: (((), ("candidate-alpha", "candidate-bravo")),)},
+            channels,
+        )
+        self.assertEqual(set(sites), set(mapper.sites))
+        namespace: dict[str, object] = {}
+        exec(compile(transformed, "fixture.py", "exec"), namespace)
+        build = namespace["build"]
+        self.assertTrue(callable(build))
+        for channel, expected in (
+            ("CHANNEL-ALPHA", "candidate-alpha"),
+            ("CHANNEL-BRAVO", "candidate-bravo"),
+        ):
+            with mock.patch.dict(
+                "os.environ", {"STYX_ACV049_MUTANT_CHANNEL": channel}, clear=False
+            ):
+                self.assertEqual(
+                    build(),  # type: ignore[operator]
+                    {"value": expected, "control": "unchanged"},
+                )
+        self.assertIn(
+            b"from os import environ as _acv049_mutant_environ", canonical_source
+        )
+        self.assertEqual(canonical_source.count(b"STYX_ACV049_MUTANT_CHANNEL"), 1)
+
+    def test_acv049_source_mutant_rejects_an_absent_site(self) -> None:
+        with self.assertRaisesRegex(
+            SemanticACV049Error, "source mutation site is absent or dead"
+        ):
+            _mutated_source_tree(
+                "def build():\n    return {'value': 'baseline'}\n",
+                "fixture.py",
+                {"PURITY-SITE-ABSENT": (((), ("one", "two")),)},
                 ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
             )
 
@@ -525,12 +592,101 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                     for pointer in row["concretePointers"]
                 )
                 and row["astSiteIds"]
+                and row["sourceSelectors"]
+                and all(
+                    set(selector)
+                    == {
+                        "astSiteId",
+                        "concretePointer",
+                        "relativePointer",
+                        "relativeTokens",
+                    }
+                    for selector in row["sourceSelectors"]
+                )
                 and row["siteId"].startswith("PURITY-SITE-")
                 and row["routeClass"]
                 in {"ORDINARY_ROUTE", "FAULT_INJECTED_ROUTE"}
                 for row in report["routes"]
             )
         )
+
+        target_route = next(
+            row
+            for row in report["routes"]
+            if _raw_report_logical_path(row["logicalPath"]).endswith(
+                "/profile/applicationProfileId"
+            )
+            and row["faultContext"] == "NONE"
+        )
+        self.assertEqual(len(target_route["astSiteIds"]), 1)
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        _inventory, _inventory_bytes, carriers = _load_phase_a(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        request, request_bytes = carriers[target_route["requestCaseId"]]
+        oracle_by_request = {
+            canonical_dumps(case.request): case.collision_oracle
+            for case in _semantic_request_carriers(authority)
+            if case.collision_oracle is not None
+        }
+        oracle = oracle_by_request.get(request_bytes)
+        baseline_response = _evaluate_fixture_request(authority, request, oracle)
+        logical_path = _raw_report_logical_path(target_route["logicalPath"])
+        terminal = resolve_logical_terminal(authority.schema, logical_path)
+        pointer = target_route["concretePointers"][0]
+        baseline_value = _value_at_report_pointer(baseline_response, pointer)
+        self.assertIsInstance(baseline_value, str)
+        channels = (
+            "ACV049-CONTROL-CHANNEL-ALPHA",
+            "ACV049-CONTROL-CHANNEL-BRAVO",
+        )
+        candidate_plan = _derive_schema_candidate_pair(
+            authority.schema, terminal, baseline_value, channels
+        )
+        mutated, _sites, mutant_source = _mutated_interface_model(
+            ROOT.parents[2],
+            {
+                target_route["astSiteIds"][0]: (
+                    (
+                        tuple(target_route["sourceSelectors"][0]["relativeTokens"]),
+                        tuple(candidate_plan["candidateValues"]),
+                    ),
+                )
+            },
+            channels,
+        )
+        self.assertEqual(len(hashlib.sha256(mutant_source).hexdigest()), 64)
+        previous = sys.modules.get("interface_model")
+        sys.modules["interface_model"] = mutated
+        try:
+            mutated_authority = mutated.ContractAuthority.load(
+                ROOT.parents[2], ROOT / "contract"
+            )
+            for channel, candidate in zip(
+                sorted(channels), candidate_plan["candidateValues"], strict=True
+            ):
+                with mock.patch.dict(
+                    "os.environ",
+                    {"STYX_ACV049_MUTANT_CHANNEL": channel},
+                    clear=False,
+                ):
+                    mutant_response = _evaluate_fixture_request(
+                        mutated_authority, request, oracle
+                    )
+                mutated.validate_response_before_release(
+                    mutated_authority, mutant_response
+                )
+                self.assertEqual(
+                    _value_at_report_pointer(mutant_response, pointer), candidate
+                )
+                normalized = copy.deepcopy(mutant_response)
+                _set_data_value(normalized, terminal.data_tokens, baseline_value)
+                self.assertEqual(normalized, baseline_response)
+        finally:
+            if previous is None:
+                sys.modules.pop("interface_model", None)
+            else:
+                sys.modules["interface_model"] = previous
 
     def test_acv049_all_materialized_scalar_domains_have_finite_candidates(
         self,
