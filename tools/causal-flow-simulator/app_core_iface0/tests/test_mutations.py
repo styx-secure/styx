@@ -735,13 +735,38 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(enum_tuple_manifest["enumRouteCount"], 212)
         self.assertEqual(enum_tuple_manifest["coveredEnumRouteCount"], 212)
-        self.assertEqual(enum_tuple_manifest["ordinaryEnumMutantCount"], 134)
+        self.assertEqual(enum_tuple_manifest["ordinaryEnumMutantCount"], 124)
         self.assertEqual(enum_tuple_manifest["relationTupleMutantCount"], 34)
         self.assertEqual(enum_tuple_manifest["relationTupleResidualCount"], 1)
-        self.assertEqual(enum_tuple_manifest["mutantCount"], 168)
+        self.assertEqual(enum_tuple_manifest["o08BoundCandidateCount"], 10)
+        self.assertEqual(enum_tuple_manifest["mutantCount"], 158)
         self.assertEqual(
             len({row["mutantId"] for row in enum_tuple_manifest["mutants"]}),
-            168,
+            158,
+        )
+        self.assertEqual(
+            {
+                (row["dimension"], row["field"])
+                for row in enum_tuple_manifest["o08BoundCandidates"]
+            },
+            {
+                (dimension, field)
+                for dimension in {
+                    "ACTIVATION_CAPABILITY_SET",
+                    "CUSTODY_REDUNDANCY",
+                    "DURABLE_RECORDS",
+                    "DURABLE_REQUIRED_OCTETS",
+                    "TRANSIENT_MEMORY_CAPABILITY",
+                }
+                for field in {"comparison", "unit"}
+            },
+        )
+        self.assertTrue(
+            all(
+                row["evidenceStatus"] == "PENDING_NEGATIVE_CONTROL"
+                and row["schemaAdmissibleAlternativeValues"]
+                for row in enum_tuple_manifest["o08BoundCandidates"]
+            )
         )
         self.assertEqual(
             {
@@ -756,7 +781,7 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 for row in enum_tuple_manifest["mutants"]
                 if row["kind"] == "ORDINARY_ENUM"
             ),
-            18,
+            13,
         )
         self.assertEqual(
             sum(

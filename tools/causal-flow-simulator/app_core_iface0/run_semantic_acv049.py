@@ -1467,7 +1467,63 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
 
     relation_groups: dict[tuple[str, str, str], list[tuple[dict[str, Any], str, LogicalTerminal]]] = {}
     ordinary = []
+    o08_bound_candidates: list[dict[str, Any]] = []
+    capability_dimensions = frozenset(authority.capability_requirements())
     for route, logical_path, terminal in enum_routes:
+        tokens = terminal.data_tokens
+        if (
+            len(tokens) == 5
+            and tokens[:3] == ("result", "descriptor", "capabilityRequirements")
+            and tokens[3] in capability_dimensions
+            and tokens[4] in {"comparison", "unit"}
+        ):
+            selectors = route.get("sourceSelectors")
+            pointers = route.get("concretePointers")
+            if (
+                not isinstance(selectors, list) or len(selectors) != 1
+                or not isinstance(pointers, list) or len(pointers) != 1
+                or route.get("astSiteIds") != [selectors[0].get("astSiteId")]
+            ):
+                raise SemanticACV049Error(
+                    "ACV-049 enum O-08-bound selector is not exact"
+                )
+            dimension = str(tokens[3])
+            field = str(tokens[4])
+            baseline = _value_at_report_pointer(
+                responses[route["requestCaseId"]], pointers[0]
+            )
+            envelope_row = authority.resource_envelope.get("entries", {}).get(
+                dimension
+            )
+            alternatives = sorted(
+                set(_enum_domain(terminal)) - {baseline},
+                key=lambda value: value.encode("utf-8"),
+            )
+            if (
+                not isinstance(baseline, str)
+                or not isinstance(envelope_row, dict)
+                or envelope_row.get(field) != baseline
+                or not alternatives
+            ):
+                raise SemanticACV049Error(
+                    "ACV-049 enum O-08 envelope binding drift"
+                )
+            o08_bound_candidates.append(
+                {
+                    "astSiteId": selectors[0]["astSiteId"],
+                    "baselineValue": baseline,
+                    "candidateDisposition": "O08_BOUND",
+                    "concretePointer": selectors[0]["concretePointer"],
+                    "dimension": dimension,
+                    "evidenceStatus": "PENDING_NEGATIVE_CONTROL",
+                    "field": field,
+                    "logicalPath": route["logicalPath"],
+                    "requestCaseId": route["requestCaseId"],
+                    "schemaAdmissibleAlternativeValues": alternatives,
+                    "sourceSiteMapRouteSha256": sha256_bytes(dumps(route)),
+                }
+            )
+            continue
         if route["siteId"] in _ACV049_RELATION_SITE_SPECS:
             relation_groups.setdefault(
                 (route["siteId"], route["requestCaseId"], route["faultContext"]), []
@@ -1477,7 +1533,7 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
 
     mutants: list[dict[str, Any]] = []
     residuals: list[dict[str, Any]] = []
-    covered_routes = 0
+    covered_routes = len(o08_bound_candidates)
     for route, logical_path, terminal in ordinary:
         selectors = route.get("sourceSelectors")
         pointers = route.get("concretePointers")
@@ -1633,10 +1689,20 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
     relation_count = sum(row["kind"] == "RELATION_TUPLE" for row in mutants)
     if (
         len(relation_groups) != 35
-        or len(ordinary) != 134
-        or ordinary_count != 134
+        or len(ordinary) != 124
+        or ordinary_count != 124
         or relation_count != 34
         or len(residuals) != 1
+        or len(o08_bound_candidates) != 10
+        or {
+            (row["dimension"], row["field"])
+            for row in o08_bound_candidates
+        }
+        != {
+            (dimension, field)
+            for dimension in capability_dimensions
+            for field in ("comparison", "unit")
+        }
         or residuals[0].get("siteId") != "PURITY-SITE-TRANSCRIPT-VALIDATED"
         or covered_routes != 212
     ):
@@ -1648,6 +1714,11 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
         "mutantCount": len(mutants),
         "mutantSetSha256": sha256_bytes(dumps(mutant_ids)),
         "mutants": mutants,
+        "o08BoundCandidateCount": len(o08_bound_candidates),
+        "o08BoundCandidates": sorted(
+            o08_bound_candidates,
+            key=lambda row: (row["dimension"], row["field"]),
+        ),
         "ordinaryEnumMutantCount": ordinary_count,
         "relationTupleMutantCount": relation_count,
         "relationTupleResidualCount": len(residuals),
