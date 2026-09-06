@@ -233,8 +233,9 @@ explicitly permitted by the report schema. Before report serialization:
 
 - expand the ratified semantic-instance axes;
 - require one observation per exact instance;
-- validate all 377 response string positions against each of the ten forbidden
-  runtime-provenance families;
+- validate the closed ACV-049 replacement relation: 401 literal-closure paths,
+  300 mutable-path purity sites, 101 singleton paths, five historical
+  non-string paths and 77 two-environment request carriers;
 - reject absolute paths, host/user/PID/time/duration/environment/exception/
   stack material in every string position;
 - reject repository, Base/HEAD/tree/diff/bundle and runtime identities in any
@@ -296,12 +297,13 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 84-row semantic-instance-axis registry, 23-row content-axis,
+The schema, 88-row semantic-instance-axis registry for 84 semantic families,
+23-row content-axis,
 25-row F13 primary/axis, 16-row transcript, 17-row genesis, 17-row signature
 verification-path and 33-row terminal-predicate relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
 families through all 87 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 7,088 structural-plus-semantic
+closed structural-keyword relation it derives 3,912 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment

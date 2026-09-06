@@ -134,8 +134,8 @@
     "oneOfArms": 57,
     "oneOfPairwiseDisjointnessRows": 101,
     "semanticFamilies": 84,
-    "semanticExecutionInstances": 5535,
-    "totalExecutionInstances": 7088,
+    "semanticExecutionInstances": 2359,
+    "totalExecutionInstances": 3912,
     "contentRelationRows": 23,
     "forkJoinLabelRelationRows": 10,
     "authorityProjectionDimensionRelationRows": 16,
@@ -192,17 +192,17 @@
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
       "role": "SEMANTIC_RULE_FAMILIES",
-      "sha256": "8b8008911acfbfc6db81ea80f235d9118275096fbf5795f9b9a407bff8f1de3a"
+      "sha256": "5164c45f0625374487a4778044b1bce7605154922008bb0833f0ea3ec23529ed"
     },
     {
       "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
       "role": "SEMANTIC_INSTANCE_AXES",
-      "sha256": "20e3a07558fbe5fb0f95c52eb31f6b24b69f8a6137a69b858260d70c60576201"
+      "sha256": "808464a19ba383cf5713a921e551ae15f5208d62e02aeb0a57414b1cf51f9247"
     },
     {
       "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
       "role": "INSTANCE_EXECUTION_PHASES",
-      "sha256": "9fc0c3929d252bab7fb435f657b69dd8e7f2d5c0d169d7b946f4eeaf402fc820"
+      "sha256": "b78b4a303779d8446e386a6fca65a764e1fef92cb4e362a77c3641e04a3a9851"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
@@ -252,17 +252,17 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "90a9f5d6286cbe81285432d9818dbba7a7eebe657aa81f4cd2d83fa2b4f82c94"
+      "sha256": "b2b383b7e2b0b90c926175b4bf2183bf23a4d936c5c75aab9b898415da9d9221"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "39bd5de7c41988ca35ed15d72f58055277dec317df933279c77442931b496ae3"
+      "sha256": "ff6b7325e36fd8e37388b26187daf71ad65153e2f6a5edaf4b415f32af1e4304"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "09e90f036aaf3e22ea9a143bdaef536fe293c9ba353ffbd41a05a1b5d3fb4e1a"
+      "sha256": "25790a8a2e7b8ba6b768f61079a0c5f4964eacef7d716eceb81a0ce74794a51a"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
@@ -287,7 +287,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "eaf9c5dda222e2652547c721b8c3bce12ceebbb2840164ce0da03578a017b6f7"
+      "sha256": "3f4f84518d95f32c9d3620f11489346948ca1a8ac81018cd444e9305d238023e"
     }
   ],
   "remainingBeforeExecutableIssue": [

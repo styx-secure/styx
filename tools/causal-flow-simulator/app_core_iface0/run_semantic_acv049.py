@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Preflight the flawed ACV-049 provenance-isolation evidence model."""
+"""Derive and preflight the ratified five-relation ACV-049 evidence model."""
 
 from __future__ import annotations
 
 import argparse
-import copy
-import hashlib
-import subprocess
 import sys
-from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,180 +20,34 @@ from interface_model import (
     HarnessFailure,
     validate_response_before_release,
 )
-from inventory import InventoryError, expand_semantic_instances, sha256_bytes
+from inventory import (
+    ACV049_LITERAL_FAMILIES,
+    InventoryError,
+    LogicalTerminal,
+    derive_acv049_path_partition,
+    derive_acv049_old_to_new_reconciliation,
+    derive_acv049_relation_members,
+    digest_lines,
+    expand_acv049_replacement_instances,
+    resolve_logical_terminal,
+    sha256_bytes,
+)
 
 
 REPORT_FIELDS = frozenset(
     {
-        "claimed_mutant_kills", "class_counts", "class_materialization_counts",
-        "instance_count", "live_rejection_count", "materialized_path_count",
-        "non_string_path_count", "path_count", "rows", "schema",
-        "semantic_rule_id", "status", "string_path_count",
-        "unmaterialized_path_count", "verdict",
+        "claimed_mutant_kills", "historical_reconciliation_count",
+        "historical_reconciliation_sha256", "instance_count",
+        "materialized_mutable_path_count", "materialized_path_count",
+        "materialized_singleton_path_count", "path_count", "relation_counts",
+        "relation_member_set_sha256", "rows", "schema", "semantic_rule_id",
+        "status", "unmaterialized_path_count", "verdict",
     }
 )
-
-LITERAL_REPRESENTATIVES = {
-    "DURATION": "duration=1.25s",
-    "ELAPSED": "elapsed=1.25s",
-    "ENVIRONMENT": "environment=production",
-    "EXCEPTION": "exception=ValueError",
-    "HOST": "hostname=review-host",
-    "PATH": "provenance=/tmp/styx-runtime",
-    "PID": "pid=4242",
-    "STACK": "stack trace: frame",
-    "TIMESTAMP": "timestamp=2026-09-03T12:34:56Z",
-    "USER": "username=operator",
-}
 
 
 class SemanticACV049Error(ValueError):
     """The ACV-049 preflight relation is malformed or overclaims evidence."""
-
-
-@dataclass(frozen=True)
-class LogicalTerminal:
-    data_tokens: tuple[str | int, ...]
-    nodes: tuple[dict[str, Any], ...]
-    branches: tuple[tuple[tuple[str | int, ...], dict[str, Any]], ...]
-
-
-def _unescape(token: str) -> str:
-    return token.replace("~1", "/").replace("~0", "~")
-
-
-def _logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerminal:
-    parts = source.split("/")
-    if not parts or parts[0] != "InterfaceResponseV0":
-        raise SemanticACV049Error("ACV-049 logical path root drift")
-    definitions = schema.get("$defs")
-    if not isinstance(definitions, dict):
-        raise SemanticACV049Error("interface definitions are absent")
-
-    def walk(
-        node: Any,
-        remaining: tuple[str, ...],
-        data_tokens: tuple[str | int, ...],
-        branches: tuple[tuple[tuple[str | int, ...], dict[str, Any]], ...],
-        stack: tuple[str, ...],
-    ) -> list[LogicalTerminal]:
-        if not isinstance(node, dict):
-            return []
-        reference = node.get("$ref")
-        if isinstance(reference, str):
-            if not reference.startswith("#/$defs/"):
-                raise SemanticACV049Error("ACV-049 contains a non-local reference")
-            name = _unescape(reference.rsplit("/", 1)[-1])
-            if name in stack or not isinstance(definitions.get(name), dict):
-                raise SemanticACV049Error("ACV-049 reference is cyclic or absent")
-            return walk(
-                definitions[name], remaining, data_tokens, branches, stack + (name,)
-            )
-        all_of = node.get("allOf")
-        if isinstance(all_of, list):
-            results = [
-                result
-                for arm in all_of
-                for result in walk(arm, remaining, data_tokens, branches, stack)
-            ]
-            if not results:
-                return []
-            first = results[0]
-            if any(
-                row.data_tokens != first.data_tokens or row.branches != first.branches
-                for row in results[1:]
-            ):
-                raise SemanticACV049Error("ACV-049 allOf logical path is ambiguous")
-            return [
-                LogicalTerminal(
-                    first.data_tokens,
-                    tuple(item for row in results for item in row.nodes),
-                    first.branches,
-                )
-            ]
-        one_of = node.get("oneOf")
-        if isinstance(one_of, list):
-            if not remaining:
-                return []
-            label = remaining[0]
-            matches: list[dict[str, Any]] = []
-            for index, arm in enumerate(one_of):
-                if not isinstance(arm, dict):
-                    continue
-                arm_ref = arm.get("$ref")
-                arm_label = (
-                    arm_ref.rsplit("/", 1)[-1]
-                    if isinstance(arm_ref, str)
-                    else str(index)
-                )
-                if label == f"<{arm_label}>":
-                    matches.append(arm)
-            if len(matches) != 1:
-                raise SemanticACV049Error("ACV-049 oneOf label is ambiguous")
-            selected = matches[0]
-            return walk(
-                selected, remaining[1:], data_tokens,
-                branches + ((data_tokens, selected),), stack,
-            )
-        properties = node.get("properties")
-        if isinstance(properties, dict):
-            if not remaining or remaining[0] not in properties:
-                return []
-            name = remaining[0]
-            return walk(
-                properties[name], remaining[1:], data_tokens + (name,), branches, stack
-            )
-        if node.get("type") == "array":
-            if not remaining or remaining[0] != "*":
-                return []
-            return walk(
-                node.get("items"), remaining[1:], data_tokens + (0,), branches, stack
-            )
-        if remaining:
-            return []
-        return [LogicalTerminal(data_tokens, (node,), branches)]
-
-    results = walk(
-        definitions["InterfaceResponseV0"], tuple(parts[1:]), (), (),
-        ("InterfaceResponseV0",),
-    )
-    if len(results) != 1:
-        raise SemanticACV049Error("ACV-049 logical path does not resolve exactly once")
-    return results[0]
-
-
-def _subschema_validator(
-    schema: dict[str, Any], nodes: tuple[dict[str, Any], ...]
-) -> Draft202012Validator:
-    body: dict[str, Any] = (
-        copy.deepcopy(nodes[0])
-        if len(nodes) == 1
-        else {"allOf": [copy.deepcopy(node) for node in nodes]}
-    )
-    return Draft202012Validator(
-        {"$schema": schema["$schema"], **body, "$defs": schema["$defs"]}
-    )
-
-
-def _is_string_terminal(nodes: tuple[dict[str, Any], ...]) -> bool:
-    for node in nodes:
-        if node.get("type") == "string" or isinstance(node.get("const"), str):
-            return True
-        enum = node.get("enum")
-        if isinstance(enum, list) and enum and all(isinstance(item, str) for item in enum):
-            return True
-    return False
-
-
-def _encoded_representatives(family: str) -> tuple[str, ...]:
-    literal = LITERAL_REPRESENTATIVES[family]
-    digest = hashlib.sha256(literal.encode("utf-8")).hexdigest()
-    decimal = {
-        "DURATION": "1250", "ELAPSED": "1250", "ENVIRONMENT": "1",
-        "EXCEPTION": "1", "HOST": "1", "PATH": "1", "PID": "4242",
-        "STACK": "1", "TIMESTAMP": "1788438896", "USER": "1",
-    }[family]
-    return (decimal, literal.encode("utf-8").hex(), digest)
 
 
 def _data_value(value: Any, tokens: tuple[str | int, ...]) -> Any:
@@ -213,21 +62,6 @@ def _data_value(value: Any, tokens: tuple[str | int, ...]) -> Any:
                 raise KeyError(token)
             current = current[token]
     return current
-
-
-def _set_data_value(value: Any, tokens: tuple[str | int, ...], replacement: str) -> None:
-    if not tokens:
-        raise SemanticACV049Error("ACV-049 cannot replace the response root")
-    parent = _data_value(value, tokens[:-1])
-    final = tokens[-1]
-    if isinstance(final, int):
-        if not isinstance(parent, list) or final >= len(parent):
-            raise SemanticACV049Error("ACV-049 array target disappeared")
-        parent[final] = replacement
-    else:
-        if not isinstance(parent, dict) or final not in parent:
-            raise SemanticACV049Error("ACV-049 object target disappeared")
-        parent[final] = replacement
 
 
 def _validator(schema: dict[str, Any], node: dict[str, Any]) -> Draft202012Validator:
@@ -254,6 +88,52 @@ def _materialized_carrier(
     return None
 
 
+def derive_phase_a_materialized_paths(
+    repo_root: Path, contract: Path, evidence_root: Path
+) -> set[str]:
+    """Re-derive the exact ACV-049 Phase-A response-path materialization set."""
+
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    responses = sorted(
+        (
+            (case_id, value)
+            for case_id, (value, _raw) in carriers.items()
+            if case_id.startswith("PCR-RESPONSE-")
+        ),
+        key=lambda row: row[0].encode("utf-8"),
+    )
+    if len(responses) != 19:
+        raise SemanticACV049Error("ACV-049 requires 19 frozen responses")
+    partition = derive_acv049_path_partition(contract)
+    terminals = {
+        path: resolve_logical_terminal(authority.schema, path)
+        for path in partition["logical"]
+    }
+    materialized = {
+        path
+        for path, terminal in terminals.items()
+        if _materialized_carrier(authority.schema, terminal, responses) is not None
+    }
+    mutable = sorted(materialized & set(partition["mutable"]))
+    singleton = sorted(materialized & set(partition["singleton"]))
+    non_string = materialized & set(partition["non_string"])
+    if (
+        len(materialized) != 321
+        or len(mutable) != 228
+        or len(singleton) != 93
+        or non_string
+        or sha256_bytes("".join(path + "\n" for path in mutable).encode("utf-8"))
+        != "47756a4adf5eaa79589f21c4b443e8f273e94efc4c798bace194cb9e1fe611de"
+        or sha256_bytes("".join(path + "\n" for path in singleton).encode("utf-8"))
+        != "6f06ee47fe0950fec29462ab849d46d7928ee7ff85de4829829731b82839c77a"
+    ):
+        raise SemanticACV049Error("ACV-049 Phase-A materialization relation drift")
+    return materialized
+
+
 def _python_rejects(authority: ContractAuthority, response: dict[str, Any]) -> bool:
     try:
         validate_response_before_release(authority, response)
@@ -262,26 +142,17 @@ def _python_rejects(authority: ContractAuthority, response: dict[str, Any]) -> b
     return False
 
 
-def _javascript_rejects(
-    node: str, adapter: Path, contract: Path, response: dict[str, Any]
-) -> bool:
-    completed = subprocess.run(
-        [node, str(adapter), "--validate-response", "--contract", str(contract)],
-        input=dumps(response), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        check=False, timeout=30,
-    )
-    if completed.returncode == 2 and not completed.stdout:
-        return True
-    if completed.returncode == 0 and completed.stdout == b'{"verdict":"PASS"}\n':
-        return False
-    raise SemanticACV049Error(
-        f"JavaScript ACV-049 preflight failed with exit {completed.returncode}"
-    )
-
-
 def build_report(
     repo_root: Path, contract: Path, evidence_root: Path, *, node: str
 ) -> dict[str, Any]:
+    """Build the exact replacement-relation registry without overclaiming execution.
+
+    The runner deliberately records zero mutant kills. Source-purity and
+    two-environment execution are separate, later gates; deriving their closed
+    relation rows here must not be reported as satisfying them.
+    """
+
+    del node
     authority = ContractAuthority.load(repo_root, contract)
     _inventory, _inventory_bytes, carriers = _load_phase_a(
         repo_root, contract, evidence_root
@@ -299,136 +170,143 @@ def build_report(
     if any(_python_rejects(authority, response) for _case_id, response in responses):
         raise SemanticACV049Error("ACV-049 negative control is rejected")
 
-    instances = [
-        row for row in expand_semantic_instances(contract) if row.family_id == "ACV-049"
-    ]
-    if len(instances) != 4060:
-        raise SemanticACV049Error("ACV-049 instance count drift")
-    paths = sorted({row.source.rsplit("::", 1)[0] for row in instances})
-    if len(paths) != 406:
-        raise SemanticACV049Error("ACV-049 path count drift")
-    terminals = {path: _logical_terminal(authority.schema, path) for path in paths}
-    materialized = {
-        path: _materialized_carrier(authority.schema, terminal, responses)
-        for path, terminal in terminals.items()
+    partition = derive_acv049_path_partition(contract)
+    relation_members = derive_acv049_relation_members(contract)
+    instances = expand_acv049_replacement_instances(contract)
+    instance_by_relation_and_source = {
+        (row.family_id, row.source): row for row in instances
+    }
+    if len(instance_by_relation_and_source) != 884:
+        raise SemanticACV049Error("ACV-049 replacement instance identity drift")
+
+    terminals = {
+        path: resolve_logical_terminal(authority.schema, path)
+        for path in partition["logical"]
     }
 
-    adapter = repo_root / "tools/causal-flow-simulator/app_core_iface0/node_adapter.mjs"
-    rows: list[dict[str, Any]] = []
-    live_rejections = 0
-    for instance in instances:
-        path, family = instance.source.rsplit("::", 1)
-        if family not in LITERAL_REPRESENTATIVES:
-            raise SemanticACV049Error("ACV-049 provenance family drift")
+    def carrier_ids(path: str) -> list[str]:
         terminal = terminals[path]
-        validator = _subschema_validator(authority.schema, terminal.nodes)
-        literal_accepted = validator.is_valid(LITERAL_REPRESENTATIVES[family])
-        encoded_accepted = any(
-            validator.is_valid(value) for value in _encoded_representatives(family)
-        )
-        if not _is_string_terminal(terminal.nodes):
-            classification = "NON_STRING_CONST"
-            if literal_accepted or encoded_accepted:
-                raise SemanticACV049Error("non-string ACV-049 path accepts a string")
-        elif literal_accepted:
-            classification = "LITERAL_SCHEMA_ADMISSIBLE"
-        elif encoded_accepted:
-            classification = "SCHEMA_ADMISSIBLE_ENCODED"
-        else:
-            classification = "SCHEMA_CLOSED"
-
-        carrier = materialized[path]
-        python_rejected: bool | None = None
-        javascript_rejected: bool | None = None
-        if carrier is not None and classification == "SCHEMA_CLOSED":
-            _case_id, baseline = carrier
-            hostile = copy.deepcopy(baseline)
-            _set_data_value(
-                hostile, terminal.data_tokens, LITERAL_REPRESENTATIVES[family]
-            )
-            python_rejected = _python_rejects(authority, hostile)
-            javascript_rejected = _javascript_rejects(node, adapter, contract, hostile)
-            if not python_rejected or not javascript_rejected:
-                raise SemanticACV049Error(
-                    f"ACV-049 live rejection drift: {instance.instance_id}"
+        found: list[str] = []
+        for case_id, response in responses:
+            try:
+                target = _data_value(response, terminal.data_tokens)
+                selected = all(
+                    _validator(authority.schema, arm).is_valid(
+                        _data_value(response, prefix)
+                    )
+                    for prefix, arm in terminal.branches
                 )
-            live_rejections += 1
-        rows.append(
-            {
-                "branchLabels": [
-                    part[1:-1]
-                    for part in path.split("/")
-                    if part.startswith("<") and part.endswith(">")
-                ],
-                "carrierCaseId": carrier[0] if carrier is not None else None,
-                "classification": classification,
-                "dataPointerTokens": list(terminal.data_tokens),
-                "encodedAcceptedBySchema": encoded_accepted,
-                "instanceId": instance.instance_id,
-                "isStringPath": _is_string_terminal(terminal.nodes),
-                "javascriptRejectedLiteral": javascript_rejected,
-                "literalAcceptedBySchema": literal_accepted,
-                "materialized": carrier is not None,
-                "pythonRejectedLiteral": python_rejected,
-            }
-        )
+            except (KeyError, TypeError):
+                continue
+            if isinstance(target, str) and selected:
+                found.append(case_id)
+        return found
 
-    class_counts = dict(sorted(Counter(row["classification"] for row in rows).items()))
-    class_materialization_counts = dict(
-        sorted(
-            Counter(
-                f"{row['classification']}:"
-                f"{'MATERIALIZED' if row['materialized'] else 'UNMATERIALIZED'}"
-                for row in rows
-            ).items()
-        )
+    materialized_by_path = {
+        path: carrier_ids(path) for path in partition["literal"]
+    }
+    materialized = {
+        path for path, case_ids in materialized_by_path.items() if case_ids
+    }
+    derived_materialized = derive_phase_a_materialized_paths(
+        repo_root, contract, evidence_root
     )
-    materialized_count = sum(value is not None for value in materialized.values())
-    non_string_count = sum(
-        not _is_string_terminal(terminal.nodes) for terminal in terminals.values()
-    )
-    if (
-        len(rows) != 4060
-        or non_string_count != 5
-        or materialized_count != 321
-        or live_rejections != 1746
-        or class_counts
-        != {
-            "NON_STRING_CONST": 50,
-            "SCHEMA_ADMISSIBLE_ENCODED": 2121,
-            "SCHEMA_CLOSED": 1889,
-        }
-        or class_materialization_counts
-        != {
-            "NON_STRING_CONST:UNMATERIALIZED": 50,
-            "SCHEMA_ADMISSIBLE_ENCODED:MATERIALIZED": 1464,
-            "SCHEMA_ADMISSIBLE_ENCODED:UNMATERIALIZED": 657,
-            "SCHEMA_CLOSED:MATERIALIZED": 1746,
-            "SCHEMA_CLOSED:UNMATERIALIZED": 143,
-        }
+    if materialized != derived_materialized:
+        raise SemanticACV049Error("ACV-049 materialization derivations disagree")
+
+    mutable = set(partition["mutable"])
+    singleton = set(partition["singleton"])
+    rows: list[dict[str, Any]] = []
+    for relation_id in (
+        "ACV-049-L",
+        "ACV-049-P",
+        "ACV-049-S",
+        "ACV-049-N",
+        "ACV-049-E",
     ):
-        raise SemanticACV049Error(
-            "ACV-049 preflight summary drift: "
-            f"rows={len(rows)} non_string={non_string_count} "
-            f"materialized={materialized_count} classes={class_counts} "
-            f"materialization={class_materialization_counts}"
-        )
+        for source in relation_members[relation_id]:
+            instance = instance_by_relation_and_source[(relation_id, source)]
+            row: dict[str, Any] = {
+                "assertionId": instance.assertion_id,
+                "detectorId": instance.detector_id,
+                "instanceId": instance.instance_id,
+                "observationId": instance.observation_id,
+                "relationId": relation_id,
+                "sourceIdentity": source,
+            }
+            if relation_id == "ACV-049-L":
+                row.update(
+                    {
+                        "carrierCaseIds": materialized_by_path[source],
+                        "domainClass": (
+                            "MUTABLE_DOMAIN" if source in mutable else "SINGLETON_CONST"
+                        ),
+                        "executionPhase": (
+                            "POST_OUTPUT_MUTATION"
+                            if source in materialized
+                            else "VALIDATOR_SELF_TEST"
+                        ),
+                        "literalFamilyVector": list(ACV049_LITERAL_FAMILIES),
+                        "materialized": source in materialized,
+                    }
+                )
+            elif relation_id == "ACV-049-P":
+                row.update(
+                    {
+                        "executionPhase": "TWO_ENVIRONMENT_SOURCE_MUTATION",
+                        "evidenceDisposition": "SOURCE_SITE_EVIDENCE_PENDING",
+                    }
+                )
+            elif relation_id in {"ACV-049-S", "ACV-049-N"}:
+                row.update(
+                    {
+                        "executionPhase": "VALIDATOR_SELF_TEST",
+                        "evidenceDisposition": "DOMAIN_CLOSURE_PENDING",
+                    }
+                )
+            else:
+                row.update(
+                    {
+                        "executionPhase": "BLIND_INPUT_EXECUTION",
+                        "evidenceDisposition": "TWO_ENVIRONMENT_EXECUTION_PENDING",
+                    }
+                )
+            rows.append(row)
+
+    reconciliation = derive_acv049_old_to_new_reconciliation(contract)
+    relation_counts = {
+        relation_id: len(members)
+        for relation_id, members in relation_members.items()
+    }
+    relation_digests = {
+        relation_id: digest_lines(members)
+        for relation_id, members in relation_members.items()
+    }
+    if len(rows) != 884 or relation_counts != {
+        "ACV-049-L": 401,
+        "ACV-049-P": 300,
+        "ACV-049-S": 101,
+        "ACV-049-N": 5,
+        "ACV-049-E": 77,
+    }:
+        raise SemanticACV049Error("ACV-049 replacement report count drift")
     return {
         "claimed_mutant_kills": 0,
-        "class_counts": class_counts,
-        "class_materialization_counts": class_materialization_counts,
+        "historical_reconciliation_count": len(reconciliation),
+        "historical_reconciliation_sha256": sha256_bytes(dumps(reconciliation)),
         "instance_count": len(rows),
-        "live_rejection_count": live_rejections,
-        "materialized_path_count": materialized_count,
-        "non_string_path_count": non_string_count,
-        "path_count": len(paths),
+        "materialized_mutable_path_count": len(materialized & mutable),
+        "materialized_path_count": len(materialized),
+        "materialized_singleton_path_count": len(materialized & singleton),
+        "path_count": len(partition["logical"]),
+        "relation_counts": relation_counts,
+        "relation_member_set_sha256": relation_digests,
         "rows": rows,
-        "schema": "styx.app-core-iface0.semantic-acv049-preflight-report.v1",
+        "schema": "styx.app-core-iface0.semantic-acv049-relation-registry.v2",
         "semantic_rule_id": "ACV-049",
-        "status": "PRESELECTION_EVIDENCE",
-        "string_path_count": len(paths) - non_string_count,
-        "unmaterialized_path_count": len(paths) - materialized_count,
-        "verdict": "AMEND_REQUIRED",
+        "status": "REMEDIATION_RELATION_REGISTRY",
+        "unmaterialized_path_count": len(set(partition["literal"]) - materialized),
+        "verdict": "RELATION_DERIVATION_PASS",
     }
 
 
@@ -448,12 +326,12 @@ def main(argv: list[str] | None = None) -> int:
         store_report(args.output, report, allowed_fields=REPORT_FIELDS)
     except (
         InventoryError, OSError, ReportError, SemanticACV049Error,
-        subprocess.SubprocessError, WitnessGenerationError,
+        WitnessGenerationError,
     ) as error:
         print(f"APP-core semantic ACV-049 preflight: FAIL: {error}", file=sys.stderr)
         return 2
     print(
-        "APP-core semantic ACV-049 preflight: AMEND_REQUIRED "
+        "APP-core semantic ACV-049 relation registry: PASS "
         f"instances={report['instance_count']} sha256={sha256_bytes(dumps(report))}"
     )
     return 0

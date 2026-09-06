@@ -499,7 +499,10 @@
       "owners": ["INTERFACE"],
       "targets": ["$defs.InterfaceResponseV0"],
       "rule": "FORBID_RUNTIME_PROVENANCE_IN_EVERY_STRING_POSITION",
-      "parameters": { "families": ["PATH", "HOST", "USER", "PID", "TIMESTAMP", "DURATION", "ELAPSED", "ENVIRONMENT", "EXCEPTION", "STACK"] },
+      "parameters": {
+        "evidenceRelations": { "ACV-049-L": 401, "ACV-049-P": 300, "ACV-049-S": 101, "ACV-049-N": 5, "ACV-049-E": 77 },
+        "families": ["PATH", "HOST", "USER", "PID", "TIMESTAMP", "DURATION", "ELAPSED", "ENVIRONMENT", "EXCEPTION", "STACK"]
+      },
       "scenario": "ACI-RUNTIME-PROVENANCE-EMBEDDED",
       "mutant": "M-ACI-EMIT-RUNTIME-DIAGNOSTIC"
     },

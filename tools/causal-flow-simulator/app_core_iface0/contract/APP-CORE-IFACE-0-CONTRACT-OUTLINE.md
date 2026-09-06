@@ -250,10 +250,11 @@ The current pre-ratification candidate is mechanically finite:
   generation rules for the 87 seed rows and 1,553 witnesses;
 - `APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json`: 84 closed semantic
   rule families;
-- `APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json`: the literal expansion axes
-  for those 84 families;
+- `APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json`: 88 literal expansion axes
+  for those 84 families, including the five ACV-049 evidence relations;
 - `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`: the closed partition
-  between blind-input execution, post-output mutation and validator self-test;
+  between blind-input execution, post-output mutation, validator self-test and
+  two-environment source mutation;
 - `APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json`: 23 content-axis,
   25 F13 primary/axis, ten fork/join-label, 16 authority-projection-dimension,
   11 graph-admission-dimension, 16 transcript reason/stage, 17 genesis
@@ -261,7 +262,7 @@ The current pre-ratification candidate is mechanically finite:
 - `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`: the closed schema
   for the post-implementation 87-row canonical positive-carrier relation; and
 - `APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md`: 24 structural and 84
-  semantic rule families, deriving exactly 7,088 structural-plus-semantic
+  semantic rule families, deriving exactly 3,912 structural-plus-semantic
   execution instances after both axis registries are expanded.
 
 These files are candidates, not authority. The executable Issue must bind their
@@ -350,7 +351,7 @@ ratified.
    evidence serialization is accepted as a future O-11/RS binding.
 10. Existing C0.3 corpus bytes, clean-room reader and historical evidence remain
     byte-identical.
-11. The hostile inventory is closed and equals the ratified 7,088-instance
+11. The hostile inventory is closed and equals the ratified 3,912-instance
     relation; every instance has a distinct required perturbation, assertion,
     observation and detector, all required mutants are killed, and all negative
     controls fail for the intended reason. A single aggregate pass cannot

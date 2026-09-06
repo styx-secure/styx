@@ -215,15 +215,71 @@ def validate_terminal_path_bindings(
             digest_lines(string_paths),
         )
 
-    acv049 = next((row for row in axes["rules"] if row["id"] == "ACV-049"), None)
-    require(isinstance(acv049, dict), "missing ACV-049 path binding")
+    acv049 = {
+        row["id"]: row
+        for row in axes["rules"]
+        if row.get("semanticRuleId") == "ACV-049"
+    }
     response_all, response_strings, response_digest = derived["InterfaceResponseV0"]
     require(
-        acv049.get("axisSources") == ["InterfaceResponseV0"]
-        and acv049.get("pathCount") == len(response_strings)
-        and acv049.get("pathSha256") == response_digest
-        and acv049.get("familyCount") == 10
-        and acv049.get("expectedCount") == len(response_strings) * 10,
+        len(response_strings) == 406
+        and response_digest
+        == "cdd2f3f325800fffd08b23c08ab51d3b3ba6a3eb949af10ad488d72a854e5fe4"
+        and acv049
+        == {
+            "ACV-049-L": {
+                "id": "ACV-049-L",
+                "semanticRuleId": "ACV-049",
+                "mode": "PER_RESPONSE_STRING_PATH_WITH_FAMILY_VECTOR",
+                "axisSources": ["InterfaceResponseV0"],
+                "literalFamilyVector": [
+                    "PATH",
+                    "HOST",
+                    "USER",
+                    "PID",
+                    "TIMESTAMP",
+                    "DURATION",
+                    "ELAPSED",
+                    "ENVIRONMENT",
+                    "EXCEPTION",
+                    "STACK",
+                ],
+                "memberSetSha256": "253048d2193a1d37cd51d9505409b7b1ad943333ad0993cb22c09cc9e6986419",
+                "expectedCount": 401,
+            },
+            "ACV-049-P": {
+                "id": "ACV-049-P",
+                "semanticRuleId": "ACV-049",
+                "mode": "PER_MUTABLE_RESPONSE_STRING_PATH",
+                "axisSources": ["InterfaceResponseV0"],
+                "memberSetSha256": "beee0c5b76943e52a0e55d7420f952b759e0732be06e4071c34d5d370d4a0c21",
+                "expectedCount": 300,
+            },
+            "ACV-049-S": {
+                "id": "ACV-049-S",
+                "semanticRuleId": "ACV-049",
+                "mode": "PER_SINGLETON_RESPONSE_STRING_PATH",
+                "axisSources": ["InterfaceResponseV0"],
+                "memberSetSha256": "50c380ce5b29a7158774fd11daf93675428cc6c56c3b7832a23aa050063856fe",
+                "expectedCount": 101,
+            },
+            "ACV-049-N": {
+                "id": "ACV-049-N",
+                "semanticRuleId": "ACV-049",
+                "mode": "PER_NON_STRING_HISTORICAL_RESPONSE_PATH",
+                "axisSources": ["InterfaceResponseV0"],
+                "memberSetSha256": "ff6a882b2805320261707316f8a3c354806b27fc042c5f64d6dafedb47e2d509",
+                "expectedCount": 5,
+            },
+            "ACV-049-E": {
+                "id": "ACV-049-E",
+                "semanticRuleId": "ACV-049",
+                "mode": "PER_RATIFIED_REQUEST_CARRIER",
+                "axisSources": ["positive-carrier-inventory:REQUEST"],
+                "memberSetSha256": "8233dd1a8172383e4679780474910b468139baeb4df028ecadc18f1fa83ecb8f",
+                "expectedCount": 77,
+            },
+        },
         "ACV-049 response path binding drift",
     )
 
@@ -541,8 +597,25 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         values = [row[field] for row in semantics["rules"]]
         require(len(values) == len(set(values)) == 84, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 84, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 5535, "semantic execution count drift")
+    acv049_axis_ids = {
+        "ACV-049-L",
+        "ACV-049-P",
+        "ACV-049-S",
+        "ACV-049-N",
+        "ACV-049-E",
+    }
+    require(
+        len(axis_ids) == len(set(axis_ids)) == 88
+        and set(axis_ids) == (set(semantic_ids) - {"ACV-049"}) | acv049_axis_ids
+        and all(
+            row.get("semanticRuleId") == "ACV-049"
+            if row["id"] in acv049_axis_ids
+            else "semanticRuleId" not in row
+            for row in axes["rules"]
+        ),
+        "semantic axis relation drift",
+    )
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 2359, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -558,7 +631,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 5535,
+        == 2359,
         "execution-phase total drift",
     )
     acv066_phase = next(
@@ -576,6 +649,65 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "ACV-066 execution-phase drift",
     )
     phase_by_id = {row["id"]: row for row in phases.get("overrides", [])}
+    require(
+        phases.get("phaseRegistry")
+        == [
+            "BLIND_INPUT_EXECUTION",
+            "POST_OUTPUT_MUTATION",
+            "VALIDATOR_SELF_TEST",
+            "TWO_ENVIRONMENT_SOURCE_MUTATION",
+        ]
+        and phases.get("defaultPhase") == "BLIND_INPUT_EXECUTION",
+        "execution-phase registry drift",
+    )
+    require(
+        {
+            rule_id: phase_by_id.get(rule_id)
+            for rule_id in (
+                "ACV-049-L",
+                "ACV-049-P",
+                "ACV-049-S",
+                "ACV-049-N",
+                "ACV-049-E",
+            )
+        }
+        == {
+            "ACV-049-L": {
+                "id": "ACV-049-L",
+                "partition": "BY_PHASE_A_MATERIALIZATION",
+                "materializedPhase": "POST_OUTPUT_MUTATION",
+                "unmaterializedPhase": "VALIDATOR_SELF_TEST",
+                "materializedCount": 321,
+                "unmaterializedCount": 80,
+                "expectedCount": 401,
+            },
+            "ACV-049-P": {
+                "id": "ACV-049-P",
+                "partition": "ALL_INSTANCES",
+                "phase": "TWO_ENVIRONMENT_SOURCE_MUTATION",
+                "expectedCount": 300,
+            },
+            "ACV-049-S": {
+                "id": "ACV-049-S",
+                "partition": "ALL_INSTANCES",
+                "phase": "VALIDATOR_SELF_TEST",
+                "expectedCount": 101,
+            },
+            "ACV-049-N": {
+                "id": "ACV-049-N",
+                "partition": "ALL_INSTANCES",
+                "phase": "VALIDATOR_SELF_TEST",
+                "expectedCount": 5,
+            },
+            "ACV-049-E": {
+                "id": "ACV-049-E",
+                "partition": "ALL_INSTANCES",
+                "phase": "BLIND_INPUT_EXECUTION",
+                "expectedCount": 77,
+            },
+        },
+        "ACV-049 replacement execution-phase drift",
+    )
     require(
         phase_by_id.get("ACV-043")
         == {
@@ -707,7 +839,11 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             "ACV-043",
             "ACV-044",
             "ACV-048",
-            "ACV-049",
+            "ACV-049-L",
+            "ACV-049-P",
+            "ACV-049-S",
+            "ACV-049-N",
+            "ACV-049-E",
             "ACV-050",
             "ACV-052",
             "ACV-056",
@@ -730,11 +866,12 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(
         phases.get("fixedCountsBeforeSeedPartition")
         == {
-            "BLIND_INPUT_EXECUTION": 575,
-            "POST_OUTPUT_MUTATION": 4151,
-            "VALIDATOR_SELF_TEST": 26,
+            "BLIND_INPUT_EXECUTION": 652,
+            "POST_OUTPUT_MUTATION": 412,
+            "VALIDATOR_SELF_TEST": 212,
+            "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
             "ACV048PendingCarrierPartition": 783,
-            "totalSemanticExecutionInstances": 5535,
+            "totalSemanticExecutionInstances": 2359,
         },
         "execution-phase count drift",
     )
@@ -886,12 +1023,6 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "ACV-034": {"expectedCount": 87},
         "ACV-036": {"expectedCount": 87},
         "ACV-046": {"expectedCount": 44},
-        "ACV-049": {
-            "pathCount": 406,
-            "pathSha256": "cdd2f3f325800fffd08b23c08ab51d3b3ba6a3eb949af10ad488d72a854e5fe4",
-            "familyCount": 10,
-            "expectedCount": 4060,
-        },
     }
     for rule_id, fragment in expected_axis_fragments.items():
         require(
@@ -1569,8 +1700,8 @@ def validate_manifest() -> None:
         "oneOfArms": 57,
         "oneOfPairwiseDisjointnessRows": 101,
         "semanticFamilies": 84,
-        "semanticExecutionInstances": 5535,
-        "totalExecutionInstances": 7088,
+        "semanticExecutionInstances": 2359,
+        "totalExecutionInstances": 3912,
         "contentRelationRows": 23,
         "forkJoinLabelRelationRows": 10,
         "authorityProjectionDimensionRelationRows": 16,
@@ -1600,7 +1731,7 @@ def validate_documented_artifact_bindings() -> None:
         encoding="utf-8"
     )
     require(
-        "equals the ratified 7,088-instance" in outline
+        "equals the ratified 3,912-instance" in outline
         and "6,599-instance" not in outline,
         "documented hostile-inventory total drift",
     )
@@ -1637,7 +1768,8 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 84-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 88-row instance-axis registry maps 84 semantic rule families, has no\n"
+            "unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -1713,6 +1845,11 @@ def validate_documented_artifact_bindings() -> None:
         digest_lines(structural_ids),
         digest_lines(semantic_ids),
         digest_lines([*structural_ids, *semantic_ids]),
+        "253048d2193a1d37cd51d9505409b7b1ad943333ad0993cb22c09cc9e6986419",
+        "beee0c5b76943e52a0e55d7420f952b759e0732be06e4071c34d5d370d4a0c21",
+        "50c380ce5b29a7158774fd11daf93675428cc6c56c3b7832a23aa050063856fe",
+        "ff6a882b2805320261707316f8a3c354806b27fc042c5f64d6dafedb47e2d509",
+        "8233dd1a8172383e4679780474910b468139baeb4df028ecadc18f1fa83ecb8f",
         *terminal_string_digests,
     }
     for document_name, document in documents.items():
@@ -1815,7 +1952,7 @@ def main() -> None:
     print(
         "PASS schemas=4 defs=124 refs=287 enums=36 oneOf=16 arms=57 "
         "pairs=101 objects=87 properties=347 required=344 structural=1553 "
-        "semantic=5535 total=7088 terminal=33 F13=25 dependencies=65 provider_history=5 "
+        "semantic=2359 total=3912 terminal=33 F13=25 dependencies=65 provider_history=5 "
         "manifest=27 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

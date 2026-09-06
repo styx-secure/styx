@@ -3,12 +3,13 @@
   "registryVersion": "APP-CORE-IFACE-0-EXECUTION-PHASES-V1",
   "semanticRuleSetSha256": "637580c267eaf8632b744922c2376bc10c142b4e20169e08a4ad4629c8943f64",
   "semanticRuleSetDigestEncoding": "ordered rule id plus LF",
-  "instanceAxisRegistrySha256": "20e3a07558fbe5fb0f95c52eb31f6b24b69f8a6137a69b858260d70c60576201",
+  "instanceAxisRegistrySha256": "808464a19ba383cf5713a921e551ae15f5208d62e02aeb0a57414b1cf51f9247",
   "defaultPhase": "BLIND_INPUT_EXECUTION",
   "phaseRegistry": [
     "BLIND_INPUT_EXECUTION",
     "POST_OUTPUT_MUTATION",
-    "VALIDATOR_SELF_TEST"
+    "VALIDATOR_SELF_TEST",
+    "TWO_ENVIRONMENT_SOURCE_MUTATION"
   ],
   "overrides": [
     {
@@ -108,10 +109,37 @@
       "exactPhaseCounts": "DERIVED_FROM_RATIFIED_SEED_REGISTRY"
     },
     {
-      "id": "ACV-049",
+      "id": "ACV-049-L",
+      "partition": "BY_PHASE_A_MATERIALIZATION",
+      "materializedPhase": "POST_OUTPUT_MUTATION",
+      "unmaterializedPhase": "VALIDATOR_SELF_TEST",
+      "materializedCount": 321,
+      "unmaterializedCount": 80,
+      "expectedCount": 401
+    },
+    {
+      "id": "ACV-049-P",
       "partition": "ALL_INSTANCES",
-      "phase": "POST_OUTPUT_MUTATION",
-      "expectedCount": 4060
+      "phase": "TWO_ENVIRONMENT_SOURCE_MUTATION",
+      "expectedCount": 300
+    },
+    {
+      "id": "ACV-049-S",
+      "partition": "ALL_INSTANCES",
+      "phase": "VALIDATOR_SELF_TEST",
+      "expectedCount": 101
+    },
+    {
+      "id": "ACV-049-N",
+      "partition": "ALL_INSTANCES",
+      "phase": "VALIDATOR_SELF_TEST",
+      "expectedCount": 5
+    },
+    {
+      "id": "ACV-049-E",
+      "partition": "ALL_INSTANCES",
+      "phase": "BLIND_INPUT_EXECUTION",
+      "expectedCount": 77
     },
     {
       "id": "ACV-050",
@@ -261,17 +289,19 @@
     }
   ],
   "fixedCountsBeforeSeedPartition": {
-    "BLIND_INPUT_EXECUTION": 575,
-    "POST_OUTPUT_MUTATION": 4151,
-    "VALIDATOR_SELF_TEST": 26,
+    "BLIND_INPUT_EXECUTION": 652,
+    "POST_OUTPUT_MUTATION": 412,
+    "VALIDATOR_SELF_TEST": 212,
+    "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
     "ACV048PendingCarrierPartition": 783,
-    "totalSemanticExecutionInstances": 5535
+    "totalSemanticExecutionInstances": 2359
   },
   "rules": [
     "Every semantic instance belongs to exactly one phase.",
     "The default applies only to rule IDs absent from overrides.",
     "A response mutation is never disclosed as a blind expected result.",
     "A validator self-test cannot satisfy an implementation behavior instance.",
+    "A two-environment source mutation cannot be satisfied by post-output substitution.",
     "The populated 87-row seed registry must resolve the ACV-048 phase partition before ratification.",
     "Phase counts, instance IDs and the complete instance-to-phase relation are exact-set evidence."
   ]

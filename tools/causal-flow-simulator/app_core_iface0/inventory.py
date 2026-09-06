@@ -12,11 +12,44 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "e0af4e1e2173deb2481eabdb24d8622282b33455"
-MANIFEST_SHA256 = "a7f8f9be5f10cd364480d2f25f8661fe52409c23821822b5fba995e66f7175db"
+MANIFEST_SHA256 = "15d75531e1fff1ff751754585561f68254a6657e4de40ff69c3a4678d1ba7cf2"
 STRUCTURAL_COUNT = 1553
-SEMANTIC_COUNT = 5535
-TOTAL_COUNT = 7088
+SEMANTIC_COUNT = 2359
+TOTAL_COUNT = 3912
 CONTRACT_FILES = 28
+ACV049_RELATION_COUNTS = {
+    "ACV-049-L": 401,
+    "ACV-049-P": 300,
+    "ACV-049-S": 101,
+    "ACV-049-N": 5,
+    "ACV-049-E": 77,
+}
+ACV049_RELATION_COUNT = 884
+ACV049_LITERAL_FAMILIES = (
+    "PATH",
+    "HOST",
+    "USER",
+    "PID",
+    "TIMESTAMP",
+    "DURATION",
+    "ELAPSED",
+    "ENVIRONMENT",
+    "EXCEPTION",
+    "STACK",
+)
+ACV049_REQUEST_CASE_IDS = tuple(
+    sorted(
+        (
+            *(f"PCR-REQUEST-DESCRIBE-PROFILE-{index:04d}" for index in range(1, 3)),
+            *(f"PCR-REQUEST-EVALUATE-CANDIDATE-{index:04d}" for index in range(1, 27)),
+            *(f"PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-{index:04d}" for index in range(1, 30)),
+            *(f"PCR-REQUEST-EVALUATE-GENESIS-{index:04d}" for index in range(1, 5)),
+            *(f"PCR-REQUEST-REPLAY-CONTEXT-{index:04d}" for index in range(1, 12)),
+            *(f"PCR-REQUEST-VALIDATE-TRANSCRIPT-{index:04d}" for index in range(1, 6)),
+        ),
+        key=lambda value: value.encode("utf-8"),
+    )
+)
 
 
 class InventoryError(ValueError):
@@ -45,6 +78,15 @@ class EvidenceInstance:
             "perturbation_id": self.perturbation_id,
             "source": self.source,
         }
+
+
+@dataclass(frozen=True)
+class LogicalTerminal:
+    """One definition-qualified response leaf and its effective constraints."""
+
+    data_tokens: tuple[str | int, ...]
+    nodes: tuple[dict[str, Any], ...]
+    branches: tuple[tuple[tuple[str | int, ...], dict[str, Any]], ...]
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -112,12 +154,16 @@ def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
         timeout=120,
         env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
-    if completed.returncode != 0 or "total=7088" not in completed.stdout:
+    if completed.returncode != 0 or "total=3912" not in completed.stdout:
         raise InventoryError("ratified contract validator failed")
 
 
 def _escape_pointer(value: str) -> str:
     return value.replace("~", "~0").replace("/", "~1")
+
+
+def _unescape_pointer(value: str) -> str:
+    return value.replace("~1", "/").replace("~0", "~")
 
 
 def walk(value: Any, pointer: str = "") -> Iterator[tuple[str, Any]]:
@@ -318,6 +364,27 @@ def _semantic_axis_members(
         if not isinstance(families, list) or len(families) != axis["familyCount"]:
             raise InventoryError("response provenance-family drift")
         return [f"{path}::{family}" for path in paths for family in families]
+    acv049_relation_by_mode = {
+        "PER_RESPONSE_STRING_PATH_WITH_FAMILY_VECTOR": "ACV-049-L",
+        "PER_MUTABLE_RESPONSE_STRING_PATH": "ACV-049-P",
+        "PER_SINGLETON_RESPONSE_STRING_PATH": "ACV-049-S",
+        "PER_NON_STRING_HISTORICAL_RESPONSE_PATH": "ACV-049-N",
+        "PER_RATIFIED_REQUEST_CARRIER": "ACV-049-E",
+    }
+    relation_id = acv049_relation_by_mode.get(mode)
+    if relation_id is not None:
+        if axis.get("id") != relation_id or axis.get("semanticRuleId") != "ACV-049":
+            raise InventoryError("ACV-049 relation identity drift")
+        members = derive_acv049_relation_members(contract)[relation_id]
+        if len(members) != axis.get("expectedCount"):
+            raise InventoryError(f"{relation_id} axis count drift")
+        if digest_lines(members) != axis.get("memberSetSha256"):
+            raise InventoryError(f"{relation_id} axis digest drift")
+        if relation_id == "ACV-049-L" and axis.get("literalFamilyVector") != list(
+            ACV049_LITERAL_FAMILIES
+        ):
+            raise InventoryError("ACV-049-L family vector drift")
+        return members
     raise InventoryError(f"unknown semantic derivation mode: {mode}")
 
 
@@ -434,6 +501,279 @@ def _string_terminal_paths(schema: dict[str, Any], source: str) -> list[str]:
     )
 
 
+def resolve_logical_terminal(schema: dict[str, Any], source: str) -> LogicalTerminal:
+    """Resolve one definition-qualified logical path exactly once.
+
+    Unlike ``_terminal_rows``, this retains every effective ``allOf``
+    constraint and the selected ``oneOf`` branches. ACV-049 needs that
+    information to distinguish actual string leaves from historical
+    constant-array leaves and singleton string domains from mutable domains.
+    """
+
+    parts = source.split("/")
+    if not parts or parts[0] != "InterfaceResponseV0":
+        raise InventoryError("ACV-049 logical path root drift")
+    definitions = schema.get("$defs")
+    if not isinstance(definitions, dict):
+        raise InventoryError("interface definitions are absent")
+
+    def walk(
+        node: Any,
+        remaining: tuple[str, ...],
+        data_tokens: tuple[str | int, ...],
+        branches: tuple[tuple[tuple[str | int, ...], dict[str, Any]], ...],
+        stack: tuple[str, ...],
+    ) -> list[LogicalTerminal]:
+        if not isinstance(node, dict):
+            return []
+        reference = node.get("$ref")
+        if isinstance(reference, str):
+            if not reference.startswith("#/$defs/"):
+                raise InventoryError("ACV-049 contains a non-local reference")
+            name = _unescape_pointer(reference.rsplit("/", 1)[-1])
+            if name in stack or not isinstance(definitions.get(name), dict):
+                raise InventoryError("ACV-049 reference is cyclic or absent")
+            return walk(
+                definitions[name], remaining, data_tokens, branches, stack + (name,)
+            )
+        all_of = node.get("allOf")
+        if isinstance(all_of, list):
+            results = [
+                result
+                for arm in all_of
+                for result in walk(arm, remaining, data_tokens, branches, stack)
+            ]
+            if not results:
+                return []
+            first = results[0]
+            if any(
+                row.data_tokens != first.data_tokens or row.branches != first.branches
+                for row in results[1:]
+            ):
+                raise InventoryError("ACV-049 allOf logical path is ambiguous")
+            return [
+                LogicalTerminal(
+                    first.data_tokens,
+                    tuple(item for row in results for item in row.nodes),
+                    first.branches,
+                )
+            ]
+        one_of = node.get("oneOf")
+        if isinstance(one_of, list):
+            if not remaining:
+                return []
+            label = remaining[0]
+            matches: list[dict[str, Any]] = []
+            for index, arm in enumerate(one_of):
+                if not isinstance(arm, dict):
+                    continue
+                arm_reference = arm.get("$ref")
+                arm_label = (
+                    arm_reference.rsplit("/", 1)[-1]
+                    if isinstance(arm_reference, str)
+                    else str(index)
+                )
+                if label == f"<{arm_label}>":
+                    matches.append(arm)
+            if len(matches) != 1:
+                raise InventoryError("ACV-049 oneOf label is ambiguous")
+            selected = matches[0]
+            return walk(
+                selected,
+                remaining[1:],
+                data_tokens,
+                branches + ((data_tokens, selected),),
+                stack,
+            )
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            if not remaining or remaining[0] not in properties:
+                return []
+            name = remaining[0]
+            return walk(
+                properties[name],
+                remaining[1:],
+                data_tokens + (name,),
+                branches,
+                stack,
+            )
+        if node.get("type") == "array":
+            if not remaining or remaining[0] != "*":
+                return []
+            return walk(
+                node.get("items"),
+                remaining[1:],
+                data_tokens + (0,),
+                branches,
+                stack,
+            )
+        if remaining:
+            return []
+        return [LogicalTerminal(data_tokens, (node,), branches)]
+
+    results = walk(
+        definitions["InterfaceResponseV0"],
+        tuple(parts[1:]),
+        (),
+        (),
+        ("InterfaceResponseV0",),
+    )
+    if len(results) != 1:
+        raise InventoryError("ACV-049 logical path does not resolve exactly once")
+    return results[0]
+
+
+def is_string_terminal(nodes: tuple[dict[str, Any], ...]) -> bool:
+    """Return whether the effective leaf domain is string-valued."""
+
+    for node in nodes:
+        if node.get("type") == "string" or isinstance(node.get("const"), str):
+            return True
+        enum = node.get("enum")
+        if isinstance(enum, list) and enum and all(isinstance(item, str) for item in enum):
+            return True
+    return False
+
+
+def derive_acv049_path_partition(contract: Path) -> dict[str, list[str]]:
+    """Derive the ratified ACV-049 L/P/S/N path partition from the schema."""
+
+    schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+    logical = _string_terminal_paths(schema, "InterfaceResponseV0")
+    terminals = {path: resolve_logical_terminal(schema, path) for path in logical}
+    strings = [path for path in logical if is_string_terminal(terminals[path].nodes)]
+    singleton = [
+        path
+        for path in strings
+        if any(isinstance(node.get("const"), str) for node in terminals[path].nodes)
+    ]
+    singleton_set = set(singleton)
+    string_set = set(strings)
+    mutable = [path for path in strings if path not in singleton_set]
+    non_string = [path for path in logical if path not in string_set]
+    result = {
+        "logical": logical,
+        "literal": strings,
+        "mutable": mutable,
+        "singleton": singleton,
+        "non_string": non_string,
+    }
+    expected = {
+        "logical": (406, "cdd2f3f325800fffd08b23c08ab51d3b3ba6a3eb949af10ad488d72a854e5fe4"),
+        "literal": (401, "253048d2193a1d37cd51d9505409b7b1ad943333ad0993cb22c09cc9e6986419"),
+        "mutable": (300, "beee0c5b76943e52a0e55d7420f952b759e0732be06e4071c34d5d370d4a0c21"),
+        "singleton": (101, "50c380ce5b29a7158774fd11daf93675428cc6c56c3b7832a23aa050063856fe"),
+        "non_string": (5, "ff6a882b2805320261707316f8a3c354806b27fc042c5f64d6dafedb47e2d509"),
+    }
+    for relation, (count, digest) in expected.items():
+        members = result[relation]
+        if len(members) != count or len(set(members)) != count:
+            raise InventoryError(f"ACV-049 {relation} path count drift")
+        if digest_lines(members) != digest:
+            raise InventoryError(f"ACV-049 {relation} path digest drift")
+    if set(mutable) & set(singleton) or set(mutable) | set(singleton) != string_set:
+        raise InventoryError("ACV-049 string-domain partition drift")
+    return result
+
+
+def derive_acv049_relation_members(contract: Path) -> dict[str, list[str]]:
+    """Derive all five ratified replacement relations and their exact sets."""
+
+    paths = derive_acv049_path_partition(contract)
+    relations = {
+        "ACV-049-L": paths["literal"],
+        "ACV-049-P": paths["mutable"],
+        "ACV-049-S": paths["singleton"],
+        "ACV-049-N": paths["non_string"],
+        "ACV-049-E": list(ACV049_REQUEST_CASE_IDS),
+    }
+    if len(ACV049_REQUEST_CASE_IDS) != 77 or digest_lines(ACV049_REQUEST_CASE_IDS) != (
+        "8233dd1a8172383e4679780474910b468139baeb4df028ecadc18f1fa83ecb8f"
+    ):
+        raise InventoryError("ACV-049 ratified request-carrier identity drift")
+    for relation_id, expected_count in ACV049_RELATION_COUNTS.items():
+        members = relations[relation_id]
+        if len(members) != expected_count or len(set(members)) != expected_count:
+            raise InventoryError(f"{relation_id} relation count or uniqueness drift")
+    if sum(len(members) for members in relations.values()) != ACV049_RELATION_COUNT:
+        raise InventoryError("ACV-049 replacement relation total drift")
+    return relations
+
+
+def expand_acv049_replacement_instances(contract: Path) -> list[EvidenceInstance]:
+    """Expand the five ACV-049 relations without Cartesian family inflation."""
+
+    relations = derive_acv049_relation_members(contract)
+    rows: list[EvidenceInstance] = []
+    for relation_id in (
+        "ACV-049-L",
+        "ACV-049-P",
+        "ACV-049-S",
+        "ACV-049-N",
+        "ACV-049-E",
+    ):
+        for index, member in enumerate(relations[relation_id], 1):
+            serial = f"{index:04d}"
+            rows.append(
+                EvidenceInstance(
+                    instance_id=f"SEM-{relation_id}--{serial}",
+                    family_id=relation_id,
+                    source=member,
+                    perturbation_id=f"PRT-{relation_id}--{serial}",
+                    assertion_id=f"AST-{relation_id}--{serial}",
+                    observation_id=f"OBS-{relation_id}--{serial}",
+                    detector_id=f"DET-{relation_id}--{serial}",
+                    expected_disposition="PASS",
+                )
+            )
+    if len(rows) != ACV049_RELATION_COUNT or len(
+        {row.instance_id for row in rows}
+    ) != ACV049_RELATION_COUNT:
+        raise InventoryError("ACV-049 replacement instance relation drift")
+    return rows
+
+
+def derive_acv049_old_to_new_reconciliation(
+    contract: Path,
+) -> list[dict[str, str]]:
+    """Retire every historical path-by-family ID into its literal/N owner."""
+
+    partition = derive_acv049_path_partition(contract)
+    literal_index = {path: index for index, path in enumerate(partition["literal"], 1)}
+    non_string_index = {
+        path: index for index, path in enumerate(partition["non_string"], 1)
+    }
+    rows: list[dict[str, str]] = []
+    serial = 0
+    for path in partition["logical"]:
+        relation_id = "ACV-049-L" if path in literal_index else "ACV-049-N"
+        relation_index = (
+            literal_index[path] if relation_id == "ACV-049-L" else non_string_index[path]
+        )
+        replacement_id = f"SEM-{relation_id}--{relation_index:04d}"
+        for family in ACV049_LITERAL_FAMILIES:
+            serial += 1
+            rows.append(
+                {
+                    "historicalInstanceId": f"SEM-ACV-049--{serial:04d}",
+                    "historicalLiteralFamily": family,
+                    "logicalPath": path,
+                    "replacementInstanceId": replacement_id,
+                }
+            )
+    if serial != 4060 or len(
+        {row["historicalInstanceId"] for row in rows}
+    ) != 4060:
+        raise InventoryError("ACV-049 historical reconciliation drift")
+    replacement_counts: dict[str, int] = {}
+    for row in rows:
+        replacement = row["replacementInstanceId"]
+        replacement_counts[replacement] = replacement_counts.get(replacement, 0) + 1
+    if len(replacement_counts) != 406 or set(replacement_counts.values()) != {10}:
+        raise InventoryError("ACV-049 reconciliation fan-in drift")
+    return rows
+
+
 def _union_arm_members(schema: dict[str, Any], sources: list[str]) -> list[str]:
     members: list[str] = []
     for source in sources:
@@ -458,8 +798,9 @@ def expand_semantic_instances(contract: Path) -> list[EvidenceInstance]:
     semantic_by_id = {row["id"]: row for row in semantics["rules"]}
     rows: list[EvidenceInstance] = []
     for axis in axes["rules"]:
+        semantic_id = axis.get("semanticRuleId", axis["id"])
         semantic = {
-            **semantic_by_id[axis["id"]],
+            **semantic_by_id[semantic_id],
             "customKeywordCoverage": semantics["customKeywordCoverage"],
         }
         members = _semantic_axis_members(axis, semantic, contract)
@@ -508,7 +849,10 @@ def _semantic_reachability_by_row(contract: Path) -> dict[str, str]:
 
 
 def derive_semantic_execution_relation(
-    contract: Path, seed_registry: dict[str, Any]
+    contract: Path,
+    seed_registry: dict[str, Any],
+    *,
+    acv049_materialized_paths: Iterable[str] | None = None,
 ) -> list[dict[str, str]]:
     """Bind every semantic instance to its closed execution phase.
 
@@ -539,6 +883,22 @@ def derive_semantic_execution_relation(
             raise InventoryError("semantic phase seed partition drift")
         direction_by_pointer[pointer] = direction
     reachability = _semantic_reachability_by_row(contract)
+    materialized = set(acv049_materialized_paths or ())
+    if "ACV-049-L" in overrides:
+        partition = derive_acv049_path_partition(contract)
+        mutable_materialized = sorted(materialized & set(partition["mutable"]))
+        singleton_materialized = sorted(materialized & set(partition["singleton"]))
+        if (
+            len(materialized) != 321
+            or len(mutable_materialized) != 228
+            or len(singleton_materialized) != 93
+            or materialized - set(partition["literal"])
+            or digest_lines(mutable_materialized)
+            != "47756a4adf5eaa79589f21c4b443e8f273e94efc4c798bace194cb9e1fe611de"
+            or digest_lines(singleton_materialized)
+            != "6f06ee47fe0950fec29462ab849d46d7928ee7ff85de4829829731b82839c77a"
+        ):
+            raise InventoryError("ACV-049 materialized phase partition drift")
 
     rows: list[dict[str, str]] = []
     for instance in expand_semantic_instances(contract):
@@ -577,6 +937,12 @@ def derive_semantic_execution_relation(
                     phase = override["responseCarrierPhase"]
                 else:
                     raise InventoryError("ACV-048 seed direction is absent")
+            elif partition == "BY_PHASE_A_MATERIALIZATION":
+                phase = (
+                    override["materializedPhase"]
+                    if instance.source in materialized
+                    else override["unmaterializedPhase"]
+                )
             else:
                 raise InventoryError(f"unknown semantic phase partition: {partition}")
         if phase not in phases["phaseRegistry"]:
@@ -612,7 +978,7 @@ def build_inventory(repo_root: Path, contract: Path) -> dict[str, Any]:
     return {
         "combined_instance_set_sha256": digest_lines(all_ids),
         "contract_manifest_sha256": MANIFEST_SHA256,
-        "family_counts": {"semantic": 83, "structural": 24},
+        "family_counts": {"semantic": 84, "structural": 24},
         "instance_counts": {
             "semantic": SEMANTIC_COUNT,
             "structural": STRUCTURAL_COUNT,

@@ -6,7 +6,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from jsonschema.validators import Draft202012Validator
 
@@ -32,7 +31,10 @@ from run_semantic_preflight import (  # noqa: E402
     build_report_from_seed_registry as build_semantic_preflight,
 )
 from run_semantic_acv048 import derive_python_report as derive_acv048_report  # noqa: E402
-from run_semantic_acv049 import build_report as build_acv049_preflight  # noqa: E402
+from run_semantic_acv049 import (  # noqa: E402
+    build_report as build_acv049_preflight,
+    derive_phase_a_materialized_paths,
+)
 
 
 class StructuralPlanTests(unittest.TestCase):
@@ -137,8 +139,15 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         )
 
     def test_real_seed_partition_closes_all_semantic_execution_rows(self) -> None:
-        report = build_semantic_preflight(self.phase_b_seeds, ROOT / "contract")
-        self.assertEqual(report["semantic_instance_count"], 5535)
+        materialized = derive_phase_a_materialized_paths(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        report = build_semantic_preflight(
+            self.phase_b_seeds,
+            ROOT / "contract",
+            acv049_materialized_paths=materialized,
+        )
+        self.assertEqual(report["semantic_instance_count"], 2359)
         self.assertEqual(
             report["seed_direction_counts"], {"REQUEST": 56, "RESPONSE": 31}
         )
@@ -148,14 +157,16 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 "BLIND_INPUT_EXECUTION": 504,
                 "POST_OUTPUT_MUTATION": 279,
                 "VALIDATOR_SELF_TEST": 0,
+                "TWO_ENVIRONMENT_SOURCE_MUTATION": 0,
             },
         )
         self.assertEqual(
             report["execution_phase_counts"],
             {
-                "BLIND_INPUT_EXECUTION": 1079,
-                "POST_OUTPUT_MUTATION": 4430,
-                "VALIDATOR_SELF_TEST": 26,
+                "BLIND_INPUT_EXECUTION": 1156,
+                "POST_OUTPUT_MUTATION": 691,
+                "VALIDATOR_SELF_TEST": 212,
+                "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
             },
         )
         self.assertEqual(report["status"], "PRESELECTION_EVIDENCE")
@@ -166,7 +177,11 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         with self.assertRaisesRegex(
             SemanticPreflightError, "requires 87 seed rows"
         ):
-            build_semantic_preflight(mutant, ROOT / "contract")
+            build_semantic_preflight(
+                mutant,
+                ROOT / "contract",
+                acv049_materialized_paths=set(),
+            )
 
     def test_acv048_executes_all_cross_plane_field_smuggling_instances(self) -> None:
         report = derive_acv048_report(
@@ -183,38 +198,42 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertTrue(all(not row["exactAccepted"] for row in report["rows"]))
         self.assertTrue(all(row["mutantAccepted"] for row in report["rows"]))
 
-    def test_acv049_preflight_is_branch_faithful_and_non_authoritative(self) -> None:
-        with patch("run_semantic_acv049._javascript_rejects", return_value=True):
-            report = build_acv049_preflight(
-                ROOT.parents[2], ROOT / "contract", self.evidence, node="node"
-            )
-        self.assertEqual(report["instance_count"], 4060)
+    def test_acv049_replacement_registry_is_branch_faithful_and_non_authoritative(self) -> None:
+        report = build_acv049_preflight(
+            ROOT.parents[2], ROOT / "contract", self.evidence, node="node"
+        )
+        self.assertEqual(report["instance_count"], 884)
         self.assertEqual(report["path_count"], 406)
-        self.assertEqual(report["string_path_count"], 401)
-        self.assertEqual(report["non_string_path_count"], 5)
         self.assertEqual(report["materialized_path_count"], 321)
-        self.assertEqual(report["unmaterialized_path_count"], 85)
-        self.assertEqual(report["live_rejection_count"], 1746)
+        self.assertEqual(report["materialized_mutable_path_count"], 228)
+        self.assertEqual(report["materialized_singleton_path_count"], 93)
+        self.assertEqual(report["unmaterialized_path_count"], 80)
         self.assertEqual(report["claimed_mutant_kills"], 0)
-        self.assertEqual(report["status"], "PRESELECTION_EVIDENCE")
-        self.assertEqual(report["verdict"], "AMEND_REQUIRED")
+        self.assertEqual(report["historical_reconciliation_count"], 4060)
+        self.assertEqual(report["status"], "REMEDIATION_RELATION_REGISTRY")
+        self.assertEqual(report["verdict"], "RELATION_DERIVATION_PASS")
         self.assertEqual(
-            report["class_counts"],
+            report["relation_counts"],
             {
-                "NON_STRING_CONST": 50,
-                "SCHEMA_ADMISSIBLE_ENCODED": 2121,
-                "SCHEMA_CLOSED": 1889,
+                "ACV-049-L": 401,
+                "ACV-049-P": 300,
+                "ACV-049-S": 101,
+                "ACV-049-N": 5,
+                "ACV-049-E": 77,
             },
         )
-        self.assertEqual(
-            report["class_materialization_counts"],
-            {
-                "NON_STRING_CONST:UNMATERIALIZED": 50,
-                "SCHEMA_ADMISSIBLE_ENCODED:MATERIALIZED": 1464,
-                "SCHEMA_ADMISSIBLE_ENCODED:UNMATERIALIZED": 657,
-                "SCHEMA_CLOSED:MATERIALIZED": 1746,
-                "SCHEMA_CLOSED:UNMATERIALIZED": 143,
-            },
+        self.assertEqual(len({row["instanceId"] for row in report["rows"]}), 884)
+        self.assertTrue(
+            all(
+                row.get("evidenceDisposition")
+                in {
+                    None,
+                    "SOURCE_SITE_EVIDENCE_PENDING",
+                    "DOMAIN_CLOSURE_PENDING",
+                    "TWO_ENVIRONMENT_EXECUTION_PENDING",
+                }
+                for row in report["rows"]
+            )
         )
 
     def test_phase_b_seed_registry_selects_all_87_objects_deterministically(self) -> None:

@@ -36,6 +36,7 @@ from inventory import (
     expand_semantic_instances,
     sha256_bytes,
 )
+from run_semantic_acv049 import derive_phase_a_materialized_paths
 
 
 REPORT_FIELDS = frozenset(
@@ -115,7 +116,13 @@ def _vectors(
     }
     phase_by_instance = {
         row["instanceId"]: row
-        for row in derive_semantic_execution_relation(contract, seed_registry)
+        for row in derive_semantic_execution_relation(
+            contract,
+            seed_registry,
+            acv049_materialized_paths=derive_phase_a_materialized_paths(
+                repo_root, contract, evidence_root
+            ),
+        )
         if row["semanticRuleId"] == "ACV-048"
     }
     instances = [

@@ -21,6 +21,7 @@ from inventory import (
     digest_lines,
     sha256_bytes,
 )
+from run_semantic_acv049 import derive_phase_a_materialized_paths
 
 
 REPORT_FIELDS = frozenset(
@@ -44,11 +45,13 @@ PHASES = (
     "BLIND_INPUT_EXECUTION",
     "POST_OUTPUT_MUTATION",
     "VALIDATOR_SELF_TEST",
+    "TWO_ENVIRONMENT_SOURCE_MUTATION",
 )
 FIXED_PHASE_COUNTS = {
-    "BLIND_INPUT_EXECUTION": 575,
-    "POST_OUTPUT_MUTATION": 4151,
-    "VALIDATOR_SELF_TEST": 26,
+    "BLIND_INPUT_EXECUTION": 652,
+    "POST_OUTPUT_MUTATION": 412,
+    "VALIDATOR_SELF_TEST": 212,
+    "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
 }
 
 
@@ -64,7 +67,10 @@ def _closed_counts(values: list[str], registry: tuple[str, ...]) -> dict[str, in
 
 
 def build_report_from_seed_registry(
-    seed_registry: dict[str, Any], contract: Path
+    seed_registry: dict[str, Any],
+    contract: Path,
+    *,
+    acv049_materialized_paths: set[str],
 ) -> dict[str, Any]:
     """Build non-authoritative preselection evidence for all semantic rows."""
 
@@ -78,7 +84,11 @@ def build_report_from_seed_registry(
         ],
         ("REQUEST", "RESPONSE"),
     )
-    rows = derive_semantic_execution_relation(contract, seed_registry)
+    rows = derive_semantic_execution_relation(
+        contract,
+        seed_registry,
+        acv049_materialized_paths=acv049_materialized_paths,
+    )
     if len(rows) != SEMANTIC_COUNT:
         raise SemanticPreflightError("semantic execution relation count drift")
     instance_ids = [row["instanceId"] for row in rows]
@@ -99,6 +109,7 @@ def build_report_from_seed_registry(
         or acv048_counts["BLIND_INPUT_EXECUTION"] != directions["REQUEST"] * 9
         or acv048_counts["POST_OUTPUT_MUTATION"] != directions["RESPONSE"] * 9
         or acv048_counts["VALIDATOR_SELF_TEST"] != 0
+        or acv048_counts["TWO_ENVIRONMENT_SOURCE_MUTATION"] != 0
     ):
         raise SemanticPreflightError("ACV-048 carrier phase partition drift")
 
@@ -123,7 +134,12 @@ def build_report_from_seed_registry(
 
 def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[str, Any]:
     seed_registry, _cases = derive_seed_registry(repo_root, contract, evidence_root)
-    return build_report_from_seed_registry(seed_registry, contract)
+    materialized = derive_phase_a_materialized_paths(repo_root, contract, evidence_root)
+    return build_report_from_seed_registry(
+        seed_registry,
+        contract,
+        acv049_materialized_paths=materialized,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

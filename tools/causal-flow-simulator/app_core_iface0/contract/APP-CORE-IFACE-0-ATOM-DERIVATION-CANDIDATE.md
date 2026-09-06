@@ -168,9 +168,14 @@ path, unresolved `$ref`, schema cycle or count/digest mismatch fails closed.
 
 At minimum:
 
-- `ACV-049` expands to the Cartesian product of all 406 response string paths
-  and the ten literal provenance families in its parameters: 4,060 distinct
-  execution instances;
+- `ACV-049` remains one semantic rule family but expands through five closed
+  evidence relations rather than the historical Cartesian product: `L` covers
+  401 actual string paths, `P` covers 300 mutable string paths, `S` covers 101
+  singleton string paths, `N` covers the five historical non-string paths, and
+  `E` covers the 77 ratified request carriers. The five relations contain 884
+  execution instances in total. The logical 406-path relation and its digest
+  above remain the reconciliation domain; its actual-string subset has digest
+  `253048d2193a1d37cd51d9505409b7b1ad943333ad0993cb22c09cc9e6986419`;
 - `ACV-050` expands to all 25 custom-keyword occurrences plus one unknown-keyword
   negative control: 26 distinct execution instances; and
 - `ACV-048` expands all nine forbidden authority/runtime/cross-plane field
@@ -195,12 +200,13 @@ The current exact expansion is:
 
 ```text
 1,553 structural instances
-+ 5,535 semantic instances
-= 7,088 total structural-plus-semantic execution instances
++ 2,359 semantic instances
+= 3,912 total structural-plus-semantic execution instances
 ```
 
-The 84-row instance-axis registry has no unresolved axis and has SHA-256
-`20e3a07558fbe5fb0f95c52eb31f6b24b69f8a6137a69b858260d70c60576201`.
+The 88-row instance-axis registry maps 84 semantic rule families, has no
+unresolved axis and has SHA-256
+`808464a19ba383cf5713a921e551ae15f5208d62e02aeb0a57414b1cf51f9247`.
 
 ## Derived interface maxima
 
@@ -223,7 +229,7 @@ merged without retaining a second decoded copy.
 
 Its execution-phase partition is the working
 `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256
-`9fc0c3929d252bab7fb435f657b69dd8e7f2d5c0d169d7b946f4eeaf402fc820`.
+`b78b4a303779d8446e386a6fca65a764e1fef92cb4e362a77c3641e04a3a9851`.
 It prevents a response-only hygiene mutation or validator self-test from being
 misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
 counts remain derived from the future 87-row seed-carrier directions.
