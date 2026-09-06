@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import copy
 import hashlib
 import json
 import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +77,466 @@ LITERAL_REPRESENTATIVES = {
 
 class SemanticACV049Error(ValueError):
     """The ACV-049 preflight relation is malformed or overclaims evidence."""
+
+
+class _SourceTaggedString(str):
+    """One immutable string carrying its nearest evaluator construction site."""
+
+    def __new__(cls, value: str, site_id: str) -> _SourceTaggedString:
+        instance = super().__new__(cls, value)
+        instance.site_id = site_id
+        return instance
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _SourceTaggedString:
+        del memo
+        return self
+
+
+def _tag_source_value(site_id: str, value: Any) -> Any:
+    """Tag unowned strings without changing their JSON-visible value or shape."""
+
+    if isinstance(value, _SourceTaggedString):
+        return value
+    if isinstance(value, str):
+        return _SourceTaggedString(value, site_id)
+    if isinstance(value, list):
+        return [_tag_source_value(site_id, item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_tag_source_value(site_id, item) for item in value)
+    if isinstance(value, dict):
+        return {
+            key: _tag_source_value(site_id, item) for key, item in value.items()
+        }
+    if isinstance(value, set):
+        return {_tag_source_value(site_id, item) for item in value}
+    if isinstance(value, frozenset):
+        return frozenset(_tag_source_value(site_id, item) for item in value)
+    return value
+
+
+def _site_token(value: str) -> str:
+    token = "".join(character if character.isalnum() else "-" for character in value)
+    token = "-".join(part for part in token.upper().split("-") if part)
+    return token or "VALUE"
+
+
+class _SourceSiteInstrumenter(ast.NodeTransformer):
+    """Instrument evaluator value-producing AST nodes with stable site IDs."""
+
+    def __init__(self) -> None:
+        self.function_names: list[str] = []
+        self.occurrences: dict[tuple[str, str, str], int] = {}
+        self.sites: dict[str, dict[str, Any]] = {}
+
+    @property
+    def function_name(self) -> str | None:
+        return self.function_names[-1] if self.function_names else None
+
+    def _site(
+        self, node: ast.AST, kind: str, label: str, *, explicit: str | None = None
+    ) -> str:
+        function = self.function_name
+        if function is None:
+            raise SemanticACV049Error("module-level ACV-049 site is forbidden")
+        if explicit is None:
+            key = (function, kind, label)
+            occurrence = self.occurrences.get(key, 0) + 1
+            self.occurrences[key] = occurrence
+            site_id = (
+                "PURITY-SITE-AST-"
+                + _site_token(function)
+                + "-"
+                + _site_token(kind)
+                + "-"
+                + _site_token(label)
+                + f"-{occurrence:03d}"
+            )
+        else:
+            site_id = explicit
+        if site_id in self.sites:
+            raise SemanticACV049Error(f"duplicate ACV-049 construction site: {site_id}")
+        self.sites[site_id] = {
+            "column": int(getattr(node, "col_offset", -1)),
+            "function": function,
+            "kind": kind,
+            "label": label,
+            "line": int(getattr(node, "lineno", -1)),
+            "siteId": site_id,
+        }
+        return site_id
+
+    @staticmethod
+    def _tag(site_id: str, value: ast.expr) -> ast.Call:
+        return ast.Call(
+            func=ast.Name(id="_acv049_tag_source_value", ctx=ast.Load()),
+            args=[ast.Constant(site_id), value],
+            keywords=[],
+        )
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+        self.function_names.append(node.name)
+        try:
+            return self.generic_visit(node)
+        finally:
+            self.function_names.pop()
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
+        self.function_names.append(node.name)
+        try:
+            return self.generic_visit(node)
+        finally:
+            self.function_names.pop()
+
+    def visit_Dict(self, node: ast.Dict) -> ast.AST:
+        node = self.generic_visit(node)
+        if self.function_name is None:
+            return node
+        wrapped: list[ast.expr] = []
+        for index, (key, value) in enumerate(zip(node.keys, node.values, strict=True)):
+            label = (
+                str(key.value)
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                else f"SPREAD-{index:03d}"
+            )
+            site_id = self._site(value, "DICT-VALUE", label)
+            wrapped.append(ast.copy_location(self._tag(site_id, value), value))
+        node.values = wrapped
+        return node
+
+    def visit_DictComp(self, node: ast.DictComp) -> ast.AST:
+        node = self.generic_visit(node)
+        if self.function_name is None:
+            return node
+        site_id = self._site(node.value, "DICT-COMPREHENSION", "VALUE")
+        node.value = ast.copy_location(self._tag(site_id, node.value), node.value)
+        return node
+
+    def visit_Assign(self, node: ast.Assign) -> ast.AST:
+        node = self.generic_visit(node)
+        if self.function_name is None:
+            return node
+        subscript_targets = [target for target in node.targets if isinstance(target, ast.Subscript)]
+        if not subscript_targets:
+            return node
+        labels = []
+        for target in subscript_targets:
+            labels.append(
+                str(target.slice.value)
+                if isinstance(target.slice, ast.Constant)
+                else "DYNAMIC-SUBSCRIPT"
+            )
+        explicit = None
+        if (
+            self.function_name == "_assemble_context_projection"
+            and labels == ["retentionState"]
+        ):
+            explicit = "PURITY-SITE-CONTENT-STATE-AXIS-REMOVAL"
+        site_id = self._site(
+            node.value,
+            "SUBSCRIPT-ASSIGNMENT",
+            "+".join(labels),
+            explicit=explicit,
+        )
+        node.value = ast.copy_location(self._tag(site_id, node.value), node.value)
+        return node
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        node = self.generic_visit(node)
+        if (
+            self.function_name is None
+            or not isinstance(node.func, ast.Attribute)
+            or node.func.attr not in {"append", "extend", "setdefault", "update"}
+            or not node.args
+        ):
+            return node
+        wrapped: list[ast.expr] = []
+        for index, argument in enumerate(node.args):
+            site_id = self._site(
+                argument, "MUTATING-CALL", f"{node.func.attr}-{index:03d}"
+            )
+            wrapped.append(ast.copy_location(self._tag(site_id, argument), argument))
+        node.args = wrapped
+        return node
+
+
+def _instrumented_interface_model(
+    repo_root: Path,
+) -> tuple[types.ModuleType, dict[str, dict[str, Any]]]:
+    """Compile an in-memory, value-preserving source-provenance evaluator."""
+
+    source_path = (
+        repo_root
+        / "tools/causal-flow-simulator/app_core_iface0/interface_model.py"
+    )
+    try:
+        source = source_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(source_path))
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError) as error:
+        raise SemanticACV049Error("ACV-049 evaluator AST is unavailable") from error
+    instrumenter = _SourceSiteInstrumenter()
+    instrumented = instrumenter.visit(tree)
+    ast.fix_missing_locations(instrumented)
+    module = types.ModuleType("interface_model")
+    module.__file__ = str(source_path)
+    module.__dict__["_acv049_tag_source_value"] = _tag_source_value
+    previous = sys.modules.get("interface_model")
+    sys.modules["interface_model"] = module
+    try:
+        exec(compile(instrumented, str(source_path), "exec"), module.__dict__)
+    except Exception:
+        if previous is None:
+            sys.modules.pop("interface_model", None)
+        else:
+            sys.modules["interface_model"] = previous
+        raise
+    if previous is None:
+        sys.modules.pop("interface_model", None)
+    else:
+        sys.modules["interface_model"] = previous
+    return module, instrumenter.sites
+
+
+def _logical_data_pattern(path: str) -> tuple[str | None, ...]:
+    parts = path.split("/")
+    if not parts or parts[0] != "InterfaceResponseV0":
+        raise SemanticACV049Error("ACV-049 logical response path drift")
+    return tuple(
+        None if part == "*" else part.replace("~1", "/").replace("~0", "~")
+        for part in parts[1:]
+        if not (part.startswith("<") and part.endswith(">"))
+    )
+
+
+def _pattern_values(
+    value: Any,
+    pattern: tuple[str | None, ...],
+    prefix: tuple[str | int, ...] = (),
+) -> list[tuple[tuple[str | int, ...], Any]]:
+    if not pattern:
+        return [(prefix, value)]
+    token, remaining = pattern[0], pattern[1:]
+    if token is None:
+        if not isinstance(value, list):
+            return []
+        return [
+            result
+            for index, item in enumerate(value)
+            for result in _pattern_values(item, remaining, (*prefix, index))
+        ]
+    if not isinstance(value, dict) or token not in value:
+        return []
+    return _pattern_values(value[token], remaining, (*prefix, token))
+
+
+def _semantic_construction_site(path: str, ast_site_id: str) -> str:
+    """Collapse only the five tuple sites named by the ratified amendment."""
+
+    if "/<CandidateEvaluationTerminalV0>/" in path:
+        return "PURITY-SITE-CANDIDATE-TERMINAL"
+    if "/<EvaluateGenesisResultTerminalV0>/" in path:
+        return "PURITY-SITE-GENESIS-TERMINAL"
+    if "/<ValidateTranscriptResultRejectedV0>/" in path and path.endswith(
+        ("/reason", "/stage")
+    ):
+        return "PURITY-SITE-TRANSCRIPT-REJECTED"
+    if path.endswith("/<ValidateTranscriptResultValidatedV0>/stage"):
+        return "PURITY-SITE-TRANSCRIPT-VALIDATED"
+    if "/projection/contentStates/*/" in path and path.rsplit("/", 1)[1] in {
+        "bindingObservation",
+        "contentClass",
+        "localAvailability",
+        "replayReadiness",
+        "retentionState",
+    }:
+        if ast_site_id == "PURITY-SITE-CONTENT-STATE-AXIS-REMOVAL":
+            return ast_site_id
+        return "PURITY-SITE-CONTENT-STATE-AXIS"
+    return ast_site_id
+
+
+def derive_phase_a_source_site_map(
+    repo_root: Path, contract: Path, evidence_root: Path
+) -> dict[str, Any]:
+    """Map Phase-A mutable response leaves to exact evaluator AST sites."""
+
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    requests = sorted(
+        (
+            (case_id, value, raw)
+            for case_id, (value, raw) in carriers.items()
+            if case_id.startswith("PCR-REQUEST-")
+        ),
+        key=lambda row: row[0].encode("utf-8"),
+    )
+    if len(requests) != 77:
+        raise SemanticACV049Error("ACV-049 requires 77 frozen requests")
+    collision_oracle_by_request = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    instrumented, ast_sites = _instrumented_interface_model(repo_root)
+    previous = sys.modules.get("interface_model")
+    sys.modules["interface_model"] = instrumented
+    tagged_responses: list[tuple[str, dict[str, Any], bool]] = []
+    try:
+        instrumented_authority = instrumented.ContractAuthority.load(repo_root, contract)
+        for case_id, request, raw in requests:
+            oracle = collision_oracle_by_request.get(raw)
+            response = _evaluate_fixture_request(
+                instrumented_authority, request, oracle
+            )
+            instrumented.validate_response_before_release(
+                instrumented_authority, response
+            )
+            tagged_responses.append((case_id, response, oracle is not None))
+    finally:
+        if previous is None:
+            sys.modules.pop("interface_model", None)
+        else:
+            sys.modules["interface_model"] = previous
+
+    partition = derive_acv049_path_partition(contract)
+    terminals = {
+        path: resolve_logical_terminal(authority.schema, path)
+        for path in partition["mutable"]
+    }
+    route_groups: dict[
+        tuple[str, str, str, str], dict[str, set[str]]
+    ] = {}
+    materialized: set[str] = set()
+    used_sites: set[str] = set()
+    for path in partition["mutable"]:
+        terminal = terminals[path]
+        pattern = _logical_data_pattern(path)
+        for case_id, response, fault_injected in tagged_responses:
+            try:
+                selected = all(
+                    _validator(authority.schema, arm).is_valid(
+                        _data_value(response, prefix)
+                    )
+                    for prefix, arm in terminal.branches
+                )
+            except (KeyError, TypeError):
+                continue
+            if not selected:
+                continue
+            values = _pattern_values(response, pattern)
+            if not values:
+                continue
+            materialized.add(path)
+            for pointer, value in values:
+                if not isinstance(value, _SourceTaggedString):
+                    raise SemanticACV049Error(
+                        f"ACV-049 materialized leaf has no AST site: {path}"
+                    )
+                if value.site_id not in ast_sites:
+                    raise SemanticACV049Error("ACV-049 reported an unknown AST site")
+                semantic_site = _semantic_construction_site(path, value.site_id)
+                used_sites.add(semantic_site)
+                fault_context = (
+                    "FIXED_INTERNAL_COLLISION_ORACLE" if fault_injected else "NONE"
+                )
+                key = (path, semantic_site, case_id, fault_context)
+                group = route_groups.setdefault(
+                    key, {"astSiteIds": set(), "concretePointers": set()}
+                )
+                group["astSiteIds"].add(value.site_id)
+                group["concretePointers"].add(
+                    _report_pointer(_json_pointer(pointer))
+                )
+    expected_materialized = derive_phase_a_materialized_paths(
+        repo_root, contract, evidence_root
+    ) & set(partition["mutable"])
+    if materialized != expected_materialized or len(materialized) != 228:
+        raise SemanticACV049Error("ACV-049 source-site materialization drift")
+    if len(set(partition["mutable"]) - materialized) != 72:
+        raise SemanticACV049Error("ACV-049 supplementary mutable-path count drift")
+    route_rows = [
+        {
+            "astSiteIds": sorted(group["astSiteIds"]),
+            "concretePointers": sorted(group["concretePointers"]),
+            "faultContext": fault_context,
+            "logicalPath": _report_logical_path(path),
+            "requestCaseId": case_id,
+            "routeClass": (
+                "FAULT_INJECTED_ROUTE"
+                if fault_context == "FIXED_INTERNAL_COLLISION_ORACLE"
+                else "ORDINARY_ROUTE"
+            ),
+            "siteId": site_id,
+        }
+        for (path, site_id, case_id, fault_context), group in route_groups.items()
+    ]
+    route_rows.sort(
+        key=lambda row: dumps(
+            [
+                row["logicalPath"], row["siteId"], row["requestCaseId"],
+                row["faultContext"],
+            ]
+        )
+    )
+    ast_claims: dict[str, set[str]] = {}
+    for row in route_rows:
+        for ast_site_id in row["astSiteIds"]:
+            ast_claims.setdefault(ast_site_id, set()).add(row["siteId"])
+    multiply_claimed = {
+        ast_site_id: claims
+        for ast_site_id, claims in ast_claims.items()
+        if len(claims) != 1
+    }
+    if multiply_claimed:
+        raise SemanticACV049Error("ACV-049 AST site is multiply claimed")
+    grouped_sites = []
+    for site_id in sorted(used_sites):
+        member_ids = sorted(
+            {
+                ast_site_id
+                for row in route_rows
+                if row["siteId"] == site_id
+                for ast_site_id in row["astSiteIds"]
+            }
+        )
+        if not member_ids or any(member not in ast_sites for member in member_ids):
+            raise SemanticACV049Error("ACV-049 used-site closure drift")
+        grouped_sites.append(
+            {
+                "astMembers": [ast_sites[member] for member in member_ids],
+                "siteId": site_id,
+            }
+        )
+    pending_paths = sorted(set(partition["mutable"]) - materialized)
+    route_class_counts = {
+        route_class: sum(row["routeClass"] == route_class for row in route_rows)
+        for route_class in ("ORDINARY_ROUTE", "FAULT_INJECTED_ROUTE")
+    }
+    if (
+        len(route_rows) != 596
+        or len(grouped_sites) != 76
+        or route_class_counts
+        != {"ORDINARY_ROUTE": 581, "FAULT_INJECTED_ROUTE": 15}
+    ):
+        raise SemanticACV049Error("ACV-049 Phase-A source-site relation drift")
+    return {
+        "instrumentationPointCount": len(ast_sites),
+        "materializedMutablePathCount": len(materialized),
+        "pendingSupplementaryMutablePathCount": 72,
+        "pendingSupplementaryLogicalPaths": [
+            _report_logical_path(path) for path in pending_paths
+        ],
+        "routeCount": len(route_rows),
+        "routeClassCounts": route_class_counts,
+        "routeSetSha256": sha256_bytes(dumps(route_rows)),
+        "routes": route_rows,
+        "schema": "styx.app-core-iface0.acv049-source-site-map.v1",
+        "usedSiteCount": len(used_sites),
+        "usedSiteSetSha256": sha256_bytes(dumps(grouped_sites)),
+        "usedSites": grouped_sites,
+        "verdict": "PHASE_A_SOURCE_SITE_MAP_PASS",
+    }
 
 
 def _data_value(value: Any, tokens: tuple[str | int, ...]) -> Any:
@@ -852,7 +1314,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--evidence-root", required=True, type=Path)
-    parser.add_argument("--emit-terminal-jobs", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--emit-terminal-jobs", action="store_true")
+    modes.add_argument("--emit-source-site-map", action="store_true")
     parser.add_argument("--javascript-results-stdin", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -863,6 +1327,19 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.buffer.write(
                 dumps(
                     build_terminal_jobs(
+                        args.repo_root.resolve(),
+                        args.contract.resolve(),
+                        args.evidence_root.resolve(),
+                    )
+                )
+            )
+            return 0
+        if args.emit_source_site_map:
+            if args.javascript_results_stdin or args.output is not None:
+                raise SemanticACV049Error("source-site mode argument drift")
+            sys.stdout.buffer.write(
+                dumps(
+                    derive_phase_a_source_site_map(
                         args.repo_root.resolve(),
                         args.contract.resolve(),
                         args.evidence_root.resolve(),

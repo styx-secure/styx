@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import subprocess
@@ -36,13 +37,60 @@ from run_semantic_preflight import (  # noqa: E402
 from run_semantic_acv048 import derive_python_report as derive_acv048_report  # noqa: E402
 from run_semantic_acv049 import (  # noqa: E402
     REPORT_FIELDS as ACV049_REPORT_FIELDS,
+    SemanticACV049Error,
+    _SourceSiteInstrumenter,
+    _SourceTaggedString,
+    _pattern_values,
+    _tag_source_value,
     build_report as build_acv049_preflight,
     build_terminal_jobs as build_acv049_terminal_jobs,
     derive_phase_a_materialized_paths,
+    derive_phase_a_source_site_map,
 )
 
 
 class StructuralPlanTests(unittest.TestCase):
+    def test_acv049_source_tagging_is_value_preserving_and_nearest_site_wins(
+        self,
+    ) -> None:
+        tagged = _tag_source_value(
+            "PURITY-SITE-FIRST",
+            {"outer": ["alpha", {"inner": "bravo"}], "number": 7},
+        )
+        self.assertEqual(
+            tagged,
+            {"outer": ["alpha", {"inner": "bravo"}], "number": 7},
+        )
+        self.assertIsInstance(tagged["outer"][0], _SourceTaggedString)
+        self.assertEqual(tagged["outer"][0].site_id, "PURITY-SITE-FIRST")
+        retagged = _tag_source_value("PURITY-SITE-SECOND", tagged)
+        self.assertEqual(retagged["outer"][0].site_id, "PURITY-SITE-FIRST")
+        self.assertIs(copy.deepcopy(retagged["outer"][0]), retagged["outer"][0])
+
+    def test_acv049_pattern_expansion_retains_every_concrete_pointer(self) -> None:
+        value = {"items": [{"state": "one"}, {"state": "two"}]}
+        self.assertEqual(
+            _pattern_values(value, ("items", None, "state")),
+            [
+                (("items", 0, "state"), "one"),
+                (("items", 1, "state"), "two"),
+            ],
+        )
+        self.assertEqual(_pattern_values(value, ("missing",)), [])
+
+    def test_acv049_duplicate_explicit_removal_site_fails_closed(self) -> None:
+        tree = ast.parse(
+            "def _assemble_context_projection():\n"
+            "    result = {}\n"
+            "    result['retentionState'] = 'FIRST'\n"
+            "    result['retentionState'] = 'SECOND'\n"
+            "    return result\n"
+        )
+        with self.assertRaisesRegex(
+            SemanticACV049Error, "duplicate ACV-049 construction site"
+        ):
+            _SourceSiteInstrumenter().visit(tree)
+
     def test_contract_derives_exact_closed_structural_plan(self) -> None:
         report = derive_structural_plan(ROOT / "contract")
         self.assertEqual(report["instance_count"], 1553)
@@ -335,6 +383,57 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 and row["evidenceDisposition"]
                 == "LOCAL_BLIND_EXECUTION_PASS_TWO_ENVIRONMENT_PENDING"
                 for row in evaluator_rows
+            )
+        )
+
+    def test_acv049_phase_a_source_sites_are_ast_derived_and_closed(self) -> None:
+        report = derive_phase_a_source_site_map(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        self.assertEqual(report["schema"], "styx.app-core-iface0.acv049-source-site-map.v1")
+        self.assertEqual(report["verdict"], "PHASE_A_SOURCE_SITE_MAP_PASS")
+        self.assertEqual(report["instrumentationPointCount"], 507)
+        self.assertEqual(report["materializedMutablePathCount"], 228)
+        self.assertEqual(report["pendingSupplementaryMutablePathCount"], 72)
+        self.assertEqual(
+            len(set(report["pendingSupplementaryLogicalPaths"])), 72
+        )
+        self.assertEqual(report["routeCount"], 596)
+        self.assertEqual(
+            report["routeClassCounts"],
+            {"FAULT_INJECTED_ROUTE": 15, "ORDINARY_ROUTE": 581},
+        )
+        self.assertEqual(report["usedSiteCount"], 76)
+        self.assertEqual(len(report["routeSetSha256"]), 64)
+        self.assertEqual(len(report["usedSiteSetSha256"]), 64)
+        self.assertEqual(
+            len({row["siteId"] for row in report["usedSites"]}),
+            report["usedSiteCount"],
+        )
+        self.assertTrue(
+            {
+                "PURITY-SITE-CANDIDATE-TERMINAL",
+                "PURITY-SITE-CONTENT-STATE-AXIS",
+                "PURITY-SITE-GENESIS-TERMINAL",
+                "PURITY-SITE-TRANSCRIPT-REJECTED",
+                "PURITY-SITE-TRANSCRIPT-VALIDATED",
+            }
+            <= {row["siteId"] for row in report["usedSites"]}
+        )
+        self.assertTrue(all(row["astMembers"] for row in report["usedSites"]))
+        self.assertTrue(
+            all(
+                row["logicalPath"].startswith("LOGICAL_PATH:")
+                and row["concretePointers"]
+                and all(
+                    pointer.startswith("JSON_POINTER:")
+                    for pointer in row["concretePointers"]
+                )
+                and row["astSiteIds"]
+                and row["siteId"].startswith("PURITY-SITE-")
+                and row["routeClass"]
+                in {"ORDINARY_ROUTE", "FAULT_INJECTED_ROUTE"}
+                for row in report["routes"]
             )
         )
 
