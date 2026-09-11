@@ -1215,16 +1215,59 @@ function validateObservations(observations) {
 }
 
 
+function validateReplayTerminalPair(result, relations) {
+  const matches = relations.candidateEvaluationPrimaryRelationV0.filter((row) => (
+    row.primary === result.primary && row.existingO10Stage === result.stage
+  ));
+  requireCondition(matches.length === 1, "response violates exact replay terminal pair");
+}
+
+
 function validateResponseShapeAndRelation(response, relations) {
   exactKeys(response, ["interfaceVersion", "operation", "profile", "result"], "response");
   requireCondition(response.interfaceVersion === "0", "interface version mismatch");
-  validateProfile(response.profile);
+  exactKeys(response.profile, ["applicationProfileId", "applicationProfileVersion", "styxProtocolVersion"], "profile");
+  requireCondition(SUPPORTED_OPERATIONS.includes(response.operation), "unsupported response operation");
   const result = response.result;
+  const successor = response.operation === "REPLAY_CONTEXT"
+    ? result.proposedContext
+    : ["EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"].includes(response.operation)
+      ? result.evaluation.proposal?.successor
+      : undefined;
+  if (successor !== undefined) {
+    // Retained-row eligibility belongs to the relation, not the reserved detector.
+    const allowedOutcomes = relations.candidateEvaluationPrimaryRelationV0.filter((row) => (
+      row.kRetentionEffect === "RETAIN_NEW" && row.reachability === "REACHABLE"
+    ));
+    for (const outcome of successor.projection.recordOutcomes) {
+      requireCondition(allowedOutcomes.some((row) => (
+        outcome.disposition === row.primary && outcome.stage === row.existingO10Stage
+      )), "response violates exact record-outcome relation");
+    }
+  }
+  if (response.operation === "REPLAY_CONTEXT") {
+    if (result.kind === "TERMINAL_CANDIDATE_REJECTED") {
+      validateReplayTerminalPair(result, relations);
+    }
+    return;
+  }
   if (response.operation === "VALIDATE_TRANSCRIPT") {
-    exactKeys(result, ["kind", "reason", "stage", "observations"], "transcript result");
+    exactKeys(
+      result,
+      result.kind === "VALIDATED"
+        ? ["kind", "stage", "observations"]
+        : ["kind", "reason", "stage", "observations"],
+      "transcript result",
+    );
     validateObservations(result.observations);
   } else if (response.operation === "EVALUATE_GENESIS") {
-    exactKeys(result, ["kind", "reason", "stage"], "genesis result");
+    exactKeys(
+      result,
+      result.kind === "GENESIS_PROPOSAL_READY"
+        ? ["kind", "stage", "proposedGenesis"]
+        : ["kind", "reason", "stage"],
+      "genesis result",
+    );
   } else if (response.operation === "EVALUATE_CANDIDATE") {
     exactKeys(result, ["evaluation"], "candidate result");
     const evaluation = result.evaluation;
@@ -1249,7 +1292,7 @@ function validateResponseShapeAndRelation(response, relations) {
     }
     return;
   } else {
-    throw new AdapterFailure("ACV-066 self-test received an unsupported operation");
+    return;
   }
   const relationName = response.operation === "VALIDATE_TRANSCRIPT"
     ? "transcriptReasonStageRelationV0"
@@ -1265,8 +1308,11 @@ function validateResponseShapeAndRelation(response, relations) {
 
 function validateBeforeRelease(response, relations, reservedDetector = true) {
   validateResponseShapeAndRelation(response, relations);
-  if (reservedDetector && response.operation === "EVALUATE_CANDIDATE") {
-    const evaluation = response.result.evaluation;
+  if (reservedDetector && (response.operation === "EVALUATE_CANDIDATE" || (
+    response.operation === "REPLAY_CONTEXT" && response.result.kind === "TERMINAL_CANDIDATE_REJECTED"
+  ))) {
+    const evaluation = response.operation === "EVALUATE_CANDIDATE"
+      ? response.result.evaluation : response.result;
     const primary = evaluation.primary ?? evaluation.primaryOnCommit;
     const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
     if (row?.reachability === "RESERVED_UNREACHABLE_V0") {
@@ -1319,8 +1365,12 @@ function validateCompleteV2Document(document, schema, trustedDirection) {
 
 function validateCompleteResponseBeforeRelease(response, schema, relations) {
   validateCompleteV2Document(response, schema, "RESPONSE");
-  if (response.operation === "EVALUATE_CANDIDATE") {
-    const evaluation = response.result.evaluation;
+  validateResponseShapeAndRelation(response, relations);
+  if (response.operation === "EVALUATE_CANDIDATE" || (
+    response.operation === "REPLAY_CONTEXT" && response.result.kind === "TERMINAL_CANDIDATE_REJECTED"
+  )) {
+    const evaluation = response.operation === "EVALUATE_CANDIDATE"
+      ? response.result.evaluation : response.result;
     if (evaluation.kind !== "LOCAL_QUARANTINE_PROPOSAL") {
       const primary = evaluation.primary ?? evaluation.primaryOnCommit;
       const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);

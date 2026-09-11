@@ -4028,20 +4028,29 @@ def admit_canonical_request(raw: bytes, *, maximum_octets: int | None) -> dict[s
     return value
 
 
+def _validate_replay_terminal_pair(
+    authority: ContractAuthority, result: dict[str, Any]
+) -> None:
+    """Match the indivisible F13 stage; reserved reachability is separate."""
+    row = _f13_relation(authority).get(result.get("primary"))
+    if row is None or result.get("stage") != row["existingO10Stage"]:
+        raise HarnessFailure("generated response violates the exact replay terminal pair")
+
+
 def _validate_response_shape_and_relation(
     authority: ContractAuthority, response: dict[str, Any]
 ) -> None:
-    """Validate the response schema and the two exact reason/stage relations.
+    """Validate the response schema and its applicable exact relations.
 
-    Reachability is deliberately not checked here.  The ACV-066 source mutant
-    is defined as this otherwise-complete validator with only the separate
-    reserved-reachability detector removed.
+    Terminal reserved reachability is deliberately checked separately.  The
+    ACV-066 source mutant removes only that detector; retained-row eligibility
+    remains part of the record-outcome relation checked here.
     """
 
     operation = response.get("operation")
     result = response.get("result")
+    successor: Any = None
     if isinstance(result, dict):
-        successor: Any = None
         if operation == "REPLAY_CONTEXT":
             successor = result.get("proposedContext")
         elif operation in {"EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"}:
@@ -4057,7 +4066,23 @@ def _validate_response_shape_and_relation(
     _validate_complete_v2_document(
         authority, response, trusted_direction="RESPONSE"
     )
+    if isinstance(successor, dict):
+        allowed_outcomes = {
+            (row["primary"], row["existingO10Stage"])
+            for row in _f13_relation(authority).values()
+            if row["kRetentionEffect"] == "RETAIN_NEW"
+            and row["reachability"] == "REACHABLE"
+        }
+        for outcome in successor["projection"]["recordOutcomes"]:
+            if (outcome["disposition"], outcome["stage"]) not in allowed_outcomes:
+                raise HarnessFailure(
+                    "generated response violates the exact record-outcome relation"
+                )
     operation = response["operation"]
+    if operation == "REPLAY_CONTEXT":
+        if response["result"]["kind"] == "TERMINAL_CANDIDATE_REJECTED":
+            _validate_replay_terminal_pair(authority, response["result"])
+        return
     if operation == "EVALUATE_CANDIDATE":
         evaluation = response["result"]["evaluation"]
         if evaluation.get("kind") == "LOCAL_QUARANTINE_PROPOSAL":
@@ -4100,8 +4125,14 @@ def validate_response_before_release(
 
     _validate_response_shape_and_relation(authority, response)
     result = response.get("result", {})
-    if response.get("operation") == "EVALUATE_CANDIDATE":
-        evaluation = result.get("evaluation", {})
+    if response.get("operation") == "EVALUATE_CANDIDATE" or (
+        response.get("operation") == "REPLAY_CONTEXT"
+        and result.get("kind") == "TERMINAL_CANDIDATE_REJECTED"
+    ):
+        evaluation = (
+            result.get("evaluation", {})
+            if response["operation"] == "EVALUATE_CANDIDATE" else result
+        )
         primary = evaluation.get("primary", evaluation.get("primaryOnCommit"))
         row = _f13_relation(authority).get(primary)
         if row is not None and row.get("reachability") == "RESERVED_UNREACHABLE_V0":

@@ -4,6 +4,7 @@ import ast
 import copy
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -277,6 +278,129 @@ class StructuralPlanTests(unittest.TestCase):
                 ("CHANNEL-ALPHA", "CHANNEL-BRAVO"),
             )
 
+    def test_acv049_pn1_rejects_two_ast_sites_disguised_as_one_tuple(self) -> None:
+        source = "def build():\n    return {'primary': 'BASE', 'stage': 'START'}\n"
+        mapper = _SourceSiteInstrumenter()
+        mapper.visit(ast.parse(source))
+        mutations = {
+            site_id: (((), ("FIRST", "SECOND")),)
+            for site_id in mapper.sites
+        }
+        self.assertEqual(len(mutations), 2)
+        with self.assertRaisesRegex(SemanticACV049Error, "exactly one AST construction site"):
+            _mutated_source_tree(
+                source, "fixture.py", mutations, ("CHANNEL-ALPHA", "CHANNEL-BRAVO")
+            )
+
+    def test_v33_record_tuple_owns_one_actual_dictionary_expression(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        source = (
+            "def _assemble_context_projection():\n"
+            "    return {'disposition': 'APPLIED', 'eventReferenceHex': 'AB', "
+            "'stage': 'FINAL_AFTER_S6'}\n"
+        )
+        mapper = _SourceSiteInstrumenter()
+        mapper.tuple_constructions = True
+        tagged = mapper.visit(ast.parse(source))
+        sites = [s for s in mapper.sites.values() if s['kind'] == 'TUPLE-DICT']
+        self.assertEqual(len(sites), 1, 'one actual dictionary, not merged leaf sites')
+        namespace = {
+            '_acv049_tag_source_value': _tag_source_value,
+            '_acv049_tuple_source_value': semantic._tuple_source_value,
+        }
+        exec(compile(ast.fix_missing_locations(tagged), 'fixture.py', 'exec'), namespace)
+        row = namespace['_assemble_context_projection']()
+        site_id = sites[0]['siteId']
+        self.assertEqual(row['disposition'].site_id, site_id)
+        self.assertEqual(row['stage'].site_id, site_id)
+        self.assertNotEqual(row['eventReferenceHex'].site_id, site_id)
+        self.assertEqual(row['disposition'].source_tokens, ('disposition',))
+        mutations = {site_id: (
+            (('disposition',), ('RETAIN_NEW', 'AUTHORITY_PROJECTION_UNAVAILABLE')),
+            (('stage',), ('EVENT_LOCAL', 'S5_AUTHORITY_PROJECTION')),
+        )}
+        tree, _, _ = _mutated_source_tree(
+            source, 'fixture.py', mutations, ('CHANNEL-ALPHA', 'CHANNEL-BRAVO'),
+            tuple_constructions=True,
+        )
+        target = {}
+        exec(compile(tree, 'fixture.py', 'exec'), target)
+        for channel, disposition, stage in [
+            ('CHANNEL-ALPHA', 'RETAIN_NEW', 'EVENT_LOCAL'),
+            ('CHANNEL-BRAVO', 'AUTHORITY_PROJECTION_UNAVAILABLE', 'S5_AUTHORITY_PROJECTION'),
+        ]:
+            with mock.patch.dict(os.environ, {'STYX_ACV049_MUTANT_CHANNEL': channel}):
+                self.assertEqual(target['_assemble_context_projection'](), {
+                    'disposition': disposition, 'eventReferenceHex': 'AB', 'stage': stage,
+                })
+        self.assertEqual(target['_acv049_mutated_sites_executed'], {site_id})
+
+    def test_v33_additional_couplings_cannot_fall_back_to_scalar_labels(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        prefixes = [
+            'InterfaceResponseV0/<OperationResponseEvaluateCandidateV0>/result/evaluation/<CandidateEvaluationReadyV0>/proposal/successor',
+            'InterfaceResponseV0/<OperationResponseEvaluateEvidenceUpdateV0>/result/evaluation/<EvidenceUpdateReadyV0>/proposal/successor',
+            'InterfaceResponseV0/<OperationResponseReplayContextV0>/result/<ReplayContextResultReadyV0>/proposedContext',
+        ]
+        paths = [p + '/projection/recordOutcomes/*/' + f
+                 for p in prefixes for f in ('disposition', 'stage')]
+        paths.append(prefixes[0].split('/proposal/successor')[0] + '/primaryOnCommit')
+        paths += ['InterfaceResponseV0/<OperationResponseReplayContextV0>/result/<ReplayContextResultCandidateRejectedV0>/' + f
+                  for f in ('primary', 'stage')]
+        self.assertEqual(len(set(paths)), 9)
+        for path in paths:
+            label = semantic._semantic_construction_site(path, 'PURITY-SITE-AST-FIXTURE-001')
+            self.assertIn(label, {'PURITY-SITE-RECORD-OUTCOME', 'PURITY-SITE-REPLAY-CANDIDATE-TERMINAL'})
+
+    def test_v33_primary_on_commit_preserves_actual_tuple_propagation(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        source = (
+            "def _assemble_context_projection():\n"
+            "    return {'disposition': 'APPLIED', 'eventReferenceHex': 'AB', 'stage': 'FINAL_AFTER_S6'}\n"
+            "def evaluate():\n"
+            "    outcome = _assemble_context_projection()\n"
+            "    return {'record': outcome, 'primaryOnCommit': str(outcome['disposition'])}\n"
+        )
+        mapper = _SourceSiteInstrumenter()
+        mapper.tuple_constructions = True
+        tree = mapper.visit(ast.parse(source))
+        namespace = dict(vars(semantic))
+        namespace.update({'_acv049_tag_source_value': _tag_source_value,
+                          '_acv049_tuple_source_value': semantic._tuple_source_value})
+        exec(compile(ast.fix_missing_locations(tree), 'fixture.py', 'exec'), namespace)
+        response = namespace['evaluate']()
+        disposition = response['record']['disposition']
+        self.assertEqual(response['primaryOnCommit'].site_id, disposition.site_id)
+        self.assertEqual(response['primaryOnCommit'].source_tokens, disposition.source_tokens)
+        self.assertEqual(response['record']['stage'].site_id, disposition.site_id)
+        self.assertNotEqual(response['record']['eventReferenceHex'].site_id, disposition.site_id)
+
+    def test_v33_relation_constructors_bind_actual_complete_expressions(self) -> None:
+        mapper = _SourceSiteInstrumenter()
+        mapper.tuple_constructions = True
+        mapper.visit(ast.parse((ROOT / 'interface_model.py').read_text()))
+        expected = {
+            '_assemble_context_projection': ('disposition', 'stage'),
+            '_candidate_result_from_primary': ('primary', 'stage'),
+            '_candidate_terminal': ('primary', 'stage'),
+            '_rejected_transcript_result': ('reason', 'stage'),
+            'evaluate_genesis': ('reason', 'stage'),
+            '_project_content_states': ('contentClass', 'localAvailability',
+                                        'bindingObservation', 'retentionState', 'replayReadiness'),
+        }
+        for function, fields in expected.items():
+            with self.subTest(function=function):
+                sites = [s for s in mapper.sites.values()
+                         if s['function'] == function and s['kind'] == 'TUPLE-DICT']
+                self.assertTrue(sites, 'missing actual tuple constructor')
+                for site in sites:
+                    self.assertEqual(tuple(site['tupleFields']), fields)
+                    self.assertEqual(len(site['sourceExpressionSha256']), 64)
+                    self.assertGreater(site['line'], 0)
+
     def test_acv049_source_mutant_replaces_one_relation_tuple_atomically(self) -> None:
         source = (
             "def build():\n"
@@ -423,7 +547,478 @@ class StructuralPlanTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
 
+    def test_v33_tuple_observer_rejects_undeclared_propagation_and_off_target_changes(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        self.assertTrue(callable(getattr(semantic, "_observe_declared_tuple_change", None)))
+        baseline = {
+            "outcome": {"disposition": "APPLIED", "stage": "FINAL_AFTER_S6"},
+            "primaryOnCommit": "APPLIED", "unchanged": "retained",
+        }
+        spec = {
+            "twoStateRule": False,
+            "patches": [
+                {"concretePointer": semantic._report_pointer(pointer),
+                 "candidateValues": candidates}
+                for pointer, candidates in (
+                    ("/outcome/disposition", ["AUTHENTIC_BUT_UNAUTHORIZED", "AUTHORITY_PROJECTION_UNAVAILABLE"]),
+                    ("/outcome/stage", ["EVENT_LOCAL", "S5_AUTHORITY_PROJECTION"]),
+                    ("/primaryOnCommit", ["AUTHENTIC_BUT_UNAUTHORIZED", "AUTHORITY_PROJECTION_UNAVAILABLE"]),
+                )
+            ],
+        }
+        observed = copy.deepcopy(baseline)
+        for patch in spec["patches"]:
+            semantic._set_value_at_report_pointer(
+                observed, patch["concretePointer"], patch["candidateValues"][0],
+            )
+        self.assertEqual(semantic._observe_declared_tuple_change(baseline, observed, spec), 0)
+        undeclared = copy.deepcopy(spec)
+        undeclared["patches"].pop()
+        with self.assertRaisesRegex(SemanticACV049Error, "multiple targets"):
+            semantic._observe_declared_tuple_change(baseline, observed, undeclared)
+        off_target = copy.deepcopy(observed)
+        off_target["unchanged"] = "corrupted"
+        with self.assertRaisesRegex(SemanticACV049Error, "multiple targets"):
+            semantic._observe_declared_tuple_change(baseline, off_target, spec)
+        partial = copy.deepcopy(observed)
+        partial["outcome"]["stage"] = "FINAL_AFTER_S6"
+        with self.assertRaisesRegex(SemanticACV049Error, "candidate tuple"):
+            semantic._observe_declared_tuple_change(baseline, partial, spec)
+
+
 class PhaseAMutationIntegrationTests(unittest.TestCase):
+    def test_v33_recurrence_pair_and_sibling_are_frozen_from_exact_historical_bindings(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        self.assertTrue(callable(getattr(semantic, "freeze_v33_recurrence_bindings", None)))
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        legacy = semantic.build_phase_a_scalar_source_mutant_manifest(ROOT.parents[2], ROOT / "contract", self.evidence)
+        fields = ("requestCaseId", "concretePointer", "sourceSiteMapRouteSha256")
+        identities = [{key: row[key] for key in fields} for row in legacy["pendingGuardedCandidates"]]
+        order = lambda row: (row["requestCaseId"], row["concretePointer"])
+        a = sorted([row for row in identities if "%2Fsuccessor%2Fprojection%2F" in row["concretePointer"]], key=order)
+        b = sorted([row for row in identities if row not in a], key=order)
+        c = []
+        for target in a:
+            old = next(row for row in legacy["pendingGuardedCandidates"] if all(row[key] == target[key] for key in fields))
+            sibling_pointer = target["concretePointer"].replace("result%2Fevaluation%2Fproposal%2Fsuccessor", "result%2FproposedContext", 1)
+            sibling = next(row for row in legacy["mutants"] if row["requestCaseId"] == "PCR-REQUEST-REPLAY-CONTEXT-0011" and row["concretePointer"] == sibling_pointer)
+            c.append({"target": target, "sibling": {key: sibling[key] for key in fields},
+                      "historicalTargetAstTag": old["astSiteId"], "historicalSiblingAstSiteId": sibling["astSiteId"],
+                      "ownershipStatus": "REQUIRES_REDERIVATION_NOT_PROVEN_BY_HISTORICAL_TAG",
+                      "relativeTokens": sibling["relativeTokens"], "historicalMutantId": sibling["mutantId"],
+                      "historicalCandidatePairSha256": semantic.sha256_bytes(semantic.dumps(sibling["candidateValues"]))})
+        current = derive_phase_a_source_site_map(ROOT.parents[2], ROOT / "contract", self.evidence, tuple_constructions=True)
+        bound = semantic.bind_v33_closed_routes(a, b, current)
+        baselines = {}
+        for case_id in {row["target"]["requestCaseId"] for row in c} | {row["sibling"]["requestCaseId"] for row in c}:
+            request = json.loads((self.evidence / "carriers" / (case_id + ".json")).read_bytes())
+            baselines[case_id] = semantic._evaluate_fixture_request(authority, request, None)
+        frozen = semantic.freeze_v33_recurrence_bindings(c, bound, current, authority.schema, baselines)
+        plans = json.loads(frozen)
+        self.assertEqual(len(plans), 12)
+        self.assertTrue(all(not plan["twoStateRule"] and len(set(plan["candidateValues"])) == 2 for plan in plans))
+        self.assertEqual(frozen, semantic.freeze_v33_recurrence_bindings(c, bound, current, authority.schema, baselines))
+        swapped = copy.deepcopy(c)
+        swapped[0]["sibling"]["requestCaseId"] = "PCR-REQUEST-REPLAY-CONTEXT-0010"
+        with self.assertRaises(SemanticACV049Error):
+            semantic.freeze_v33_recurrence_bindings(swapped, bound, current, authority.schema, baselines)
+        incomplete = dict(baselines)
+        incomplete.pop(c[0]["target"]["requestCaseId"])
+        with self.assertRaises(SemanticACV049Error):
+            semantic.freeze_v33_recurrence_bindings(c, bound, current, authority.schema, incomplete)
+
+    def test_v33_guarded_source_rejection_has_exact_origin_and_no_successor(self) -> None:
+        import io
+        import run_semantic_acv049 as semantic
+
+        case_id = "PCR-REQUEST-EVALUATE-CANDIDATE-0023"
+        request = json.loads((self.evidence / "carriers" / (case_id + ".json")).read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        baseline = semantic._evaluate_fixture_request(authority, request, None)
+        pointer = semantic._report_pointer("/result/evaluation/proposal/successor/projection/authority/necessaryCredentialIdentifiers/0")
+        source_map = derive_phase_a_source_site_map(ROOT.parents[2], ROOT / "contract", self.evidence, tuple_constructions=True)
+        routes = [r for r in source_map["routes"] if r["requestCaseId"] == case_id and pointer in r["concretePointers"]]
+        self.assertEqual(len(routes), 1)
+        route = routes[0]
+        terminal = semantic.resolve_logical_terminal(authority.schema, semantic._raw_report_logical_path(route["logicalPath"]))
+        spec = semantic.build_scalar_source_mutant_spec(authority.schema, route, terminal, semantic._value_at_report_pointer(baseline, pointer))
+        mutations = {spec["astSiteId"]: ((tuple(spec["relativeTokens"]), tuple(spec["candidateValues"])),)}
+        mutated, sites, _ = semantic._mutated_interface_model(ROOT.parents[2], mutations, semantic.ACV049_MUTANT_CHANNELS, tuple_constructions=True)
+        for index, channel in enumerate(semantic.ACV049_MUTANT_CHANNELS):
+            mutated._acv049_trace_events.clear()
+            with mock.patch.dict(os.environ, {semantic.ACV049_MUTANT_CHANNEL_NAME: channel}), mock.patch.dict(sys.modules, {"interface_model": mutated}):
+                local = mutated.ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+                with self.assertRaises(mutated.RequestRejected):
+                    semantic._evaluate_fixture_request(local, request, None)
+            events = mutated._acv049_trace_events
+            guards = [event for event in events if event["kind"] == "PRIOR_GUARD"]
+            self.assertEqual(len(guards), 1)
+            self.assertFalse(guards[0]["value"]["equal"])
+            self.assertEqual(events[-1]["kind"], "REQUEST_REJECTED_ORIGIN")
+            self.assertEqual(sites[events[-1]["siteId"]]["function"], "evaluate_candidate")
+            self.assertFalse(any(sites[e["siteId"]]["function"] == "replay_context" for e in events if e["kind"] == "CONSTRUCTION"))
+            actual = guards[0]["value"]["regenerated"]["projection"]["authority"]["necessaryCredentialIdentifiers"][0]
+            self.assertEqual(actual, spec["candidateValues"][index])
+        mutated._acv049_trace_events.clear()
+        with self.assertRaises(mutated.RequestRejected):
+            mutated.read_bounded_request(io.BytesIO(b"xx"), maximum_octets=1)
+        self.assertEqual(mutated._acv049_trace_events, [], "same-class rejection from another origin has no guard credit")
+
+    def test_v33_closed_route_mapping_requires_exact_bijection_not_counts(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        self.assertTrue(callable(getattr(semantic, "bind_v33_closed_routes", None)))
+        legacy = semantic.build_phase_a_scalar_source_mutant_manifest(ROOT.parents[2], ROOT / "contract", self.evidence)
+        fields = ("requestCaseId", "concretePointer", "sourceSiteMapRouteSha256")
+        identities = [{key: row[key] for key in fields} for row in legacy["pendingGuardedCandidates"]]
+        order = lambda row: (row["requestCaseId"], row["concretePointer"])
+        a = sorted([row for row in identities if "%2Fsuccessor%2Fprojection%2F" in row["concretePointer"]], key=order)
+        b = sorted([row for row in identities if row not in a], key=order)
+        current = derive_phase_a_source_site_map(ROOT.parents[2], ROOT / "contract", self.evidence, tuple_constructions=True)
+        bound = semantic.bind_v33_closed_routes(a, b, current)
+        self.assertEqual(len(bound), 48)
+        self.assertEqual(sum(row["residualEligible"] for row in bound), 12)
+        self.assertEqual({semantic.dumps(row["historical"]) for row in bound}, {semantic.dumps(row) for row in identities})
+        for changed_a, changed_b in ((a[:-1], b), (a, b + [b[0]]), (a, [*b[:-1], b[0]])):
+            with self.assertRaises(SemanticACV049Error):
+                semantic.bind_v33_closed_routes(changed_a, changed_b, current)
+        with self.assertRaises(SemanticACV049Error):
+            semantic.bind_v33_closed_routes(a, b, current, p_path_count=299)
+        changed = copy.deepcopy(current)
+        selected = [row for row in changed["routes"] if row["requestCaseId"] == b[0]["requestCaseId"] and b[0]["concretePointer"] in row["concretePointers"]]
+        self.assertEqual(len(selected), 1)
+        replacement = next(index for index, row in enumerate(changed["routes"]) if row["requestCaseId"] == b[1]["requestCaseId"] and b[1]["concretePointer"] in row["concretePointers"])
+        changed["routes"][replacement] = copy.deepcopy(selected[0])
+        changed["routeSetSha256"] = semantic.sha256_bytes(semantic.dumps(changed["routes"]))
+        with self.assertRaises(SemanticACV049Error):
+            semantic.bind_v33_closed_routes(a, b, changed)
+
+    def test_v33_prior_guard_trace_binds_the_unchanged_comparison_and_successor(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        traced, sites = semantic._instrumented_interface_model(ROOT.parents[2], tuple_constructions=True)
+        request = json.loads((self.evidence / "carriers" / "PCR-REQUEST-EVALUATE-CANDIDATE-0023.json").read_bytes())
+        with mock.patch.dict(sys.modules, {"interface_model": traced}):
+            local = traced.ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+            response = semantic._evaluate_fixture_request(local, request, None)
+        events = getattr(traced, "_acv049_trace_events", [])
+        guards = [(index, event) for index, event in enumerate(events) if event["kind"] == "PRIOR_GUARD"]
+        self.assertEqual(len(guards), 1, "the exact existing prior comparison must execute")
+        index, guard = guards[0]
+        self.assertTrue(guard["value"]["equal"])
+        self.assertEqual(semantic.dumps(guard["value"]["prior"]), semantic.dumps(request["input"]["prior"]))
+        self.assertEqual(semantic.dumps(guard["value"]["regenerated"]), semantic.dumps(request["input"]["prior"]))
+        before = {event["siteId"] for event in events[:index] if event["kind"] == "CONSTRUCTION"}
+        after = {event["siteId"] for event in events[index + 1:] if event["kind"] == "CONSTRUCTION"}
+        self.assertTrue(before & after)
+        leaf = response["result"]["evaluation"]["proposal"]["successor"]["projection"]["authority"]["necessaryCredentialIdentifiers"][0]
+        self.assertEqual(sites[leaf.site_id]["function"], "_assemble_context_projection")
+        self.assertIn(leaf.site_id, before & after)
+
+    def test_v33_successor_copy_owner_is_not_internal_reconstruction(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        traced, sites = semantic._instrumented_interface_model(ROOT.parents[2], tuple_constructions=True)
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        for case_id in ("PCR-REQUEST-EVALUATE-CANDIDATE-0023", "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028"):
+            request = json.loads((self.evidence / "carriers" / (case_id + ".json")).read_bytes())
+            baseline = semantic._evaluate_fixture_request(authority, request, None)
+            with mock.patch.dict(sys.modules, {"interface_model": traced}):
+                local = traced.ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+                response = semantic._evaluate_fixture_request(local, request, None)
+            self.assertEqual(semantic.dumps(response), semantic.dumps(baseline))
+            successor = response["result"]["evaluation"]["proposal"]["successor"]
+            copied = [successor["genesis"]["logicalGenesis"]["transcriptHex"]]
+            copied.extend(row["transcriptHex"] for row in successor["logicalEvents"])
+            self.assertTrue(copied)
+            for leaf in copied:
+                self.assertEqual(sites[leaf.site_id]["function"], "replay_context",
+                                 "internal replay-input reconstruction cannot own an emitted successor")
+                self.assertIn(sites[leaf.site_id]["label"], ("genesis", "logicalEvents"))
+
+    def test_v33_e_source_control_rejects_extra_copy_corruption_without_reader_changes(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        case_id = "PCR-REQUEST-EVALUATE-CANDIDATE-0023"
+        request = json.loads((self.evidence / "carriers" / (case_id + ".json")).read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        baseline = semantic._evaluate_fixture_request(authority, request, None)
+        source_map = derive_phase_a_source_site_map(ROOT.parents[2], ROOT / "contract", self.evidence, tuple_constructions=True)
+        manifest = build_phase_a_enum_tuple_source_mutant_manifest(ROOT.parents[2], ROOT / "contract", self.evidence, source_site_map=source_map)
+        selected = [m for m in manifest["mutants"] if m["requestCaseId"] == case_id and m["siteId"] == "PURITY-SITE-RECORD-OUTCOME"]
+        self.assertEqual(len(selected), 1)
+        spec = selected[0]
+        frozen = semantic.freeze_retained_input_plan(authority, request, target_pointers=tuple(p["concretePointer"] for p in spec["patches"]))
+        mutations = {}
+        for patch in spec["patches"]:
+            mutations.setdefault(patch["astSiteId"], set()).add((tuple(patch["relativeTokens"]), tuple(patch["candidateValues"])))
+        mutations = {site: tuple(sorted(patches)) for site, patches in mutations.items()}
+        self.assertEqual(len(mutations), 1)
+        mutated, _, _ = semantic._mutated_interface_model(ROOT.parents[2], mutations, semantic.ACV049_MUTANT_CHANNELS, tuple_constructions=True)
+        for channel in semantic.ACV049_MUTANT_CHANNELS:
+            with mock.patch.dict(os.environ, {semantic.ACV049_MUTANT_CHANNEL_NAME: channel}), mock.patch.dict(sys.modules, {"interface_model": mutated}):
+                live_authority = mutated.ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+                response = semantic._evaluate_fixture_request(live_authority, request, None)
+            self.assertEqual(mutated._acv049_mutated_sites_executed, set(mutations))
+            semantic._observe_declared_tuple_change(baseline, response, spec)
+            self.assertEqual(semantic.observe_retained_input(frozen, response)["verdict"], "RETAINED_INPUT_PASS")
+            # Extra post-output corruption is a checker sentinel, never a kill.
+            damaged = copy.deepcopy(response)
+            pointer = semantic._report_pointer("/result/evaluation/proposal/successor/genesis/logicalGenesis/transcriptHex")
+            value = semantic._value_at_report_pointer(damaged, pointer)
+            semantic._set_value_at_report_pointer(damaged, pointer, value[:-2] + ("00" if value[-2:] != "00" else "ff"))
+            self.assertEqual(semantic.observe_retained_input(frozen, damaged)["verdict"], "RETAINED_INPUT_FAIL")
+            for document in (response, damaged):
+                raw = semantic.dumps(document)
+                semantic.validate_response_before_release(authority, document)
+                for mode in ("--validate-response", "--validate-response-batch"):
+                    payload = semantic.dumps({"responses": [document]}) if mode.endswith("-batch") else raw
+                    result = subprocess.run(["node", str(ROOT / "node_adapter.mjs"), mode, "--contract", str(ROOT / "contract")], input=payload, capture_output=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stderr, b"")
+                self.assertEqual(semantic.dumps(document), raw)
+
+    def test_v33_retained_target_diagnostic_is_not_a_copy_correctness_claim(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        request = json.loads((self.evidence / "carriers" / "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028.json").read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        pointer = semantic._report_pointer("/result/evaluation/proposal/successor/genesis/logicalGenesis/transcriptHex")
+        try:
+            frozen = semantic.freeze_retained_input_plan(authority, request, target_pointers=(pointer,))
+        except TypeError as error:
+            self.fail("pre-frozen retained target observation is unavailable: " + str(error))
+        response = semantic._evaluate_fixture_request(authority, request, None)
+        # Observer diagnostics, not executed source-mutant evidence.
+        damaged = copy.deepcopy(response)
+        value = semantic._value_at_report_pointer(damaged, pointer)
+        semantic._set_value_at_report_pointer(damaged, pointer, value[:-2] + ("00" if value[-2:] != "00" else "ff"))
+        report = semantic.observe_retained_input(frozen, damaged)
+        self.assertEqual(report["targetDifferences"], [pointer])
+        self.assertEqual(report["offTargetDifferences"], [])
+        self.assertEqual(report["verdict"], "RETAINED_OFF_TARGET_PASS_TARGET_EXPERIMENT")
+        extra = semantic._report_pointer("/result/evaluation/proposal/successor/logicalEvents/0/transcriptHex")
+        old = semantic._value_at_report_pointer(damaged, extra)
+        semantic._set_value_at_report_pointer(damaged, extra, old[:-2] + ("00" if old[-2:] != "00" else "ff"))
+        self.assertEqual(semantic.observe_retained_input(frozen, damaged)["verdict"], "RETAINED_INPUT_FAIL")
+
+    def test_v34_identity_target_plan_allows_only_frozen_position_without_candidates(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        request = json.loads((self.evidence / "carriers" / "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028.json").read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        pointer = semantic._report_pointer(
+            "/result/evaluation/proposal/successor/logicalEvents/0/eventReferenceHex"
+        )
+        frozen = semantic.freeze_retained_input_plan(
+            authority, request, target_pointers=(pointer,)
+        )
+        plan = json.loads(frozen)
+        prior_identity = request["input"]["prior"]["logicalEvents"][0]["eventReferenceHex"]
+        self.assertEqual(
+            plan["positionalIdentityBindings"],
+            [{
+                "canonicalPosition": 0,
+                "collectionPath": ["logicalEvents"],
+                "priorIdentity": prior_identity,
+                "targetPointer": pointer,
+            }],
+        )
+        self.assertNotIn("candidateValues", frozen.decode())
+        self.assertNotIn(semantic.ACV049_MUTANT_CHANNEL_NAME, frozen.decode())
+
+        response = semantic._evaluate_fixture_request(authority, request, None)
+        changed = copy.deepcopy(response)
+        replacement = "00" * 32 if prior_identity != "00" * 32 else "11" * 32
+        semantic._set_value_at_report_pointer(changed, pointer, replacement)
+        report = semantic.observe_retained_input(frozen, changed)
+        self.assertEqual(report["verdict"], "RETAINED_OFF_TARGET_PASS_TARGET_EXPERIMENT")
+        self.assertEqual(report["targetDifferences"], [pointer])
+        self.assertEqual(report["offTargetDifferences"], [])
+        self.assertEqual(report["structuralDifferences"], [])
+
+        original = semantic.freeze_retained_input_plan(authority, request)
+        self.assertEqual(
+            semantic.observe_retained_input(original, changed)["verdict"],
+            "RETAINED_INPUT_FAIL",
+        )
+
+    def test_v34_identity_target_source_run_conjoins_observer_and_manifest_detector(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        case_id = "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028"
+        pointer = semantic._report_pointer(
+            "/result/evaluation/proposal/successor/logicalEvents/0/eventReferenceHex"
+        )
+        request = json.loads((self.evidence / "carriers" / (case_id + ".json")).read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        baseline = semantic._evaluate_fixture_request(authority, request, None)
+        source_map = derive_phase_a_source_site_map(
+            ROOT.parents[2], ROOT / "contract", self.evidence,
+            tuple_constructions=True,
+        )
+        routes = [
+            route for route in source_map["routes"]
+            if route["requestCaseId"] == case_id and route["concretePointers"] == [pointer]
+        ]
+        self.assertEqual(len(routes), 1)
+        route = routes[0]
+        terminal = semantic.resolve_logical_terminal(
+            authority.schema, semantic._raw_report_logical_path(route["logicalPath"]),
+        )
+        spec = semantic.build_scalar_source_mutant_spec(
+            authority.schema, route, terminal,
+            semantic._value_at_report_pointer(baseline, pointer),
+        )
+
+        runs = []
+        for channel in semantic.ACV049_MUTANT_CHANNELS:
+            with mock.patch.dict(os.environ, {semantic.ACV049_MUTANT_CHANNEL_NAME: channel}):
+                run = semantic.execute_scalar_source_mutant(
+                    ROOT.parents[2], ROOT / "contract", self.evidence, spec,
+                )
+            self.assertEqual(
+                run["retainedInputObservation"]["verdict"],
+                "RETAINED_OFF_TARGET_PASS_TARGET_EXPERIMENT",
+            )
+            self.assertEqual(
+                run["retainedInputObservation"]["runBindingRecordSha256"],
+                run["runBindingRecordSha256"],
+            )
+            self.assertEqual(
+                run["runBindingRecord"]["mutantManifestSha256"],
+                semantic.sha256_bytes(semantic.dumps(spec)),
+            )
+            binding_bytes = semantic.dumps(run["runBindingRecord"])
+            self.assertNotIn(b"candidateValues", binding_bytes)
+            self.assertNotIn(b"response", binding_bytes)
+            self.assertEqual(
+                run["runBindingRecord"]["sourceEvidence"]["function"],
+                "replay_context",
+            )
+            self.assertEqual(
+                run["runBindingRecord"]["sourceEvidence"]["relativeTokens"],
+                [0, "eventReferenceHex"],
+            )
+            self.assertEqual(
+                run["sourceQualification"]["verdict"],
+                "V34_IDENTITY_TARGET_SOURCE_RUN_PASS",
+            )
+            runs.append(run)
+        self.assertEqual(runs[0]["runBindingRecordSha256"], runs[1]["runBindingRecordSha256"])
+
+    def test_v34_identity_target_qualification_rejects_binding_and_post_output_tampering(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        case_id = "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028"
+        pointer = semantic._report_pointer(
+            "/result/evaluation/proposal/successor/logicalEvents/0/eventReferenceHex"
+        )
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        request = json.loads((self.evidence / "carriers" / (case_id + ".json")).read_bytes())
+        baseline = semantic._evaluate_fixture_request(authority, request, None)
+        source_map = derive_phase_a_source_site_map(
+            ROOT.parents[2], ROOT / "contract", self.evidence,
+            tuple_constructions=True,
+        )
+        route = next(
+            row for row in source_map["routes"]
+            if row["requestCaseId"] == case_id and row["concretePointers"] == [pointer]
+        )
+        terminal = semantic.resolve_logical_terminal(
+            authority.schema, semantic._raw_report_logical_path(route["logicalPath"]),
+        )
+        spec = semantic.build_scalar_source_mutant_spec(
+            authority.schema, route, terminal,
+            semantic._value_at_report_pointer(baseline, pointer),
+        )
+        with mock.patch.dict(
+            os.environ,
+            {semantic.ACV049_MUTANT_CHANNEL_NAME: semantic.ACV049_MUTANT_CHANNELS[0]},
+        ):
+            run = semantic.execute_scalar_source_mutant(
+                ROOT.parents[2], ROOT / "contract", self.evidence, spec,
+            )
+
+        tampered_binding = copy.deepcopy(run)
+        tampered_binding["runBindingRecord"]["requestSha256"] = "00" * 32
+        with self.assertRaisesRegex(semantic.SemanticACV049Error, "run binding"):
+            semantic._validate_v34_identity_target_source_qualification(
+                ROOT.parents[2], ROOT / "contract", self.evidence, spec,
+                tampered_binding,
+            )
+
+        post_output = copy.deepcopy(run)
+        post_output["sourceSiteExecuted"] = False
+        with self.assertRaisesRegex(semantic.SemanticACV049Error, "source execution trace"):
+            semantic._validate_v34_identity_target_source_qualification(
+                ROOT.parents[2], ROOT / "contract", self.evidence, spec,
+                post_output,
+            )
+
+        wrong_value = copy.deepcopy(run)
+        wrong_value["response"] = copy.deepcopy(baseline)
+        semantic._set_value_at_report_pointer(
+            wrong_value["response"], pointer, spec["candidateValues"][1],
+        )
+        wrong_value["responseSha256"] = semantic.sha256_bytes(
+            semantic.dumps(wrong_value["response"])
+        )
+        with self.assertRaisesRegex(semantic.SemanticACV049Error, "candidate index"):
+            semantic._validate_v34_identity_target_source_qualification(
+                ROOT.parents[2], ROOT / "contract", self.evidence, spec,
+                wrong_value,
+            )
+
+    def test_v33_retained_observer_allows_only_contract_candidate_additions(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        request = json.loads((self.evidence / "carriers" / "PCR-REQUEST-EVALUATE-CANDIDATE-0023.json").read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        response = semantic._evaluate_fixture_request(authority, request, None)
+        try:
+            frozen = semantic.freeze_retained_input_plan(authority, request)
+        except SemanticACV049Error as error:
+            self.fail("candidate retained-input contract is unavailable: " + str(error))
+        self.assertEqual(semantic.observe_retained_input(frozen, response)["verdict"], "RETAINED_INPUT_PASS")
+        successor = response["result"]["evaluation"]["proposal"]["successor"]
+        self.assertGreater(len(successor["logicalEvents"]), len(request["input"]["prior"]["logicalEvents"]))
+        for collection in ("logicalEvents", "retainedProofs"):
+            damaged = copy.deepcopy(response)
+            target = damaged["result"]["evaluation"]["proposal"]["successor"]
+            rows = target[collection] if collection == "logicalEvents" else target["localRevalidation"][collection]
+            rows.append(copy.deepcopy(rows[0]))
+            report = semantic.observe_retained_input(frozen, damaged)
+            self.assertEqual(report["verdict"], "RETAINED_INPUT_FAIL")
+            self.assertTrue(report["structuralDifferences"])
+
+    def test_v33_retained_observer_rejects_corrupted_prior_leaves(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        self.assertTrue(callable(getattr(semantic, "freeze_retained_input_plan", None)))
+        request = json.loads((self.evidence / "carriers" / "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028.json").read_bytes())
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        response = semantic._evaluate_fixture_request(authority, request, None)
+        frozen = semantic.freeze_retained_input_plan(authority, request)
+        original = semantic.dumps(response)
+        self.assertTrue(request["input"]["prior"]["logicalEvents"])
+        clean = semantic.observe_retained_input(frozen, response)
+        self.assertEqual(clean["verdict"], "RETAINED_INPUT_PASS")
+        self.assertGreater(clean["retainedLeafCount"], 0)
+        self.assertEqual(semantic.dumps(response), original)
+        # Checker self-tests only: these substitutions claim zero source kills.
+        for suffix in ("/genesis/logicalGenesis/transcriptHex", "/logicalEvents/0/transcriptHex"):
+            pointer = semantic._report_pointer("/result/evaluation/proposal/successor" + suffix)
+            damaged = copy.deepcopy(response)
+            value = semantic._value_at_report_pointer(damaged, pointer)
+            semantic._set_value_at_report_pointer(damaged, pointer, value[:-2] + ("00" if value[-2:] != "00" else "ff"))
+            report = semantic.observe_retained_input(frozen, damaged)
+            self.assertEqual(report["verdict"], "RETAINED_INPUT_FAIL")
+            self.assertIn(pointer, report["offTargetDifferences"])
+        self.assertEqual(frozen, semantic.freeze_retained_input_plan(authority, request))
+
     @classmethod
     def setUpClass(cls) -> None:
         cls._temporary = tempfile.TemporaryDirectory()
@@ -436,6 +1031,60 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls._temporary.cleanup()
+
+    def test_v33_manifest_declares_complete_atomic_and_propagated_tuples(self) -> None:
+        report = derive_phase_a_source_site_map(
+            ROOT.parents[2], ROOT / 'contract', self.evidence, tuple_constructions=True,
+        )
+        manifest = build_phase_a_enum_tuple_source_mutant_manifest(
+            ROOT.parents[2], ROOT / 'contract', self.evidence, source_site_map=report,
+        )
+        coupled = [m for m in manifest['mutants'] if m['siteId'] in {
+            'PURITY-SITE-RECORD-OUTCOME', 'PURITY-SITE-REPLAY-CANDIDATE-TERMINAL',
+        }]
+        self.assertTrue(coupled)
+        self.assertTrue(all(m['kind'] == 'RELATION_TUPLE' for m in coupled),
+                        'a coupled obligation must not become an ordinary enum')
+        for mutant in manifest['mutants']:
+            self.assertEqual(len({p['astSiteId'] for p in mutant['patches']}), 1)
+        candidate = [m for m in coupled if any('/primaryOnCommit' in _raw_report_logical_path(p)
+                                               for p in m['logicalPaths'])]
+        self.assertTrue(candidate)
+        for mutant in candidate:
+            self.assertEqual({p['field'] for p in mutant['patches']},
+                             {'primaryOnCommit', 'disposition', 'stage'})
+            propagated = next(p for p in mutant['patches'] if p['field'] == 'primaryOnCommit')
+            source = next(p for p in mutant['patches'] if p['field'] == 'disposition')
+            self.assertEqual(propagated['relativeTokens'], source['relativeTokens'])
+            self.assertEqual(propagated['candidateValues'], source['candidateValues'])
+
+    def test_v33_atomic_source_execution_retains_declared_candidate_propagation(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        source_map = derive_phase_a_source_site_map(
+            ROOT.parents[2], ROOT / 'contract', self.evidence, tuple_constructions=True,
+        )
+        manifest = build_phase_a_enum_tuple_source_mutant_manifest(
+            ROOT.parents[2], ROOT / 'contract', self.evidence, source_site_map=source_map,
+        )
+        observations = []
+        for channel in semantic.ACV049_MUTANT_CHANNELS:
+            with mock.patch.dict(os.environ, {'STYX_ACV049_MUTANT_CHANNEL': channel}):
+                try:
+                    report = semantic.execute_enum_tuple_source_mutant_batch(
+                        ROOT.parents[2], ROOT / 'contract', self.evidence, manifest,
+                    )
+                except SemanticACV049Error as error:
+                    self.fail('V33 ownership execution is unavailable: ' + str(error))
+            candidate_ids = {m['mutantId'] for m in manifest['mutants']
+                             if m['siteId'] == 'PURITY-SITE-RECORD-OUTCOME'
+                             and any(p['field'] == 'primaryOnCommit' for p in m['patches'])}
+            selected = [row for row in report['rows'] if row['mutantId'] in candidate_ids]
+            self.assertEqual({row['mutantId'] for row in selected}, candidate_ids)
+            self.assertTrue(selected)
+            observations.append({row['mutantId']: row['responseSha256'] for row in selected})
+        self.assertEqual(set(observations[0]), set(observations[1]))
+        self.assertTrue(all(observations[0][key] != observations[1][key] for key in observations[0]))
 
     def test_every_phase_a_package_mutant_is_killed(self) -> None:
         report = build_phase_a_mutation_report(

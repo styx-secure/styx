@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import sys
 from dataclasses import replace
 from io import BytesIO
@@ -1142,6 +1143,131 @@ class InterfaceModelTests(unittest.TestCase):
             "AUTHORITY_PROJECTION_UNAVAILABLE",
         )
         self.assertEqual(unavailable["authority"]["status"], "UNAVAILABLE")
+
+    def test_rn1_replay_record_outcome_rejects_schema_valid_wrong_stage(self) -> None:
+        from generate_seed_registry import _semantic_request_carriers
+
+        # Select the frozen R0011 request by bytes, not a mutable fixture ordinal.
+        cases = [
+            case
+            for case in _semantic_request_carriers(self.authority)
+            if hashlib.sha256(canonical_dumps(case.request)).hexdigest()
+            == "fa815f13e29e860f67874fb4e2627c17134b903d1273be690b337bd0ae53718a"
+        ]
+        self.assertEqual(len(cases), 1)
+        self.assertIsNone(cases[0].collision_oracle)
+        response = evaluate_interface_request(self.authority, cases[0].request)
+        self.assertEqual(
+            hashlib.sha256(canonical_dumps(response)).hexdigest(),
+            "5fd4571047ca58c05dca839e213728ed9b29869266f993bc09944ea19ea7f5c6",
+        )
+        outcomes = response["result"]["proposedContext"]["projection"]["recordOutcomes"]
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(outcomes[0]["disposition"], "APPLIED")
+        self.assertEqual(outcomes[0]["stage"], "FINAL_AFTER_S6")
+        self.assertEqual(
+            validate_response_before_release(self.authority, response), response
+        )
+
+        mutant = copy.deepcopy(response)
+        mutant["result"]["proposedContext"]["projection"]["recordOutcomes"][0][
+            "stage"
+        ] = "EVENT_LOCAL"
+        _validate_complete_v2_document(
+            self.authority, mutant, trusted_direction="RESPONSE"
+        )
+        for validator in (
+            _validate_response_shape_and_relation,
+            validate_response_before_release,
+        ):
+            with self.subTest(validator=validator.__name__):
+                with self.assertRaisesRegex(HarnessFailure, "record-outcome relation"):
+                    validator(self.authority, mutant)
+
+    def test_rn1_node_cli_rejects_wrong_stage_and_preserves_cp1_positives(self) -> None:
+        from generate_seed_registry import _semantic_request_carriers
+
+        responses = {}
+        for case in _semantic_request_carriers(self.authority):
+            if case.collision_oracle is None:
+                digest = hashlib.sha256(canonical_dumps(case.request)).hexdigest()
+                self.assertNotIn(digest, responses)
+                responses[digest] = evaluate_interface_request(
+                    self.authority, case.request
+                )
+                if case.request["operation"] == "DESCRIBE_PROFILE":
+                    unsupported = copy.deepcopy(case.request)
+                    unsupported["profile"]["applicationProfileId"] = "2"
+                    digest = hashlib.sha256(canonical_dumps(unsupported)).hexdigest()
+                    responses[digest] = evaluate_interface_request(
+                        self.authority, unsupported
+                    )
+        replay = responses[
+            "fa815f13e29e860f67874fb4e2627c17134b903d1273be690b337bd0ae53718a"
+        ]
+        update = responses[
+            "ef56560cff4b25b1dd66450ad0f3a4db0d90e62dd2b143e931d9955d39bff91a"
+        ]
+        self.assertEqual(replay["operation"], "REPLAY_CONTEXT")
+        self.assertEqual(update["operation"], "EVALUATE_EVIDENCE_UPDATE")
+        self.assertEqual(
+            {response["operation"] for response in responses.values()},
+            {
+                "DESCRIBE_PROFILE",
+                "VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS", "REPLAY_CONTEXT",
+                "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE",
+            },
+        )
+
+        def invoke(mode, value):
+            return subprocess.run(
+                ["node", str(ROOT / "node_adapter.mjs"), mode,
+                 "--contract", str(ROOT / "contract")],
+                input=canonical_dumps(value), stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False, timeout=30,
+            )
+
+        # C-P1: the complete G/T/C/R/U responses must survive the real CLI.
+        for digest, response in responses.items():
+            with self.subTest(positive=digest, mode="single"):
+                completed = invoke("--validate-response", response)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout), {"verdict": "PASS"})
+                self.assertEqual(completed.stderr, b"")
+        positives = list(responses.values())
+        completed = invoke("--validate-response-batch", {"responses": positives})
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, b"")
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "verdict": "PASS",
+                "responseCount": len(positives),
+                "responseSha256s": [
+                    hashlib.sha256(canonical_dumps(response)).hexdigest()
+                    for response in positives
+                ],
+            },
+        )
+
+        mutant = copy.deepcopy(replay)
+        outcome = mutant["result"]["proposedContext"]["projection"]["recordOutcomes"][0]
+        self.assertEqual((outcome["disposition"], outcome["stage"]),
+                         ("APPLIED", "FINAL_AFTER_S6"))
+        outcome["stage"] = "EVENT_LOCAL"
+        _validate_complete_v2_document(
+            self.authority, mutant, trusted_direction="RESPONSE"
+        )
+        for mode, value in (
+            ("--validate-response", mutant),
+            ("--validate-response-batch", {"responses": [update, mutant]}),
+        ):
+            with self.subTest(negative="R-N1", mode=mode):
+                completed = invoke(mode, value)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertEqual(completed.stdout, b"")
+                self.assertIn(b"record-outcome relation", completed.stderr)
+                self.assertNotIn(b"unsupported operation", completed.stderr)
 
     def test_candidate_evaluation_revalidates_prior_and_equals_full_replay(self) -> None:
         proposed, candidate = self._replay_fixture(event_type=1)

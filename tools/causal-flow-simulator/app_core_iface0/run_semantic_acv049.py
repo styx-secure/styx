@@ -28,6 +28,7 @@ from generate_seed_registry import (  # noqa: E402
     _evaluate_fixture_request,
     _semantic_request_carriers,
 )
+import interface_model as _retained_contract
 from interface_model import (
     ContractAuthority,
     HarnessFailure,
@@ -192,6 +193,47 @@ def _tag_source_value(
     return value
 
 
+def _acv049_source_str(value: Any) -> str:
+    """Preserve provenance through a value-preserving string cast, not a new owner."""
+
+    return value if isinstance(value, _SourceTaggedString) else str(value)
+
+
+def _response_copy_source_value(value: Any) -> Any:
+    """A new output-copy expression owns its copied leaves, not prior trace tags."""
+    if isinstance(value, dict):
+        return {key: _response_copy_source_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_response_copy_source_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_response_copy_source_value(item) for item in value)
+    return str(value) if isinstance(value, str) else value
+
+
+def _install_source_trace(module: types.ModuleType) -> None:
+    events: list[dict[str, Any]] = []
+
+    def trace(kind: str, site_id: str, value: Any) -> Any:
+        events.append({"kind": kind, "siteId": site_id, "value": _response_copy_source_value(value)})
+        return value
+
+    def guard(site_id: str, equal: bool, regenerated: Any, prior: Any) -> bool:
+        trace("PRIOR_GUARD", site_id, {"equal": equal, "regenerated": regenerated, "prior": prior})
+        return equal
+
+    module.__dict__.update(_acv049_trace_events=events, _acv049_trace=trace, _acv049_guard_comparison=guard)
+
+
+def _tuple_source_value(value: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
+    """Retag only fields constructed together by one observed dict expression."""
+
+    if not isinstance(value, dict) or any(
+        field not in value or not isinstance(value[field], str) for field in fields
+    ):
+        raise SemanticACV049Error("ACV-049 tuple construction shape drift")
+    return {key: str(item) if key in fields else item for key, item in value.items()}
+
+
 def _acv049_single_dict_value(value: dict[Any, Any]) -> Any:
     """Return the value of an instrumented one-entry comprehension fragment."""
 
@@ -210,6 +252,7 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
     """Instrument evaluator value-producing AST nodes with stable site IDs."""
 
     def __init__(self) -> None:
+        self.tuple_constructions = False
         self.function_names: list[str] = []
         self.occurrences: dict[tuple[str, str, str], int] = {}
         self.sites: dict[str, dict[str, Any]] = {}
@@ -279,6 +322,22 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
             self.function_names.pop()
 
     def visit_Dict(self, node: ast.Dict) -> ast.AST:
+        value_digests = [sha256_bytes(ast.dump(value, include_attributes=False).encode()) for value in node.values]
+        keys = {key.value for key in node.keys if isinstance(key, ast.Constant)}
+        constructors = {
+            "_assemble_context_projection": ("RECORD-OUTCOME", ("disposition", "stage")),
+            "_candidate_result_from_primary": ("CANDIDATE-TERMINAL", ("primary", "stage")),
+            "_candidate_terminal": ("REPLAY-CANDIDATE-TERMINAL", ("primary", "stage")),
+            "_rejected_transcript_result": ("TRANSCRIPT-REJECTED", ("reason", "stage")),
+            "evaluate_genesis": ("GENESIS-TERMINAL", ("reason", "stage")),
+            "_project_content_states": ("CONTENT-STATE-AXIS", (
+                "contentClass", "localAvailability", "bindingObservation",
+                "retentionState", "replayReadiness",
+            )),
+        }
+        tuple_label, fields = constructors.get(self.function_name, ("", ()))
+        tuple_fields = fields if self.tuple_constructions and fields and set(fields) <= keys else ()
+        expression_digest = sha256_bytes(ast.dump(node, include_attributes=False).encode())
         node = self.generic_visit(node)
         if self.function_name is None:
             return node
@@ -290,9 +349,59 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
                 else f"SPREAD-{index:03d}"
             )
             site_id = self._site(value, "DICT-VALUE", label)
-            wrapped.append(ast.copy_location(self._tag(site_id, value), value))
+            trace_construction = False
+            if self.tuple_constructions:
+                self.sites[site_id]["sourceExpressionSha256"] = value_digests[index]
+                trace_construction = (
+                    (self.function_name == "replay_context" and label in {"genesis", "logicalEvents"})
+                    or (self.function_name == "_assemble_context_projection" and label in {
+                        "necessaryCredentialIdentifiers", "possibleCredentialIdentifiers", "terminalCredentialIdentifiers"})
+                    or (self.function_name == "_credential_projection" and label in {
+                        "credentialIdentifierHex", "signatureSuiteId", "verificationKeyHex"})
+                )
+                if trace_construction:
+                    value = self._response_copy(value)
+            tagged = self._tag(site_id, value)
+            if trace_construction:
+                tagged = ast.Call(func=ast.Name(id="_acv049_trace", ctx=ast.Load()), args=[ast.Constant("CONSTRUCTION"), ast.Constant(site_id), tagged], keywords=[])
+            wrapped.append(ast.copy_location(tagged, value))
         node.values = wrapped
+        if tuple_fields:
+            site_id = self._site(node, "TUPLE-DICT", tuple_label)
+            self.sites[site_id].update({
+                "tupleFields": list(tuple_fields),
+                "sourceExpressionSha256": expression_digest,
+            })
+            reset = ast.Call(
+                func=ast.Name(id="_acv049_tuple_source_value", ctx=ast.Load()),
+                args=[node, ast.Tuple(elts=[ast.Constant(field) for field in tuple_fields], ctx=ast.Load())],
+                keywords=[],
+            )
+            return ast.copy_location(self._tag(site_id, reset), node)
         return node
+
+    def visit_Compare(self, node: ast.Compare) -> ast.AST:
+        if (self.tuple_constructions and self.function_name == "_revalidate_prior_snapshot"
+                and isinstance(node.left, ast.Name) and node.left.id == "regenerated"
+                and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq)
+                and len(node.comparators) == 1 and isinstance(node.comparators[0], ast.Name)
+                and node.comparators[0].id == "prior"):
+            site_id = self._site(node, "PRIOR-GUARD", "REGENERATED-EQUAL-PRIOR")
+            self.sites[site_id]["sourceExpressionSha256"] = sha256_bytes(ast.dump(node, include_attributes=False).encode())
+            return ast.copy_location(ast.Call(func=ast.Name(id="_acv049_guard_comparison", ctx=ast.Load()),
+                args=[ast.Constant(site_id), node, ast.Name(id="regenerated", ctx=ast.Load()), ast.Name(id="prior", ctx=ast.Load())], keywords=[]), node)
+        return self.generic_visit(node)
+
+    def visit_Raise(self, node: ast.Raise) -> ast.AST | list[ast.stmt]:
+        if (self.tuple_constructions and self.function_name == "evaluate_candidate"
+                and isinstance(node.exc, ast.Call) and isinstance(node.exc.func, ast.Name)
+                and node.exc.func.id == "RequestRejected" and not node.exc.args and not node.exc.keywords):
+            site_id = self._site(node, "REJECTION-ORIGIN", "REQUEST-REJECTED")
+            self.sites[site_id]["sourceExpressionSha256"] = sha256_bytes(ast.dump(node, include_attributes=False).encode())
+            observation = ast.Expr(value=ast.Call(func=ast.Name(id="_acv049_trace", ctx=ast.Load()),
+                args=[ast.Constant("REQUEST_REJECTED_ORIGIN"), ast.Constant(site_id), ast.Constant(None)], keywords=[]))
+            return [ast.copy_location(observation, node), node]
+        return self.generic_visit(node)
 
     def visit_DictComp(self, node: ast.DictComp) -> ast.AST:
         node = self.generic_visit(node)
@@ -343,8 +452,18 @@ class _SourceSiteInstrumenter(ast.NodeTransformer):
         node.value = ast.copy_location(self._tag(site_id, node.value), node.value)
         return node
 
+    def _response_copy(self, value: ast.expr) -> ast.expr:
+        return ast.copy_location(ast.Call(func=ast.Name(id="_acv049_response_copy", ctx=ast.Load()), args=[value], keywords=[]), value)
+
+    def _source_str_call(self, node: ast.Call) -> ast.AST:
+        node.func = ast.copy_location(ast.Name(id="_acv049_source_str", ctx=ast.Load()), node.func)
+        return node
+
     def visit_Call(self, node: ast.Call) -> ast.AST:
         node = self.generic_visit(node)
+        if (self.tuple_constructions and isinstance(node.func, ast.Name)
+                and node.func.id == "str" and len(node.args) == 1 and not node.keywords):
+            return self._source_str_call(node)
         if (
             self.function_name is None
             or not isinstance(node.func, ast.Attribute)
@@ -374,6 +493,10 @@ class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
         channels: tuple[str, str],
     ) -> None:
         super().__init__()
+        if len(mutations) != 1:
+            raise SemanticACV049Error(
+                "ACV-049 source mutant requires exactly one AST construction site"
+            )
         if not mutations or any(
             not site_id.startswith("PURITY-SITE-")
             or not patches
@@ -391,6 +514,13 @@ class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
         self.channels = tuple(channel.decode("ascii") for channel in ordered_channels)
         self.mutations = dict(mutations)
         self.mutated_sites: set[str] = set()
+
+    def _response_copy(self, value: ast.expr) -> ast.expr:
+        return value
+
+    def _source_str_call(self, node: ast.Call) -> ast.AST:
+        # Mutant evaluation uses ordinary strings; no provenance helper is needed.
+        return node
 
     def _tag(self, site_id: str, value: ast.expr) -> ast.expr:
         patches = self.mutations.get(site_id)
@@ -533,6 +663,13 @@ class _SourceMutationInstrumenter(_SourceSiteInstrumenter):
         ).body
         for offset, helper in enumerate(helpers, start=1):
             node.body.insert(insertion + offset, helper)
+        if self.tuple_constructions:
+            node.body.insert(insertion + len(helpers) + 1, ast.parse(
+                "def _acv049_tuple_source_value(value, fields):\n"
+                "    if not isinstance(value, dict) or any(field not in value or not isinstance(value[field], str) for field in fields):\n"
+                "        raise RuntimeError('ACV-049 tuple construction shape drift')\n"
+                "    return {key: str(item) if key in fields else item for key, item in value.items()}\n"
+            ).body[0])
         return node
 
 
@@ -544,12 +681,15 @@ def _mutated_source_tree(
         tuple[tuple[tuple[str | int, ...], tuple[str, str]], ...],
     ],
     channels: tuple[str, str],
+    *,
+    tuple_constructions: bool = False,
 ) -> tuple[ast.Module, dict[str, dict[str, Any]], bytes]:
     try:
         tree = ast.parse(source, filename=filename)
     except (SyntaxError, ValueError) as error:
         raise SemanticACV049Error("ACV-049 evaluator AST is unavailable") from error
     instrumenter = _SourceMutationInstrumenter(mutations, channels)
+    instrumenter.tuple_constructions = tuple_constructions
     transformed = instrumenter.visit(tree)
     if not isinstance(transformed, ast.Module):
         raise SemanticACV049Error("ACV-049 mutated evaluator root drift")
@@ -572,6 +712,8 @@ def _mutated_interface_model(
         tuple[tuple[tuple[str | int, ...], tuple[str, str]], ...],
     ],
     channels: tuple[str, str],
+    *,
+    tuple_constructions: bool = False,
 ) -> tuple[types.ModuleType, dict[str, dict[str, Any]], bytes]:
     source_path = (
         repo_root
@@ -582,7 +724,8 @@ def _mutated_interface_model(
     except (OSError, UnicodeDecodeError) as error:
         raise SemanticACV049Error("ACV-049 evaluator source is unavailable") from error
     tree, sites, canonical_source = _mutated_source_tree(
-        source, str(source_path), mutations, channels
+        source, str(source_path), mutations, channels,
+        tuple_constructions=tuple_constructions,
     )
     module = types.ModuleType("interface_model")
     module.__file__ = str(source_path)
@@ -600,11 +743,15 @@ def _mutated_interface_model(
         sys.modules.pop("interface_model", None)
     else:
         sys.modules["interface_model"] = previous
+    if tuple_constructions:
+        _install_source_trace(module)
     return module, sites, canonical_source
 
 
 def _instrumented_interface_model(
     repo_root: Path,
+    *,
+    tuple_constructions: bool = False,
 ) -> tuple[types.ModuleType, dict[str, dict[str, Any]]]:
     """Compile an in-memory, value-preserving source-provenance evaluator."""
 
@@ -618,12 +765,16 @@ def _instrumented_interface_model(
     except (OSError, UnicodeDecodeError, SyntaxError, ValueError) as error:
         raise SemanticACV049Error("ACV-049 evaluator AST is unavailable") from error
     instrumenter = _SourceSiteInstrumenter()
+    instrumenter.tuple_constructions = tuple_constructions
     instrumented = instrumenter.visit(tree)
     ast.fix_missing_locations(instrumented)
     module = types.ModuleType("interface_model")
     module.__file__ = str(source_path)
     module.__dict__["_acv049_tag_source_value"] = _tag_source_value
     module.__dict__["_acv049_single_dict_value"] = _acv049_single_dict_value
+    module.__dict__["_acv049_tuple_source_value"] = _tuple_source_value
+    module.__dict__["_acv049_response_copy"] = _response_copy_source_value
+    module.__dict__["_acv049_source_str"] = _acv049_source_str
     previous = sys.modules.get("interface_model")
     sys.modules["interface_model"] = module
     try:
@@ -638,6 +789,8 @@ def _instrumented_interface_model(
         sys.modules.pop("interface_model", None)
     else:
         sys.modules["interface_model"] = previous
+    if tuple_constructions:
+        _install_source_trace(module)
     return module, instrumenter.sites
 
 
@@ -858,8 +1011,18 @@ def _derive_schema_candidate_pair(
     }
 
 
-def _semantic_construction_site(path: str, ast_site_id: str) -> str:
-    """Collapse only the five tuple sites named by the ratified amendment."""
+def _semantic_construction_site(
+    path: str, ast_site_id: str, *, tuple_constructions: bool = True,
+) -> str:
+    """Name semantic ownership; this label never establishes AST identity."""
+
+    if tuple_constructions:
+        if ("/projection/recordOutcomes/*/" in path and path.endswith(("/disposition", "/stage"))) or path.endswith(
+            "/<CandidateEvaluationReadyV0>/primaryOnCommit"
+        ):
+            return "PURITY-SITE-RECORD-OUTCOME"
+        if "/<ReplayContextResultCandidateRejectedV0>/" in path and path.endswith(("/primary", "/stage")):
+            return "PURITY-SITE-REPLAY-CANDIDATE-TERMINAL"
 
     if "/<CandidateEvaluationTerminalV0>/" in path:
         return "PURITY-SITE-CANDIDATE-TERMINAL"
@@ -885,7 +1048,8 @@ def _semantic_construction_site(path: str, ast_site_id: str) -> str:
 
 
 def derive_phase_a_source_site_map(
-    repo_root: Path, contract: Path, evidence_root: Path
+    repo_root: Path, contract: Path, evidence_root: Path,
+    *, tuple_constructions: bool = False,
 ) -> dict[str, Any]:
     """Map Phase-A mutable response leaves to exact evaluator AST sites."""
 
@@ -908,7 +1072,9 @@ def derive_phase_a_source_site_map(
         for case in _semantic_request_carriers(authority)
         if case.collision_oracle is not None
     }
-    instrumented, ast_sites = _instrumented_interface_model(repo_root)
+    instrumented, ast_sites = _instrumented_interface_model(
+        repo_root, tuple_constructions=tuple_constructions,
+    )
     previous = sys.modules.get("interface_model")
     sys.modules["interface_model"] = instrumented
     tagged_responses: list[tuple[str, dict[str, Any], bool]] = []
@@ -961,7 +1127,9 @@ def derive_phase_a_source_site_map(
             for pointer, value, relative_pointer in values:
                 if value.site_id not in ast_sites:
                     raise SemanticACV049Error("ACV-049 reported an unknown AST site")
-                semantic_site = _semantic_construction_site(path, value.site_id)
+                semantic_site = _semantic_construction_site(
+                    path, value.site_id, tuple_constructions=tuple_constructions,
+                )
                 used_sites.add(semantic_site)
                 fault_context = (
                     "FIXED_INTERNAL_COLLISION_ORACLE" if fault_injected else "NONE"
@@ -1074,12 +1242,13 @@ def derive_phase_a_source_site_map(
     }
     if (
         len(route_rows) != 596
-        or len(grouped_sites) != 76
+        or (not tuple_constructions and len(grouped_sites) != 76)
         or route_class_counts
         != {"ORDINARY_ROUTE": 581, "FAULT_INJECTED_ROUTE": 15}
     ):
         raise SemanticACV049Error("ACV-049 Phase-A source-site relation drift")
     return {
+        **({"ownershipRevision": "V33_TUPLE_CONSTRUCTIONS"} if tuple_constructions else {}),
         "instrumentationPointCount": len(ast_sites),
         "materializedMutablePathCount": len(materialized),
         "pendingSupplementaryMutablePathCount": 72,
@@ -1311,6 +1480,14 @@ def build_phase_a_scalar_source_mutant_manifest(
 
 
 _ACV049_RELATION_SITE_SPECS = {
+    "PURITY-SITE-RECORD-OUTCOME": {
+        "fields": ("disposition", "stage"),
+        "relation": "candidateEvaluationPrimaryRelationV0",
+    },
+    "PURITY-SITE-REPLAY-CANDIDATE-TERMINAL": {
+        "fields": ("primary", "stage"),
+        "relation": "candidateEvaluationPrimaryRelationV0",
+    },
     "PURITY-SITE-CANDIDATE-TERMINAL": {
         "fields": ("primary", "stage"),
         "relation": "candidateEvaluationPrimaryRelationV0",
@@ -1395,8 +1572,11 @@ def _acv049_reserved_enum_values(
 
 
 def _relation_row_value(site_id: str, row: dict[str, Any], field: str) -> str:
-    if site_id == "PURITY-SITE-CANDIDATE-TERMINAL" and field == "stage":
+    if site_id in {"PURITY-SITE-CANDIDATE-TERMINAL", "PURITY-SITE-RECORD-OUTCOME",
+                   "PURITY-SITE-REPLAY-CANDIDATE-TERMINAL"} and field == "stage":
         value = row.get("existingO10Stage")
+    elif site_id == "PURITY-SITE-RECORD-OUTCOME" and field in {"disposition", "primaryOnCommit"}:
+        value = row.get("primary")
     else:
         value = row.get(field)
     if not isinstance(value, str):
@@ -1421,7 +1601,16 @@ def _relation_rows_for_response(
     result = response.get("result")
     if not isinstance(result, dict):
         raise SemanticACV049Error("ACV-049 relation response result is malformed")
-    if site_id == "PURITY-SITE-CANDIDATE-TERMINAL":
+    if site_id == "PURITY-SITE-RECORD-OUTCOME":
+        rows = [row for row in source_rows if row.get("reachability") == "REACHABLE"
+                and row.get("kRetentionEffect") == "RETAIN_NEW"
+                and row.get("coreResultKind") == "PROPOSAL_READY"]
+        observed = {}
+    elif site_id == "PURITY-SITE-REPLAY-CANDIDATE-TERMINAL":
+        rows = [row for row in source_rows if row.get("reachability") == "REACHABLE"
+                and row.get("coreResultKind") == "TERMINAL_NO_SUCCESSOR"]
+        observed = {"primary": result.get("primary"), "stage": result.get("stage")}
+    elif site_id == "PURITY-SITE-CANDIDATE-TERMINAL":
         branch = result.get("evaluation")
         if not isinstance(branch, dict):
             raise SemanticACV049Error("ACV-049 candidate relation branch is absent")
@@ -1537,6 +1726,7 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
             encoding="utf-8"
         )
     )
+    tuple_constructions = site_map.get("ownershipRevision") == "V33_TUPLE_CONSTRUCTIONS"
     enum_routes: list[tuple[dict[str, Any], str, LogicalTerminal]] = []
     for route in site_map["routes"]:
         logical_path = _raw_report_logical_path(route["logicalPath"])
@@ -1678,6 +1868,14 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
         relation_name, fields, rows, baseline_row = _relation_rows_for_response(
             site_id, response, relations
         )
+        if tuple_constructions:
+            owners = {owner for route, _path, _terminal in group for owner in route["astSiteIds"]}
+            if len(owners) != 1:
+                raise SemanticACV049Error("ACV-049 coupled tuple has no unique actual construction")
+            if site_id == "PURITY-SITE-RECORD-OUTCOME" and any(
+                _logical_data_pattern(path)[-1] == "primaryOnCommit" for _route, path, _terminal in group
+            ):
+                fields = (*fields, "primaryOnCommit")
         observed = {}
         route_by_field = {}
         for route, logical_path, _terminal in group:
@@ -1688,7 +1886,7 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
             observed[field] = _value_at_report_pointer(
                 response, route["concretePointers"][0]
             )
-        if site_id == "PURITY-SITE-CONTENT-STATE-AXIS":
+        if site_id in {"PURITY-SITE-CONTENT-STATE-AXIS", "PURITY-SITE-RECORD-OUTCOME"}:
             matches = [
                 row for row in rows
                 if all(_relation_row_value(site_id, row, field) == observed[field] for field in fields)
@@ -1769,10 +1967,10 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
     ordinary_count = sum(row["kind"] == "ORDINARY_ENUM" for row in mutants)
     relation_count = sum(row["kind"] == "RELATION_TUPLE" for row in mutants)
     if (
-        len(relation_groups) != 35
-        or len(ordinary) != 124
-        or ordinary_count != 124
-        or relation_count != 34
+        (not tuple_constructions and (
+            len(relation_groups) != 35 or len(ordinary) != 124
+            or ordinary_count != 124 or relation_count != 34
+        ))
         or len(residuals) != 1
         or len(o08_bound_candidates) != 10
         or {
@@ -1790,6 +1988,7 @@ def build_phase_a_enum_tuple_source_mutant_manifest(
         raise SemanticACV049Error("ACV-049 enum/tuple manifest closure drift")
     mutant_ids = [row["mutantId"] for row in mutants]
     return {
+        **({"ownershipRevision": "V33_TUPLE_CONSTRUCTIONS"} if tuple_constructions else {}),
         "coveredEnumRouteCount": covered_routes,
         "enumRouteCount": len(enum_routes),
         "mutantCount": len(mutants),
@@ -2186,6 +2385,333 @@ def execute_scalar_source_mutant_batch(
     }
 
 
+def bind_v33_closed_routes(
+    appendix_a: list[dict[str, Any]], appendix_b: list[dict[str, Any]],
+    source_map: dict[str, Any], *, p_path_count: int = 300,
+) -> list[dict[str, Any]]:
+    """Bind immutable obligations, without converting a binding into a kill."""
+    for rows, count, digest in (
+        (appendix_a, 12, "2f624c5dbdc02a1bbad59e8049066b1f83bc5802bd321a511a746d52604c3694"),
+        (appendix_b, 36, "43bf4e9119db75b3a0fc537c2f22aa3411acb7d0114ad77f407332bb194210e9"),
+    ):
+        if len(rows) != count or sha256_bytes(dumps(rows)) != digest:
+            raise SemanticACV049Error("V33 historical closed route identities changed")
+    if (p_path_count != 300 or source_map.get("ownershipRevision") != "V33_TUPLE_CONSTRUCTIONS"
+            or source_map.get("routeCount") != 596 or len(source_map.get("routes", [])) != 596
+            or sha256_bytes(dumps(source_map["routes"])) != source_map.get("routeSetSha256")
+            or source_map["materializedMutablePathCount"] + source_map["pendingSupplementaryMutablePathCount"] != p_path_count):
+        raise SemanticACV049Error("V33 closed source-map invariants changed")
+    members = {member["siteId"]: member for site in source_map["usedSites"] for member in site["astMembers"]}
+    result = []
+    seen = set()
+    for eligible, rows in ((True, appendix_a), (False, appendix_b)):
+        for historical in rows:
+            identity = (historical["requestCaseId"], historical["concretePointer"])
+            matches = [route for route in source_map["routes"]
+                       if route["requestCaseId"] == identity[0] and identity[1] in route["concretePointers"]]
+            if identity in seen or len(matches) != 1:
+                raise SemanticACV049Error("V33 historical-to-current mapping is not bijective")
+            seen.add(identity)
+            route = matches[0]
+            selectors = [item for item in route["sourceSelectors"] if item["concretePointer"] == identity[1]]
+            if len(selectors) != 1 or selectors[0]["astSiteId"] not in members:
+                raise SemanticACV049Error("V33 source ownership is missing or ambiguous")
+            selector = selectors[0]
+            owner = members[selector["astSiteId"]]
+            if (owner["function"] == "_revalidate_prior_snapshot"
+                    or len(owner.get("sourceExpressionSha256", "")) != 64
+                    or any(type(token) not in (str, int) for token in selector["relativeTokens"])):
+                raise SemanticACV049Error("V33 output ownership is unproved or reconstruction-only")
+            result.append({
+                "historical": copy.deepcopy(historical), "residualEligible": eligible,
+                "currentRouteSha256": sha256_bytes(dumps(route)),
+                "logicalPath": route["logicalPath"], "selector": copy.deepcopy(selector),
+                "source": copy.deepcopy(owner), "disposition": "PENDING_CONTRACT_CLASSIFICATION",
+            })
+    return result
+
+
+def freeze_v33_recurrence_bindings(
+    appendix_c: list[dict[str, Any]], bound: list[dict[str, Any]], source_map: dict[str, Any],
+    schema: dict[str, Any], baselines: dict[str, dict[str, Any]],
+) -> bytes:
+    """Freeze the exact replay sibling and recipe, not a residual disposition."""
+    if (len(appendix_c) != 12 or sha256_bytes(dumps(appendix_c)) !=
+            "0c95af1749c2adc1d850f281450ab4f4548e9c7169a00c05b23ea34a91f3811e"):
+        raise SemanticACV049Error("V33 exact Appendix C binding changed")
+    rebuilt = bind_v33_closed_routes(
+        [row["historical"] for row in bound if row["residualEligible"]],
+        [row["historical"] for row in bound if not row["residualEligible"]], source_map,
+    )
+    if dumps(rebuilt) != dumps(bound):
+        raise SemanticACV049Error("V33 closed binding changed after derivation")
+    plans = []
+    members = {member["siteId"]: member for site in source_map["usedSites"] for member in site["astMembers"]}
+    for obligation in appendix_c:
+        targets = [row for row in bound if row["historical"] == obligation["target"] and row["residualEligible"]]
+        sibling = obligation["sibling"]
+        siblings = [row for row in source_map["routes"] if row["requestCaseId"] == sibling["requestCaseId"]
+                    and sibling["concretePointer"] in row["concretePointers"]]
+        if len(targets) != 1 or len(siblings) != 1:
+            raise SemanticACV049Error("V33 target or exact replay sibling is missing")
+        target, replay_route = targets[0], siblings[0]
+        selectors = [row for row in replay_route["sourceSelectors"] if row["concretePointer"] == sibling["concretePointer"]]
+        if len(selectors) != 1:
+            raise SemanticACV049Error("V33 replay sibling selector is ambiguous")
+        selector = selectors[0]
+        source = target["source"]
+        if (selector["astSiteId"] != obligation["historicalSiblingAstSiteId"]
+                or target["selector"]["astSiteId"] != selector["astSiteId"]
+                or target["selector"]["relativeTokens"] != obligation["relativeTokens"]
+                or selector["relativeTokens"] != obligation["relativeTokens"]
+                or members[selector["astSiteId"]]["sourceExpressionSha256"] != source["sourceExpressionSha256"]
+                or source["function"] not in {"_assemble_context_projection", "_credential_projection"}):
+            raise SemanticACV049Error("V33 actual source/selector mapping requires structural proof")
+        target_case = target["historical"]["requestCaseId"]
+        if target_case not in baselines or sibling["requestCaseId"] not in baselines:
+            raise SemanticACV049Error("V33 successful baseline successor coverage is absent")
+        target_baseline = _value_at_report_pointer(baselines[target_case], target["historical"]["concretePointer"])
+        sibling_baseline = _value_at_report_pointer(baselines[sibling["requestCaseId"]], sibling["concretePointer"])
+        terminal = resolve_logical_terminal(schema, _raw_report_logical_path(target["logicalPath"]))
+        pair = _derive_schema_candidate_pair(schema, terminal, target_baseline, ACV049_MUTANT_CHANNELS)
+        candidates = pair["candidateValues"]
+        if pair["twoStateRule"] or len(set(candidates)) != 2 or any(value in candidates for value in (target_baseline, sibling_baseline)):
+            raise SemanticACV049Error("V33 recurrence cannot use baseline-equivalent candidates")
+        plans.append({
+            "target": copy.deepcopy(target), "sibling": copy.deepcopy(sibling),
+            "siblingCurrentRouteSha256": sha256_bytes(dumps(replay_route)),
+            "astSiteId": selector["astSiteId"], "relativeTokens": copy.deepcopy(selector["relativeTokens"]),
+            "candidateValues": candidates, "twoStateRule": False,
+            "channels": list(ACV049_MUTANT_CHANNELS),
+            "targetBaselineSha256": sha256_bytes(dumps(baselines[target_case])),
+            "siblingBaselineSha256": sha256_bytes(dumps(baselines[sibling["requestCaseId"]])),
+        })
+    return dumps(plans)
+
+
+def _retained_leaf_bytes(value: Any, tokens: tuple[str | int, ...]) -> dict[str, bytes]:
+    if isinstance(value, dict) and value:
+        return {pointer: raw for key in sorted(value)
+                for pointer, raw in _retained_leaf_bytes(value[key], (*tokens, key)).items()}
+    if isinstance(value, list) and value:
+        return {pointer: raw for index, item in enumerate(value)
+                for pointer, raw in _retained_leaf_bytes(item, (*tokens, index)).items()}
+    return {_report_pointer(_json_pointer(tokens)): dumps(value)}
+
+
+_V34_IDENTITY_TARGET_REQUEST_SHA256 = (
+    "ef56560cff4b25b1dd66450ad0f3a4db0d90e62dd2b143e931d9955d39bff91a"
+)
+_V34_IDENTITY_TARGET_REQUEST_CASE_ID = "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028"
+_V34_IDENTITY_TARGET_HISTORICAL_ROUTE_SHA256 = (
+    "ad8bdf499daa48a5fd341445357653f6859d5a8955204127e8162c7f9e69a6e8"
+)
+_V34_IDENTITY_TARGET_POINTER = (
+    "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlogicalEvents%2F0%2FeventReferenceHex"
+)
+
+
+def _v34_positional_identity_bindings(
+    request: dict[str, Any], expected: dict[str, Any], target_pointers: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    if _V34_IDENTITY_TARGET_POINTER not in target_pointers:
+        return []
+    if (
+        target_pointers != (_V34_IDENTITY_TARGET_POINTER,)
+        or request["operation"] != "EVALUATE_EVIDENCE_UPDATE"
+        or sha256_bytes(dumps(request)) != _V34_IDENTITY_TARGET_REQUEST_SHA256
+    ):
+        raise SemanticACV049Error("V34 identity-target binding is outside Appendix S")
+    prior_rows = request["input"]["prior"]["logicalEvents"]
+    expected_rows = expected["logicalEvents"]
+    if len(prior_rows) != 1 or len(expected_rows) != 1:
+        raise SemanticACV049Error("V34 identity-target binding requires one logical event")
+    prior_identity = prior_rows[0].get("eventReferenceHex")
+    if (
+        not isinstance(prior_identity, str)
+        or expected_rows[0].get("eventReferenceHex") != prior_identity
+    ):
+        raise SemanticACV049Error("V34 identity-target prior binding drift")
+    return [{
+        "canonicalPosition": 0,
+        "collectionPath": ["logicalEvents"],
+        "priorIdentity": prior_identity,
+        "targetPointer": _V34_IDENTITY_TARGET_POINTER,
+    }]
+
+
+def freeze_retained_input_plan(
+    authority: ContractAuthority, request: dict[str, Any], *, target_pointers: tuple[str, ...] = (),
+) -> bytes:
+    """Freeze request-derived E expectations before executing any source mutant."""
+    if request["operation"] not in {"EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"}:
+        raise SemanticACV049Error("E retained-input operation is not supported")
+    value = request["input"]
+    prior = value["prior"]
+    projected = _retained_contract._revalidate_prior_snapshot(authority, request["profile"], prior)
+    if projected is None:
+        raise SemanticACV049Error("E requires successful byte-exact prior revalidation")
+    expected = copy.deepcopy({key: prior[key] for key in ("genesis", "logicalEvents", "localRevalidation")})
+    if request["operation"] == "EVALUATE_CANDIDATE":
+        combined = _retained_contract.project_replay_state(authority, request["profile"], {
+            "proposedGenesis": prior["genesis"],
+            "presentations": [*_retained_contract._retained_presentations(projected.closure.candidates), value["candidate"]],
+            "evidenceAttempts": _retained_contract._internal_evidence_as_attempts(projected.closure.evidence),
+        })
+        if isinstance(combined, dict):
+            raise SemanticACV049Error("E candidate has no admitted closure")
+        expected["logicalEvents"] = [candidate.candidate for candidate in combined.closure.candidates]
+        expected["localRevalidation"]["retainedProofs"] = [
+            {"eventReferenceHex": candidate.reference_hex, "signatureHex": candidate.retained_proof_signature_hex}
+            for candidate in combined.closure.candidates
+        ]
+        expected["localRevalidation"]["evidence"] = _retained_contract._internal_evidence_to_authoritative(combined.closure.evidence)
+        # New membership is contract-derived; retained bytes still come from prior.
+        for old_rows, new_rows in (
+            (prior["logicalEvents"], expected["logicalEvents"]),
+            (prior["localRevalidation"]["retainedProofs"], expected["localRevalidation"]["retainedProofs"]),
+            (prior["localRevalidation"]["evidence"]["verifiedComplete"], expected["localRevalidation"]["evidence"]["verifiedComplete"]),
+        ):
+            for retained in old_rows:
+                matches = [row for row in new_rows if row["eventReferenceHex"] == retained["eventReferenceHex"]]
+                if len(matches) != 1 or dumps(matches[0]) != dumps(retained):
+                    raise SemanticACV049Error("E candidate closure does not preserve prior identity and bytes")
+    else:
+        additions: dict[str, Any] = {"contentMaterial": [], "openingMaterial": []}
+        for attempt in sorted(value["additions"], key=dumps):
+            raw = _retained_contract._attempt_to_internal_evidence(attempt)
+            if raw is None:
+                continue
+            try:
+                verified = _retained_contract._reduce_complete_evidence_attempts(authority, projected.closure.candidates, raw)
+            except _retained_contract.EvidenceError:
+                continue
+            if verified["contentMaterial"]:
+                additions, _ = _retained_contract.merge_verified_complete_evidence(additions, verified)
+        if not additions["contentMaterial"]:
+            raise SemanticACV049Error("E has no contract-permitted evidence addition")
+        merged, _ = _retained_contract.merge_verified_complete_evidence(projected.closure.evidence, additions)
+        expected["localRevalidation"]["evidence"] = _retained_contract._internal_evidence_to_authoritative(merged)
+    prefix = ("result", "evaluation", "proposal", "successor")
+    leaves = _retained_leaf_bytes(expected, prefix)
+    if len(target_pointers) != len(set(target_pointers)):
+        raise SemanticACV049Error("E duplicate frozen target pointer")
+    for pointer in target_pointers:
+        if _report_pointer(_raw_report_pointer(pointer)) != pointer:
+            raise SemanticACV049Error("E noncanonical frozen target pointer")
+        if pointer in leaves and leaves[pointer].startswith((b"{", b"[")):
+            raise SemanticACV049Error("E a retained container cannot be a leaf target")
+    return dumps({
+        "schema": "styx.app-core-iface0.retained-input-plan.v1",
+        "experimentalTargetPointers": sorted(target_pointers),
+        "positionalIdentityBindings": _v34_positional_identity_bindings(
+            request, expected, target_pointers,
+        ),
+        "operation": request["operation"], "requestSha256": sha256_bytes(dumps(request)),
+        "proposalPath": ["result", "evaluation", "proposal", "successor"], "expected": expected,
+        "retainedLeafCount": len(_retained_leaf_bytes(
+            {key: prior[key] for key in expected}, ("prior",),
+        )),
+    })
+
+
+def observe_retained_input(frozen: bytes, response: dict[str, Any]) -> dict[str, Any]:
+    """Evidence-only comparison; neither reader receives this plan or result."""
+    plan = json.loads(frozen)
+    if plan.get("schema") != "styx.app-core-iface0.retained-input-plan.v1":
+        raise SemanticACV049Error("E retained-input plan schema drift")
+    prefix = tuple(plan["proposalPath"])
+    expected = plan["expected"]
+    positional_bindings = plan.get("positionalIdentityBindings")
+    if not isinstance(positional_bindings, list):
+        raise SemanticACV049Error("E retained-input positional binding drift")
+    structural: list[str] = []
+    differences: list[str] = []
+    try:
+        proposal = response
+        for token in prefix:
+            proposal = proposal[token]
+        actual = {key: proposal[key] for key in expected}
+        collections = [
+            ("logicalEvents",), ("localRevalidation", "retainedProofs"),
+            ("localRevalidation", "evidence", "verifiedComplete"),
+        ]
+        for path in collections:
+            left, right = expected, actual
+            for token in path:
+                left, right = left[token], right[token]
+            expected_ids = [row["eventReferenceHex"] for row in left]
+            actual_ids = [row["eventReferenceHex"] for row in right]
+            bindings = [
+                binding for binding in positional_bindings
+                if binding.get("collectionPath") == list(path)
+            ]
+            qualified = False
+            if len(bindings) == 1:
+                binding = bindings[0]
+                position = binding.get("canonicalPosition")
+                qualified = (
+                    path == ("logicalEvents",)
+                    and position == 0
+                    and binding.get("targetPointer") == _V34_IDENTITY_TARGET_POINTER
+                    and len(expected_ids) == len(actual_ids) == 1
+                    and expected_ids[0] == binding.get("priorIdentity")
+                    and actual_ids == sorted(set(actual_ids))
+                )
+            if (
+                expected_ids != sorted(set(expected_ids))
+                or (not qualified and actual_ids != expected_ids)
+                or len(bindings) > 1
+                or (bindings and not qualified)
+            ):
+                structural.append(_report_pointer(_json_pointer((*prefix, *path))))
+        before = _retained_leaf_bytes(expected, prefix)
+        after = _retained_leaf_bytes(actual, prefix)
+        differences = sorted(pointer for pointer in before.keys() | after.keys()
+                             if before.get(pointer) != after.get(pointer))
+        if before.keys() != after.keys():
+            structural.append(_report_pointer(_json_pointer(prefix)))
+    except (KeyError, TypeError, ValueError):
+        structural.append(_report_pointer(_json_pointer(prefix)))
+    targets = sorted(set(differences) & set(plan["experimentalTargetPointers"]))
+    off_target = sorted(set(differences) - set(targets))
+    return {
+        "offTargetDifferences": off_target, "targetDifferences": targets,
+        "structuralDifferences": sorted(set(structural)),
+        "retainedLeafCount": plan["retainedLeafCount"],
+        "verdict": (
+            "RETAINED_INPUT_FAIL" if off_target or structural else
+            "RETAINED_OFF_TARGET_PASS_TARGET_EXPERIMENT" if targets else "RETAINED_INPUT_PASS"
+        ),
+    }
+
+
+def _observe_declared_tuple_change(
+    baseline: dict[str, Any], response: dict[str, Any], spec: dict[str, Any],
+) -> int:
+    """Observe a frozen experiment; never repair the response sent to a reader."""
+    matching_indexes = [
+        index for index in (0, 1)
+        if all(
+            _value_at_report_pointer(response, patch["concretePointer"])
+            == patch["candidateValues"][index]
+            for patch in spec["patches"]
+        )
+    ]
+    if len(matching_indexes) != 1:
+        raise SemanticACV049Error("ACV-049 enum/tuple candidate tuple is ambiguous")
+    index = matching_indexes[0]
+    if (dumps(response) == dumps(baseline)) != (bool(spec["twoStateRule"]) and index == 1):
+        raise SemanticACV049Error("ACV-049 enum/tuple baseline equivalence is invalid")
+    normalized = copy.deepcopy(response)
+    for patch in spec["patches"]:
+        pointer = patch["concretePointer"]
+        _set_value_at_report_pointer(normalized, pointer, _value_at_report_pointer(baseline, pointer))
+    if dumps(normalized) != dumps(baseline):
+        raise SemanticACV049Error("ACV-049 enum/tuple mutant changed multiple targets")
+    return index
+
+
 def execute_enum_tuple_source_mutant_batch(
     repo_root: Path,
     contract: Path,
@@ -2201,8 +2727,12 @@ def execute_enum_tuple_source_mutant_batch(
         or manifest.get("verdict") != "PHASE_A_ENUM_TUPLE_MUTANT_MANIFEST_PASS"
     ):
         raise SemanticACV049Error("ACV-049 enum/tuple manifest is malformed")
+    tuple_constructions = manifest.get("ownershipRevision") == "V33_TUPLE_CONSTRUCTIONS"
+    current_sites = derive_phase_a_source_site_map(
+        repo_root, contract, evidence_root, tuple_constructions=tuple_constructions,
+    )
     expected_manifest = build_phase_a_enum_tuple_source_mutant_manifest(
-        repo_root, contract, evidence_root
+        repo_root, contract, evidence_root, source_site_map=current_sites,
     )
     if dumps(expected_manifest) != dumps(manifest):
         raise SemanticACV049Error("ACV-049 enum/tuple manifest is stale")
@@ -2220,7 +2750,9 @@ def execute_enum_tuple_source_mutant_batch(
         for case in _semantic_request_carriers(authority)
         if case.collision_oracle is not None
     }
-    instrumented, ast_sites = _instrumented_interface_model(repo_root)
+    instrumented, ast_sites = _instrumented_interface_model(
+        repo_root, tuple_constructions=tuple_constructions,
+    )
     previous = sys.modules.get("interface_model")
     sys.modules["interface_model"] = instrumented
     tagged_responses: dict[str, dict[str, Any]] = {}
@@ -2291,7 +2823,8 @@ def execute_enum_tuple_source_mutant_batch(
                 )
             )
         frozen_mutation_map = {
-            site_id: tuple(sorted(patches, key=lambda row: dumps([list(row[0]), list(row[1])])))
+            site_id: tuple(sorted(set(patches) if tuple_constructions else patches,
+                                  key=lambda row: dumps([list(row[0]), list(row[1])])))
             for site_id, patches in mutation_map.items()
         }
         module_key = dumps(
@@ -2303,7 +2836,8 @@ def execute_enum_tuple_source_mutant_batch(
         cached = module_cache.get(module_key)
         if cached is None:
             mutated, _mutant_sites, mutant_source = _mutated_interface_model(
-                repo_root, frozen_mutation_map, ACV049_MUTANT_CHANNELS
+                repo_root, frozen_mutation_map, ACV049_MUTANT_CHANNELS,
+                tuple_constructions=tuple_constructions,
             )
             previous = sys.modules.get("interface_model")
             sys.modules["interface_model"] = mutated
@@ -2360,33 +2894,7 @@ def execute_enum_tuple_source_mutant_batch(
                 raise SemanticACV049Error(
                     "ACV-049 enum/tuple mutant is nondeterministic"
                 )
-            matching_indexes = [
-                index for index in (0, 1)
-                if all(
-                    _value_at_report_pointer(first, patch["concretePointer"])
-                    == patch["candidateValues"][index]
-                    for patch in spec["patches"]
-                )
-            ]
-            if len(matching_indexes) != 1:
-                raise SemanticACV049Error(
-                    "ACV-049 enum/tuple candidate tuple is ambiguous"
-                )
-            observed_index = matching_indexes[0]
-            is_baseline = dumps(first) == dumps(baseline_response)
-            if is_baseline != (
-                bool(spec["twoStateRule"]) and observed_index == 1
-            ):
-                raise SemanticACV049Error(
-                    "ACV-049 enum/tuple baseline equivalence is invalid"
-                )
-            normalized = copy.deepcopy(first)
-            for pointer, baseline in baseline_by_pointer.items():
-                _set_value_at_report_pointer(normalized, pointer, baseline)
-            if dumps(normalized) != dumps(baseline_response):
-                raise SemanticACV049Error(
-                    "ACV-049 enum/tuple mutant changed multiple targets"
-                )
+            observed_index = _observe_declared_tuple_change(baseline_response, first, spec)
         except (KeyError, SemanticACV049Error) as error:
             execution_failures.append({
                 "changedPointers": _changed_json_pointers(
@@ -2435,17 +2943,185 @@ def execute_enum_tuple_source_mutant_batch(
     }
 
 
+def _v34_identity_target_run_binding(
+    repo_root: Path,
+    contract: Path,
+    request_bytes: bytes,
+    inventory_bytes: bytes,
+    retained_input_plan: bytes,
+    spec: dict[str, Any],
+    ast_sites: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], str]:
+    """Bind the independent V34 E plan and scalar manifest before execution."""
+
+    if sha256_bytes(request_bytes) != _V34_IDENTITY_TARGET_REQUEST_SHA256:
+        raise SemanticACV049Error("V34 identity-target run request drift")
+    if spec["concretePointer"] != _V34_IDENTITY_TARGET_POINTER:
+        raise SemanticACV049Error("V34 identity-target run pointer drift")
+    if spec["relativeTokens"] != [0, "eventReferenceHex"]:
+        raise SemanticACV049Error("V34 identity-target source selector drift")
+    site = ast_sites.get(spec["astSiteId"])
+    if site is None or site.get("function") != "replay_context":
+        raise SemanticACV049Error("V34 identity-target response-copy owner drift")
+    if site.get("label") != "logicalEvents":
+        raise SemanticACV049Error("V34 identity-target response-copy label drift")
+
+    implementation = repo_root / "tools/causal-flow-simulator/app_core_iface0"
+    interface_model = implementation / "interface_model.py"
+    artifacts = {
+        "evaluatorSource": sha256_bytes(interface_model.read_bytes()),
+        "instrumenterSource": sha256_bytes(Path(__file__).read_bytes()),
+        "nodeReaderSource": sha256_bytes(
+            (implementation / "node_adapter.mjs").read_bytes()
+        ),
+        "positiveCarrierInventory": sha256_bytes(inventory_bytes),
+        "pythonReaderSource": sha256_bytes(interface_model.read_bytes()),
+        "relations": sha256_bytes(
+            (
+                contract
+                / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+            ).read_bytes()
+        ),
+        "schema": sha256_bytes(
+            (contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json").read_bytes()
+        ),
+    }
+    record = {
+        "artifactSha256": artifacts,
+        "controlledChannels": list(ACV049_MUTANT_CHANNELS),
+        "historicalSourceSiteMapRouteSha256": (
+            _V34_IDENTITY_TARGET_HISTORICAL_ROUTE_SHA256
+        ),
+        "mutantManifestSha256": sha256_bytes(dumps(spec)),
+        "requestCaseId": spec["requestCaseId"],
+        "requestSha256": sha256_bytes(request_bytes),
+        "retainedInputPlanSha256": sha256_bytes(retained_input_plan),
+        "schema": "styx.app-core-iface0.acv049-v34-identity-target-run-binding.v1",
+        "sourceEvidence": {
+            "astSiteId": spec["astSiteId"],
+            "function": site["function"],
+            "label": site["label"],
+            "relativeTokens": list(spec["relativeTokens"]),
+            "sourceExpressionSha256": site["sourceExpressionSha256"],
+            "sourceSiteMapRouteSha256": spec["sourceSiteMapRouteSha256"],
+        },
+    }
+    raw = dumps(record)
+    if any(value.encode("utf-8") in raw for value in spec["candidateValues"]):
+        raise SemanticACV049Error("V34 run binding copied a candidate value")
+    return record, sha256_bytes(raw)
+
+
+def _validate_v34_identity_target_source_qualification(
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+    spec: dict[str, Any],
+    run: dict[str, Any],
+) -> dict[str, Any]:
+    """Conjoin Appendix-S binding, source trace, E, and value detection."""
+
+    if (
+        spec.get("requestCaseId") != _V34_IDENTITY_TARGET_REQUEST_CASE_ID
+        or spec.get("concretePointer") != _V34_IDENTITY_TARGET_POINTER
+    ):
+        raise SemanticACV049Error("V34 source qualification is outside Appendix S")
+    _validate_scalar_source_mutant_spec(spec)
+    authority = ContractAuthority.load(repo_root, contract)
+    _inventory, inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    request, request_bytes = carriers[spec["requestCaseId"]]
+    instrumented, ast_sites = _instrumented_interface_model(
+        repo_root, tuple_constructions=True
+    )
+    retained_input_plan = freeze_retained_input_plan(
+        authority, request, target_pointers=(spec["concretePointer"],)
+    )
+    expected_binding, expected_binding_sha256 = _v34_identity_target_run_binding(
+        repo_root,
+        contract,
+        request_bytes,
+        inventory_bytes,
+        retained_input_plan,
+        spec,
+        ast_sites,
+    )
+    if run.get("runBindingRecord") != expected_binding or (
+        run.get("runBindingRecordSha256") != expected_binding_sha256
+    ):
+        raise SemanticACV049Error("V34 run binding record drift")
+    if run.get("sourceSiteExecuted") is not True:
+        raise SemanticACV049Error("V34 source execution trace is absent")
+    _mutated, _mutant_sites, mutant_source = _mutated_interface_model(
+        repo_root,
+        {
+            spec["astSiteId"]: (
+                (tuple(spec["relativeTokens"]), tuple(spec["candidateValues"])),
+            )
+        },
+        ACV049_MUTANT_CHANNELS,
+        tuple_constructions=True,
+    )
+    if run.get("mutantSourceSha256") != sha256_bytes(mutant_source):
+        raise SemanticACV049Error("V34 source execution trace digest drift")
+    response = run.get("response")
+    if not isinstance(response, dict) or run.get("responseSha256") != sha256_bytes(
+        dumps(response)
+    ):
+        raise SemanticACV049Error("V34 source response digest drift")
+    retained = observe_retained_input(retained_input_plan, response)
+    if retained.get("verdict") != "RETAINED_OFF_TARGET_PASS_TARGET_EXPERIMENT":
+        raise SemanticACV049Error("V34 retained-input qualification failed")
+    oracle_by_request = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    baseline = _evaluate_fixture_request(
+        authority, request, oracle_by_request.get(request_bytes)
+    )
+    observed_index = _observe_declared_tuple_change(
+        baseline,
+        response,
+        {
+            "patches": [
+                {
+                    "candidateValues": list(spec["candidateValues"]),
+                    "concretePointer": spec["concretePointer"],
+                }
+            ],
+            "twoStateRule": spec["twoStateRule"],
+        },
+    )
+    if run.get("observedCandidateIndex") != observed_index:
+        raise SemanticACV049Error("V34 source candidate index drift")
+    return {
+        "mutantManifestSha256": sha256_bytes(dumps(spec)),
+        "retainedInputPlanSha256": sha256_bytes(retained_input_plan),
+        "runBindingRecordSha256": expected_binding_sha256,
+        "sourceSiteExecuted": True,
+        "verdict": "V34_IDENTITY_TARGET_SOURCE_RUN_PASS",
+    }
+
+
 def execute_scalar_source_mutant(
     repo_root: Path,
     contract: Path,
     evidence_root: Path,
     spec: dict[str, Any],
+    *,
+    tuple_constructions: bool = False,
 ) -> dict[str, Any]:
     """Execute one frozen scalar source mutant without reading its channel."""
 
     _validate_scalar_source_mutant_spec(spec)
+    tuple_constructions = tuple_constructions or (
+        spec["requestCaseId"] == _V34_IDENTITY_TARGET_REQUEST_CASE_ID
+        and spec["concretePointer"] == _V34_IDENTITY_TARGET_POINTER
+    )
     authority = ContractAuthority.load(repo_root, contract)
-    _inventory, _inventory_bytes, carriers = _load_phase_a(
+    _inventory, inventory_bytes, carriers = _load_phase_a(
         repo_root, contract, evidence_root
     )
     carrier = carriers.get(spec["requestCaseId"])
@@ -2466,7 +3142,9 @@ def execute_scalar_source_mutant(
 
     logical_path = _raw_report_logical_path(spec["logicalPath"])
     terminal = resolve_logical_terminal(authority.schema, logical_path)
-    instrumented, ast_sites = _instrumented_interface_model(repo_root)
+    instrumented, ast_sites = _instrumented_interface_model(
+        repo_root, tuple_constructions=tuple_constructions
+    )
     previous = sys.modules.get("interface_model")
     sys.modules["interface_model"] = instrumented
     try:
@@ -2506,6 +3184,25 @@ def execute_scalar_source_mutant(
         if spec[key] != candidate_plan[key]:
             raise SemanticACV049Error("ACV-049 scalar candidate-plan drift")
 
+    retained_input_plan: bytes | None = None
+    run_binding: dict[str, Any] | None = None
+    run_binding_sha256: str | None = None
+    if spec["requestCaseId"] == _V34_IDENTITY_TARGET_REQUEST_CASE_ID and (
+        spec["concretePointer"] == _V34_IDENTITY_TARGET_POINTER
+    ):
+        retained_input_plan = freeze_retained_input_plan(
+            authority, request, target_pointers=(spec["concretePointer"],)
+        )
+        run_binding, run_binding_sha256 = _v34_identity_target_run_binding(
+            repo_root,
+            contract,
+            request_bytes,
+            inventory_bytes,
+            retained_input_plan,
+            spec,
+            ast_sites,
+        )
+
     mutated, _mutant_sites, mutant_source = _mutated_interface_model(
         repo_root,
         {
@@ -2517,6 +3214,7 @@ def execute_scalar_source_mutant(
             )
         },
         ACV049_MUTANT_CHANNELS,
+        tuple_constructions=tuple_constructions,
     )
     previous = sys.modules.get("interface_model")
     sys.modules["interface_model"] = mutated
@@ -2548,7 +3246,7 @@ def execute_scalar_source_mutant(
     _set_value_at_report_pointer(normalized, spec["concretePointer"], baseline)
     if dumps(normalized) != dumps(baseline_response):
         raise SemanticACV049Error("ACV-049 scalar mutant changed multiple targets")
-    return {
+    result = {
         "baselineResponseSha256": sha256_bytes(dumps(baseline_response)),
         "mutantId": spec["mutantId"],
         "mutantSourceSha256": sha256_bytes(mutant_source),
@@ -2561,6 +3259,29 @@ def execute_scalar_source_mutant(
         "sourceSiteExecuted": True,
         "verdict": "PYTHON_RELEASE_MUTANT_PASS",
     }
+    if retained_input_plan is not None:
+        retained_observation = observe_retained_input(retained_input_plan, first)
+        if retained_observation["verdict"] != (
+            "RETAINED_OFF_TARGET_PASS_TARGET_EXPERIMENT"
+        ):
+            raise SemanticACV049Error("V34 retained-input observer failed")
+        retained_observation = {
+            **retained_observation,
+            "runBindingRecordSha256": run_binding_sha256,
+        }
+        result.update(
+            {
+                "retainedInputObservation": retained_observation,
+                "runBindingRecord": run_binding,
+                "runBindingRecordSha256": run_binding_sha256,
+            }
+        )
+        result["sourceQualification"] = (
+            _validate_v34_identity_target_source_qualification(
+                repo_root, contract, evidence_root, spec, result
+            )
+        )
+    return result
 
 
 def _data_value(value: Any, tokens: tuple[str | int, ...]) -> Any:
