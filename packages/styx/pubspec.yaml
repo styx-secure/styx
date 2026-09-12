@@ -17,4 +17,4 @@ dependencies:
 dev_dependencies:
   dart_code_linter: any
   test: any
-  very_good_analysis: any
+  very_good_analysis: ^11.0.0
