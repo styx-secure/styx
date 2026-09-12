@@ -69,6 +69,7 @@ IMPLEMENTATION_FILES = frozenset(
 )
 TEST_FILES = frozenset(
     {
+        "release-relation-requests.json",
         "test_authority_projection.py",
         "test_canonical_json.py",
         "test_contract_package.py",
@@ -78,6 +79,7 @@ TEST_FILES = frozenset(
         "test_interface_model.py",
         "test_inventory.py",
         "test_mutations.py",
+        "test_release_relations.py",
         "test_report_hygiene.py",
         "test_scope_guard.py",
         "test_structural_isolation_relation.py",
@@ -175,7 +177,7 @@ def _verify_subtree(repo: Path, candidate: str) -> tuple[int, int, int]:
         mode = _git(repo, "ls-tree", candidate, SUBTREE + path).split()[0]
         if mode != "100644" and not (path.endswith(".py") and mode == "100755"):
             raise ScopeError("symlink, submodule, binary mode, or unexpected mode")
-    return len(contracts), len(implementations), len(tests)
+    return len(contracts), len(implementations), sum(name.endswith(".py") for name in tests)
 
 
 def _verify_native_read_only(repo: Path, base: str, candidate: str) -> int:
