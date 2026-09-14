@@ -4219,10 +4219,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.emit_enum_tuple_source_mutant_manifest:
             if args.javascript_results_stdin or args.output is None:
                 raise SemanticACV049Error("enum/tuple manifest mode argument drift")
+            source_site_map = derive_phase_a_source_site_map(
+                args.repo_root.resolve(),
+                args.contract.resolve(),
+                args.evidence_root.resolve(),
+                tuple_constructions=True,
+            )
             manifest = build_phase_a_enum_tuple_source_mutant_manifest(
                 args.repo_root.resolve(),
                 args.contract.resolve(),
                 args.evidence_root.resolve(),
+                source_site_map=source_site_map,
             )
             _store_external_artifact(args.repo_root.resolve(), args.output, manifest)
             print(

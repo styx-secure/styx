@@ -1032,6 +1032,35 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._temporary.cleanup()
 
+    def test_v33_enum_tuple_cli_emits_single_construction_ownership(self) -> None:
+        import contextlib
+        import io
+        import run_semantic_acv049 as semantic
+
+        with tempfile.TemporaryDirectory() as raw:
+            output = Path(raw) / 'enum-tuple-manifest.json'
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = semantic.main([
+                    '--repo-root', str(ROOT.parents[2]),
+                    '--contract', str(ROOT / 'contract'),
+                    '--evidence-root', str(self.evidence),
+                    '--emit-enum-tuple-source-mutant-manifest',
+                    '--output', str(output),
+                ])
+            self.assertEqual(code, 0)
+            manifest = json.loads(output.read_bytes())
+        self.assertEqual(manifest.get('ownershipRevision'), 'V33_TUPLE_CONSTRUCTIONS')
+        self.assertTrue(manifest['mutants'])
+        for mutant in manifest['mutants']:
+            self.assertEqual(len({patch['astSiteId'] for patch in mutant['patches']}), 1)
+        source_map = derive_phase_a_source_site_map(
+            ROOT.parents[2], ROOT / 'contract', self.evidence, tuple_constructions=True,
+        )
+        expected = build_phase_a_enum_tuple_source_mutant_manifest(
+            ROOT.parents[2], ROOT / 'contract', self.evidence, source_site_map=source_map,
+        )
+        self.assertEqual(canonical_dumps(manifest), canonical_dumps(expected))
+
     def test_v33_manifest_declares_complete_atomic_and_propagated_tuples(self) -> None:
         report = derive_phase_a_source_site_map(
             ROOT.parents[2], ROOT / 'contract', self.evidence, tuple_constructions=True,
