@@ -1,0 +1,300 @@
+{
+  "manifestVersion": "APP-CORE-IFACE-0-CANDIDATE-MANIFEST-V1",
+  "status": "PRE_RATIFICATION_WORKING_EVIDENCE",
+  "authorityEffect": "NONE",
+  "derivedInterfaceMaxima": {
+    "derivationVersion": "APP-CORE-IFACE-0-INTERFACE-MAXIMA-V1",
+    "maxRetainedDecodedOctets": 35300616,
+    "maxRetainedDecodedRoot": "REQUEST-EVALUATE_CANDIDATE",
+    "maximizingRootBreakdowns": [
+      {
+        "breakdown": [
+          {
+            "component": "canonical-syntax-keys-and-final-lf",
+            "jsonOctets": 55,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "input",
+            "jsonOctets": 71124930,
+            "representedDecodedOctets": 35300616
+          },
+          {
+            "component": "interfaceVersion",
+            "jsonOctets": 3,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "operation",
+            "jsonOctets": 20,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "profile",
+            "jsonOctets": 108,
+            "representedDecodedOctets": 0
+          }
+        ],
+        "direction": "REQUEST",
+        "jsonOctets": 71125116,
+        "operation": "EVALUATE_CANDIDATE",
+        "representedDecodedOctets": 35300616,
+        "retainedDecodedOctets": 35300616,
+        "rootId": "REQUEST-EVALUATE_CANDIDATE"
+      },
+      {
+        "breakdown": [
+          {
+            "component": "canonical-syntax-keys-and-final-lf",
+            "jsonOctets": 55,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "input",
+            "jsonOctets": 138547482,
+            "representedDecodedOctets": 68859060
+          },
+          {
+            "component": "interfaceVersion",
+            "jsonOctets": 3,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "operation",
+            "jsonOctets": 26,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "profile",
+            "jsonOctets": 108,
+            "representedDecodedOctets": 0
+          }
+        ],
+        "direction": "REQUEST",
+        "jsonOctets": 138547674,
+        "operation": "EVALUATE_EVIDENCE_UPDATE",
+        "representedDecodedOctets": 68859060,
+        "retainedDecodedOctets": 35288244,
+        "rootId": "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+      },
+      {
+        "breakdown": [
+          {
+            "component": "canonical-syntax-keys-and-final-lf",
+            "jsonOctets": 56,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "interfaceVersion",
+            "jsonOctets": 3,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "operation",
+            "jsonOctets": 20,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "profile",
+            "jsonOctets": 108,
+            "representedDecodedOctets": 0
+          },
+          {
+            "component": "result",
+            "jsonOctets": 71096313,
+            "representedDecodedOctets": 35288244
+          }
+        ],
+        "direction": "RESPONSE",
+        "jsonOctets": 71096500,
+        "operation": "EVALUATE_CANDIDATE",
+        "representedDecodedOctets": 35288244,
+        "retainedDecodedOctets": 35288244,
+        "rootId": "RESPONSE-EVALUATE_CANDIDATE"
+      }
+    ],
+    "outerRequestOctets": 138547674,
+    "outerRequestRoot": "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+    "outerResponseOctets": 71096500,
+    "outerResponseRoot": "RESPONSE-EVALUATE_CANDIDATE",
+    "rootMeasurementSetSha256": "098c010fa03e22d87dd8a42e28e7068396f44139a5d3981dcc10b33d9897b239"
+  },
+  "derivedCounts": {
+    "operations": 6,
+    "propertyBearingObjectSchemas": 87,
+    "directObjectDefinitions": 82,
+    "inlineObjectSchemas": 5,
+    "properties": 347,
+    "directlyRequiredProperties": 344,
+    "customKeywordOccurrences": 25,
+    "structuralRuleFamilies": 24,
+    "structuralExecutionInstances": 1553,
+    "structuralIsolationRelationRows": 96,
+    "oneOfOccurrences": 16,
+    "oneOfArms": 57,
+    "oneOfPairwiseDisjointnessRows": 101,
+    "semanticFamilies": 84,
+    "semanticExecutionInstances": 2359,
+    "totalExecutionInstances": 3912,
+    "contentRelationRows": 23,
+    "forkJoinLabelRelationRows": 10,
+    "authorityProjectionDimensionRelationRows": 16,
+    "graphAdmissionDimensionRelationRows": 11,
+    "candidatePrimaryRelationRows": 25,
+    "transcriptRelationRows": 16,
+    "genesisRelationRows": 17,
+    "terminalPredicateRelationRows": 33,
+    "signatureVerificationPathRows": 17,
+    "nativeDependencies": 65,
+    "readOnlyNativeDependencies": 60,
+    "seededExtensionNativeDependencies": 4,
+    "ratifiedExactRepinNativeDependencies": 1,
+    "historicalProviderIncrements": 5,
+    "seedRegistryRowsPendingPostBase": 87,
+    "structuralWitnessRowsPendingPostBase": 1553
+  },
+  "artifacts": [
+    {
+      "path": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+      "role": "INTERFACE_SCHEMA",
+      "sha256": "55592a26c13e72b888afaa743646ccfd69d6bb756ad6f15aaa290cdd1c3debd5"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json",
+      "role": "PROPERTY_OWNERSHIP",
+      "sha256": "1f72ec035987321f54e21338d04a5c434147d93352ef2cbad9ac0183c051523d"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json",
+      "role": "STRUCTURAL_INSTANCE_AXES",
+      "sha256": "61f6d5c359604e7d194525d013b5ac5ddd2eb1e4725c3e0b0f90d182e8642227"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
+      "role": "BOUNDED_STRUCTURAL_PERTURBATION_PALETTE",
+      "sha256": "db8ebfaf3d34a8d47dae6c1996eb4cadc91d737f13a9278a75c2ea441ebea9d8"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
+      "role": "ONEOF_PAIRWISE_DISJOINTNESS",
+      "sha256": "9f37ed686591b22514450e1ee8fa31d9d24a0c6fd336904fd92a51877abde204"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
+      "role": "STRUCTURAL_WITNESS_REGISTRY_SCHEMA",
+      "sha256": "b7073e8826f905362e0bec8d1d5e9678da1615a4629affe1657717d8b2584013"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-RELATION-CANDIDATE.json",
+      "role": "STRUCTURAL_ISOLATION_RELATION_DERIVED_UNDER_RATIFIED_REMEDIATION",
+      "sha256": "7fd65f6a1348b361b745df29a48573d5df9d97dd180ae609195db8a711317177"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
+      "role": "SEMANTIC_RULE_FAMILIES",
+      "sha256": "5164c45f0625374487a4778044b1bce7605154922008bb0833f0ea3ec23529ed"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
+      "role": "SEMANTIC_INSTANCE_AXES",
+      "sha256": "808464a19ba383cf5713a921e551ae15f5208d62e02aeb0a57414b1cf51f9247"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
+      "role": "INSTANCE_EXECUTION_PHASES",
+      "sha256": "b78b4a303779d8446e386a6fca65a764e1fef92cb4e362a77c3641e04a3a9851"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
+      "role": "LITERAL_LEGAL_RELATIONS",
+      "sha256": "ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
+      "role": "SEED_REGISTRY_SCHEMA",
+      "sha256": "14bc332e90ae7d7730098279f2b4c99054dd0c1e6768aeb4b55620f8282f5cf2"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
+      "role": "POSITIVE_CARRIER_INVENTORY_SCHEMA",
+      "sha256": "8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json",
+      "role": "DERIVED_CARRIER_REACHABILITY",
+      "sha256": "b3e33bdf0a07fa7d9f08c9158e20a4ce912df0c32d9dfadd6f29a7a422695208"
+    },
+    {
+      "path": "derive_app_core_carrier_reachability.py",
+      "role": "CARRIER_REACHABILITY_DERIVER",
+      "sha256": "06297a28f6959c47b4d5558a89d776fc2d124c3f2c76072796dbf02935c89480"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json",
+      "role": "EXACT_BASE_AND_RATIFIED_REPIN_NATIVE_DEPENDENCY_RELATION",
+      "sha256": "ef99c5b3e453f4f3642d2337df35736d71a6efdfa7ec853d33735daf4d0de128"
+    },
+    {
+      "path": "derive_app_core_native_dependencies.py",
+      "role": "EXACT_GIT_OBJECT_DEPENDENCY_DERIVER",
+      "sha256": "dc594a2be7f3a59f3081fcea7f80b3b7df7e988d97fb78226ac3cadbbc2170b2"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-PROVIDER-BINDINGS-CANDIDATE.json",
+      "role": "HISTORICAL_PROVIDER_AUTHORITY_AND_SCOPE_RELATION",
+      "sha256": "d60e9352607b06fb3f7d932afba037884c1e23c800d86d882b5bb4eb2eb924e7"
+    },
+    {
+      "path": "validate_app_core_provider_bindings.py",
+      "role": "LIVE_PROVIDER_AND_MUTABLE_SCOPE_VALIDATOR",
+      "sha256": "7e83976f3d8120ee87ab12a99ce6c569b5b1ed22e12274d2ae20561aa9477c45"
+    },
+    {
+      "path": "validate_app_core_contract_candidates.py",
+      "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
+      "sha256": "b2b383b7e2b0b90c926175b4bf2183bf23a4d936c5c75aab9b898415da9d9221"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
+      "role": "HOSTILE_DERIVATION",
+      "sha256": "ff6b7325e36fd8e37388b26187daf71ad65153e2f6a5edaf4b415f32af1e4304"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
+      "role": "VALIDATOR_PIPELINE",
+      "sha256": "25790a8a2e7b8ba6b768f61079a0c5f4964eacef7d716eceb81a0ce74794a51a"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
+      "role": "DETERMINISTIC_SEED_AND_WITNESS_GENERATION",
+      "sha256": "6070b3f9c94d454bb4ea4e32cd1f9eb7f77a3199cd03c498979d0b88d0c8b5c4"
+    },
+    {
+      "path": "APP-CORE-O10-CLOSURE-CANDIDATE.md",
+      "role": "F13_F14_RELATIONS",
+      "sha256": "15a8a30a58b9010452fb70132b9e8e1a302a0b8cefaa79938af704cd771b4dc8"
+    },
+    {
+      "path": "APP-CORE-EVIDENCE-UPDATE-CANDIDATE.md",
+      "role": "F16_RELATION",
+      "sha256": "9f8d7b09327a54f473bf208ea437463c8509ce19e6265ebbf97948fe00fd1aa1"
+    },
+    {
+      "path": "APP-CORE-FLOW-CLOSURE.md",
+      "role": "TWELVE_FLOW_RELATION",
+      "sha256": "3aa8fb2f4114f1ac19aecc3dbf2e5376b78943e51e70760b9a86f3c3fb5c3f51"
+    },
+    {
+      "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
+      "role": "EXECUTABLE_CONTRACT_OUTLINE",
+      "sha256": "3f4f84518d95f32c9d3620f11489346948ca1a8ac81018cd444e9305d238023e"
+    }
+  ],
+  "remainingBeforeExecutableIssue": [
+    "RATIFIED_F13_F14_F16_NORMATIVE_RELATIONS",
+    "RATIFIED_BOUNDED_PERTURBATION_AND_CARRIER_GENERATION_CONTRACT",
+    "EXACT_PROVIDER_OBJECT_BINDINGS",
+    "INDEPENDENT_SECURITY_REVIEW",
+    "PROVIDER_BOUND_HUMAN_RATIFICATION"
+  ]
+}
