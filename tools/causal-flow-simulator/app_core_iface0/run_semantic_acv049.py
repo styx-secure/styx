@@ -2142,6 +2142,47 @@ def _validate_scalar_source_mutant_manifest(manifest: dict[str, Any]) -> None:
         raise SemanticACV049Error("ACV-049 scalar mutant set identity drift")
 
 
+def _scalar_batch_failure(
+    spec: dict[str, Any], stage: str, error: Exception,
+) -> dict[str, str]:
+    """Preserve the exact scalar failure stage and detector."""
+
+    return {
+        "astSiteId": spec["astSiteId"],
+        "failureClass": type(error).__name__,
+        "failureMessage": str(error),
+        "mutantId": spec["mutantId"],
+        "requestCaseId": spec["requestCaseId"],
+        "stage": stage,
+    }
+
+
+def _execute_scalar_mutant_stages(
+    mutated: types.ModuleType,
+    mutated_authority: Any,
+    request: dict[str, Any],
+    oracle: Any,
+    spec: dict[str, Any],
+) -> tuple[tuple[Any, Any, frozenset[str], frozenset[str]] | None, dict[str, str] | None]:
+    """Evaluate twice, then run Python release admission as a distinct stage."""
+
+    try:
+        mutated._acv049_mutated_sites_executed.clear()
+        first = _evaluate_fixture_request(mutated_authority, request, oracle)
+        first_executed_sites = frozenset(mutated._acv049_mutated_sites_executed)
+        mutated._acv049_mutated_sites_executed.clear()
+        second = _evaluate_fixture_request(mutated_authority, request, oracle)
+        second_executed_sites = frozenset(mutated._acv049_mutated_sites_executed)
+    except Exception as error:
+        return None, _scalar_batch_failure(spec, "evaluation", error)
+    try:
+        mutated.validate_response_before_release(mutated_authority, first)
+        mutated.validate_response_before_release(mutated_authority, second)
+    except Exception as error:
+        return None, _scalar_batch_failure(spec, "python_release_admission", error)
+    return (first, second, first_executed_sites, second_executed_sites), None
+
+
 def execute_scalar_source_mutant_batch(
     repo_root: Path,
     contract: Path,
@@ -2278,37 +2319,17 @@ def execute_scalar_source_mutant_batch(
         previous = sys.modules.get("interface_model")
         sys.modules["interface_model"] = mutated
         try:
-            try:
-                mutated._acv049_mutated_sites_executed.clear()
-                first = _evaluate_fixture_request(
-                    mutated_authority, request, oracle
-                )
-                first_executed_sites = frozenset(
-                    mutated._acv049_mutated_sites_executed
-                )
-                mutated._acv049_mutated_sites_executed.clear()
-                second = _evaluate_fixture_request(
-                    mutated_authority, request, oracle
-                )
-                second_executed_sites = frozenset(
-                    mutated._acv049_mutated_sites_executed
-                )
-                mutated.validate_response_before_release(
-                    mutated_authority, first
-                )
-                mutated.validate_response_before_release(
-                    mutated_authority, second
-                )
-            except Exception as error:
-                admission_failures.append(
-                    {
-                        "astSiteId": spec["astSiteId"],
-                        "failureClass": type(error).__name__,
-                        "mutantId": spec["mutantId"],
-                        "requestCaseId": spec["requestCaseId"],
-                    }
-                )
+            staged_result, staged_failure = _execute_scalar_mutant_stages(
+                mutated, mutated_authority, request, oracle, spec
+            )
+            if staged_failure is not None:
+                admission_failures.append(staged_failure)
                 continue
+            if staged_result is None:
+                raise SemanticACV049Error(
+                    "ACV-049 scalar batch stage result drift"
+                )
+            first, second, first_executed_sites, second_executed_sites = staged_result
         finally:
             if previous is None:
                 sys.modules.pop("interface_model", None)
@@ -2340,12 +2361,7 @@ def execute_scalar_source_mutant_batch(
                 )
         except (KeyError, SemanticACV049Error) as error:
             execution_failures.append(
-                {
-                    "astSiteId": spec["astSiteId"],
-                    "failureClass": type(error).__name__,
-                    "mutantId": spec["mutantId"],
-                    "requestCaseId": spec["requestCaseId"],
-                }
+                _scalar_batch_failure(spec, "execution", error)
             )
             continue
         rows.append(

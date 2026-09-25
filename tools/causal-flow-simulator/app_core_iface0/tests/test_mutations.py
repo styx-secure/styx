@@ -588,6 +588,72 @@ class StructuralPlanTests(unittest.TestCase):
 
 
 class PhaseAMutationIntegrationTests(unittest.TestCase):
+    def test_scalar_batch_distinguishes_evaluation_from_python_release_admission(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        class HarnessFailure(Exception):
+            pass
+
+        spec = {
+            "astSiteId": "PURITY-AST-SENTINEL",
+            "mutantId": "ACV049-P-MUTANT-SENTINEL",
+            "requestCaseId": "PCR-REQUEST-SENTINEL",
+        }
+        mutated = mock.Mock()
+        mutated._acv049_mutated_sites_executed = set()
+
+        with mock.patch.object(
+            semantic,
+            "_evaluate_fixture_request",
+            side_effect=RuntimeError("evaluation sentinel"),
+        ):
+            result, failure = semantic._execute_scalar_mutant_stages(
+                mutated, object(), {}, None, spec,
+            )
+        self.assertIsNone(result)
+        self.assertEqual(
+            failure,
+            {
+                **spec,
+                "failureClass": "RuntimeError",
+                "failureMessage": "evaluation sentinel",
+                "stage": "evaluation",
+            },
+        )
+        mutated.validate_response_before_release.assert_not_called()
+
+        mutated.reset_mock()
+        mutated._acv049_mutated_sites_executed = set()
+        mutated.validate_response_before_release.side_effect = HarnessFailure(
+            "release sentinel"
+        )
+        with mock.patch.object(
+            semantic,
+            "_evaluate_fixture_request",
+            side_effect=[{"result": "first"}, {"result": "second"}],
+        ):
+            result, failure = semantic._execute_scalar_mutant_stages(
+                mutated, object(), {}, None, spec,
+            )
+        self.assertIsNone(result)
+        self.assertEqual(
+            failure,
+            {
+                **spec,
+                "failureClass": "HarnessFailure",
+                "failureMessage": "release sentinel",
+                "stage": "python_release_admission",
+            },
+        )
+        self.assertEqual(mutated.validate_response_before_release.call_count, 1)
+
+        execution = semantic._scalar_batch_failure(
+            spec, "execution", SemanticACV049Error("execution sentinel")
+        )
+        self.assertEqual(execution["stage"], "execution")
+        self.assertEqual(execution["failureMessage"], "execution sentinel")
+        self.assertEqual(execution["failureClass"], "SemanticACV049Error")
+
     def test_v33_recurrence_pair_and_sibling_are_frozen_from_exact_historical_bindings(self) -> None:
         import run_semantic_acv049 as semantic
 
