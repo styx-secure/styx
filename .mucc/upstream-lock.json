@@ -1,8 +1,8 @@
 {
   "schema": "styx.mucc-upstream-lock/v1",
   "repository": "MaxGiu67/plugin-MUCC",
-  "commit": "21ecfdc84afc65395033b56c9b86f8d514c3e80a",
-  "marketplace_version": "2.12.1",
-  "dev_methodology_version": "0.40.1",
+  "commit": "d8a7c1f72cd49425f7d3cfca6f4bf7a1961467cc",
+  "marketplace_version": "2.19.0",
+  "dev_methodology_version": "0.51.0",
   "update_policy": "explicit-reviewed-pull-request-only"
 }
