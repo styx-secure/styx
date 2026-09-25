@@ -7,7 +7,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from canonical_json import dumps
 
@@ -1531,13 +1531,14 @@ def _classify_reference_identities(
     }
 
 
-def evaluate_k_admission_graph(
+def _evaluate_k_admission_graph(
     genesis_record: dict[str, Any],
     records: list[dict[str, Any]],
     *,
+    local_evaluator: Callable[[dict[str, Any]], dict[str, Any]],
     presentation_evidence: bool = False,
 ) -> list[dict[str, Any]]:
-    """Evaluate K0/K1/K2/K3 over one complete bounded candidate set."""
+    """Evaluate K0/K1/K2/K3 with one sealed local-occurrence policy."""
 
     if genesis_record.get("kind") != "GENESIS":
         raise ProtocolError("PREACCEPTED_GENESIS_KIND_INVALID")
@@ -1689,7 +1690,7 @@ def evaluate_k_admission_graph(
                         "credentialIdentifierHex": actor,
                         "verificationKeyHex": binding["verificationKeyHex"],
                     }
-                    local = evaluate_vector(local_record)
+                    local = local_evaluator(local_record)
                     local_code = local.get("localOutcome")
                     local_pending = (
                         local_code == "PENDING_OPENING"
@@ -1816,6 +1817,17 @@ def evaluate_k_admission_graph(
             dependency_pending = any(
                 admitted[value]["pendingLineage"] for value in required
             )
+            retained_proofs = sorted(
+                {
+                    str(local_results[identifier][0]["retainedProofSignatureHex"])
+                    for identifier in eligible
+                    if local_results[identifier][0].get(
+                        "retainedProofSignatureHex"
+                    )
+                    is not None
+                },
+                key=bytes.fromhex,
+            )
             candidate_event = {
                 "fields": fields,
                 "k1PresentationIds": tuple(eligible),
@@ -1823,6 +1835,8 @@ def evaluate_k_admission_graph(
                 "pendingLineage": (not ready) or dependency_pending,
                 "record": presentations[(ready or eligible)[0]]["record"],
             }
+            if retained_proofs:
+                candidate_event["retainedProofSignatureHex"] = retained_proofs[0]
             commit_admitted(reference, candidate_event)
             if fields["eventRole"] == "CREDENTIAL" and fields["tail"]["kind"] == "GRANT":
                 bindings[reference] = {
@@ -1886,35 +1900,150 @@ def evaluate_k_admission_graph(
             if k_admitted and logical is not None
             else 0
         )
-        observations.append(
-            {
-                "coalescedPresentationCount": coalesced,
-                "eventReferenceHex": reference,
-                "id": identifier,
-                "kBindingAdmission": (
-                    "ADMITTED" if k_admitted else "REJECTED"
-                ),
-                "logicalEventEffectCount": (
-                    logical_event_effect_counts.get(reference, 0)
-                    if k_admitted and logical is not None
-                    else 0
-                ),
-                "logicalEventReferenceHex": reference,
-                "protocolErrorCode": error.code if error else None,
-                "stage": error.stage if error else "FINAL_AFTER_S6",
-            }
-        )
+        observation = {
+            "coalescedPresentationCount": coalesced,
+            "eventReferenceHex": reference,
+            "id": identifier,
+            "kBindingAdmission": "ADMITTED" if k_admitted else "REJECTED",
+            "logicalEventEffectCount": (
+                logical_event_effect_counts.get(reference, 0)
+                if k_admitted and logical is not None
+                else 0
+            ),
+            "logicalEventReferenceHex": reference,
+            "protocolErrorCode": error.code if error else None,
+            "stage": error.stage if error else "FINAL_AFTER_S6",
+        }
+        if (
+            presentation_evidence
+            and k_admitted
+            and logical is not None
+            and logical.get("retainedProofSignatureHex") is not None
+        ):
+            observation["retainedProofSignatureHex"] = logical[
+                "retainedProofSignatureHex"
+            ]
+        observations.append(observation)
     if presentation_evidence:
         return observations
     evidence_fields = {
         "coalescedPresentationCount",
         "logicalEventEffectCount",
         "logicalEventReferenceHex",
+        "retainedProofSignatureHex",
     }
     return [
         {key: value for key, value in row.items() if key not in evidence_fields}
         for row in observations
     ]
+
+
+def _normalize_logical_k_result(
+    result: dict[str, Any], *, retained_proof_signature_hex: str | None = None
+) -> dict[str, Any]:
+    """Remove O-04 pending from an otherwise authenticated K occurrence."""
+
+    if result.get("localOutcome") not in {"OPENING_MISSING", "PENDING_OPENING"}:
+        normalized = dict(result)
+    else:
+        normalized = dict(result)
+        normalized["apAuthorityResult"] = "AP_FOLD_NOT_EXECUTED"
+        normalized["kBindingAdmission"] = "ADMITTED"
+        normalized["outcomeEvaluated"] = False
+        normalized["stage"] = "FINAL_AFTER_S6"
+        normalized.pop("localOutcome", None)
+        normalized.pop("remoteClass", None)
+    if retained_proof_signature_hex is not None:
+        normalized["retainedProofSignatureHex"] = retained_proof_signature_hex
+    return normalized
+
+
+def _evaluate_logical_k_occurrence(record: dict[str, Any]) -> dict[str, Any]:
+    """Validate transcript/proof while excluding O-04 material from K.
+
+    This is a sealed internal evaluator selected only by
+    ``evaluate_logical_k_admission_graph``.  It cannot be selected by a wire
+    input.  Content/opening bytes are removed before validation; the two
+    historical missing-opening outcomes are normalized to a successful K
+    occurrence after transcript, reference, binding and signature checks.
+    """
+
+    logical_record = dict(record)
+    logical_record.pop("opening", None)
+    logical_record.pop("content", None)
+    proof_rows = logical_record.pop("proofs", None)
+    if proof_rows is None:
+        return _normalize_logical_k_result(evaluate_vector(logical_record))
+    if not isinstance(proof_rows, list) or not proof_rows:
+        invalid = dict(logical_record)
+        invalid["signatureHex"] = ""
+        return evaluate_vector(invalid)
+
+    signatures: list[str] = []
+    for row in proof_rows:
+        if not isinstance(row, dict) or not isinstance(row.get("signatureHex"), str):
+            invalid = dict(logical_record)
+            invalid["signatureHex"] = ""
+            return evaluate_vector(invalid)
+        try:
+            raw = bytes.fromhex(row["signatureHex"])
+        except ValueError:
+            invalid = dict(logical_record)
+            invalid["signatureHex"] = ""
+            return evaluate_vector(invalid)
+        if len(raw) != 64:
+            invalid = dict(logical_record)
+            invalid["signatureHex"] = ""
+            return evaluate_vector(invalid)
+        signatures.append(raw.hex())
+
+    first_failure: dict[str, Any] | None = None
+    for signature_hex in sorted(signatures, key=bytes.fromhex):
+        occurrence = dict(logical_record)
+        occurrence["signatureHex"] = signature_hex
+        result = evaluate_vector(occurrence)
+        normalized = _normalize_logical_k_result(
+            result, retained_proof_signature_hex=signature_hex
+        )
+        if transition_input_is_compatible(normalized):
+            return normalized
+        if first_failure is None:
+            first_failure = result
+    if first_failure is None:
+        raise ProtocolError("STRUCTURAL_REJECTION")
+    return first_failure
+
+
+def evaluate_k_admission_graph(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    presentation_evidence: bool = False,
+) -> list[dict[str, Any]]:
+    """Evaluate the preserved historical opening-sensitive K graph."""
+
+    return _evaluate_k_admission_graph(
+        genesis_record,
+        records,
+        local_evaluator=evaluate_vector,
+        presentation_evidence=presentation_evidence,
+    )
+
+
+def evaluate_logical_k_admission_graph(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    presentation_evidence: bool = False,
+) -> list[dict[str, Any]]:
+    """Evaluate K with content/opening excluded from every K predicate."""
+
+    return _evaluate_k_admission_graph(
+        genesis_record,
+        records,
+        local_evaluator=_evaluate_logical_k_occurrence,
+        presentation_evidence=presentation_evidence,
+    )
 
 
 def evaluate_transcript_conformance(record: dict[str, Any]) -> dict[str, Any]:
