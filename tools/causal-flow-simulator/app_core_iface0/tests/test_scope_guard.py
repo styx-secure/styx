@@ -21,6 +21,7 @@ from scope_guard import (
     _is_allowed,
     _verify_native_read_only,
     _verify_subtree,
+    build_report,
 )
 
 
@@ -28,6 +29,7 @@ class ScopeGuardTests(unittest.TestCase):
     def test_only_exact_shared_paths_and_closed_subtree_are_allowed(self) -> None:
         expected_implementation_files = {
             "README.md",
+            "RESIDUALS-DISPOSITION.md",
             "authority_projection.py",
             "authority_witness.py",
             "canonical_json.py",
@@ -50,6 +52,7 @@ class ScopeGuardTests(unittest.TestCase):
             "validate_inventory.py",
         }
         expected_test_files = {
+            "fixtures/acv049_historical_residual_mutants.json",
             "release-relation-requests.json",
             "test_authority_projection.py",
             "test_canonical_json.py",
@@ -80,7 +83,13 @@ class ScopeGuardTests(unittest.TestCase):
         self.assertEqual(TEST_FILES, expected_test_files)
 
     def test_real_git_tree_counts_python_modules_without_json_fixture(self) -> None:
-        self.assertEqual(_verify_subtree(ROOT.parents[2], "HEAD"), (28, 21, 13))
+        self.assertEqual(_verify_subtree(ROOT.parents[2], "HEAD"), (28, 22, 13))
+
+    def test_strict_guard_accepts_actual_candidate_tree(self) -> None:
+        report = build_report(ROOT.parents[2], BASE_SHA, "HEAD", "strict")
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["implementation_file_count"], 22)
+        self.assertEqual(report["test_module_count"], 13)
 
 
 class GitObjectScopeGuardTests(unittest.TestCase):

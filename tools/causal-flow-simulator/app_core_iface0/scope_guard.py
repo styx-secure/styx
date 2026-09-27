@@ -45,6 +45,7 @@ SUBTREE = "tools/causal-flow-simulator/app_core_iface0/"
 IMPLEMENTATION_FILES = frozenset(
     {
         "README.md",
+        "RESIDUALS-DISPOSITION.md",
         "authority_projection.py",
         "authority_witness.py",
         "canonical_json.py",
@@ -69,6 +70,7 @@ IMPLEMENTATION_FILES = frozenset(
 )
 TEST_FILES = frozenset(
     {
+        "fixtures/acv049_historical_residual_mutants.json",
         "release-relation-requests.json",
         "test_authority_projection.py",
         "test_canonical_json.py",
@@ -159,7 +161,7 @@ def _verify_subtree(repo: Path, candidate: str) -> tuple[int, int, int]:
     tests = {
         name.removeprefix("tests/")
         for name in relative
-        if name.startswith("tests/") and name.count("/") == 1
+        if name.startswith("tests/")
     }
     if implementations != IMPLEMENTATION_FILES:
         raise ScopeError("APP-core implementation file set mismatch")
