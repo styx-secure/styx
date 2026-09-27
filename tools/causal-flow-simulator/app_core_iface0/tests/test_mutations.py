@@ -1085,6 +1085,161 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             self.assertIn(pointer, report["offTargetDifferences"])
         self.assertEqual(frozen, semantic.freeze_retained_input_plan(authority, request))
 
+    def test_historical_residual_dispositions_are_exact_and_kills_are_observable(self) -> None:
+        import run_semantic_acv049 as semantic
+
+        fixture = json.loads(
+            (ROOT / "tests" / "fixtures" / "acv049_historical_residual_mutants.json").read_bytes()
+        )
+        expected_ids = set("""
+ACV049-P-ENUM-06D17CD3FC3EEF91B55F199B
+ACV049-P-ENUM-1AF92F6A527EDF721228CA92
+ACV049-P-ENUM-88E0EA775991578DCF8C8655
+ACV049-P-MUTANT-02612137D31F19F47ABA44C1
+ACV049-P-MUTANT-0D7DCBB143A15B3ED6C69297
+ACV049-P-MUTANT-0F19BEFC461173F0954604A6
+ACV049-P-MUTANT-0F8D75F4FFD51A1374BA5AC8
+ACV049-P-MUTANT-179DFB9D477DDC0B3BDF0141
+ACV049-P-MUTANT-3DF867ECCB4C7C961C3E6950
+ACV049-P-MUTANT-6628BF2485A395DA1DDFA8DF
+ACV049-P-MUTANT-73B31C15ABC93668806F9F7F
+ACV049-P-MUTANT-89A1EBDA2728158AFD750FE5
+ACV049-P-MUTANT-8B332624E0DCF7C5B7BBA65A
+ACV049-P-MUTANT-9DB6D1DDA5578AB45C6C0C5B
+ACV049-P-MUTANT-A402EFDA9DB671BBA4D06246
+ACV049-P-MUTANT-D560664469D2B02F2C7C8BA1
+ACV049-P-MUTANT-E00D67065A78D523DA9F6A69
+ACV049-P-MUTANT-E1E6AF9C583DBB4153D8B7A6
+ACV049-P-MUTANT-F254713D2FE7E3AD3ECF0600
+ACV049-P-TUPLE-C58490C2F7743CCD512FD1CA
+ACV049-P-TUPLE-FC57231E9DA7F26A79951133
+""".split())
+        self.assertEqual(fixture["schema"], "styx.app-core-iface0.acv049-residual-mutants.v1")
+        self.assertEqual(
+            {row["spec"]["mutantId"] for row in fixture["mutants"]}, expected_ids
+        )
+        self.assertEqual(
+            sum(row["disposition"] == "KILLED" for row in fixture["mutants"]), 20
+        )
+        self.assertEqual(
+            {
+                row["spec"]["mutantId"]
+                for row in fixture["mutants"]
+                if row["disposition"] == "OUT_OF_SCOPE"
+            },
+            {"ACV049-P-MUTANT-0D7DCBB143A15B3ED6C69297"},
+        )
+        self.assertEqual(
+            semantic.ACV049_MUTANT_CHANNELS,
+            ("ACV049-CONTROL-CHANNEL-ALPHA", "ACV049-CONTROL-CHANNEL-BRAVO"),
+        )
+
+        authority = ContractAuthority.load(ROOT.parents[2], ROOT / "contract")
+        oracle_by_request = {
+            semantic.dumps(case.request): case.collision_oracle
+            for case in semantic._semantic_request_carriers(authority)
+            if case.collision_oracle is not None
+        }
+        for row in fixture["mutants"]:
+            spec = row["spec"]
+            request = json.loads(
+                (self.evidence / "carriers" / (spec["requestCaseId"] + ".json")).read_bytes()
+            )
+            oracle = oracle_by_request.get(semantic.dumps(request))
+            baseline = semantic._evaluate_fixture_request(authority, request, oracle)
+            semantic.validate_response_before_release(authority, baseline)
+
+            patches = spec["patches"] if row["family"] == "enum-tuple" else [{
+                "astSiteId": spec["astSiteId"],
+                "candidateValues": spec["candidateValues"],
+                "concretePointer": spec["concretePointer"],
+                "relativeTokens": spec["relativeTokens"],
+            }]
+            for index, channel in enumerate(semantic.ACV049_MUTANT_CHANNELS):
+                self.assertTrue(
+                    any(
+                        semantic._value_at_report_pointer(
+                            baseline, candidate["concretePointer"]
+                        ) != candidate["candidateValues"][index]
+                        for candidate in patches
+                    ),
+                    f"{spec['mutantId']} {channel} does not change its frozen target",
+                )
+            mutations: dict[str, list[tuple[tuple[str | int, ...], tuple[str, str]]]] = {}
+            for candidate in patches:
+                mutations.setdefault(candidate["astSiteId"], []).append(
+                    (
+                        tuple(candidate["relativeTokens"]),
+                        tuple(candidate["candidateValues"]),
+                    )
+                )
+            frozen_mutations = {
+                site: tuple(sorted(set(candidates)))
+                for site, candidates in mutations.items()
+            }
+            mutated, sites, _source = semantic._mutated_interface_model(
+                ROOT.parents[2],
+                frozen_mutations,
+                semantic.ACV049_MUTANT_CHANNELS,
+                tuple_constructions=row["family"] == "enum-tuple",
+            )
+            self.assertTrue(set(frozen_mutations) <= set(sites))
+            with mock.patch.dict(sys.modules, {"interface_model": mutated}):
+                live_authority = mutated.ContractAuthority.load(
+                    ROOT.parents[2], ROOT / "contract"
+                )
+            for index, channel in enumerate(semantic.ACV049_MUTANT_CHANNELS):
+                mutated._acv049_mutated_sites_executed.clear()
+                response = None
+                rejection = None
+                with mock.patch.dict(
+                    os.environ, {semantic.ACV049_MUTANT_CHANNEL_NAME: channel}
+                ), mock.patch.dict(sys.modules, {"interface_model": mutated}):
+                    try:
+                        response = semantic._evaluate_fixture_request(
+                            live_authority, request, oracle
+                        )
+                        mutated.validate_response_before_release(live_authority, response)
+                    except Exception as error:
+                        rejection = error
+                with self.subTest(mutant=spec["mutantId"], channel=channel):
+                    expected_outcome = row["expectedOutcomes"][index]
+                    if row["disposition"] == "OUT_OF_SCOPE":
+                        self.assertEqual(
+                            mutated._acv049_mutated_sites_executed,
+                            set(),
+                            "an out-of-scope frozen selector must not execute",
+                        )
+                        self.assertEqual(expected_outcome["kind"], "REJECTION")
+                        self.assertIsNotNone(rejection)
+                        self.assertEqual(
+                            type(rejection).__name__, expected_outcome["exceptionClass"]
+                        )
+                        self.assertEqual(
+                            str(rejection), expected_outcome["exceptionMessage"]
+                        )
+                        continue
+                    self.assertEqual(
+                        mutated._acv049_mutated_sites_executed,
+                        set(frozen_mutations),
+                        "the mutant must reach its declared source site",
+                    )
+                    if expected_outcome["kind"] == "REJECTION":
+                        self.assertIsNotNone(rejection)
+                        self.assertEqual(
+                            type(rejection).__name__, expected_outcome["exceptionClass"]
+                        )
+                        self.assertEqual(
+                            str(rejection), expected_outcome["exceptionMessage"]
+                        )
+                    else:
+                        self.assertIsNone(rejection)
+                        self.assertNotEqual(
+                            semantic.dumps(response),
+                            semantic.dumps(baseline),
+                            "the frozen mutant must be observably different",
+                        )
+
     @classmethod
     def setUpClass(cls) -> None:
         cls._temporary = tempfile.TemporaryDirectory()
