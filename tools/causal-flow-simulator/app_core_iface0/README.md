@@ -47,17 +47,22 @@ being mapped by exact source identity onto the amended schema before the
 production-faithful V1 canonical boundary and whole-V2 validator run in Python
 and the cross-runtime runner requires byte-identical JavaScript observations.
 Phase B must still complete and freeze that two-runtime report. The semantic
-preflight now derives the exact 5,535-row execution relation from the real
+preflight now derives the exact 2,359-row execution relation from the real
 87-row seed registry,
 including the carrier-dependent ACV-048 partition, but deliberately labels the
 result `PRESELECTION_EVIDENCE`: it neither ratifies those carriers nor claims
 that all semantic rows or their source mutants have executed. ACV-048
 additionally executes all 783 cross-plane field-smuggling instances and their
 isolated schema mutants in Python and JavaScript, while retaining the same
-preselection status. Phase B must still execute the other 4,752 semantic
-instances and kill every remaining named source mutant.
+preselection status. Phase B must still execute every remaining semantic
+instance and kill every remaining named source mutant.
 Until both phases pass, this directory is an implementation in progress rather
 than complete conformance evidence.
+
+The implementation scope of this increment is exactly
+`tools/causal-flow-simulator/app_core_iface0/**`. Reports from C0.3, SS0 and the
+protocol review model are final-gate regression inputs; naming them here does
+not authorize changes outside that APP-core subtree.
 
 ACV-049 remains a partial execution rather than a closure claim. Its ratified
 884-row relation now executes all 401 literal, 101 singleton, five non-string
@@ -141,6 +146,26 @@ python3 tools/causal-flow-simulator/app_core_iface0/run_semantic_acv048.py \
   --evidence-root /external/path/app-core-phase-a \
   --python-output /external/path/semantic-acv048-python.json \
   --javascript-output /external/path/semantic-acv048-javascript.json
+
+# Run from a third controller checkout at the exact candidate: it must be clean,
+# distinct from both evidence worktrees, and have HEAD == $CANDIDATE.
+# The literal final mode is selected only when none of --phase-a,
+# --phase-b-entry, or --acv049-e-baseline is present and all seven flags below
+# are supplied. Exit 0 means every family is PASS; MISSING or any gate error is
+# exit 2 with phaseBComplete=false. Only the 14 filenames fixed by Required
+# verification form the evidence-root set. PHASE_A, HOSTILE_OBSERVATIONS,
+# ACV049_RECONCILIATION, SOURCE_MUTANT_KILLS and SCOPE_AND_REGRESSIONS remain
+# MISSING with reason UNPRESCRIBED_EVIDENCE until authority prescribes the
+# missing report bindings and schemas.
+CANDIDATE=0cb46fc6d77c93ad0fae068f37cca45ccacf1113
+python3 tools/causal-flow-simulator/app_core_iface0/final_gate.py \
+  --base e0af4e1e2173deb2481eabdb24d8622282b33455 \
+  --candidate "$CANDIDATE" \
+  --worktree-1 /clean/checkout-one \
+  --evidence-1 /external/evidence-one \
+  --worktree-2 /clean/checkout-two \
+  --evidence-2 /external/evidence-two \
+  --output /external/final/final-gate.json
 
 # ACV-049 E is orchestrated only by the outer gate.  The Python evaluator and
 # JavaScript reader never spawn one another.  Both checkouts must be clean,

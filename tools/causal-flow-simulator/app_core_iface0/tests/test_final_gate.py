@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import base64
+import os
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,17 @@ from final_gate import (  # noqa: E402
     _verify_provider_source_slice,
     _verify_runtime_semantic_fixture,
     _verify_clean_checkout,
+    FINAL_GATE_FAMILY_IDS,
+    FINAL_GATE_REPORT_FILES,
+    _completion_family_statuses,
+    _contains_stale_current_count,
+    _final_gate_report,
+    _run_internal_phase_a,
+    _verify_final_gate_output_location,
+    _verify_final_gate_roots,
+    _write_final_gate_report,
+    main,
+    run_final_gate,
     run_acv049_static_provenance_scan,
     run_acv049_e_baseline_gate,
     run_phase_a_gate,
@@ -141,6 +153,21 @@ def _runtime_permit_row() -> dict[str, object]:
         "justification": "test permit",
         "kind": "monitor",
     }
+
+
+def _write_prescribed_reports(root: Path, *, stale: object | None = None) -> None:
+    root.mkdir()
+    for name in FINAL_GATE_REPORT_FILES:
+        report: dict[str, object] = {"verdict": "PASS"}
+        if name == "inventory.json":
+            report["instance_counts"] = {
+                "semantic": 2359,
+                "structural": 1553,
+                "total": 3912,
+            }
+        if stale is not None and name == "c03-validate.json":
+            report["preflightCount"] = stale
+        (root / name).write_bytes(dumps(report))
 
 
 class FinalGateTests(unittest.TestCase):
@@ -1262,6 +1289,602 @@ class FinalGateTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(FinalGateError, "changed during"):
                     _validate_provider_authority(comment_id, repo)
+
+    def test_final_gate_roots_reject_overlap_and_controller_drift(self) -> None:
+        candidate = "a" * 40
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            first = root / "one"
+            second = root / "two"
+            evidence_one = root / "evidence-one"
+            evidence_two = evidence_one / "nested"
+            for path in (first, second, evidence_two):
+                path.mkdir(parents=True)
+            with (
+                patch("final_gate._verify_clean_checkout"),
+                patch(
+                    "final_gate._git",
+                    side_effect=[
+                        str(root / "g1"), str(root / "g2"),
+                        str(root / "common1"), str(root / "common2"),
+                    ],
+                ),
+                patch("final_gate.subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"", b"")),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "evidence roots overlap"):
+                    _verify_final_gate_roots(
+                        BASE_SHA, candidate, first, evidence_one, second,
+                        evidence_two, root.parent / "report.json",
+                    )
+
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            paths = [root / name for name in ("one", "e1", "two", "e2")]
+            for path in paths:
+                path.mkdir()
+            with (
+                patch("final_gate._verify_clean_checkout") as clean,
+                patch(
+                    "final_gate._git",
+                    side_effect=[
+                        str(root / "g1"), str(root / "g2"),
+                        str(root / "common1"), str(root / "common2"),
+                    ],
+                ),
+                patch("final_gate.subprocess.run", return_value=subprocess.CompletedProcess([], 0, b"", b"")),
+                patch("final_gate._controller_repo_root", return_value=root / "controller"),
+            ):
+                _verify_final_gate_roots(
+                    BASE_SHA, candidate, paths[0], paths[1], paths[2], paths[3],
+                    root.parent / "report.json",
+                )
+            self.assertEqual(clean.call_count, 3)
+            self.assertEqual(clean.call_args_list[-1].args, (root / "controller", candidate))
+
+    def test_final_gate_roots_protect_common_git_dirs(self) -> None:
+        candidate = "a" * 40
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            paths = [root / name for name in ("one", "e1", "two", "e2")]
+            for path in paths:
+                path.mkdir()
+            common = root / "shared-git"
+            common.mkdir()
+
+            def git_query(repo: Path, *arguments: str) -> str:
+                if arguments == ("rev-parse", "--absolute-git-dir"):
+                    return str(root / ("g1" if repo == paths[0] else "g2"))
+                if arguments == ("rev-parse", "--git-common-dir"):
+                    return str(common)
+                raise AssertionError(arguments)
+
+            with (
+                patch("final_gate._verify_clean_checkout"),
+                patch("final_gate._git", side_effect=git_query),
+                patch(
+                    "final_gate.subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 0, b"", b""),
+                ),
+                patch("final_gate._controller_repo_root", return_value=root / "controller"),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "output overlaps"):
+                    _verify_final_gate_roots(
+                        BASE_SHA, candidate, paths[0], paths[1], paths[2], paths[3],
+                        common / "final-gate.json",
+                    )
+
+    def test_final_gate_roots_reject_base_ancestry_and_dirty_checkout(self) -> None:
+        candidate = "a" * 40
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            paths = [root / name for name in ("one", "e1", "two", "e2")]
+            for path in paths:
+                path.mkdir()
+            with self.assertRaisesRegex(FinalGateError, "base identity"):
+                _verify_final_gate_roots(
+                    "b" * 40, candidate, paths[0], paths[1], paths[2], paths[3],
+                    root.parent / "report.json",
+                )
+            with (
+                patch("final_gate._verify_clean_checkout"),
+                patch(
+                    "final_gate.subprocess.run",
+                    return_value=subprocess.CompletedProcess([], 1, b"", b""),
+                ),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "not an ancestor"):
+                    _verify_final_gate_roots(
+                        BASE_SHA, candidate, paths[0], paths[1], paths[2], paths[3],
+                        root.parent / "report.json",
+                    )
+            with patch(
+                "final_gate._verify_clean_checkout",
+                side_effect=FinalGateError("checkout is not clean"),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "not clean"):
+                    _verify_final_gate_roots(
+                        BASE_SHA, candidate, paths[0], paths[1], paths[2], paths[3],
+                        root.parent / "report.json",
+                    )
+
+    def test_report_writer_rejects_existing_targets_and_temporary_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            target = root / "report.json"
+            target.write_bytes(b"old")
+            with self.assertRaisesRegex(FinalGateError, "already exists"):
+                _write_final_gate_report(target, {"verdict": "MISSING"})
+            target.unlink()
+            (root / "elsewhere").write_bytes(b"unchanged")
+            (root / "report.json.tmp").symlink_to(root / "elsewhere")
+            with self.assertRaisesRegex(FinalGateError, "temporary"):
+                _write_final_gate_report(target, {"verdict": "MISSING"})
+            self.assertEqual((root / "elsewhere").read_bytes(), b"unchanged")
+
+    def test_report_writer_does_not_overwrite_target_created_during_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            target = root / "report.json"
+
+            def collide(_source: object, destination: object) -> None:
+                Path(destination).write_bytes(b"racer")
+                raise FileExistsError
+
+            with patch("final_gate.os.link", side_effect=collide):
+                with self.assertRaisesRegex(FinalGateError, "publish"):
+                    _write_final_gate_report(target, {"verdict": "MISSING"})
+            self.assertEqual(target.read_bytes(), b"racer")
+
+    def test_run_final_gate_writes_fail_closed_report_when_roots_are_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            output = root / "out" / "final-gate.json"
+            report = run_final_gate(
+                BASE_SHA, "a" * 40, root / "missing-one", root / "e1",
+                root / "missing-two", root / "e2", output,
+            )
+            self.assertEqual(report["verdict"], "MISSING")
+            self.assertEqual(
+                {row["status"] for row in report["families"]}, {"MISSING"}
+            )
+            self.assertEqual(json.loads(output.read_bytes()), report)
+
+    def test_run_final_gate_with_populated_evidence_is_honestly_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            evidence = (root / "e1", root / "e2")
+            for item in evidence:
+                _write_prescribed_reports(item)
+            output = root / "out" / "final-gate.json"
+            with (
+                patch("final_gate._verify_final_gate_output_location"),
+                patch("final_gate._verify_final_gate_roots"),
+                patch("final_gate._verify_contract_sets"),
+                patch(
+                    "final_gate._run_internal_phase_a",
+                    return_value={"verdict": "PASS"},
+                ) as phase_a,
+                patch(
+                    "final_gate._fetch_issue_comments",
+                    side_effect=FinalGateError("offline"),
+                ),
+            ):
+                report = run_final_gate(
+                    BASE_SHA, "a" * 40, root / "w1", evidence[0],
+                    root / "w2", evidence[1], output,
+                )
+            phase_a.assert_called_once()
+            statuses = {row["id"]: row for row in report["families"]}
+            self.assertEqual(statuses["ROOT_IDENTITY"]["status"], "PASS")
+            self.assertEqual(statuses["CONTRACT_SET"]["status"], "PASS")
+            self.assertEqual(statuses["OUTPUT_FAMILIES"]["status"], "PASS")
+            self.assertEqual(statuses["CANONICAL_REPORTS"]["status"], "PASS")
+            self.assertEqual(statuses["PHASE_A"]["status"], "MISSING")
+            self.assertEqual(statuses["PHASE_A"]["reason"], "UNPRESCRIBED_EVIDENCE")
+            self.assertFalse(report["phaseBComplete"])
+            self.assertEqual(report["verdict"], "MISSING")
+            self.assertEqual(json.loads(output.read_bytes()), report)
+
+    def test_stale_count_detection_scans_every_leaf_and_only_exempts_named_history(self) -> None:
+        self.assertTrue(
+            _contains_stale_current_count(
+                {"preflight": {"count": "5,535"}}, "c03-validate.json"
+            )
+        )
+        self.assertFalse(
+            _contains_stale_current_count(
+                {"oldToNewReconciliation": {"oldCount": 4060}}, "inventory.json"
+            )
+        )
+        self.assertTrue(
+            _contains_stale_current_count(
+                {"oldToNewReconciliation": {"unexpected": 4060}}, "inventory.json"
+            )
+        )
+        self.assertFalse(_contains_stale_current_count({"count": 2359}, "scope.json"))
+
+    def test_prescribed_report_set_can_pass_without_unprescribed_schemas(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            roots = (root / "one", root / "two")
+            for evidence in roots:
+                _write_prescribed_reports(evidence)
+            with patch(
+                "final_gate._fetch_issue_comments", side_effect=FinalGateError("offline")
+            ):
+                statuses = _completion_family_statuses(
+                    root / "w1", roots[0], root / "w2", roots[1], "a" * 40
+                )
+        self.assertEqual(statuses["OUTPUT_FAMILIES"], "PASS")
+        self.assertEqual(statuses["CANONICAL_REPORTS"], "PASS")
+        for family in (
+            "HOSTILE_OBSERVATIONS",
+            "ACV049_RECONCILIATION",
+            "SOURCE_MUTANT_KILLS",
+            "SCOPE_AND_REGRESSIONS",
+        ):
+            self.assertEqual(statuses[family], "MISSING")
+
+    def test_stale_count_in_any_prescribed_report_blocks_output_family(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            roots = (root / "one", root / "two")
+            for evidence in roots:
+                _write_prescribed_reports(evidence, stale="5,535")
+            with patch(
+                "final_gate._fetch_issue_comments", side_effect=FinalGateError("offline")
+            ):
+                statuses = _completion_family_statuses(
+                    root / "w1", roots[0], root / "w2", roots[1], "a" * 40
+                )
+        self.assertEqual(statuses["OUTPUT_FAMILIES"], "MISSING")
+
+    def test_output_family_rejects_extra_evidence_files(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            roots = (root / "one", root / "two")
+            for evidence in roots:
+                _write_prescribed_reports(evidence)
+                (evidence / "unprescribed.json").write_bytes(dumps({}))
+            with patch(
+                "final_gate._fetch_issue_comments", side_effect=FinalGateError("offline")
+            ):
+                statuses = _completion_family_statuses(
+                    root / "w1", roots[0], root / "w2", roots[1], "a" * 40
+                )
+            self.assertEqual(statuses["OUTPUT_FAMILIES"], "MISSING")
+
+    def test_scope_requires_explicit_zero_unexpected_skips(self) -> None:
+        scope_names = (
+            "scope.json", "c03-validate.json", "c03-replay.json",
+            "c03-cross-runtime.json", "c03-mutations.json",
+            "ss0-corpus-replay.json", "ss0-corpus-mutations.json",
+            "ss0-frozen-cross-runtime.json", "ss0-frozen-mutations.json",
+            "review-model.json",
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            roots = (root / "one", root / "two")
+            for evidence in roots:
+                evidence.mkdir()
+                for name in scope_names:
+                    report = {"verdict": "PASS"}
+                    if name == "scope.json":
+                        report.update({"baseSha": BASE_SHA, "candidateSha": "a" * 40})
+                    (evidence / name).write_bytes(dumps(report))
+            with patch("final_gate._fetch_issue_comments", side_effect=FinalGateError("offline")):
+                statuses = _completion_family_statuses(
+                    root / "w1", roots[0], root / "w2", roots[1], "a" * 40
+                )
+            self.assertEqual(statuses["SCOPE_AND_REGRESSIONS"], "MISSING")
+
+    def test_aggregate_passes_cannot_cover_quantified_observations(self) -> None:
+        names = (
+            "structural-python.json", "structural-javascript.json",
+            "semantic-preflight.json", "semantic-acv048-python.json",
+            "semantic-acv048-javascript.json", "semantic-acv049.json",
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            roots = (root / "one", root / "two")
+            for evidence in roots:
+                evidence.mkdir()
+                (evidence / "inventory.json").write_bytes(dumps({
+                    "instance_counts": {
+                        "semantic": 2359, "structural": 1553, "total": 3912
+                    }
+                }))
+                for name in names:
+                    (evidence / name).write_bytes(dumps({"verdict": "PASS"}))
+            with patch(
+                "final_gate._fetch_issue_comments", side_effect=FinalGateError("offline")
+            ):
+                statuses = _completion_family_statuses(
+                    root / "w1", roots[0], root / "w2", roots[1], "a" * 40
+                )
+            self.assertEqual(statuses["HOSTILE_OBSERVATIONS"], "MISSING")
+
+    def test_internal_phase_a_requires_pass_verdict(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+
+            def generate(_repo: Path, evidence: Path) -> None:
+                evidence.mkdir()
+
+            with (
+                patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
+                patch("final_gate.run_phase_a_gate", return_value={"verdict": "MISSING"}),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "Phase-A verdict"):
+                    _run_internal_phase_a(
+                        root / "w1", root / "e1", root / "w2", root / "e2", "a" * 40
+                    )
+
+    def test_internal_phase_a_digest_matches_legacy_mode_on_same_fixture(self) -> None:
+        source = ROOT.parents[2]
+        selection_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=source,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            checkouts = (root / "checkout-one", root / "checkout-two")
+            for checkout in checkouts:
+                subprocess.run(
+                    ["git", "clone", "--quiet", "--shared", str(source), str(checkout)],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "checkout", "--quiet", "--detach", selection_head],
+                    cwd=checkout,
+                    check=True,
+                )
+            legacy_roots = (root / "legacy-one", root / "legacy-two")
+            for checkout, evidence in zip(checkouts, legacy_roots, strict=True):
+                _generate_phase_a_from_checkout(checkout, evidence)
+            prescribed = (root / "reports-one", root / "reports-two")
+            for evidence in prescribed:
+                _write_prescribed_reports(evidence)
+            with patch("final_gate._verify_provider_source_slice"):
+                legacy = run_phase_a_gate(
+                    checkouts[0], checkouts[1], legacy_roots[0], legacy_roots[1],
+                    selection_head,
+                )
+                internal = _run_internal_phase_a(
+                    checkouts[0], prescribed[0], checkouts[1], prescribed[1],
+                    selection_head,
+                )
+        self.assertEqual(internal, legacy)
+        self.assertEqual(internal["verdict"], "PASS")
+
+    def test_final_report_uses_stable_reason_only_for_unprescribed_evidence(self) -> None:
+        statuses = {family: "PASS" for family in FINAL_GATE_FAMILY_IDS}
+        unprescribed = {
+            "PHASE_A",
+            "HOSTILE_OBSERVATIONS",
+            "ACV049_RECONCILIATION",
+            "SOURCE_MUTANT_KILLS",
+            "SCOPE_AND_REGRESSIONS",
+        }
+        for family in unprescribed:
+            statuses[family] = "MISSING"
+        statuses["OUTPUT_FAMILIES"] = "MISSING"
+        report = _final_gate_report(BASE_SHA, "a" * 40, statuses)
+        rows = {item["id"]: item for item in report["families"]}
+        for family in unprescribed:
+            self.assertEqual(rows[family]["reason"], "UNPRESCRIBED_EVIDENCE")
+        self.assertNotIn("reason", rows["OUTPUT_FAMILIES"])
+
+    def test_final_report_is_fail_closed_and_inventory_bound(self) -> None:
+        statuses = {family: "PASS" for family in FINAL_GATE_FAMILY_IDS}
+        statuses["SOURCE_MUTANT_KILLS"] = "MISSING"
+        report = _final_gate_report(BASE_SHA, "a" * 40, statuses)
+        self.assertEqual(report["schema"], "styx.app-core-iface0.final-gate.v1")
+        self.assertEqual(
+            report["instanceCounts"],
+            {"structural": 1553, "semantic": 2359, "total": 3912},
+        )
+        self.assertEqual(report["acv049RelationCount"], 884)
+        self.assertEqual(report["contractFileCount"], 28)
+        self.assertEqual(
+            [row["id"] for row in report["families"]],
+            list(FINAL_GATE_FAMILY_IDS),
+        )
+        self.assertEqual(
+            {row["status"] for row in report["families"]},
+            {"PASS", "MISSING"},
+        )
+        self.assertFalse(report["phaseBComplete"])
+        self.assertEqual(report["verdict"], "MISSING")
+        self.assertNotIn("PARTIAL_PASS", json.dumps(report))
+
+        with self.assertRaisesRegex(FinalGateError, "family status"):
+            _final_gate_report(
+                BASE_SHA,
+                "a" * 40,
+                {family: "PASS" for family in FINAL_GATE_FAMILY_IDS[:-1]},
+            )
+        with self.assertRaisesRegex(FinalGateError, "family status"):
+            _final_gate_report(
+                BASE_SHA,
+                "a" * 40,
+                {**statuses, "SOURCE_MUTANT_KILLS": "PARTIAL_PASS"},
+            )
+
+    def test_missing_reports_do_not_hide_independent_provider_pass(self) -> None:
+        candidate = "a" * 40
+        decision = {
+            "baseSha": BASE_SHA,
+            "candidateManifestSha256": (
+                "15d75531e1fff1ff751754585561f68254a6657e4de40ff69c3a4678d1ba7cf2"
+            ),
+            "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
+            "selectionHead": candidate,
+        }
+        selected = {
+            "body": json.dumps(decision),
+            "created_at": "2026-09-25T00:00:00Z",
+            "updated_at": "2026-09-25T00:00:00Z",
+            "performed_via_github_app": None,
+            "id": 1,
+            "issue_url": "https://api.github.com/repos/styx-secure/styx/issues/295",
+            "user": {"id": 141346846, "login": "maverde73"},
+        }
+
+        def fetch(url: str) -> tuple[object, bytes, dict[str, str]]:
+            if "/commits/" in url:
+                return {"sha": candidate}, b"commit", {}
+            return {
+                "ref": COMBINED_BRANCH_REF,
+                "object": {"sha": candidate, "type": "commit"},
+            }, b"branch", {}
+
+        with (
+            tempfile.TemporaryDirectory() as raw,
+            patch("final_gate._fetch_issue_comments", return_value=[selected]),
+            patch("final_gate._scan_provider_authority", return_value=()),
+            patch("final_gate._fetch_json", side_effect=fetch),
+        ):
+            root = Path(raw)
+            statuses = _completion_family_statuses(
+                root / "worktree-one",
+                root / "evidence-one",
+                root / "worktree-two",
+                root / "evidence-two",
+                candidate,
+            )
+        self.assertEqual(statuses["OUTPUT_FAMILIES"], "MISSING")
+        self.assertEqual(statuses["PROVIDER_OBJECTS"], "PASS")
+
+    def test_final_gate_uses_only_prescribed_or_existing_report_names(self) -> None:
+        self.assertEqual(
+            FINAL_GATE_REPORT_FILES,
+            (
+                "inventory.json",
+                "probe.json",
+                "cross-runtime.json",
+                "mutations.json",
+                "scope.json",
+                "c03-validate.json",
+                "c03-replay.json",
+                "c03-cross-runtime.json",
+                "c03-mutations.json",
+                "ss0-corpus-replay.json",
+                "ss0-corpus-mutations.json",
+                "ss0-frozen-cross-runtime.json",
+                "ss0-frozen-mutations.json",
+                "review-model.json",
+            ),
+        )
+
+    def test_final_gate_output_must_be_outside_all_input_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            worktree_one = root / "worktree-one"
+            worktree_two = root / "worktree-two"
+            evidence_one = root / "evidence-one"
+            evidence_two = root / "evidence-two"
+            for path in (worktree_one, worktree_two, evidence_one, evidence_two):
+                path.mkdir()
+            with self.assertRaisesRegex(FinalGateError, "output overlaps"):
+                _verify_final_gate_output_location(
+                    worktree_one / "final-gate.json",
+                    (worktree_one, worktree_two),
+                    (evidence_one, evidence_two),
+                    (root / "git-one", root / "git-two"),
+                )
+            _verify_final_gate_output_location(
+                root.parent / (root.name + "-final") / "final-gate.json",
+                (worktree_one, worktree_two),
+                (evidence_one, evidence_two),
+                (root / "git-one", root / "git-two"),
+            )
+
+    def test_final_gate_output_expands_home_before_overlap_check(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            with patch.dict(os.environ, {"HOME": str(home)}):
+                with self.assertRaisesRegex(FinalGateError, "output overlaps"):
+                    _verify_final_gate_output_location(
+                        Path("~/final-gate.json"),
+                        (home, home.parent / "other-worktree"),
+                        (home.parent / "e1", home.parent / "e2"),
+                        (),
+                    )
+
+    def test_cli_rejects_partial_final_and_legacy_mix(self) -> None:
+        for argv in (
+            ["--base", BASE_SHA],
+            ["--phase-a", "--base", BASE_SHA],
+        ):
+            with self.subTest(argv=argv), patch("builtins.print"):
+                self.assertEqual(main(argv), 2)
+
+    def test_cli_rejects_abbreviated_final_gate_flags(self) -> None:
+        argv = [
+            "--bas", BASE_SHA,
+            "--cand", "a" * 40,
+            "--worktree-1", "/w1",
+            "--evidence-1", "/e1",
+            "--worktree-2", "/w2",
+            "--evidence-2", "/e2",
+            "--out", "/out.json",
+        ]
+        with (
+            patch("final_gate.run_final_gate") as run,
+            patch("sys.stderr"),
+        ):
+            with self.assertRaises(SystemExit):
+                main(argv)
+        run.assert_not_called()
+
+    def test_legacy_phase_a_dispatch_is_unchanged(self) -> None:
+        report = {"verdict": "PASS"}
+        argv = [
+            "--phase-a",
+            "--repo-root-one", "/w1",
+            "--repo-root-two", "/w2",
+            "--evidence-root-one", "/e1",
+            "--evidence-root-two", "/e2",
+            "--selection-head", "a" * 40,
+        ]
+        with (
+            patch("final_gate.run_phase_a_gate", return_value=report) as run,
+            patch("builtins.print"),
+        ):
+            self.assertEqual(main(argv), 0)
+        run.assert_called_once_with(
+            Path("/w1"), Path("/w2"), Path("/e1"), Path("/e2"), "a" * 40
+        )
+
+    def test_literal_final_mode_dispatches_exact_seven_flags(self) -> None:
+        report = {"verdict": "MISSING", "phaseBComplete": False}
+        argv = [
+            "--base", BASE_SHA,
+            "--candidate", "a" * 40,
+            "--worktree-1", "/w1",
+            "--evidence-1", "/e1",
+            "--worktree-2", "/w2",
+            "--evidence-2", "/e2",
+            "--output", "/out/final-gate.json",
+        ]
+        with (
+            patch("final_gate.run_final_gate", return_value=report) as run,
+            patch("builtins.print"),
+        ):
+            self.assertEqual(main(argv), 2)
+        run.assert_called_once_with(
+            BASE_SHA,
+            "a" * 40,
+            Path("/w1"),
+            Path("/e1"),
+            Path("/w2"),
+            Path("/e2"),
+            Path("/out/final-gate.json"),
+        )
 
 
 if __name__ == "__main__":

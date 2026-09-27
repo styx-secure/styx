@@ -24,9 +24,17 @@ sys.dont_write_bytecode = True
 from canonical_json import CanonicalJsonError, dumps, loads
 from generate_seed_registry import REQUEST_SET_MANIFEST_SHA256, TERMINAL_IMPLEMENTATION_FILES
 from inventory import (
+    ACV049_RELATION_COUNT,
+    ACV049_RELATION_COUNTS,
     BASE_SHA,
+    CONTRACT_FILES,
+    MANIFEST_SHA256,
+    SEMANTIC_COUNT,
+    STRUCTURAL_COUNT,
+    TOTAL_COUNT,
     InventoryError,
     derive_acv049_relation_members,
+    verify_contract_package,
 )
 
 
@@ -103,13 +111,6 @@ ACV049_MUTANT_CHANNELS = (
     "ACV049-CONTROL-CHANNEL-ALPHA",
     "ACV049-CONTROL-CHANNEL-BRAVO",
 )
-ACV049_RELATION_COUNTS = {
-    "ACV-049-E": 77,
-    "ACV-049-L": 401,
-    "ACV-049-N": 5,
-    "ACV-049-P": 300,
-    "ACV-049-S": 101,
-}
 ACV049_EVALUATOR_PYTHON_FILES = (
     "authority_projection.py",
     "canonical_json.py",
@@ -672,6 +673,49 @@ record("monitor", "PERMIT", "runtime monitor installed before JavaScript reader 
 
 class FinalGateError(ValueError):
     """A freeze identity, checkout, package, or provider authority failed."""
+
+
+FINAL_GATE_FAMILY_IDS = (
+    "ROOT_IDENTITY",
+    "CONTRACT_SET",
+    "PHASE_A",
+    "OUTPUT_FAMILIES",
+    "HOSTILE_OBSERVATIONS",
+    "ACV049_RECONCILIATION",
+    "SOURCE_MUTANT_KILLS",
+    "CANONICAL_REPORTS",
+    "SCOPE_AND_REGRESSIONS",
+    "PROVIDER_OBJECTS",
+)
+FINAL_GATE_REPORT_FILES = (
+    "inventory.json",
+    "probe.json",
+    "cross-runtime.json",
+    "mutations.json",
+    "scope.json",
+    "c03-validate.json",
+    "c03-replay.json",
+    "c03-cross-runtime.json",
+    "c03-mutations.json",
+    "ss0-corpus-replay.json",
+    "ss0-corpus-mutations.json",
+    "ss0-frozen-cross-runtime.json",
+    "ss0-frozen-mutations.json",
+    "review-model.json",
+)
+STALE_CURRENT_COUNTS = frozenset({1367, 4624, 5991, 4060, 5535, 7088})
+UNPRESCRIBED_EVIDENCE_FAMILIES = frozenset(
+    {
+        "PHASE_A",
+        "HOSTILE_OBSERVATIONS",
+        "ACV049_RECONCILIATION",
+        "SOURCE_MUTANT_KILLS",
+        "SCOPE_AND_REGRESSIONS",
+    }
+)
+HISTORICAL_STALE_COUNT_PATHS = frozenset(
+    {("inventory.json", ("oldToNewReconciliation", "oldCount"))}
+)
 
 
 def _sha256(payload: bytes) -> str:
@@ -3056,24 +3100,442 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     return decision
 
 
+def _final_gate_report(
+    base: str,
+    candidate: str,
+    statuses: dict[str, str],
+) -> dict[str, object]:
+    if set(statuses) != set(FINAL_GATE_FAMILY_IDS) or any(
+        value not in {"PASS", "MISSING"} for value in statuses.values()
+    ):
+        raise FinalGateError("final-gate family status drift")
+    complete = all(statuses[name] == "PASS" for name in FINAL_GATE_FAMILY_IDS)
+    return {
+        "acv049RelationCount": ACV049_RELATION_COUNT,
+        "baseSha": base,
+        "candidateSha": candidate,
+        "contractFileCount": CONTRACT_FILES,
+        "contractManifestSha256": MANIFEST_SHA256,
+        "families": [
+            {
+                "id": name,
+                "status": statuses[name],
+                **(
+                    {"reason": "UNPRESCRIBED_EVIDENCE"}
+                    if statuses[name] == "MISSING"
+                    and name in UNPRESCRIBED_EVIDENCE_FAMILIES
+                    else {}
+                ),
+            }
+            for name in FINAL_GATE_FAMILY_IDS
+        ],
+        "instanceCounts": {
+            "semantic": SEMANTIC_COUNT,
+            "structural": STRUCTURAL_COUNT,
+            "total": TOTAL_COUNT,
+        },
+        "phaseBComplete": complete,
+        "schema": "styx.app-core-iface0.final-gate.v1",
+        "verdict": "PASS" if complete else "MISSING",
+    }
+
+
+def _is_outside(path: Path, roots: tuple[Path, ...]) -> bool:
+    return all(path != root and root not in path.parents and path not in root.parents for root in roots)
+
+
+def _verify_final_gate_output_location(
+    output: Path,
+    repos: tuple[Path, ...],
+    evidence: tuple[Path, ...],
+    git_dirs: tuple[Path, ...],
+) -> None:
+    resolved_output = output.expanduser().resolve()
+    protected = tuple(path.resolve() for path in (*repos, *evidence, *git_dirs))
+    if not _is_outside(resolved_output, protected):
+        raise FinalGateError("output overlaps a final-gate input root")
+
+
+def _controller_repo_root() -> Path:
+    root = Path(__file__).resolve().parents[3]
+    if not (root / ".git").exists():
+        raise FinalGateError("controller repository root is unavailable")
+    return root
+
+
+def _git_metadata_path(repo: Path, argument: str) -> Path:
+    value = Path(_git(repo, "rev-parse", argument).strip())
+    return value.resolve() if value.is_absolute() else (repo / value).resolve()
+
+
+def _verify_final_gate_roots(
+    base: str,
+    candidate: str,
+    first: Path,
+    evidence_first: Path,
+    second: Path,
+    evidence_second: Path,
+    output: Path,
+) -> None:
+    if base != BASE_SHA:
+        raise FinalGateError("base identity drift")
+    if len(candidate) != 40 or any(ch not in "0123456789abcdef" for ch in candidate):
+        raise FinalGateError("candidate is not a full lowercase Git identity")
+    repos = (first.resolve(), second.resolve())
+    evidence = (evidence_first.resolve(), evidence_second.resolve())
+    if repos[0] == repos[1] or evidence[0] == evidence[1]:
+        raise FinalGateError("final-gate roots are not distinct")
+    if not _is_outside(evidence[0], (evidence[1],)):
+        raise FinalGateError("evidence roots overlap")
+    for repo in repos:
+        _verify_clean_checkout(repo, candidate)
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", base, candidate],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+        )
+        if ancestor.returncode != 0 or ancestor.stdout or ancestor.stderr:
+            raise FinalGateError("base is not an ancestor of candidate")
+    git_dirs = tuple(_git_metadata_path(repo, "--absolute-git-dir") for repo in repos)
+    common_dirs = tuple(_git_metadata_path(repo, "--git-common-dir") for repo in repos)
+    if git_dirs[0] == git_dirs[1]:
+        raise FinalGateError("worktree Git metadata are not distinct")
+    controller = _controller_repo_root().resolve()
+    protected = (*repos, *git_dirs, *common_dirs, controller)
+    if any(not _is_outside(root, protected) for root in evidence):
+        raise FinalGateError("evidence root overlaps checkout or Git metadata")
+    if not _is_outside(controller, (*repos, *git_dirs, *common_dirs)):
+        raise FinalGateError("controller repository is not distinct")
+    _verify_clean_checkout(controller, candidate)
+    _verify_final_gate_output_location(
+        output, (*repos, controller), evidence, (*git_dirs, *common_dirs)
+    )
+
+
+def _verify_contract_sets(first: Path, second: Path) -> None:
+    relative = Path("tools/causal-flow-simulator/app_core_iface0/contract")
+    contracts = (first.resolve() / relative, second.resolve() / relative)
+    for contract in contracts:
+        verify_contract_package(contract)
+    if _tree(contracts[0]) != _tree(contracts[1]):
+        raise FinalGateError("contract package differs across worktrees")
+
+
+def _load_canonical_report(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_bytes()
+        value = loads(raw)
+    except (CanonicalJsonError, OSError) as error:
+        raise FinalGateError("required canonical report is missing or invalid") from error
+    if not isinstance(value, dict) or dumps(value) != raw:
+        raise FinalGateError("required report is not a canonical JSON object")
+    return value
+
+
+def _numeric_leaf(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9][0-9,]*", value):
+        try:
+            return int(value.replace(",", ""))
+        except ValueError:
+            return None
+    return None
+
+
+def _contains_stale_current_count(
+    value: object,
+    report_name: str,
+    path: tuple[str, ...] = (),
+) -> bool:
+    if (report_name, path) in HISTORICAL_STALE_COUNT_PATHS:
+        return False
+    if isinstance(value, dict):
+        return any(
+            _contains_stale_current_count(item, report_name, (*path, str(key)))
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(
+            _contains_stale_current_count(item, report_name, (*path, str(index)))
+            for index, item in enumerate(value)
+        )
+    return _numeric_leaf(value) in STALE_CURRENT_COUNTS
+
+
+def _run_internal_phase_a(
+    worktree_one: Path,
+    evidence_one: Path,
+    worktree_two: Path,
+    evidence_two: Path,
+    candidate: str,
+) -> dict[str, object]:
+    evidence_roots = (evidence_one.resolve(), evidence_two.resolve())
+    with tempfile.TemporaryDirectory(prefix="styx-final-gate-phase-a-") as raw:
+        private = Path(raw).resolve()
+        if not _is_outside(private, evidence_roots):
+            raise FinalGateError("private Phase-A root overlaps evidence")
+        first = private / "one"
+        second = private / "two"
+        _generate_phase_a_from_checkout(worktree_one, first)
+        _generate_phase_a_from_checkout(worktree_two, second)
+        result = run_phase_a_gate(
+            worktree_one, worktree_two, first, second, candidate
+        )
+    if result.get("verdict") != "PASS":
+        raise FinalGateError("internal Phase-A verdict is not PASS")
+    return result
+
+
+def _completion_family_statuses(
+    first: Path,
+    evidence_first: Path,
+    second: Path,
+    evidence_second: Path,
+    candidate: str,
+) -> dict[str, str]:
+    statuses = {
+        name: "MISSING"
+        for name in FINAL_GATE_FAMILY_IDS
+        if name not in {"ROOT_IDENTITY", "CONTRACT_SET", "PHASE_A"}
+    }
+    roots = (evidence_first.resolve(), evidence_second.resolve())
+    required = FINAL_GATE_REPORT_FILES
+    reports: list[dict[str, dict[str, Any]]] = []
+    complete_report_set = True
+    for root in roots:
+        environment: dict[str, dict[str, Any]] = {}
+        for name in required:
+            try:
+                environment[name] = _load_canonical_report(root / name)
+            except FinalGateError:
+                complete_report_set = False
+        reports.append(environment)
+    exact_top_level = all(
+        {path.name for path in root.iterdir()} == set(FINAL_GATE_REPORT_FILES)
+        for root in roots
+        if root.is_dir()
+    ) and all(root.is_dir() for root in roots)
+    if complete_report_set and exact_top_level and not any(
+        _contains_stale_current_count(report, name)
+        for environment in reports
+        for name, report in environment.items()
+    ):
+        statuses["OUTPUT_FAMILIES"] = "PASS"
+        if all(
+            (roots[0] / name).read_bytes() == (roots[1] / name).read_bytes()
+            for name in required
+        ):
+            statuses["CANONICAL_REPORTS"] = "PASS"
+
+    try:
+        comments = _fetch_issue_comments()
+        matches: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for row in comments:
+            body = row.get("body")
+            parsed = _json_object(body) if isinstance(body, str) else None
+            if (
+                _operator(row)
+                and isinstance(parsed, dict)
+                and parsed.get("kind") == POSITIVE_INVENTORY_RATIFICATION_KIND
+                and parsed.get("baseSha") == BASE_SHA
+                and parsed.get("selectionHead") == candidate
+                and parsed.get("candidateManifestSha256") == MANIFEST_SHA256
+                and row.get("issue_url") == ISSUE_URL
+                and row.get("created_at") == row.get("updated_at")
+                and row.get("performed_via_github_app") is None
+            ):
+                matches.append((row, parsed))
+        if len(matches) != 1:
+            raise FinalGateError("provider object is absent or duplicated")
+        selected, decision = matches[0]
+        _scan_provider_authority(decision, selected, MANIFEST_SHA256)
+        commit, _commit_raw, _ = _fetch_json(
+            f"https://api.github.com/repos/styx-secure/styx/commits/{candidate}"
+        )
+        branch, _branch_raw, _ = _fetch_json(COMBINED_BRANCH_URL)
+        branch_object = branch.get("object") if isinstance(branch, dict) else None
+        if (
+            not isinstance(commit, dict)
+            or commit.get("sha") != candidate
+            or not isinstance(branch_object, dict)
+            or branch.get("ref") != COMBINED_BRANCH_REF
+            or branch_object.get("type") != "commit"
+            or branch_object.get("sha") != candidate
+        ):
+            raise FinalGateError("provider commit or branch identity drift")
+        statuses["PROVIDER_OBJECTS"] = "PASS"
+    except (FinalGateError, OSError, subprocess.SubprocessError):
+        pass
+    return statuses
+
+
+def _write_final_gate_report(output: Path, report: dict[str, object]) -> None:
+    target = output.expanduser().resolve()
+    if target.exists() or target.is_symlink():
+        raise FinalGateError("final-gate output target already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target = target.parent.resolve() / target.name
+    temporary = target.with_name(target.name + ".tmp")
+    if temporary.exists() or temporary.is_symlink():
+        raise FinalGateError("final-gate temporary output already exists")
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(dumps(report))
+        try:
+            os.link(temporary, target)
+        except OSError as error:
+            raise FinalGateError("final-gate report publish failed") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary.exists():
+            temporary.unlink()
+
+
+def run_final_gate(
+    base: str,
+    candidate: str,
+    worktree_one: Path,
+    evidence_one: Path,
+    worktree_two: Path,
+    evidence_two: Path,
+    output: Path,
+) -> dict[str, object]:
+    resolved_repos = (worktree_one.resolve(), worktree_two.resolve())
+    resolved_evidence = (evidence_one.resolve(), evidence_two.resolve())
+    # This preliminary path-only check is possible even when an input root is
+    # absent.  It prevents the fail-closed report itself from entering input.
+    _verify_final_gate_output_location(
+        output,
+        resolved_repos,
+        resolved_evidence,
+        (),
+    )
+    statuses = {name: "MISSING" for name in FINAL_GATE_FAMILY_IDS}
+    roots_ok = False
+    try:
+        _verify_final_gate_roots(
+            base,
+            candidate,
+            worktree_one,
+            evidence_one,
+            worktree_two,
+            evidence_two,
+            output,
+        )
+        roots_ok = True
+        statuses["ROOT_IDENTITY"] = "PASS"
+    except (FinalGateError, OSError, subprocess.SubprocessError):
+        pass
+    if roots_ok:
+        try:
+            _verify_contract_sets(worktree_one, worktree_two)
+            statuses["CONTRACT_SET"] = "PASS"
+        except (FinalGateError, InventoryError, OSError, subprocess.SubprocessError):
+            pass
+        try:
+            _run_internal_phase_a(
+                worktree_one,
+                evidence_one,
+                worktree_two,
+                evidence_two,
+                candidate,
+            )
+            # The internal run proves the legacy Phase-A computation, but the
+            # final-gate contract prescribes no registered digest report to bind
+            # it to either evidence root.  The family therefore remains MISSING.
+        except (FinalGateError, InventoryError, OSError, subprocess.SubprocessError):
+            pass
+        if statuses["CONTRACT_SET"] == "PASS":
+            try:
+                statuses.update(
+                    _completion_family_statuses(
+                        worktree_one,
+                        evidence_one,
+                        worktree_two,
+                        evidence_two,
+                        candidate,
+                    )
+                )
+            except (FinalGateError, InventoryError, OSError, subprocess.SubprocessError):
+                pass
+    report = _final_gate_report(base, candidate, statuses)
+    _write_final_gate_report(output, report)
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    modes = parser.add_mutually_exclusive_group(required=True)
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    modes = parser.add_mutually_exclusive_group(required=False)
     modes.add_argument("--phase-a", action="store_true")
     modes.add_argument("--phase-b-entry", action="store_true")
     modes.add_argument("--acv049-e-baseline", action="store_true")
-    parser.add_argument("--repo-root-one", required=True, type=Path)
+    parser.add_argument("--repo-root-one", type=Path)
     parser.add_argument("--repo-root-two", type=Path)
     parser.add_argument("--evidence-root-one", type=Path)
     parser.add_argument("--evidence-root-two", type=Path)
     parser.add_argument("--selection-head")
     parser.add_argument("--provider-comment-id")
     parser.add_argument("--node", type=Path)
+    parser.add_argument("--base")
+    parser.add_argument("--candidate")
+    parser.add_argument("--worktree-1", type=Path)
+    parser.add_argument("--evidence-1", type=Path)
+    parser.add_argument("--worktree-2", type=Path)
+    parser.add_argument("--evidence-2", type=Path)
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
+    legacy_mode = args.phase_a or args.phase_b_entry or args.acv049_e_baseline
+    final_values = (
+        args.base,
+        args.candidate,
+        args.worktree_1,
+        args.evidence_1,
+        args.worktree_2,
+        args.evidence_2,
+        args.output,
+    )
+    legacy_values = (
+        args.repo_root_one,
+        args.repo_root_two,
+        args.evidence_root_one,
+        args.evidence_root_two,
+        args.selection_head,
+        args.provider_comment_id,
+        args.node,
+    )
     try:
-        if args.phase_a:
+        if legacy_mode and any(value is not None for value in final_values):
+            raise FinalGateError("final-gate arguments cannot be mixed with a legacy mode")
+        if not legacy_mode:
+            if any(value is not None for value in legacy_values):
+                raise FinalGateError("legacy arguments require an existing mode")
+            if any(value is None for value in final_values):
+                raise FinalGateError("literal final gate requires all seven arguments")
+            result = run_final_gate(
+                args.base,
+                args.candidate,
+                args.worktree_1,
+                args.evidence_1,
+                args.worktree_2,
+                args.evidence_2,
+                args.output,
+            )
+        elif args.phase_a:
             if (
-                args.repo_root_two is None
+                args.repo_root_one is None
+                or args.repo_root_two is None
                 or args.evidence_root_one is None
                 or args.evidence_root_two is None
                 or args.selection_head is None
@@ -3088,7 +3550,8 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.acv049_e_baseline:
             if (
-                args.repo_root_two is None
+                args.repo_root_one is None
+                or args.repo_root_two is None
                 or args.evidence_root_one is None
                 or args.evidence_root_two is None
                 or args.selection_head is None
@@ -3106,6 +3569,8 @@ def main(argv: list[str] | None = None) -> int:
                 node=args.node,
             )
         else:
+            if args.repo_root_one is None:
+                raise FinalGateError("Phase B requires one root")
             if args.provider_comment_id is None:
                 raise FinalGateError("Phase B requires a provider comment ID")
             decision = _validate_provider_authority(
@@ -3129,7 +3594,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"APP-core final gate: FAIL: {error}", file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
-    return 0
+    return 2 if not legacy_mode and result.get("verdict") != "PASS" else 0
 
 
 if __name__ == "__main__":
