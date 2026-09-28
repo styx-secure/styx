@@ -84,6 +84,7 @@ TEST_FILES = frozenset(
         "test_inventory.py",
         "test_mutations.py",
         "test_o04_evidence_mutants.py",
+        "test_public_boundary_red.py",
         "test_release_relations.py",
         "test_report_hygiene.py",
         "test_scope_guard.py",
