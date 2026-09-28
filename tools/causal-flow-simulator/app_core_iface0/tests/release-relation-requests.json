@@ -1,0 +1,138 @@
+{
+  "PCR-REQUEST-EVALUATE-CANDIDATE-0016.json": {
+    "input": {
+      "candidate": {
+        "carriedReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "logicalEvent": {
+          "eventReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "objectKind": "APPLICATION_EVENT",
+          "transcriptHex": ""
+        },
+        "proofs": []
+      },
+      "prior": {
+        "genesis": {
+          "expectedContextIdentifierHex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "logicalGenesis": {
+            "genesisReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+            "objectKind": "GENESIS",
+            "transcriptHex": ""
+          },
+          "profile": {
+            "applicationProfileId": "0",
+            "applicationProfileVersion": "0",
+            "styxProtocolVersion": "0"
+          },
+          "projection": {
+            "context": {
+              "applicationProfileId": "0",
+              "applicationProfileVersion": "0",
+              "contextIdentifierHex": "0000000000000000000000000000000000000000000000000000000000000000",
+              "styxProtocolVersion": "0"
+            },
+            "genesisReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+            "initialAuthorityPolicyBlockHex": "",
+            "rootCredentialIdentifierHex": "0000000000000000000000000000000000000000000000000000000000000000",
+            "rootSignatureSuiteId": "0",
+            "rootVerificationKeyHex": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "retainedProof": {
+            "genesisReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+            "signatureHex": ""
+          }
+        },
+        "localRevalidation": {
+          "evidence": {
+            "verifiedComplete": []
+          },
+          "retainedProofs": []
+        },
+        "logicalEvents": [],
+        "projection": {
+          "aliasGroups": [],
+          "appliedControlReferences": [],
+          "authority": {
+            "necessaryCredentialIdentifiers": [],
+            "possibleCredentialIdentifiers": [],
+            "status": "AVAILABLE",
+            "terminalCredentialIdentifiers": []
+          },
+          "checkpointEvidenceReferences": [],
+          "contentStates": [],
+          "contextState": "ACTIVE",
+          "credentialBindings": [],
+          "eventAuthority": [],
+          "forkJoins": [],
+          "forkedCredentialIdentifiers": [],
+          "pendingReferences": [],
+          "pendingRootReferences": [],
+          "recordOutcomes": [],
+          "records": [
+            {
+              "apTransitionBlockHex": "",
+              "applicationProfileId": "0",
+              "applicationProfileVersion": "0",
+              "authorSequence": "0",
+              "causalParentReferences": [],
+              "contentDescriptor": {
+                "contentClass": "NONE",
+                "exactContentLength": "0"
+              },
+              "contextIdentifierHex": "0000000000000000000000000000000000000000000000000000000000000000",
+              "credentialIdentifierHex": "0000000000000000000000000000000000000000000000000000000000000000",
+              "eventReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+              "eventRole": "CREDENTIAL_CONTROL",
+              "eventTypeIdentifier": "0",
+              "genesisReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+              "kAdmission": "ADMITTED",
+              "objectKind": "APPLICATION_EVENT",
+              "replayReadiness": "READY_FOR_AP_FOLD",
+              "roleTail": {
+                "kind": "ROTATE",
+                "replacementGrantReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+                "retiringCredentialIdentifierHex": "0000000000000000000000000000000000000000000000000000000000000000"
+              },
+              "schemaIdentifier": "0",
+              "schemaVersion": "0",
+              "styxProtocolVersion": "0"
+            }
+          ],
+          "reductionStandings": [],
+          "replayDependencyReferences": [],
+          "revokedCredentialIdentifiers": [],
+          "terminatedCredentialIdentifiers": []
+        }
+      }
+    },
+    "interfaceVersion": "0",
+    "operation": "EVALUATE_CANDIDATE",
+    "profile": {
+      "applicationProfileId": "0",
+      "applicationProfileVersion": "0",
+      "styxProtocolVersion": "0"
+    }
+  },
+  "PCR-REQUEST-VALIDATE-TRANSCRIPT-0001.json": {
+    "input": {
+      "candidate": {
+        "carriedReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "logicalEvent": {
+          "eventReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "objectKind": "APPLICATION_EVENT",
+          "transcriptHex": ""
+        },
+        "proofs": []
+      },
+      "standaloneVerification": {
+        "verificationKeyHex": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "interfaceVersion": "0",
+    "operation": "VALIDATE_TRANSCRIPT",
+    "profile": {
+      "applicationProfileId": "0",
+      "applicationProfileVersion": "0",
+      "styxProtocolVersion": "0"
+    }
+  }
+}

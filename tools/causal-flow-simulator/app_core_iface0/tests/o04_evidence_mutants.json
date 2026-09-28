@@ -1,0 +1,32 @@
+[
+  {
+    "id": "O04-MUT-001-replay-drop-corrupt",
+    "find": "if terminal is not None:\n        raise EvidenceError(terminal.reason or \"NONCANONICAL_MATERIAL\")",
+    "replace": "if terminal is not None and terminal.kind == \"MALFORMED\":\n        raise EvidenceError(terminal.reason or \"NONCANONICAL_MATERIAL\")",
+    "killedBy": "test_corrupt_attempt_vetoes_verified_peer_in_both_operations_and_orders"
+  },
+  {
+    "id": "O04-MUT-002-update-mask-corrupt",
+    "find": "if corrupt:\n        reason = (",
+    "replace": "if False and corrupt:\n        reason = (",
+    "killedBy": "test_corrupt_attempt_vetoes_verified_peer_in_both_operations_and_orders"
+  },
+  {
+    "id": "O04-MUT-003-randomizer-whitespace",
+    "find": "or re.fullmatch(r\"[0-9a-f]{64}\", randomizer) is None",
+    "replace": "or False",
+    "killedBy": "test_randomizer_whitespace_classification_is_total_and_malformed"
+  },
+  {
+    "id": "O04-MUT-004-incomplete-as-corrupt",
+    "find": "if complete is None:\n        return EvidenceAttemptClassification(\"INCOMPLETE\")",
+    "replace": "if complete is None:\n        return EvidenceAttemptClassification(\"CORRUPT\", \"EVIDENCE_COMMITMENT_MISMATCH\")",
+    "killedBy": "test_each_incomplete_form_is_dropped_and_not_mislabeled"
+  },
+  {
+    "id": "O04-MUT-005-zero-length-loss",
+    "find": "complete = _complete_content_hex(material, exact_length)\n    if complete is None:",
+    "replace": "complete = None if exact_length == 0 else _complete_content_hex(material, exact_length)\n    if complete is None:",
+    "killedBy": "test_zero_length_verified_evidence_is_retained_and_updatable"
+  }
+]

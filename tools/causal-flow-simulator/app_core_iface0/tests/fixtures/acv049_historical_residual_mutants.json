@@ -1,0 +1,961 @@
+{
+  "mutants": [
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "RequestRejected",
+          "exceptionMessage": "",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "RequestRejected",
+          "exceptionMessage": "",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "enum-tuple",
+      "spec": {
+        "candidateValues": [
+          "AUTHORITY_UNAVAILABLE",
+          "EMPTY_STALE"
+        ],
+        "domainClass": "ENUM",
+        "faultContext": "NONE",
+        "kind": "ORDINARY_ENUM",
+        "logicalPaths": [
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateCandidateV0>%2Fresult%2Fevaluation%2F<CandidateEvaluationReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontextState"
+        ],
+        "mutantId": "ACV049-P-ENUM-06D17CD3FC3EEF91B55F199B",
+        "patches": [
+          {
+            "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-CONTEXTSTATE-002",
+            "candidateValues": [
+              "AUTHORITY_UNAVAILABLE",
+              "EMPTY_STALE"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontextState",
+            "field": "contextState",
+            "relativeTokens": []
+          }
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0023",
+        "reservedEvidence": [],
+        "reservedValues": [],
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-enum-tuple-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-CONTEXTSTATE-002",
+        "sourceSiteMapRouteSha256s": [
+          "372dd37cb0c4909a03314df0e935fc96eafe847200156b747b43a0878fb4e13a"
+        ],
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "enum-tuple",
+      "spec": {
+        "candidateValues": [
+          "AUTHORITY_UNAVAILABLE",
+          "EMPTY_STALE"
+        ],
+        "domainClass": "ENUM",
+        "faultContext": "NONE",
+        "kind": "ORDINARY_ENUM",
+        "logicalPaths": [
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontextState"
+        ],
+        "mutantId": "ACV049-P-ENUM-1AF92F6A527EDF721228CA92",
+        "patches": [
+          {
+            "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-CONTEXTSTATE-002",
+            "candidateValues": [
+              "AUTHORITY_UNAVAILABLE",
+              "EMPTY_STALE"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontextState",
+            "field": "contextState",
+            "relativeTokens": []
+          }
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "reservedEvidence": [],
+        "reservedValues": [],
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-enum-tuple-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-CONTEXTSTATE-002",
+        "sourceSiteMapRouteSha256s": [
+          "27001c6afd43568154ca1c6301faeb5a5a9022eb433356d6599c7af3456894b5"
+        ],
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "enum-tuple",
+      "spec": {
+        "candidateValues": [
+          "MAY_AUTH",
+          "NO_AUTH"
+        ],
+        "domainClass": "ENUM",
+        "faultContext": "NONE",
+        "kind": "ORDINARY_ENUM",
+        "logicalPaths": [
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FeventAuthority%2F*%2Fverdict"
+        ],
+        "mutantId": "ACV049-P-ENUM-88E0EA775991578DCF8C8655",
+        "patches": [
+          {
+            "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-VERDICT-001",
+            "candidateValues": [
+              "MAY_AUTH",
+              "NO_AUTH"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FeventAuthority%2F0%2Fverdict",
+            "field": "verdict",
+            "relativeTokens": []
+          }
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "reservedEvidence": [],
+        "reservedValues": [],
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-enum-tuple-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-VERDICT-001",
+        "sourceSiteMapRouteSha256s": [
+          "426a51f99c9adf9bc2df1c80290bb02ea53c22eceabafc46632a72b5e3a37e22"
+        ],
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-REPLAYDEPENDENCYREFERENCES-002",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FreplayDependencyReferences%2F0",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FreplayDependencyReferences%2F*",
+        "mutantId": "ACV049-P-MUTANT-02612137D31F19F47ABA44C1",
+        "relativePointer": "JSON_POINTER:0",
+        "relativeTokens": [
+          0
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-REPLAYDEPENDENCYREFERENCES-002",
+        "sourceSiteMapRouteSha256": "7c5399160dde4557c39285bac010f88e733408a066c49a827b2fad1c028ef1fd",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "OUT_OF_SCOPE",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "RuntimeError",
+          "exceptionMessage": "ACV-049 source selector drift",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "RuntimeError",
+          "exceptionMessage": "ACV-049 source selector drift",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-REPLAYDEPENDENCYREFERENCES-002",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FreplayDependencyReferences%2F0",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateCandidateV0>%2Fresult%2Fevaluation%2F<CandidateEvaluationReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FreplayDependencyReferences%2F*",
+        "mutantId": "ACV049-P-MUTANT-0D7DCBB143A15B3ED6C69297",
+        "relativePointer": "JSON_POINTER:0",
+        "relativeTokens": [
+          0
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0023",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-REPLAYDEPENDENCYREFERENCES-002",
+        "sourceSiteMapRouteSha256": "d9ed2be9272d39ecc50e073ea7abd69b813677ca0da72a6d402941d71e9009ef",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "HarnessFailure",
+          "exceptionMessage": "candidate full replay omitted the new record outcome",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "HarnessFailure",
+          "exceptionMessage": "candidate full replay omitted the new record outcome",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-EVALUATE-CANDIDATE-DICT-VALUE-PRESENTATIONS-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlogicalEvents%2F0%2FtranscriptHex",
+        "domainClass": "EVEN_LOWER_HEX",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateCandidateV0>%2Fresult%2Fevaluation%2F<CandidateEvaluationReadyV0>%2Fproposal%2Fsuccessor%2FlogicalEvents%2F*%2FtranscriptHex",
+        "mutantId": "ACV049-P-MUTANT-0F19BEFC461173F0954604A6",
+        "relativePointer": "JSON_POINTER:0%2FlogicalEvent%2FtranscriptHex",
+        "relativeTokens": [
+          0,
+          "logicalEvent",
+          "transcriptHex"
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0023",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-EVALUATE-CANDIDATE-DICT-VALUE-PRESENTATIONS-001",
+        "sourceSiteMapRouteSha256": "c08c1460dc94a7c53198143bf877e5fdfff4363224ba8d5e2910b58b4d984e34",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-VERIFIED-COMPLETE-PAIR-DICT-VALUE-EVENTREFERENCEHEX-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-0F8D75F4FFD51A1374BA5AC8",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-VERIFIED-COMPLETE-PAIR-DICT-VALUE-EVENTREFERENCEHEX-001",
+        "sourceSiteMapRouteSha256": "69149dc41289eae65f9e92e2786d735919a5898031deb3a915bc00e84e0ab285",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "KeyError",
+          "exceptionMessage": "'1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9'",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "KeyError",
+          "exceptionMessage": "'2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4'",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-PROJECT-REPLAY-STATE-DICT-VALUE-REFERENCE-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2FproposedContext%2Fprojection%2FeventAuthority%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseReplayContextV0>%2Fresult%2F<ReplayContextResultReadyV0>%2FproposedContext%2Fprojection%2FeventAuthority%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-179DFB9D477DDC0B3BDF0141",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0011",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-PROJECT-REPLAY-STATE-DICT-VALUE-REFERENCE-001",
+        "sourceSiteMapRouteSha256": "d059ecc2b825f6eff72eb9e3cbe973e3ddd1a9888ca6eea50e4c3826c88d9c9b",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-CANONICALIZE-EVIDENCE-DICT-VALUE-OFFSET-001",
+        "candidateValues": [
+          "5001",
+          "8228"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F0%2FcontentMaterial%2Fsegments%2F0%2Foffset",
+        "domainClass": "CANONICAL_DECIMAL",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F*%2FcontentMaterial%2Fsegments%2F*%2Foffset",
+        "mutantId": "ACV049-P-MUTANT-3DF867ECCB4C7C961C3E6950",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-CANONICALIZE-EVIDENCE-DICT-VALUE-OFFSET-001",
+        "sourceSiteMapRouteSha256": "c00052592f573ebcf2d264b2965e49bf7b66b9bece8c13496b01a964619d7e8d",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-VERIFIED-COMPLETE-PAIR-DICT-VALUE-EVENTREFERENCEHEX-002",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F0%2FopeningMaterial%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F*%2FopeningMaterial%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-6628BF2485A395DA1DDFA8DF",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-VERIFIED-COMPLETE-PAIR-DICT-VALUE-EVENTREFERENCEHEX-002",
+        "sourceSiteMapRouteSha256": "61f44ef62264f5360eea404903c5157e1ce7c38e1b05b23d74f8af8d332173de",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-EVENTREFERENCEHEX-003",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-73B31C15ABC93668806F9F7F",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-EVENTREFERENCEHEX-003",
+        "sourceSiteMapRouteSha256": "bdc0fc7cfb7d77ec20f8acae1db00821b1afb07a100c8e60fc9115ac5fb76c67",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-ATTEMPT-TO-INTERNAL-EVIDENCE-DICT-VALUE-CONTENTMATERIAL-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F0%2FcontentMaterial%2Fsegments%2F0%2FoctetsHex",
+        "domainClass": "EVEN_LOWER_HEX",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F*%2FcontentMaterial%2Fsegments%2F*%2FoctetsHex",
+        "mutantId": "ACV049-P-MUTANT-89A1EBDA2728158AFD750FE5",
+        "relativePointer": "JSON_POINTER:0%2Fsegments%2F0%2FoctetsHex",
+        "relativeTokens": [
+          0,
+          "segments",
+          0,
+          "octetsHex"
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ATTEMPT-TO-INTERNAL-EVIDENCE-DICT-VALUE-CONTENTMATERIAL-001",
+        "sourceSiteMapRouteSha256": "b08de0edf379021ab922ada28fd0909f026273f92478cb2a17410f7e2787f585",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "KeyError",
+          "exceptionMessage": "'1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9'",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "KeyError",
+          "exceptionMessage": "'2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4'",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-PROJECT-REPLAY-STATE-DICT-VALUE-REFERENCE-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FeventAuthority%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateCandidateV0>%2Fresult%2Fevaluation%2F<CandidateEvaluationReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FeventAuthority%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-8B332624E0DCF7C5B7BBA65A",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0023",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-PROJECT-REPLAY-STATE-DICT-VALUE-REFERENCE-001",
+        "sourceSiteMapRouteSha256": "e442a2bce4b50f4692761ecb7cc9ffe20998c74ddb1c961f11919f3cc46da328",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "HarnessFailure",
+          "exceptionMessage": "candidate full replay omitted the new record outcome",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "HarnessFailure",
+          "exceptionMessage": "candidate full replay omitted the new record outcome",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-EVALUATE-CANDIDATE-DICT-VALUE-PRESENTATIONS-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlogicalEvents%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateCandidateV0>%2Fresult%2Fevaluation%2F<CandidateEvaluationReadyV0>%2Fproposal%2Fsuccessor%2FlogicalEvents%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-9DB6D1DDA5578AB45C6C0C5B",
+        "relativePointer": "JSON_POINTER:0%2FlogicalEvent%2FeventReferenceHex",
+        "relativeTokens": [
+          0,
+          "logicalEvent",
+          "eventReferenceHex"
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0023",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-EVALUATE-CANDIDATE-DICT-VALUE-PRESENTATIONS-001",
+        "sourceSiteMapRouteSha256": "d158de926f9642e33ba0a486f5eb2e50dfe90bc0454370775a6bf6c69f8e7140",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-VERIFIED-COMPLETE-PAIR-DICT-VALUE-EVENTREFERENCEHEX-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F0%2FcontentMaterial%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F*%2FcontentMaterial%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-A402EFDA9DB671BBA4D06246",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-VERIFIED-COMPLETE-PAIR-DICT-VALUE-EVENTREFERENCEHEX-001",
+        "sourceSiteMapRouteSha256": "373e27c94589af7c6bd6cd7127f83834c44491cc86a0be5716115690e3b38d5d",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-ATTEMPT-TO-INTERNAL-EVIDENCE-DICT-VALUE-OPENINGMATERIAL-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F0%2FopeningMaterial%2FopeningRandomizerHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2FlocalRevalidation%2Fevidence%2FverifiedComplete%2F*%2FopeningMaterial%2FopeningRandomizerHex",
+        "mutantId": "ACV049-P-MUTANT-D560664469D2B02F2C7C8BA1",
+        "relativePointer": "JSON_POINTER:0%2FopeningRandomizerHex",
+        "relativeTokens": [
+          0,
+          "openingRandomizerHex"
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ATTEMPT-TO-INTERNAL-EVIDENCE-DICT-VALUE-OPENINGMATERIAL-001",
+        "sourceSiteMapRouteSha256": "ef580ea102c3077f3cb7da2fdcafb1d7eb231db1130faf04818639c848dbcfa3",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "HarnessFailure",
+          "exceptionMessage": "candidate full replay omitted the new record outcome",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "HarnessFailure",
+          "exceptionMessage": "candidate full replay omitted the new record outcome",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-EVENTREFERENCEHEX-003",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateCandidateV0>%2Fresult%2Fevaluation%2F<CandidateEvaluationReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-E00D67065A78D523DA9F6A69",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0023",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-DICT-VALUE-EVENTREFERENCEHEX-003",
+        "sourceSiteMapRouteSha256": "cf3fe8c13970277423f1c1fae484dd304566ae14afbf36d937af5ceae7ca2ca0",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-DICT-VALUE-EVENTREFERENCEHEX-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-E1E6AF9C583DBB4153D8B7A6",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-DICT-VALUE-EVENTREFERENCEHEX-001",
+        "sourceSiteMapRouteSha256": "69d29640cc466940ce2700adc124b9898b4cf4237a85d3ab0614466053f443d9",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "exceptionClass": "KeyError",
+          "exceptionMessage": "'1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9'",
+          "kind": "REJECTION"
+        },
+        {
+          "exceptionClass": "KeyError",
+          "exceptionMessage": "'2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4'",
+          "kind": "REJECTION"
+        }
+      ],
+      "family": "scalar",
+      "spec": {
+        "advanceCounts": [
+          0,
+          0
+        ],
+        "astSiteId": "PURITY-SITE-AST-PROJECT-REPLAY-STATE-DICT-VALUE-REFERENCE-001",
+        "candidateValues": [
+          "1333707b1755ee8e98dd6bf3526a427ce021a9e54bbdc5d86edc49a54806f8c9",
+          "2135bd3d241b4571526a0123ae3f5d57881adbfe6c11308b0d7fddb5acbbd7e4"
+        ],
+        "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FeventAuthority%2F0%2FeventReferenceHex",
+        "domainClass": "HEX64",
+        "faultContext": "NONE",
+        "logicalPath": "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FeventAuthority%2F*%2FeventReferenceHex",
+        "mutantId": "ACV049-P-MUTANT-F254713D2FE7E3AD3ECF0600",
+        "relativePointer": "SELF",
+        "relativeTokens": [],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-scalar-source-mutant-spec.v1",
+        "siteId": "PURITY-SITE-AST-PROJECT-REPLAY-STATE-DICT-VALUE-REFERENCE-001",
+        "sourceSiteMapRouteSha256": "addb639551c53f98933ffec1d48d95ee50309996761457374f282cb838f90b0b",
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "enum-tuple",
+      "spec": {
+        "baselineRelationRowId": "F13R-001",
+        "baselineTerminalPredicateRowId": "NOT_APPLICABLE",
+        "candidateRelationRowIds": [
+          "F13R-002",
+          "F13R-003"
+        ],
+        "candidateTerminalPredicateRowIds": [
+          "NOT_APPLICABLE",
+          "NOT_APPLICABLE"
+        ],
+        "coupledFields": [
+          "disposition",
+          "stage"
+        ],
+        "faultContext": "NONE",
+        "kind": "RELATION_TUPLE",
+        "logicalPaths": [
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F*%2Fdisposition",
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F*%2Fstage"
+        ],
+        "mutantId": "ACV049-P-TUPLE-C58490C2F7743CCD512FD1CA",
+        "owningRelation": "candidateEvaluationPrimaryRelationV0",
+        "patches": [
+          {
+            "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-TUPLE-DICT-RECORD-OUTCOME-002",
+            "candidateValues": [
+              "AUTHENTIC_BUT_UNAUTHORIZED",
+              "AUTHORITY_PROJECTION_UNAVAILABLE"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F0%2Fdisposition",
+            "field": "disposition",
+            "relativeTokens": [
+              "disposition"
+            ]
+          },
+          {
+            "astSiteId": "PURITY-SITE-AST-ASSEMBLE-CONTEXT-PROJECTION-TUPLE-DICT-RECORD-OUTCOME-002",
+            "candidateValues": [
+              "EVENT_LOCAL",
+              "S5_AUTHORITY_PROJECTION"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FrecordOutcomes%2F0%2Fstage",
+            "field": "stage",
+            "relativeTokens": [
+              "stage"
+            ]
+          }
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-enum-tuple-mutant-spec.v1",
+        "siteId": "PURITY-SITE-RECORD-OUTCOME",
+        "sourceSiteMapRouteSha256s": [
+          "d019ad02bf5c0c5a839a8c4548c0da4a93c4dc801ba0cc054990503dbe952b81",
+          "d9257d49e0440cce53908f513a86a2da904f1ceec0335a1cb72cc7f13882a2a6"
+        ],
+        "twoStateRule": false
+      }
+    },
+    {
+      "disposition": "KILLED",
+      "expectedOutcomes": [
+        {
+          "kind": "RESPONSE_DIFF"
+        },
+        {
+          "kind": "RESPONSE_DIFF"
+        }
+      ],
+      "family": "enum-tuple",
+      "spec": {
+        "baselineRelationRowId": "CAR-006",
+        "baselineTerminalPredicateRowId": "NOT_APPLICABLE",
+        "candidateRelationRowIds": [
+          "CAR-001",
+          "CAR-003"
+        ],
+        "candidateTerminalPredicateRowIds": [
+          "NOT_APPLICABLE",
+          "NOT_APPLICABLE"
+        ],
+        "coupledFields": [
+          "contentClass",
+          "localAvailability",
+          "bindingObservation",
+          "retentionState",
+          "replayReadiness"
+        ],
+        "faultContext": "NONE",
+        "kind": "RELATION_TUPLE",
+        "logicalPaths": [
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F*%2FbindingObservation",
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F*%2FcontentClass",
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F*%2FlocalAvailability",
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F*%2FreplayReadiness",
+          "LOGICAL_PATH:InterfaceResponseV0%2F<OperationResponseEvaluateEvidenceUpdateV0>%2Fresult%2Fevaluation%2F<EvidenceUpdateReadyV0>%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F*%2FretentionState"
+        ],
+        "mutantId": "ACV049-P-TUPLE-FC57231E9DA7F26A79951133",
+        "owningRelation": "contentAxisLegalRelationV0",
+        "patches": [
+          {
+            "astSiteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-TUPLE-DICT-CONTENT-STATE-AXIS-001",
+            "candidateValues": [
+              "NONE",
+              "REQUIRED"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F0%2FcontentClass",
+            "field": "contentClass",
+            "relativeTokens": [
+              "contentClass"
+            ]
+          },
+          {
+            "astSiteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-TUPLE-DICT-CONTENT-STATE-AXIS-001",
+            "candidateValues": [
+              "ABSENT",
+              "ABSENT"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F0%2FlocalAvailability",
+            "field": "localAvailability",
+            "relativeTokens": [
+              "localAvailability"
+            ]
+          },
+          {
+            "astSiteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-TUPLE-DICT-CONTENT-STATE-AXIS-001",
+            "candidateValues": [
+              "NOT_APPLICABLE",
+              "NOT_CHECKED"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F0%2FbindingObservation",
+            "field": "bindingObservation",
+            "relativeTokens": [
+              "bindingObservation"
+            ]
+          },
+          {
+            "astSiteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-TUPLE-DICT-CONTENT-STATE-AXIS-001",
+            "candidateValues": [
+              "ACTIVE",
+              "ACTIVE"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F0%2FretentionState",
+            "field": "retentionState",
+            "relativeTokens": [
+              "retentionState"
+            ]
+          },
+          {
+            "astSiteId": "PURITY-SITE-AST-PROJECT-CONTENT-STATES-TUPLE-DICT-CONTENT-STATE-AXIS-001",
+            "candidateValues": [
+              "READY",
+              "CONTENT_DEFERRED"
+            ],
+            "concretePointer": "JSON_POINTER:result%2Fevaluation%2Fproposal%2Fsuccessor%2Fprojection%2FcontentStates%2F0%2FreplayReadiness",
+            "field": "replayReadiness",
+            "relativeTokens": [
+              "replayReadiness"
+            ]
+          }
+        ],
+        "requestCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0028",
+        "routeClass": "ORDINARY_ROUTE",
+        "schema": "styx.app-core-iface0.acv049-enum-tuple-mutant-spec.v1",
+        "siteId": "PURITY-SITE-CONTENT-STATE-AXIS",
+        "sourceSiteMapRouteSha256s": [
+          "5abfccbd21599e39d04cfb9a393a4764caedf5f73720837a98b7a3af650424a0",
+          "80a787cc5ba14782f1d7ac3b497e665260e3ef578d809b6cb7dd2b671e0b2801",
+          "9601cc0620cb592fcb187a22f5d66a5b287eb11ed2f711da8650161f63519bce",
+          "c93e4134b6f1de10dd57a2d89fadaecf0d80bf2c86d0e94277e8dde323548f0c",
+          "ed3f8057441756c66fc239f6522e0f7596c72d5e9c4fb322b1c261fc14eb14e1"
+        ],
+        "twoStateRule": false
+      }
+    }
+  ],
+  "schema": "styx.app-core-iface0.acv049-residual-mutants.v1"
+}
