@@ -219,6 +219,62 @@ those remain governed generated artifacts rather than implementation choices.
 
 Generated reports belong outside the repository and must never be committed.
 
+## Executable-review sandbox
+
+Cross-vendor reviewers must execute each proposed counterexample before they
+report the finding. `review_sandbox.py` creates a self-contained detached clone
+at the exact candidate commit, runs it with a minimal read-only system root and
+no network through
+`bubblewrap`, runs the complete APP-core unit suite plus both deterministic seed
+generator proofs, and only then runs the reviewer's probe. The JSON report must
+also be outside the repository.
+
+The sandbox clears the host environment, creates private `/dev`, `/proc`,
+`/tmp` and writable scratch filesystems, and does not mount the host home.
+Absolute regular-file arguments, such as the external probe script in the
+example below, are mounted individually read-only; a probe must be
+self-contained or use files from the checkout.
+
+A probe runs with the detached checkout as its current directory. It must exit
+zero and write exactly one canonical JSON object (sorted keys, compact encoding,
+one final LF) to stdout:
+
+```json
+{"reproduced":true,"summary":"minimal counterexample reaches the claimed branch"}
+```
+
+Example invocation:
+
+```bash
+CANDIDATE=$(git rev-parse HEAD)
+python3 tools/causal-flow-simulator/app_core_iface0/review_sandbox.py \
+  --repo-root . \
+  --revision "$CANDIDATE" \
+  --finding-id REVIEW-HIGH-01 \
+  --severity HIGH \
+  --output /external/review/REVIEW-HIGH-01.json \
+  -- python3 /external/review/probe-high-01.py
+```
+
+Copy this rule into every review prompt:
+
+> For each candidate finding, first write a minimal executable counterexample
+> outside the repository and run it through `review_sandbox.py` at the exact
+> reviewed commit. Report the finding at its proposed severity only when the
+> sandbox report says `CONFIRMED`. If it says
+> `DOWNGRADED_NOT_REPRODUCED`, downgrade it to `NOTE` and label it
+> unconfirmed; do not present it as a blocking finding. If it says
+> `INVALID_BASELINE` or `INVALID_PROBE`, stop the review. Cite the report path,
+> candidate commit, probe summary and output digest for every finding.
+
+The sandbox rejects probe stdout above 16 KiB, gives each validation command a
+two-hour timeout by default (override with `--timeout-seconds`), requires a typed
+`reproduced`/`summary` result, records command digests and tails, and verifies
+that the detached checkout remains clean. A probe that fails to execute or
+emits an invalid result is `INVALID_PROBE`, never a false non-reproduction.
+The parsing-refactor gate and its
+inventory are in `IMPACT-ANALYSIS-PARSING.md`.
+
 ## M1 O-04 known deviations
 
 Follow-up issue [#312](https://github.com/styx-secure/styx/issues/312) owns the

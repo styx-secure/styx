@@ -45,6 +45,7 @@ SUBTREE = "tools/causal-flow-simulator/app_core_iface0/"
 IMPLEMENTATION_FILES = frozenset(
     {
         "FOLLOWUPS.md",
+        "IMPACT-ANALYSIS-PARSING.md",
         "README.md",
         "RESIDUALS-DISPOSITION.md",
         "authority_projection.py",
@@ -61,6 +62,7 @@ IMPLEMENTATION_FILES = frozenset(
         "run_cross_runtime.py",
         "run_mutations.py",
         "run_probe.py",
+        "review_sandbox.py",
         "run_semantic_acv048.py",
         "run_semantic_acv049.py",
         "run_semantic_preflight.py",
@@ -87,6 +89,7 @@ TEST_FILES = frozenset(
         "test_public_boundary_red.py",
         "test_release_relations.py",
         "test_report_hygiene.py",
+        "test_review_sandbox.py",
         "test_scope_guard.py",
         "test_structural_isolation_relation.py",
     }
