@@ -1561,7 +1561,7 @@ ACV049-P-TUPLE-FC57231E9DA7F26A79951133
         )
         self.assertEqual(report["schema"], "styx.app-core-iface0.acv049-source-site-map.v1")
         self.assertEqual(report["verdict"], "PHASE_A_SOURCE_SITE_MAP_PASS")
-        self.assertEqual(report["instrumentationPointCount"], 533)
+        self.assertEqual(report["instrumentationPointCount"], 537)
         self.assertEqual(report["materializedMutablePathCount"], 228)
         self.assertEqual(report["pendingSupplementaryMutablePathCount"], 72)
         self.assertEqual(

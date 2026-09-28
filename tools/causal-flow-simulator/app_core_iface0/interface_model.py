@@ -3918,6 +3918,8 @@ def _revalidate_prior_snapshot(
         },
         "projection": _assemble_context_projection(authority, projection),
     }
+    if regenerated == prior:
+        return projection
     return (
         projection
         if _content_equivalence_view(regenerated) == _content_equivalence_view(prior)
