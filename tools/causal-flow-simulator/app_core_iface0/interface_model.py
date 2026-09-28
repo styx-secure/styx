@@ -1452,7 +1452,8 @@ def _parse_transcript_candidate(
         logical_event.get(reference_field) != reference_hex
         or candidate.get("carriedReferenceHex") != reference_hex
     ):
-        raise RequestRejected()
+        observations["referenceVerification"] = "REJECTED"
+        return "REFERENCE_MISMATCH", "REFERENCE_DERIVATION", observations
     observations["referenceVerification"] = "VALID"
     try:
         proof_signatures = tuple(
@@ -1650,6 +1651,8 @@ def validate_transcript(
     parsed = _parse_transcript_candidate(authority, candidate)
     if isinstance(parsed, tuple):
         reason, stage, observations = parsed
+        if reason == "REFERENCE_MISMATCH" and stage == "REFERENCE_DERIVATION":
+            raise RequestRejected()
         return _rejected_transcript_result(reason, stage, observations)
     module = _load_pinned_c03_model(str(authority.repo_root))
     transcript = parsed.transcript
@@ -1719,6 +1722,8 @@ def evaluate_genesis(
     parsed = _parse_transcript_candidate(authority, candidate)
     if isinstance(parsed, tuple):
         reason, stage, _ = parsed
+        if reason == "REFERENCE_MISMATCH" and stage == "REFERENCE_DERIVATION":
+            raise RequestRejected()
         return {"kind": "TERMINAL_NO_PROPOSAL", "reason": reason, "stage": stage}
     module = _load_pinned_c03_model(str(authority.repo_root))
     transcript = parsed.transcript

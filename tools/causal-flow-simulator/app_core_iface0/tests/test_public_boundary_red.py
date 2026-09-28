@@ -58,6 +58,30 @@ class PublicBoundaryRedTests(unittest.TestCase):
                         candidate["logicalEvent"][logical_field] = "00" * 32
                     self.assert_defined_rejection(request)
 
+    def test_reference_mismatch_preserves_other_operation_results(self) -> None:
+        expected = {
+            "REPLAY_CONTEXT": ("REPLAY_PROPOSAL_READY", None),
+            "EVALUATE_CANDIDATE": ("TERMINAL_NO_SUCCESSOR", "STRUCTURAL_REJECTION"),
+        }
+        for operation, outcome in expected.items():
+            with self.subTest(operation=operation):
+                request = self.request_for(operation)
+                candidate = (
+                    request["input"]["presentations"][0]
+                    if operation == "REPLAY_CONTEXT"
+                    else request["input"]["candidate"]
+                )
+                original = candidate["carriedReferenceHex"]
+                candidate["carriedReferenceHex"] = (
+                    "00" * 32 if original != "00" * 32 else "11" * 32
+                )
+                result = evaluate_interface_request(self.authority, request)["result"]
+                actual = (
+                    result.get("kind", result.get("evaluation", {}).get("kind")),
+                    result.get("primary", result.get("evaluation", {}).get("primary")),
+                )
+                self.assertEqual(actual, outcome)
+
     def test_63_byte_signature_is_defined_rejection(self) -> None:
         for octets in (0, 63, 65):
             with self.subTest(octets=octets):
