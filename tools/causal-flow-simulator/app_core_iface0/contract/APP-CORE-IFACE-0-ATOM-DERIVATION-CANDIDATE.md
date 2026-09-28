@@ -130,11 +130,11 @@ finite set of execution instances before the inventory can be frozen.
 structural rule families: 24
 SHA-256: 9624a24ff7a5b748afc66eca1c59e8deaf6db9cf37598523dd1d8ef8efdb450a
 
-semantic families: 83
-SHA-256: 637580c267eaf8632b744922c2376bc10c142b4e20169e08a4ad4629c8943f64
+semantic families: 82
+SHA-256: 6e74a98a281c0c12cc7c54ff349cdff4b7d957996d4662d0ab5c61c74545e692
 
-combined rule families: 107
-SHA-256: c472e8996aa682f1c5fa079ca068dd0a404d5a4cedfab2e37b0b1c50d9780de5
+combined rule families: 106
+SHA-256: ed709f98f006a0d246046a509175899f3b6867132f35cdc5d431c446fd6c200e
 ```
 
 Each digest is over the lexicographically sorted UTF-8 identifiers, one
@@ -200,13 +200,13 @@ The current exact expansion is:
 
 ```text
 1,553 structural instances
-+ 2,359 semantic instances
-= 3,912 total structural-plus-semantic execution instances
++ 2,356 semantic instances
+= 3,909 total structural-plus-semantic execution instances
 ```
 
-The 88-row instance-axis registry maps 84 semantic rule families, has no
+The 86-row instance-axis registry maps 82 semantic rule families, has no
 unresolved axis and has SHA-256
-`808464a19ba383cf5713a921e551ae15f5208d62e02aeb0a57414b1cf51f9247`.
+`909767929bcc1b047232c39cf32d499dc44f55b3fa113f710a6d9d690e65b560`.
 
 ## Derived interface maxima
 
@@ -229,7 +229,7 @@ merged without retaining a second decoded copy.
 
 Its execution-phase partition is the working
 `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256
-`b78b4a303779d8446e386a6fca65a764e1fef92cb4e362a77c3641e04a3a9851`.
+`d02ba12ec435edfe96e7a246eaab9f4c942da0499c28705578329c6c796ab961`.
 It prevents a response-only hygiene mutation or validator self-test from being
 misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
 counts remain derived from the future 87-row seed-carrier directions.
@@ -265,7 +265,7 @@ definitions were unused aliases/meta-types and therefore could not honestly
 carry schema assertions or conformance evidence.
 
 The structural axis registry has SHA-256
-`61f6d5c359604e7d194525d013b5ac5ddd2eb1e4725c3e0b0f90d182e8642227`.
+`217981472583e8482836ccb2a965ddf4cbf064de845b974a3da7261617b50fd5`.
 Its 1,553 count is frozen only after a populated witness registry maps every
 instance to an exact positive carrier, target pointer, perturbation and expected
 observation. Until then it is a closed derivation candidate, not execution

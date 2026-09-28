@@ -155,22 +155,33 @@ Dispatch exactly one operation:
    ready only if every supplied distinct candidate belongs to the retained
    closure. Otherwise it selects the first canonical failing candidate or one
    replay-input terminal; it never silently drops input.
-5. `EVALUATE_CANDIDATE` revalidates the complete prior, evaluates the candidate
-   and merges prior/call evidence by purpose and exact event reference before
-   candidate work. Exact repeats are idempotent, non-overlapping content
-   segments merge canonically, and unknown references or conflicting content/
-   openings reject the request. It then applies the exact 25-row F13 relation
+5. `EVALUATE_CANDIDATE` revalidates the complete prior and evaluates the
+   candidate without accepting caller-supplied evidence. It then applies the
+   exact 25-row F13 relation
    and returns a terminal result or one
    complete successor proposal. The successor must equal complete replay. It
    copies the exact O-10 stage/mutation tuple and keeps deterministic O-08 S6
    reachable only on the would-be `APPLIED` path; all successor publication is
    deferred to the separate adapter/RS lifecycle.
-6. `EVALUATE_EVIDENCE_UPDATE` revalidates the complete prior and permits only a
-   non-empty monotone addition for known events. It returns the distinct
+6. `EVALUATE_EVIDENCE_UPDATE` revalidates the complete prior, merges additions
+   by purpose and exact event reference, and permits only a non-empty monotone
+   addition for known events. Exact repeats are idempotent, non-overlapping
+   content segments merge canonically, and unknown references or conflicting
+   content/openings reject the request. It returns the distinct
    rejected/idempotent/ready union, never K-retention or an O-10 primary. A
    ready successor must equal complete replay. The supplied prior is evidence
    input, never online-update authority; the future adapter must source and
    revalidate the authoritative prior before commit.
+
+The target-resolution remediation deliberately removes two semantic families
+rather than inventing public schema fields. ACV-064 is removed because
+`EvaluateCandidateInputV0` has no call-evidence carrier; unknown evidence
+references remain enforced on the actual evidence-update carrier by ACV-038.
+ACV-084 is removed because proof-attempt count has no `InterfaceLimitsV0`
+field, and `SIGNATURE_OCTETS` is a byte-size limit rather than an array-count
+limit. The implementation may retain its internal selected-envelope guard, but
+this candidate registry does not misrepresent it as a schema-resolved public
+constraint.
 
 No operation mutates its input, writes storage, accesses a network, commits a
 state, returns a secret or exposes an internal exception.
@@ -297,7 +308,7 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 88-row semantic-instance-axis registry for 84 semantic families,
+The schema, 86-row semantic-instance-axis registry for 82 semantic families,
 23-row content-axis,
 25-row F13 primary/axis, 16-row transcript, 17-row genesis, 17-row signature
 verification-path and 33-row terminal-predicate relations are now

@@ -470,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"APP-core inventory: FAIL: {error}", file=sys.stderr)
         return 2
     if args.phase_a_evidence_root is None:
-        print("APP-core inventory: PASS structural=1553 semantic=2359 total=3912")
+        print("APP-core inventory: PASS structural=1553 semantic=2356 total=3909")
     else:
         print("APP-core Phase A: PASS cases=96 requests=77 responses=19")
     return 0

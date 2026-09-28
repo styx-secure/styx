@@ -448,7 +448,15 @@ class ContractAuthority:
             for target in row.get("targets", [])
             if isinstance(target, str)
         }
-        if collection_targets != IMPLEMENTED_COLLECTION_BOUND_TARGETS:
+        internal_proof_group_targets = {
+            "$defs.ApplicationPresentationGroupV0.proofs",
+            "$defs.GenesisPresentationGroupV0.proofs",
+        }
+        if (
+            collection_targets & internal_proof_group_targets
+            or collection_targets | internal_proof_group_targets
+            != IMPLEMENTED_COLLECTION_BOUND_TARGETS
+        ):
             raise InterfaceModelError("implemented collection-bound target set drift")
         return cls(root, package, schema, envelope, dependencies)
 
@@ -2354,6 +2362,18 @@ def _project_content_states(
             row["replayReadiness"],
         )
         for row in relations["contentAxisLegalRelationV0"]
+        if row.get("reachability") != "RESERVED_UNREACHABLE_V0"
+    }
+    reserved = {
+        (
+            row["contentClass"],
+            row["localAvailability"],
+            row["bindingObservation"],
+            row["retentionState"],
+            row["replayReadiness"],
+        )
+        for row in relations["contentAxisLegalRelationV0"]
+        if row.get("reachability") == "RESERVED_UNREACHABLE_V0"
     }
     for row in rows:
         observed = (
@@ -2363,6 +2383,8 @@ def _project_content_states(
             row["retentionState"],
             row["replayReadiness"],
         )
+        if observed in reserved:
+            raise HarnessFailure("derived reserved O-04 content-axis state")
         if observed not in legal:
             raise HarnessFailure("derived O-04 state violates the exact axis relation")
     return sorted(rows, key=lambda row: row["eventReferenceHex"]), frozenset(
@@ -4141,6 +4163,43 @@ def validate_response_before_release(
     relations = _read_json(
         authority.contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
     )
+    reserved_content_states = {
+        (
+            row["contentClass"],
+            row["localAvailability"],
+            row["bindingObservation"],
+            row["retentionState"],
+            row["replayReadiness"],
+        )
+        for row in relations.get("contentAxisLegalRelationV0", [])
+        if row.get("reachability") == "RESERVED_UNREACHABLE_V0"
+    }
+
+    def reject_reserved_content_states(value: Any) -> None:
+        if isinstance(value, dict):
+            content_states = value.get("contentStates")
+            if isinstance(content_states, list):
+                for state in content_states:
+                    if not isinstance(state, dict):
+                        continue
+                    observed_content_state = (
+                        state.get("contentClass"),
+                        state.get("localAvailability"),
+                        state.get("bindingObservation"),
+                        state.get("retentionState"),
+                        state.get("replayReadiness"),
+                    )
+                    if observed_content_state in reserved_content_states:
+                        raise HarnessFailure(
+                            "APP-core v0 reserved O-04 content-axis state was generated"
+                        )
+            for child in value.values():
+                reject_reserved_content_states(child)
+        elif isinstance(value, list):
+            for child in value:
+                reject_reserved_content_states(child)
+
+    reject_reserved_content_states(result)
     reserved = {
         (row["operation"], row["result"]["kind"], row["result"].get("reason"), row["result"]["stage"])
         for row in relations.get("terminalPredicateRelationV0", [])

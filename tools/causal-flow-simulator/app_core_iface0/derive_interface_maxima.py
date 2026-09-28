@@ -73,7 +73,7 @@ class Derivation:
         require(self.envelope.get("candidate_id") == "balanced", "unselected resource envelope")
         require(self.reachability.get("schemaSha256") == sha256(SCHEMA_PATH), "schema/reachability drift")
         require(self.reachability.get("rootCount") == 12, "carrier-root drift")
-        require(len(self.semantics.get("rules", [])) == 84, "semantic-rule drift")
+        require(len(self.semantics.get("rules", [])) == 82, "semantic-rule drift")
         self.limits = {
             name: int(row["selected_value"])
             for name, row in self.envelope["entries"].items()
@@ -125,6 +125,15 @@ class Derivation:
                         f"unknown or mismatched derived array expression: {target}",
                     )
                     result[target] = selected
+        # Proof-group count remains an internal selected-envelope guard. It is
+        # not represented as a public semantic constraint because
+        # InterfaceLimitsV0 has no SIGNATURE_ATTEMPTS field.
+        for target in (
+            "$defs.ApplicationPresentationGroupV0.proofs",
+            "$defs.GenesisPresentationGroupV0.proofs",
+        ):
+            require(target not in result, f"duplicate array bound: {target}")
+            result[target] = self.limits["SIGNATURE_ATTEMPTS"]
         expected = {
             "$defs.ApplicationPresentationGroupV0.proofs",
             "$defs.ContentMaterialEvidenceV0.segments",

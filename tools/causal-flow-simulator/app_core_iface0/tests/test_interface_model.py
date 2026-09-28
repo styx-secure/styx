@@ -1758,13 +1758,10 @@ class InterfaceModelTests(unittest.TestCase):
         )
         self.assertIsInstance(detachable_closure, ReplayClosure)
         self.assertEqual(detachable_closure.k_observations[0]["kBindingAdmission"], "ADMITTED")
-        detachable = project_replay_state(
-            self.authority, dict(SUPPORTED_PROFILE), detachable_value
-        )
-        self.assertIsInstance(detachable, ReplayProjection)
-        self.assertEqual(detachable.content_states[0]["localAvailability"], "ABSENT")
-        self.assertEqual(detachable.content_states[0]["bindingObservation"], "NOT_CHECKED")
-        self.assertEqual(detachable.records[0]["replayReadiness"], "READY_FOR_AP_FOLD")
+        with self.assertRaisesRegex(HarnessFailure, "reserved O-04"):
+            project_replay_state(
+                self.authority, dict(SUPPORTED_PROFILE), detachable_value
+            )
 
         verified_detachable = candidate("DETACHABLE", 3)
         detachable_reference = backend.framed_hash(
@@ -2065,6 +2062,63 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertEqual(projected["eventReferenceHex"], reference)
         self.assertEqual(projected["contentDescriptor"]["commitmentShape"], "SINGLE")
         self.assertEqual(projected["replayReadiness"], "PENDING_OPENING")
+
+    def test_car010_detachable_absent_state_is_not_projected(self) -> None:
+        fields = self._application_fields(
+            content={
+                "class": "DETACHABLE",
+                "commitmentHex": "00" * 32,
+                "contentType": 1,
+                "exactLength": 0,
+                "geometryPredicateResults": {
+                    f"geometryPredicate{index}": "NOT_APPLICABLE"
+                    for index in range(1, 8)
+                },
+                "shape": "SINGLE",
+            }
+        )
+        candidate = ReplayCandidate(
+            {"objectKind": "APPLICATION_EVENT", "signatureHex": "", "transcriptHex": ""},
+            "77" * 32,
+            b"",
+            fields,
+        )
+        with self.assertRaisesRegex(HarnessFailure, "reserved O-04"):
+            _project_content_states(
+                self.authority,
+                (candidate,),
+                {"contentMaterial": [], "openingMaterial": []},
+            )
+
+    def test_car010_detachable_absent_state_is_rejected_before_release(self) -> None:
+        proposed, candidate = self._replay_fixture(event_type=1)
+        response = evaluate_interface_request(
+            self.authority,
+            {
+                "interfaceVersion": "0",
+                "operation": "REPLAY_CONTEXT",
+                "profile": dict(SUPPORTED_PROFILE),
+                "input": {
+                    "proposedGenesis": proposed,
+                    "presentations": [candidate],
+                    "evidenceAttempts": [],
+                },
+            },
+        )
+        content_state = response["result"]["proposedContext"]["projection"][
+            "contentStates"
+        ][0]
+        content_state.update(
+            {
+                "bindingObservation": "NOT_CHECKED",
+                "contentClass": "DETACHABLE",
+                "localAvailability": "ABSENT",
+                "replayReadiness": "READY",
+                "retentionState": "ACTIVE",
+            }
+        )
+        with self.assertRaisesRegex(HarnessFailure, "reserved O-04"):
+            validate_response_before_release(self.authority, response)
 
     def test_projection_foundations_derive_forks_pending_and_grant_bindings(self) -> None:
         proposed, _ = self._replay_fixture()

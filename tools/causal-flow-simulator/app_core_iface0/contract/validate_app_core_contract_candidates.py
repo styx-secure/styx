@@ -127,6 +127,73 @@ def resolve(schema: dict[str, Any], reference: str) -> Any:
     return current
 
 
+def _resolve_semantic_target(schema: dict[str, Any], target: str) -> Any:
+    require(
+        isinstance(target, str) and target.startswith("$defs."),
+        f"unresolved semantic target: {target!r}",
+    )
+    segments = target.split(".")
+    require(len(segments) >= 2 and segments[0] == "$defs", f"unresolved semantic target: {target}")
+    current: Any = schema.get("$defs", {})
+    for segment in segments[1:]:
+        match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*)(?:\[([0-9]+)\])?", segment)
+        require(match is not None, f"unresolved semantic target: {target}")
+        key, raw_index = match.groups()
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        elif (
+            isinstance(current, dict)
+            and isinstance(current.get("properties"), dict)
+            and key in current["properties"]
+        ):
+            current = current["properties"][key]
+        else:
+            require(False, f"unresolved semantic target: {target}")
+        if raw_index is not None:
+            index = int(raw_index)
+            require(
+                isinstance(current, list) and index < len(current),
+                f"unresolved semantic target: {target}",
+            )
+            current = current[index]
+    return current
+
+
+def validate_semantic_targets(schema: dict[str, Any], semantics: dict[str, Any]) -> None:
+    """Fail closed when a semantic target or target-keyed parameter is dangling."""
+
+    limits = schema.get("$defs", {}).get("InterfaceLimitsV0", {})
+    limit_properties = limits.get("properties", {})
+    limit_required = limits.get("required", [])
+    require(
+        isinstance(limit_properties, dict)
+        and isinstance(limit_required, list)
+        and set(limit_properties) == set(limit_required),
+        "InterfaceLimitsV0 dimension set is not closed",
+    )
+    for rule in semantics.get("rules", []):
+        targets = rule.get("targets", [])
+        require(isinstance(targets, list), f"invalid semantic targets: {rule.get('id')}")
+        for target in targets:
+            _resolve_semantic_target(schema, target)
+        parameters = rule.get("parameters", {})
+        require(isinstance(parameters, dict), f"invalid semantic parameters: {rule.get('id')}")
+        for name, value in parameters.items():
+            if name.endswith("ByTarget"):
+                require(
+                    isinstance(value, dict) and set(value) == set(targets),
+                    f"semantic target-keyed parameter drift: {rule.get('id')}/{name}",
+                )
+                for target in value:
+                    _resolve_semantic_target(schema, target)
+        dimension = parameters.get("dimension")
+        if dimension is not None:
+            require(
+                isinstance(dimension, str) and dimension in limit_properties,
+                f"unresolved semantic dimension: {rule.get('id')}/{dimension}",
+            )
+
+
 def terminal_rows(
     schema: dict[str, Any],
     node: dict[str, Any],
@@ -549,6 +616,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "oneOfDisjointnessRegistrySha256": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
         "perturbationPaletteSha256": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
         "positiveCarrierInventorySchemaSha256": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
+        "structuralIsolationRelationSha256": "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-RELATION-CANDIDATE.json",
         "structuralWitnessRegistrySchemaSha256": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
     }
     for field, name in bindings.items():
@@ -586,16 +654,18 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     semantics = load("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
+    validate_semantic_targets(schema, semantics)
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 84, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 82, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 85)},
+        set(semantic_ids)
+        == {f"ACV-{index:03d}" for index in range(1, 85)} - {"ACV-064", "ACV-084"},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 84, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 82, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
     acv049_axis_ids = {
         "ACV-049-L",
@@ -605,7 +675,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "ACV-049-E",
     }
     require(
-        len(axis_ids) == len(set(axis_ids)) == 88
+        len(axis_ids) == len(set(axis_ids)) == 86
         and set(axis_ids) == (set(semantic_ids) - {"ACV-049"}) | acv049_axis_ids
         and all(
             row.get("semanticRuleId") == "ACV-049"
@@ -615,7 +685,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         ),
         "semantic axis relation drift",
     )
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 2359, "semantic execution count drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 2356, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -631,7 +701,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 2359,
+        == 2356,
         "execution-phase total drift",
     )
     acv066_phase = next(
@@ -866,12 +936,12 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(
         phases.get("fixedCountsBeforeSeedPartition")
         == {
-            "BLIND_INPUT_EXECUTION": 652,
+            "BLIND_INPUT_EXECUTION": 649,
             "POST_OUTPUT_MUTATION": 412,
             "VALIDATOR_SELF_TEST": 212,
             "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
             "ACV048PendingCarrierPartition": 783,
-            "totalSemanticExecutionInstances": 2359,
+            "totalSemanticExecutionInstances": 2356,
         },
         "execution-phase count drift",
     )
@@ -933,7 +1003,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     acv050_rule = next(row for row in semantics["rules"] if row["id"] == "ACV-050")
     acv050_axis = next(row for row in axes["rules"] if row["id"] == "ACV-050")
     require(
-        acv050_rule["parameters"] == {"ruleCount": "84"}
+        acv050_rule["parameters"] == {"ruleCount": "82"}
         and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 25
         and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 26,
         "ACV-050 exact-registry binding drift",
@@ -1078,6 +1148,13 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         require(len(rows) == count, f"relation count drift: {field}")
         ids = [row["id"] for row in rows]
         require(len(ids) == len(set(ids)), f"relation ID drift: {field}")
+    require(
+        semantic_by_id["ACV-043"]["parameters"]["relationRowCount"]
+        == str(relation_counts["transcriptReasonStageRelationV0"])
+        and semantic_by_id["ACV-044"]["parameters"]["relationRowCount"]
+        == str(relation_counts["genesisReasonStageRelationV0"]),
+        "semantic relation-row count binding drift",
+    )
 
     fork_join = schema["$defs"]["ForkJoinProjectionV0"]
     require(
@@ -1699,9 +1776,9 @@ def validate_manifest() -> None:
         "oneOfOccurrences": 16,
         "oneOfArms": 57,
         "oneOfPairwiseDisjointnessRows": 101,
-        "semanticFamilies": 84,
-        "semanticExecutionInstances": 2359,
-        "totalExecutionInstances": 3912,
+        "semanticFamilies": 82,
+        "semanticExecutionInstances": 2356,
+        "totalExecutionInstances": 3909,
         "contentRelationRows": 23,
         "forkJoinLabelRelationRows": 10,
         "authorityProjectionDimensionRelationRows": 16,
@@ -1768,7 +1845,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 88-row instance-axis registry maps 84 semantic rule families, has no\n"
+            "The 86-row instance-axis registry maps 82 semantic rule families, has no\n"
             "unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
@@ -1952,7 +2029,7 @@ def main() -> None:
     print(
         "PASS schemas=4 defs=124 refs=287 enums=36 oneOf=16 arms=57 "
         "pairs=101 objects=87 properties=347 required=344 structural=1553 "
-        "semantic=2359 total=3912 terminal=33 F13=25 dependencies=65 provider_history=5 "
+        "semantic=2356 total=3909 terminal=33 F13=25 dependencies=65 provider_history=5 "
         "manifest=27 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

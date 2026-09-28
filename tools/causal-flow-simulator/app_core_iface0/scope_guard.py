@@ -44,6 +44,7 @@ PREFIX_MUTABLE = (
 SUBTREE = "tools/causal-flow-simulator/app_core_iface0/"
 IMPLEMENTATION_FILES = frozenset(
     {
+        "FOLLOWUPS.md",
         "README.md",
         "RESIDUALS-DISPOSITION.md",
         "authority_projection.py",

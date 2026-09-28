@@ -12,10 +12,10 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "e0af4e1e2173deb2481eabdb24d8622282b33455"
-MANIFEST_SHA256 = "15d75531e1fff1ff751754585561f68254a6657e4de40ff69c3a4678d1ba7cf2"
+MANIFEST_SHA256 = "c70d5d65fc42eeacd763c2bdc822fc060f533aa56f5f767a2270456dc3490220"
 STRUCTURAL_COUNT = 1553
-SEMANTIC_COUNT = 2359
-TOTAL_COUNT = 3912
+SEMANTIC_COUNT = 2356
+TOTAL_COUNT = 3909
 CONTRACT_FILES = 28
 ACV049_RELATION_COUNTS = {
     "ACV-049-L": 401,
@@ -155,7 +155,7 @@ def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
         text=True,
         timeout=120,
     )
-    if completed.returncode != 0 or "total=3912" not in completed.stdout:
+    if completed.returncode != 0 or "total=3909" not in completed.stdout:
         raise InventoryError("ratified contract validator failed")
 
 

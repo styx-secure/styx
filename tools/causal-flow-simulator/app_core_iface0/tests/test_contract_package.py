@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import copy
+import importlib.util
+import json
 import shutil
 import sys
 import tempfile
@@ -35,6 +38,26 @@ class ContractPackageTests(unittest.TestCase):
                     target.write_bytes(target.read_bytes() + b"x")
                 with self.assertRaises((InventoryError, FileNotFoundError)):
                     verify_contract_package(package)
+
+    def test_every_semantic_target_resolves_and_dangling_target_fails_closed(self) -> None:
+        validator_path = ROOT / "contract" / "validate_app_core_contract_candidates.py"
+        spec = importlib.util.spec_from_file_location("app_core_contract_validator", validator_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validator)
+        schema = json.loads(
+            (ROOT / "contract" / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json").read_text()
+        )
+        semantics = json.loads(
+            (ROOT / "contract" / "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json").read_text()
+        )
+        validator.validate_semantic_targets(schema, semantics)
+
+        dangling = copy.deepcopy(semantics)
+        dangling["rules"][0]["targets"][0] = "$defs.DoesNotExist"
+        with self.assertRaisesRegex(SystemExit, "unresolved semantic target"):
+            validator.validate_semantic_targets(schema, dangling)
 
 
 if __name__ == "__main__":

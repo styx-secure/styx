@@ -12,7 +12,7 @@
   "structuralWitnessRegistrySchema": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
   "structuralWitnessRegistrySchemaSha256": "b7073e8826f905362e0bec8d1d5e9678da1615a4629affe1657717d8b2584013",
   "structuralIsolationRelation": "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-RELATION-CANDIDATE.json",
-  "structuralIsolationRelationSha256": "7cfdeb97ab4dae27a8a5ca03cb0def4d5b87b1d0b28439a3dd40d2d38793b87d",
+  "structuralIsolationRelationSha256": "7fd65f6a1348b361b745df29a48573d5df9d97dd180ae609195db8a711317177",
   "pointerDigestEncoding": "lexicographically sorted canonical JSON Pointer plus LF",
   "executionContract": {
     "request": {

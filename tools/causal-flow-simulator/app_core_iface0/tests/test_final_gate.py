@@ -161,9 +161,9 @@ def _write_prescribed_reports(root: Path, *, stale: object | None = None) -> Non
         report: dict[str, object] = {"verdict": "PASS"}
         if name == "inventory.json":
             report["instance_counts"] = {
-                "semantic": 2359,
+                "semantic": 2356,
                 "structural": 1553,
-                "total": 3912,
+                "total": 3909,
             }
         if stale is not None and name == "c03-validate.json":
             report["preflightCount"] = stale
@@ -1501,7 +1501,7 @@ class FinalGateTests(unittest.TestCase):
                 {"oldToNewReconciliation": {"unexpected": 4060}}, "inventory.json"
             )
         )
-        self.assertFalse(_contains_stale_current_count({"count": 2359}, "scope.json"))
+        self.assertFalse(_contains_stale_current_count({"count": 2356}, "scope.json"))
 
     def test_prescribed_report_set_can_pass_without_unprescribed_schemas(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -1591,7 +1591,7 @@ class FinalGateTests(unittest.TestCase):
                 evidence.mkdir()
                 (evidence / "inventory.json").write_bytes(dumps({
                     "instance_counts": {
-                        "semantic": 2359, "structural": 1553, "total": 3912
+                        "semantic": 2356, "structural": 1553, "total": 3909
                     }
                 }))
                 for name in names:
@@ -1685,7 +1685,7 @@ class FinalGateTests(unittest.TestCase):
         self.assertEqual(report["schema"], "styx.app-core-iface0.final-gate.v1")
         self.assertEqual(
             report["instanceCounts"],
-            {"structural": 1553, "semantic": 2359, "total": 3912},
+            {"structural": 1553, "semantic": 2356, "total": 3909},
         )
         self.assertEqual(report["acv049RelationCount"], 884)
         self.assertEqual(report["contractFileCount"], 28)
@@ -1719,7 +1719,7 @@ class FinalGateTests(unittest.TestCase):
         decision = {
             "baseSha": BASE_SHA,
             "candidateManifestSha256": (
-                "15d75531e1fff1ff751754585561f68254a6657e4de40ff69c3a4678d1ba7cf2"
+                "c70d5d65fc42eeacd763c2bdc822fc060f533aa56f5f767a2270456dc3490220"
             ),
             "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
             "selectionHead": candidate,

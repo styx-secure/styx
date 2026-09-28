@@ -977,8 +977,14 @@ function verifyCollectionTargetClosure(semantics) {
     requireCondition(Array.isArray(row.targets), "collection-bound target list is absent");
     for (const target of row.targets) actual.add(target);
   }
+  const internalProofGroupTargets = new Set([
+    "$defs.ApplicationPresentationGroupV0.proofs",
+    "$defs.GenesisPresentationGroupV0.proofs",
+  ]);
   requireCondition(
-    JSON.stringify([...actual].sort()) === JSON.stringify([...IMPLEMENTED_COLLECTION_BOUND_TARGETS].sort()),
+    [...actual].every((target) => !internalProofGroupTargets.has(target))
+      && JSON.stringify([...new Set([...actual, ...internalProofGroupTargets])].sort())
+        === JSON.stringify([...IMPLEMENTED_COLLECTION_BOUND_TARGETS].sort()),
     "implemented collection-bound target set drift",
   );
 }

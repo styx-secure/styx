@@ -1369,7 +1369,7 @@ ACV049-P-TUPLE-FC57231E9DA7F26A79951133
             ROOT / "contract",
             acv049_materialized_paths=materialized,
         )
-        self.assertEqual(report["semantic_instance_count"], 2359)
+        self.assertEqual(report["semantic_instance_count"], 2356)
         self.assertEqual(
             report["seed_direction_counts"], {"REQUEST": 56, "RESPONSE": 31}
         )
@@ -1385,7 +1385,7 @@ ACV049-P-TUPLE-FC57231E9DA7F26A79951133
         self.assertEqual(
             report["execution_phase_counts"],
             {
-                "BLIND_INPUT_EXECUTION": 1156,
+                "BLIND_INPUT_EXECUTION": 1153,
                 "POST_OUTPUT_MUTATION": 691,
                 "VALIDATOR_SELF_TEST": 212,
                 "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
