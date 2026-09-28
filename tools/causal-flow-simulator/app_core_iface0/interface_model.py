@@ -812,9 +812,14 @@ def _complete_v2_validator(
         if not isinstance(maximum, str) or re.fullmatch(r"[0-9]+", maximum) is None:
             yield ValidationError("x-styx-unsigned-maximum is malformed")
             return
-        if (
-            re.fullmatch(r"(?:0|[1-9][0-9]*)", instance) is not None
-            and int(instance) > int(maximum)
+        canonical = re.fullmatch(r"(?:0|[1-9][0-9]*)", instance) is not None
+        normalized_maximum = maximum.lstrip("0") or "0"
+        if canonical and (
+            len(instance) > len(normalized_maximum)
+            or (
+                len(instance) == len(normalized_maximum)
+                and instance > normalized_maximum
+            )
         ):
             yield ValidationError("unsigned decimal exceeds maximum")
 
@@ -1049,7 +1054,9 @@ def _preflight_presentation_group(
     maximum = 2 * int(authority.interface_limits()["SIGNATURE_OCTETS"])
     for proof in proofs:
         signature = proof.get("signatureHex") if isinstance(proof, dict) else None
-        if isinstance(signature, str) and len(signature) > maximum:
+        if isinstance(signature, str) and (
+            len(signature) != maximum if request_side else len(signature) > maximum
+        ):
             if request_side:
                 raise RequestRejected()
             raise HarnessFailure("generated response exceeds signature bound")
@@ -1189,6 +1196,8 @@ def _preflight_request_collections(
     authority: ContractAuthority, request: Mapping[str, Any]
 ) -> None:
     operation = request.get("operation")
+    if not isinstance(operation, str):
+        raise RequestRejected()
     value = request.get("input")
     if not isinstance(value, dict):
         return
@@ -1443,8 +1452,7 @@ def _parse_transcript_candidate(
         logical_event.get(reference_field) != reference_hex
         or candidate.get("carriedReferenceHex") != reference_hex
     ):
-        observations["referenceVerification"] = "REJECTED"
-        return "REFERENCE_MISMATCH", "REFERENCE_DERIVATION", observations
+        raise RequestRejected()
     observations["referenceVerification"] = "VALID"
     try:
         proof_signatures = tuple(
@@ -3793,6 +3801,40 @@ def replay_context(
     }
 
 
+def _content_equivalence_view(value: Any, *, field: str | None = None) -> Any:
+    """Normalize adjacent content segments without changing their byte content."""
+
+    if isinstance(value, Mapping):
+        return {
+            key: _content_equivalence_view(item, field=key)
+            for key, item in value.items()
+        }
+    if not isinstance(value, list):
+        return value
+    if field != "segments":
+        return [_content_equivalence_view(item) for item in value]
+
+    merged: list[dict[str, str]] = []
+    for segment in value:
+        if (
+            not isinstance(segment, Mapping)
+            or set(segment) != {"offset", "octetsHex"}
+            or not isinstance(segment.get("offset"), str)
+            or not isinstance(segment.get("octetsHex"), str)
+        ):
+            return [_content_equivalence_view(item) for item in value]
+        offset = int(segment["offset"])
+        octets_hex = segment["octetsHex"]
+        if merged:
+            previous = merged[-1]
+            previous_end = int(previous["offset"]) + len(previous["octetsHex"]) // 2
+            if previous_end == offset:
+                previous["octetsHex"] += octets_hex
+                continue
+        merged.append({"offset": segment["offset"], "octetsHex": octets_hex})
+    return merged
+
+
 def _revalidate_prior_snapshot(
     authority: ContractAuthority,
     profile: dict[str, str],
@@ -3866,7 +3908,11 @@ def _revalidate_prior_snapshot(
         },
         "projection": _assemble_context_projection(authority, projection),
     }
-    return projection if regenerated == prior else None
+    return (
+        projection
+        if _content_equivalence_view(regenerated) == _content_equivalence_view(prior)
+        else None
+    )
 
 
 def _f13_relation(authority: ContractAuthority) -> dict[str, dict[str, Any]]:

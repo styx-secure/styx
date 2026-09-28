@@ -1042,8 +1042,8 @@ function preflightPresentationGroup(presentation, limits) {
   for (const proof of proofs) {
     if (objectValue(proof) && typeof proof.signatureHex === "string") {
       requireCondition(
-        proof.signatureHex.length <= 2 * limits.SIGNATURE_OCTETS,
-        "proof signature exceeds the ratified bound",
+        proof.signatureHex.length === 2 * limits.SIGNATURE_OCTETS,
+        "proof signature does not match the ratified width",
       );
     }
   }
@@ -1119,6 +1119,7 @@ function preflightCollections(input, schema, semantics, resourceEnvelope) {
   const limits = interfaceLimits(schema, resourceEnvelope);
   const message = input.message;
   if (input.direction === "REQUEST") {
+    requireCondition(typeof message.operation === "string", "request operation is not a string");
     const value = message.input;
     if (!objectValue(value)) return { verdict: "PASS" };
     if (["VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"].includes(message.operation)) {

@@ -696,6 +696,47 @@ class SeedReachabilityTests(unittest.TestCase):
             {"verdict": "PASS"},
         )
 
+        for malformed_operation in ([], {}):
+            malformed = json.loads(json.dumps(presentation_request))
+            malformed["message"]["operation"] = malformed_operation
+            rejected_operation = subprocess.run(
+                command,
+                input=json.dumps(malformed),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(rejected_operation.returncode, 2)
+            self.assertIn("operation", rejected_operation.stderr)
+
+        for octets in (0, 63, 65):
+            malformed = json.loads(json.dumps(presentation_request))
+            malformed["message"]["input"]["candidate"]["proofs"] = [
+                {"signatureHex": "00" * octets}
+            ]
+            rejected_signature = subprocess.run(
+                command,
+                input=json.dumps(malformed),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(rejected_signature.returncode, 2)
+            self.assertIn("signature", rejected_signature.stderr)
+
+        exact_signature = json.loads(json.dumps(presentation_request))
+        exact_signature["message"]["input"]["candidate"]["proofs"] = [
+            {"signatureHex": "00" * 64}
+        ]
+        accepted_signature = subprocess.run(
+            command,
+            input=json.dumps(exact_signature),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(json.loads(accepted_signature.stdout), {"verdict": "PASS"})
+
         too_many_proofs = json.loads(json.dumps(presentation_request))
         too_many_proofs["message"]["input"]["candidate"]["proofs"] = [
             {} for _ in range(65)
