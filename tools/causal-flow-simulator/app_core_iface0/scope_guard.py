@@ -72,6 +72,7 @@ IMPLEMENTATION_FILES = frozenset(
 TEST_FILES = frozenset(
     {
         "fixtures/acv049_historical_residual_mutants.json",
+        "o04_evidence_mutants.json",
         "release-relation-requests.json",
         "test_authority_projection.py",
         "test_canonical_json.py",
@@ -82,6 +83,7 @@ TEST_FILES = frozenset(
         "test_interface_model.py",
         "test_inventory.py",
         "test_mutations.py",
+        "test_o04_evidence_mutants.py",
         "test_release_relations.py",
         "test_report_hygiene.py",
         "test_scope_guard.py",

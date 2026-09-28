@@ -35,6 +35,7 @@ from interface_model import (  # noqa: E402
     _canonicalize_evidence,
     _assemble_context_projection,
     _branch_a_capacity_crossed,
+    _classify_evidence_attempt,
     _event_projection,
     _credential_projection,
     _fork_join_projection,
@@ -1078,6 +1079,205 @@ class InterfaceModelTests(unittest.TestCase):
             backend, transcript, signature
         )
 
+    def _required_content_candidate(
+        self,
+        proposed: dict[str, object],
+        *,
+        content: bytes = b"classified",
+        event_type: int = 1,
+        opening: str = "45" * 32,
+    ) -> tuple[dict[str, object], dict[str, object]]:
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        root = proposed["projection"]["rootCredentialIdentifierHex"]
+        context = proposed["projection"]["context"]["contextIdentifierHex"]
+        commitment = backend.encode_commitment(
+            profile_id=1,
+            profile_version=1,
+            context=bytes.fromhex(context),
+            credential=bytes.fromhex(root),
+            sequence=0,
+            content_type=1,
+            content=content,
+            randomizer=bytes.fromhex(opening),
+            chunk_size=None,
+        )
+        transcript = backend.encode_event(
+            self._application_fields(
+                contextIdentifierHex=context,
+                credentialIdentifierHex=root,
+                eventTypeId=event_type,
+                genesisReferenceHex=root,
+                content={
+                    "class": "REQUIRED",
+                    "commitmentHex": commitment["commitmentHex"],
+                    "contentType": 1,
+                    "exactLength": len(content),
+                    "geometryPredicateResults": {
+                        f"geometryPredicate{index}": "NOT_APPLICABLE"
+                        for index in range(1, 8)
+                    },
+                    "shape": "SINGLE",
+                },
+            )
+        )
+        _, signature = backend.ed25519_sign(bytes(range(32)), transcript)
+        candidate = self._application_presentation(backend, transcript, signature)
+        reference = candidate["logicalEvent"]["eventReferenceHex"]
+        attempt = {
+            "eventReferenceHex": reference,
+            "presentationId": "0",
+            "contentMaterial": {
+                "eventReferenceHex": reference,
+                "segments": (
+                    [{"offset": "0", "octetsHex": content.hex()}]
+                    if content
+                    else []
+                ),
+            },
+            "openingMaterial": {
+                "eventReferenceHex": reference,
+                "openingRandomizerHex": opening,
+            },
+        }
+        return candidate, attempt
+
+    def _pending_context(
+        self,
+        proposed: dict[str, object],
+        candidates: list[dict[str, object]],
+    ) -> dict[str, object]:
+        return replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": candidates,
+                "evidenceAttempts": [],
+            },
+        )["proposedContext"]
+
+    def test_replay_bad_randomizer_is_defined_malformed_result(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, attempt = self._required_content_candidate(proposed)
+        attempt["openingMaterial"]["openingRandomizerHex"] = "not-hex"
+
+        result = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [attempt],
+            },
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "kind": "TERMINAL_INPUT_REJECTED",
+                "reason": "EVIDENCE_NONCANONICAL",
+                "stage": "EVIDENCE_VALIDATION",
+            },
+        )
+
+    def test_randomizer_whitespace_classification_is_total_and_malformed(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, attempt = self._required_content_candidate(proposed)
+        closure = prepare_replay_closure(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [],
+            },
+        )
+        self.assertIsInstance(closure, ReplayClosure)
+        attempt["openingMaterial"]["openingRandomizerHex"] = (
+            " " + attempt["openingMaterial"]["openingRandomizerHex"]
+        )
+
+        try:
+            classification = _classify_evidence_attempt(
+                self.authority, closure.candidates, attempt
+            )
+        except Exception as error:
+            self.fail(f"classification raised instead of returning MALFORMED: {error}")
+
+        self.assertEqual(classification.kind, "MALFORMED")
+
+    def test_replay_malformed_attempt_shapes_are_terminal_without_exceptions(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, valid = self._required_content_candidate(proposed)
+        inner_mismatch = copy.deepcopy(valid)
+        inner_mismatch["contentMaterial"]["eventReferenceHex"] = "ff" * 32
+        malformed_attempts = [None, {}, inner_mismatch]
+
+        for malformed in malformed_attempts:
+            with self.subTest(attempt=malformed):
+                result = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": [malformed],
+                    },
+                )
+                self.assertEqual(
+                    result,
+                    {
+                        "kind": "TERMINAL_INPUT_REJECTED",
+                        "reason": "EVIDENCE_NONCANONICAL",
+                        "stage": "EVIDENCE_VALIDATION",
+                    },
+                )
+
+    def test_replay_complete_commitment_mismatch_is_corrupt(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, attempt = self._required_content_candidate(proposed)
+        attempt["openingMaterial"]["openingRandomizerHex"] = "46" * 32
+
+        result = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [attempt],
+            },
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "kind": "TERMINAL_INPUT_REJECTED",
+                "reason": "EVIDENCE_NONCANONICAL",
+                "stage": "EVIDENCE_VALIDATION",
+            },
+        )
+
+    def test_replay_well_formed_incomplete_attempt_is_dropped(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, attempt = self._required_content_candidate(proposed)
+        del attempt["openingMaterial"]
+
+        result = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [attempt],
+            },
+        )
+
+        self.assertEqual(result["kind"], "REPLAY_PROPOSAL_READY")
+        self.assertEqual(
+            result["proposedContext"]["localRevalidation"]["evidence"],
+            {"verifiedComplete": []},
+        )
+
     def test_replay_security_prefix_revalidates_genesis_and_complete_k_set(self) -> None:
         proposed, candidate = self._replay_fixture(event_type=1)
         value = {
@@ -1445,6 +1645,791 @@ class InterfaceModelTests(unittest.TestCase):
         with self.assertRaisesRegex(HarnessFailure, "reserved F13"):
             validate_response_before_release(self.authority, reserved)
 
+    def test_none_class_opening_is_malformed_in_both_operations(self) -> None:
+        proposed, candidate = self._replay_fixture(event_type=1)
+        pending = self._pending_context(proposed, [candidate])
+        reference = candidate["logicalEvent"]["eventReferenceHex"]
+        opening_attempt = {
+            "eventReferenceHex": reference,
+            "presentationId": "0",
+            "openingMaterial": {
+                "eventReferenceHex": reference,
+                "openingRandomizerHex": "45" * 32,
+            },
+        }
+        content_attempt = {
+            "eventReferenceHex": reference,
+            "presentationId": "1",
+            "contentMaterial": {
+                "eventReferenceHex": reference,
+                "segments": [],
+            },
+        }
+
+        for attempt in (opening_attempt, content_attempt):
+            with self.subTest(attempt=attempt):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": [attempt],
+                    },
+                )
+                self.assertEqual(replayed["reason"], "EVIDENCE_NONCANONICAL")
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": [attempt]},
+                )
+                self.assertEqual(
+                    updated["evaluation"]["reason"],
+                    "NONCANONICAL_MATERIAL",
+                )
+
+    def test_empty_nonzero_content_material_is_incomplete(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, attempt = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        attempt["contentMaterial"]["segments"] = []
+
+        replayed = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [attempt],
+            },
+        )
+        self.assertEqual(replayed["kind"], "REPLAY_PROPOSAL_READY")
+        updated = evaluate_evidence_update(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {"prior": pending, "additions": [attempt]},
+        )
+        self.assertEqual(updated["evaluation"]["reason"], "EMPTY_ADDITION_SET")
+
+    def test_conflicting_incomplete_duplicates_are_rejected(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, complete = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        first = copy.deepcopy(complete)
+        second = copy.deepcopy(complete)
+        del first["openingMaterial"]
+        del second["openingMaterial"]
+        first["contentMaterial"]["segments"][0]["octetsHex"] = "63"
+        second["contentMaterial"]["segments"][0]["octetsHex"] = "64"
+
+        replayed = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [first, second],
+            },
+        )
+        self.assertEqual(replayed["reason"], "EVIDENCE_NONCANONICAL")
+        updated = evaluate_evidence_update(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {"prior": pending, "additions": [first, second]},
+        )
+        self.assertEqual(updated["evaluation"]["reason"], "CONFLICTING_DUPLICATE")
+
+    def test_verified_peer_does_not_mask_conflicting_incomplete_rows(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, verified = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        conflicting_content = copy.deepcopy(verified)
+        del conflicting_content["openingMaterial"]
+        conflicting_content["contentMaterial"]["segments"][0][
+            "octetsHex"
+        ] = "64" + conflicting_content["contentMaterial"]["segments"][0][
+            "octetsHex"
+        ][2:]
+        conflicting_opening = copy.deepcopy(verified)
+        del conflicting_opening["contentMaterial"]
+        conflicting_opening["openingMaterial"]["openingRandomizerHex"] = "46" * 32
+
+        for incomplete in (conflicting_content, conflicting_opening):
+            for additions in ([verified, incomplete], [incomplete, verified]):
+                with self.subTest(additions=additions):
+                    replayed = replay_context(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {
+                            "proposedGenesis": proposed,
+                            "presentations": [candidate],
+                            "evidenceAttempts": additions,
+                        },
+                    )
+                    self.assertEqual(replayed["reason"], "EVIDENCE_NONCANONICAL")
+                    updated = evaluate_evidence_update(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {"prior": pending, "additions": additions},
+                    )
+                    self.assertEqual(
+                        updated["evaluation"]["reason"],
+                        "CONFLICTING_DUPLICATE",
+                    )
+
+    def test_consistent_partials_drop_and_equivalent_segmentations_coalesce(
+        self,
+    ) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, verified = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        candidate_b, verified_b = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        pending_with_peer = self._pending_context(proposed, [candidate, candidate_b])
+        reference = verified["eventReferenceHex"]
+        split_verified = copy.deepcopy(verified)
+        complete_hex = verified["contentMaterial"]["segments"][0]["octetsHex"]
+        split_verified["contentMaterial"]["segments"] = [
+            {"offset": "0", "octetsHex": complete_hex[:8]},
+            {"offset": "4", "octetsHex": complete_hex[8:]},
+        ]
+        partial_a = {
+            "eventReferenceHex": reference,
+            "presentationId": "1",
+            "contentMaterial": {
+                "eventReferenceHex": reference,
+                "segments": [{"offset": "0", "octetsHex": "63"}],
+            },
+        }
+        partial_b = {
+            "eventReferenceHex": reference,
+            "presentationId": "2",
+            "contentMaterial": {
+                "eventReferenceHex": reference,
+                "segments": [{"offset": "1", "octetsHex": "6c"}],
+            },
+        }
+        prefix_partial = copy.deepcopy(partial_a)
+        prefix_partial["presentationId"] = "3"
+        prefix_partial["contentMaterial"]["segments"][0]["octetsHex"] = "636c"
+        complete_content_only = copy.deepcopy(verified)
+        del complete_content_only["openingMaterial"]
+        partial_with_opening = copy.deepcopy(verified)
+        partial_with_opening["presentationId"] = "4"
+        partial_with_opening["contentMaterial"]["segments"][0]["octetsHex"] = "63"
+
+        for partials in (
+            [partial_a, partial_b],
+            [partial_a, prefix_partial],
+            [complete_content_only, partial_with_opening],
+        ):
+            with self.subTest(partials=partials):
+                replayed_partials = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": partials,
+                    },
+                )
+                self.assertEqual(replayed_partials["kind"], "REPLAY_PROPOSAL_READY")
+                self.assertEqual(
+                    replayed_partials["proposedContext"]["localRevalidation"][
+                        "evidence"
+                    ]["verifiedComplete"],
+                    [],
+                )
+                updated_partials = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": partials},
+                )
+                self.assertEqual(
+                    updated_partials["evaluation"]["reason"],
+                    "EMPTY_ADDITION_SET",
+                )
+
+                replayed_with_peer = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate, candidate_b],
+                        "evidenceAttempts": [*partials, verified_b],
+                    },
+                )
+                self.assertEqual(replayed_with_peer["kind"], "REPLAY_PROPOSAL_READY")
+                self.assertEqual(
+                    len(
+                        replayed_with_peer["proposedContext"]["localRevalidation"][
+                            "evidence"
+                        ]["verifiedComplete"]
+                    ),
+                    1,
+                )
+                updated_with_peer = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending_with_peer, "additions": [*partials, verified_b]},
+                )
+                self.assertEqual(
+                    updated_with_peer["evaluation"]["kind"], "PROPOSAL_READY"
+                )
+
+        for additions in (
+            [split_verified],
+            [verified, split_verified],
+            [split_verified, verified],
+        ):
+            with self.subTest(additions=additions):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": additions,
+                    },
+                )
+                self.assertEqual(replayed["kind"], "REPLAY_PROPOSAL_READY")
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": additions},
+                )
+                self.assertEqual(updated["evaluation"]["kind"], "PROPOSAL_READY")
+
+    def test_identical_representations_coalesce_and_same_event_incomplete_drops(
+        self,
+    ) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, complete = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        duplicate = copy.deepcopy(complete)
+        duplicate["presentationId"] = "1"
+        content_only = copy.deepcopy(complete)
+        del content_only["openingMaterial"]
+
+        for additions in (
+            [complete, duplicate],
+            [content_only, complete],
+            [complete, content_only],
+        ):
+            with self.subTest(additions=additions):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": additions,
+                    },
+                )
+                self.assertEqual(replayed["kind"], "REPLAY_PROPOSAL_READY")
+                self.assertEqual(
+                    len(
+                        replayed["proposedContext"]["localRevalidation"][
+                            "evidence"
+                        ]["verifiedComplete"]
+                    ),
+                    1,
+                )
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": additions},
+                )
+                self.assertEqual(updated["evaluation"]["kind"], "PROPOSAL_READY")
+
+    def test_verified_additions_are_permutation_invariant(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate_a, verified_a = self._required_content_candidate(
+            proposed, content=b"verified-a", event_type=1
+        )
+        candidate_b, verified_b = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        candidates = [candidate_a, candidate_b]
+        pending = self._pending_context(proposed, candidates)
+        replay_results = []
+        update_results = []
+        for additions in ([verified_a, verified_b], [verified_b, verified_a]):
+            replay_results.append(
+                replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": candidates,
+                        "evidenceAttempts": additions,
+                    },
+                )
+            )
+            update_results.append(
+                evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": additions},
+                )
+            )
+        self.assertEqual(replay_results[0], replay_results[1])
+        self.assertEqual(update_results[0], update_results[1])
+        for replayed in replay_results:
+            self.assertEqual(replayed["kind"], "REPLAY_PROPOSAL_READY")
+            self.assertEqual(
+                len(
+                    replayed["proposedContext"]["localRevalidation"]["evidence"][
+                        "verifiedComplete"
+                    ]
+                ),
+                2,
+            )
+        for updated in update_results:
+            self.assertEqual(updated["evaluation"]["kind"], "PROPOSAL_READY")
+            self.assertEqual(
+                len(
+                    updated["evaluation"]["proposal"]["successor"][
+                        "localRevalidation"
+                    ]["evidence"]["verifiedComplete"]
+                ),
+                2,
+            )
+
+    def test_malformed_forms_veto_verified_peer_in_both_orders_and_operations(
+        self,
+    ) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate_a, base = self._required_content_candidate(
+            proposed, content=b"classified", event_type=1
+        )
+        candidate_b, verified = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        candidates = [candidate_a, candidate_b]
+        pending = self._pending_context(proposed, candidates)
+
+        overlap = copy.deepcopy(base)
+        overlap["contentMaterial"]["segments"] = [
+            {"offset": "0", "octetsHex": "636c"},
+            {"offset": "1", "octetsHex": "61"},
+        ]
+        bad_offset = copy.deepcopy(base)
+        bad_offset["contentMaterial"]["segments"][0]["offset"] = float("inf")
+        huge_offset = copy.deepcopy(base)
+        huge_offset["contentMaterial"]["segments"][0]["offset"] = "1" * 5000
+        over_u64_offset = copy.deepcopy(base)
+        over_u64_offset["contentMaterial"]["segments"][0]["offset"] = (
+            "18446744073709551616"
+        )
+        leading_zero_offset = copy.deepcopy(base)
+        leading_zero_offset["contentMaterial"]["segments"][0]["offset"] = "01"
+        negative_offset = copy.deepcopy(base)
+        negative_offset["contentMaterial"]["segments"][0]["offset"] = "-1"
+        integer_offset = copy.deepcopy(base)
+        integer_offset["contentMaterial"]["segments"][0]["offset"] = 0
+        bad_octets = copy.deepcopy(base)
+        bad_octets["contentMaterial"]["segments"][0]["octetsHex"] = "zz"
+        bad_reference = copy.deepcopy(base)
+        bad_reference["eventReferenceHex"] = "gg" * 32
+        bad_reference["contentMaterial"]["eventReferenceHex"] = "gg" * 32
+        bad_reference["openingMaterial"]["eventReferenceHex"] = "gg" * 32
+        opening_mismatch = copy.deepcopy(base)
+        opening_mismatch["openingMaterial"]["eventReferenceHex"] = "ff" * 32
+        null_material = copy.deepcopy(base)
+        null_material["contentMaterial"] = None
+
+        for malformed, update_reason in (
+            (overlap, "PARTIAL_OVERLAP"),
+            (bad_offset, "NONCANONICAL_MATERIAL"),
+            (huge_offset, "NONCANONICAL_MATERIAL"),
+            (over_u64_offset, "NONCANONICAL_MATERIAL"),
+            (leading_zero_offset, "NONCANONICAL_MATERIAL"),
+            (negative_offset, "NONCANONICAL_MATERIAL"),
+            (integer_offset, "NONCANONICAL_MATERIAL"),
+            (bad_octets, "NONCANONICAL_MATERIAL"),
+            (bad_reference, "NONCANONICAL_MATERIAL"),
+            (opening_mismatch, "NONCANONICAL_MATERIAL"),
+            (null_material, "NONCANONICAL_MATERIAL"),
+        ):
+            for additions in ([malformed, verified], [verified, malformed]):
+                with self.subTest(malformed=malformed, additions=additions):
+                    replayed = replay_context(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {
+                            "proposedGenesis": proposed,
+                            "presentations": candidates,
+                            "evidenceAttempts": additions,
+                        },
+                    )
+                    self.assertEqual(
+                        replayed,
+                        {
+                            "kind": "TERMINAL_INPUT_REJECTED",
+                            "reason": "EVIDENCE_NONCANONICAL",
+                            "stage": "EVIDENCE_VALIDATION",
+                        },
+                    )
+                    updated = evaluate_evidence_update(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {"prior": pending, "additions": additions},
+                    )
+                    self.assertEqual(updated["evaluation"]["reason"], update_reason)
+
+    def test_unknown_evidence_reference_is_terminal_in_both_operations(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate_a, attempt = self._required_content_candidate(
+            proposed, content=b"unknown-a", event_type=1
+        )
+        candidate_b, verified = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        candidates = [candidate_a, candidate_b]
+        pending = self._pending_context(proposed, candidates)
+        unknown = "ff" * 32
+        attempt["eventReferenceHex"] = unknown
+        attempt["contentMaterial"]["eventReferenceHex"] = unknown
+        attempt["openingMaterial"]["eventReferenceHex"] = unknown
+
+        for additions in ([attempt], [attempt, verified], [verified, attempt]):
+            with self.subTest(additions=additions):
+                self.assertEqual(
+                    replay_context(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {
+                            "proposedGenesis": proposed,
+                            "presentations": candidates,
+                            "evidenceAttempts": additions,
+                        },
+                    ),
+                    {
+                        "kind": "TERMINAL_INPUT_REJECTED",
+                        "reason": "UNKNOWN_EVIDENCE_REFERENCE",
+                        "stage": "EVIDENCE_VALIDATION",
+                    },
+                )
+                self.assertEqual(
+                    evaluate_evidence_update(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {"prior": pending, "additions": additions},
+                    ),
+                    {
+                        "evaluation": {
+                            "kind": "TERMINAL_REJECTED",
+                            "reason": "UNKNOWN_EVENT_REFERENCE",
+                        }
+                    },
+                )
+
+    def test_evidence_update_malformed_shapes_are_defined_results(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, valid = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        bad_randomizer = copy.deepcopy(valid)
+        bad_randomizer["openingMaterial"]["openingRandomizerHex"] = "bad"
+        noncanonical_randomizer = copy.deepcopy(valid)
+        noncanonical_randomizer["openingMaterial"]["openingRandomizerHex"] = (
+            "45 " * 32
+        )
+
+        for malformed in (None, {}, bad_randomizer, noncanonical_randomizer):
+            with self.subTest(attempt=malformed):
+                self.assertEqual(
+                    evaluate_evidence_update(
+                        self.authority,
+                        dict(SUPPORTED_PROFILE),
+                        {"prior": pending, "additions": [malformed]},
+                    ),
+                    {
+                        "evaluation": {
+                            "kind": "TERMINAL_REJECTED",
+                            "reason": "NONCANONICAL_MATERIAL",
+                        }
+                    },
+                )
+
+        for malformed_batch in (None, {}):
+            with self.subTest(batch=malformed_batch):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": malformed_batch,
+                    },
+                )
+                self.assertEqual(replayed["reason"], "EVIDENCE_NONCANONICAL")
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": malformed_batch},
+                )
+                self.assertEqual(
+                    updated["evaluation"]["reason"],
+                    "NONCANONICAL_MATERIAL",
+                )
+
+    def test_commitment_backend_failure_is_contained_in_both_operations(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, complete = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+
+        with patch(
+            "interface_model._verified_complete_pair",
+            side_effect=EvidenceError("PRIMITIVE_ASSUMPTION_FAILURE"),
+        ):
+            replayed = replay_context(
+                self.authority,
+                dict(SUPPORTED_PROFILE),
+                {
+                    "proposedGenesis": proposed,
+                    "presentations": [candidate],
+                    "evidenceAttempts": [complete],
+                },
+            )
+            updated = evaluate_evidence_update(
+                self.authority,
+                dict(SUPPORTED_PROFILE),
+                {"prior": pending, "additions": [complete]},
+            )
+
+        self.assertEqual(replayed["kind"], "LOCAL_QUARANTINE_PROPOSAL")
+        self.assertEqual(updated["evaluation"]["kind"], "LOCAL_QUARANTINE_PROPOSAL")
+
+    def test_complete_overflow_is_corrupt_in_both_operations(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate_a, overflow = self._required_content_candidate(
+            proposed, content=b"overflow-a", event_type=1
+        )
+        candidate_b, verified = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        candidates = [candidate_a, candidate_b]
+        pending = self._pending_context(proposed, candidates)
+        overflow["contentMaterial"]["segments"][0]["octetsHex"] += "00"
+
+        for additions in ([overflow], [overflow, verified], [verified, overflow]):
+            with self.subTest(additions=additions):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": candidates,
+                        "evidenceAttempts": additions,
+                    },
+                )
+                self.assertEqual(replayed["reason"], "EVIDENCE_NONCANONICAL")
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": additions},
+                )
+                self.assertEqual(
+                    updated["evaluation"]["reason"],
+                    "NONCANONICAL_MATERIAL",
+                )
+
+    def test_incomplete_peer_is_dropped_while_verified_update_proceeds(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate_a, incomplete = self._required_content_candidate(
+            proposed, content=b"incomplete-a", event_type=1
+        )
+        candidate_b, verified = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        del incomplete["openingMaterial"]
+        pending = self._pending_context(proposed, [candidate_a, candidate_b])
+
+        result = evaluate_evidence_update(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {"prior": pending, "additions": [incomplete, verified]},
+        )
+
+        self.assertEqual(result["evaluation"]["kind"], "PROPOSAL_READY")
+        evidence = result["evaluation"]["proposal"]["successor"][
+            "localRevalidation"
+        ]["evidence"]["verifiedComplete"]
+        self.assertEqual(
+            [row["eventReferenceHex"] for row in evidence],
+            [verified["eventReferenceHex"]],
+        )
+
+    def test_each_incomplete_form_is_dropped_and_not_mislabeled(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, complete = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        opening_only = copy.deepcopy(complete)
+        del opening_only["contentMaterial"]
+        partial_with_opening = copy.deepcopy(complete)
+        partial_with_opening["contentMaterial"]["segments"][0]["octetsHex"] = "63"
+        partial_without_opening = copy.deepcopy(partial_with_opening)
+        del partial_without_opening["openingMaterial"]
+
+        for incomplete in (
+            opening_only,
+            partial_with_opening,
+            partial_without_opening,
+        ):
+            with self.subTest(attempt=incomplete):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": [candidate],
+                        "evidenceAttempts": [incomplete],
+                    },
+                )
+                self.assertEqual(replayed["kind"], "REPLAY_PROPOSAL_READY")
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": [incomplete]},
+                )
+                self.assertEqual(
+                    updated["evaluation"],
+                    {
+                        "kind": "TERMINAL_REJECTED",
+                        "reason": "EMPTY_ADDITION_SET",
+                    },
+                )
+
+    def test_split_incomplete_attempts_are_not_combined(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, complete = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        content_only = copy.deepcopy(complete)
+        opening_only = copy.deepcopy(complete)
+        del content_only["openingMaterial"]
+        del opening_only["contentMaterial"]
+        split = [content_only, opening_only]
+
+        replayed = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": split,
+            },
+        )
+        self.assertEqual(
+            replayed["proposedContext"]["localRevalidation"]["evidence"],
+            {"verifiedComplete": []},
+        )
+        updated = evaluate_evidence_update(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {"prior": pending, "additions": split},
+        )
+        self.assertEqual(updated["evaluation"]["reason"], "EMPTY_ADDITION_SET")
+
+    def test_zero_length_verified_evidence_is_retained_and_updatable(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, zero = self._required_content_candidate(proposed, content=b"")
+        pending = self._pending_context(proposed, [candidate])
+
+        replayed = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "presentations": [candidate],
+                "evidenceAttempts": [zero],
+            },
+        )
+        self.assertEqual(
+            len(
+                replayed["proposedContext"]["localRevalidation"]["evidence"][
+                    "verifiedComplete"
+                ]
+            ),
+            1,
+        )
+        updated = evaluate_evidence_update(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {"prior": pending, "additions": [zero]},
+        )
+        self.assertEqual(updated["evaluation"]["kind"], "PROPOSAL_READY")
+
+    def test_corrupt_attempt_vetoes_verified_peer_in_both_operations_and_orders(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate_a, corrupt = self._required_content_candidate(
+            proposed, content=b"corrupt-a", event_type=1
+        )
+        candidate_b, verified = self._required_content_candidate(
+            proposed, content=b"verified-b", event_type=2, opening="47" * 32
+        )
+        corrupt["openingMaterial"]["openingRandomizerHex"] = "46" * 32
+        candidates = [candidate_a, candidate_b]
+        pending = self._pending_context(proposed, candidates)
+
+        for attempts in ([corrupt, verified], [verified, corrupt]):
+            with self.subTest(operation="REPLAY_CONTEXT", attempts=attempts):
+                replayed = replay_context(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {
+                        "proposedGenesis": proposed,
+                        "presentations": candidates,
+                        "evidenceAttempts": attempts,
+                    },
+                )
+                self.assertEqual(
+                    replayed,
+                    {
+                        "kind": "TERMINAL_INPUT_REJECTED",
+                        "reason": "EVIDENCE_NONCANONICAL",
+                        "stage": "EVIDENCE_VALIDATION",
+                    },
+                )
+            with self.subTest(operation="EVALUATE_EVIDENCE_UPDATE", attempts=attempts):
+                updated = evaluate_evidence_update(
+                    self.authority,
+                    dict(SUPPORTED_PROFILE),
+                    {"prior": pending, "additions": attempts},
+                )
+                self.assertEqual(
+                    updated,
+                    {
+                        "evaluation": {
+                            "kind": "TERMINAL_REJECTED",
+                            "reason": "EVIDENCE_COMMITMENT_MISMATCH",
+                        }
+                    },
+                )
+
+    def test_evidence_update_incomplete_only_uses_empty_addition_set(self) -> None:
+        proposed, _ = self._replay_fixture()
+        candidate, attempt = self._required_content_candidate(proposed)
+        pending = self._pending_context(proposed, [candidate])
+        del attempt["openingMaterial"]
+
+        result = evaluate_evidence_update(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {"prior": pending, "additions": [attempt]},
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "evaluation": {
+                    "kind": "TERMINAL_REJECTED",
+                    "reason": "EMPTY_ADDITION_SET",
+                }
+            },
+        )
+
     def test_evidence_update_is_monotone_prior_bound_and_full_replay_equal(self) -> None:
         proposed, _ = self._replay_fixture()
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
@@ -1550,7 +2535,7 @@ class InterfaceModelTests(unittest.TestCase):
             {
                 "evaluation": {
                     "kind": "TERMINAL_REJECTED",
-                    "reason": "NONCANONICAL_MATERIAL",
+                    "reason": "EMPTY_ADDITION_SET",
                 }
             },
         )
@@ -1882,14 +2867,13 @@ class InterfaceModelTests(unittest.TestCase):
             },
         )
         self.assertIsInstance(absent_same_candidate, ReplayClosure)
-        self.assertIsInstance(mismatched_same_candidate, ReplayClosure)
         self.assertEqual(
-            mismatched_same_candidate.evidence,
-            {"contentMaterial": [], "openingMaterial": []},
-        )
-        self.assertEqual(
-            absent_same_candidate.k_observations,
-            mismatched_same_candidate.k_observations,
+            mismatched_same_candidate,
+            {
+                "kind": "TERMINAL_INPUT_REJECTED",
+                "reason": "EVIDENCE_NONCANONICAL",
+                "stage": "EVIDENCE_VALIDATION",
+            },
         )
 
     def test_replay_presentation_order_is_non_authoritative(self) -> None:

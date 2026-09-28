@@ -122,6 +122,15 @@ class EvidenceError(ValueError):
 
 
 @dataclass(frozen=True)
+class EvidenceAttemptClassification:
+    """Closed classification of one untrusted evidence attempt."""
+
+    kind: str
+    reason: str | None = None
+    verified: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class SignaturePathResult:
     """One exact ACV-068 path observation.
 
@@ -1911,6 +1920,208 @@ def _attempt_to_internal_evidence(
     return {"contentMaterial": [material], "openingMaterial": [opening]}
 
 
+def _classify_evidence_attempt(
+    authority: ContractAuthority,
+    candidates: tuple[ReplayCandidate, ...],
+    attempt: Any,
+) -> EvidenceAttemptClassification:
+    """Classify one attempt before it can affect authoritative evidence."""
+
+    malformed = EvidenceAttemptClassification("MALFORMED", "NONCANONICAL_MATERIAL")
+    if not isinstance(attempt, Mapping) or not attempt:
+        return malformed
+    if not set(attempt).issubset(
+        {"eventReferenceHex", "presentationId", "contentMaterial", "openingMaterial"}
+    ):
+        return malformed
+    reference = attempt.get("eventReferenceHex")
+    if (
+        not isinstance(reference, str)
+        or re.fullmatch(r"[0-9a-f]{64}", reference) is None
+    ):
+        return malformed
+    try:
+        if len(bytes.fromhex(reference)) != 32:
+            return malformed
+    except ValueError:
+        return malformed
+
+    material_present = "contentMaterial" in attempt
+    opening_present = "openingMaterial" in attempt
+    material = attempt.get("contentMaterial")
+    opening = attempt.get("openingMaterial")
+    if (material_present and not isinstance(material, Mapping)) or (
+        opening_present and not isinstance(opening, Mapping)
+    ):
+        return malformed
+    if material is None and opening is None:
+        return malformed
+    if material is not None:
+        if (
+            not isinstance(material, Mapping)
+            or set(material) != {"eventReferenceHex", "segments"}
+            or material.get("eventReferenceHex") != reference
+            or not isinstance(material.get("segments"), list)
+        ):
+            return malformed
+        segments = material["segments"]
+        previous_end = 0
+        for index, segment in enumerate(segments):
+            if not isinstance(segment, Mapping) or set(segment) != {
+                "offset",
+                "octetsHex",
+            }:
+                return malformed
+            offset_text = segment["offset"]
+            octets_hex = segment["octetsHex"]
+            if (
+                not isinstance(offset_text, str)
+                or re.fullmatch(r"0|[1-9][0-9]{0,19}", offset_text) is None
+                or not isinstance(octets_hex, str)
+                or re.fullmatch(r"(?:[0-9a-f]{2})+", octets_hex) is None
+            ):
+                return malformed
+            offset = int(offset_text)
+            octets = bytes.fromhex(octets_hex)
+            if offset > 18_446_744_073_709_551_615:
+                return malformed
+            if index and offset < previous_end:
+                return EvidenceAttemptClassification("MALFORMED", "PARTIAL_OVERLAP")
+            previous_end = offset + len(octets)
+    if opening is not None:
+        if (
+            not isinstance(opening, Mapping)
+            or set(opening) != {"eventReferenceHex", "openingRandomizerHex"}
+            or opening.get("eventReferenceHex") != reference
+        ):
+            return malformed
+        randomizer = opening.get("openingRandomizerHex")
+        try:
+            if (
+                not isinstance(randomizer, str)
+                or re.fullmatch(r"[0-9a-f]{64}", randomizer) is None
+                or len(bytes.fromhex(randomizer)) != 32
+            ):
+                return malformed
+        except ValueError:
+            return malformed
+
+    candidate = next(
+        (row for row in candidates if row.reference_hex == reference),
+        None,
+    )
+    if candidate is None:
+        return EvidenceAttemptClassification("UNKNOWN_REFERENCE")
+    descriptor = candidate.fields["content"]
+    if descriptor["class"] == "NONE":
+        return malformed
+
+    exact_length = descriptor["exactLength"]
+    if material is not None:
+        end = max(
+            (
+                int(segment["offset"])
+                + len(bytes.fromhex(segment["octetsHex"]))
+                for segment in material["segments"]
+            ),
+            default=0,
+        )
+        if end > exact_length:
+            return EvidenceAttemptClassification("CORRUPT", "NONCANONICAL_MATERIAL")
+    if material is None or opening is None:
+        return EvidenceAttemptClassification("INCOMPLETE")
+    complete = _complete_content_hex(material, exact_length)
+    if complete is None:
+        return EvidenceAttemptClassification("INCOMPLETE")
+
+    raw = _attempt_to_internal_evidence(attempt)
+    if raw is None:
+        return malformed
+    material = raw["contentMaterial"][0]
+    opening = raw["openingMaterial"][0]
+
+    module = _load_pinned_c03_model(str(authority.repo_root))
+    pair = _verified_complete_pair(module, candidate, material, opening)
+    if pair is None:
+        return EvidenceAttemptClassification(
+            "CORRUPT", "EVIDENCE_COMMITMENT_MISMATCH"
+        )
+    verified_material, verified_opening = pair
+    verified_material = {
+        **verified_material,
+        "segments": (
+            []
+            if complete == ""
+            else [{"offset": "0", "octetsHex": complete}]
+        ),
+    }
+    verified = _canonicalize_evidence(
+        {
+            "contentMaterial": [verified_material],
+            "openingMaterial": [verified_opening],
+        },
+        {reference: descriptor},
+        unknown_code="NONCANONICAL_MATERIAL",
+    )
+    return EvidenceAttemptClassification("VERIFIED_COMPLETE", verified=verified)
+
+
+def _classify_evidence_attempts(
+    authority: ContractAuthority,
+    candidates: tuple[ReplayCandidate, ...],
+    attempts: list[Any],
+) -> list[EvidenceAttemptClassification]:
+    """Classify a batch and surface duplicate purpose rows before any merge."""
+
+    classified = [
+        _classify_evidence_attempt(authority, candidates, attempt)
+        for attempt in attempts
+    ]
+    paired = list(zip(attempts, classified, strict=True))
+    content_octets: dict[tuple[str, int], tuple[int, str]] = {}
+    openings: dict[str, tuple[str, str]] = {}
+    conflicting = False
+    for attempt, row in paired:
+        if (
+            row.kind not in {"INCOMPLETE", "VERIFIED_COMPLETE"}
+            or not isinstance(attempt, Mapping)
+        ):
+            continue
+        reference = attempt["eventReferenceHex"]
+        material = attempt.get("contentMaterial")
+        if isinstance(material, Mapping):
+            for segment in material["segments"]:
+                offset = int(segment["offset"])
+                for index, octet in enumerate(
+                    bytes.fromhex(segment["octetsHex"])
+                ):
+                    key = (reference, offset + index)
+                    previous = content_octets.get(key)
+                    if (
+                        previous is not None
+                        and previous[0] != octet
+                        and {previous[1], row.kind} != {"VERIFIED_COMPLETE"}
+                    ):
+                        conflicting = True
+                    content_octets[key] = (octet, row.kind)
+        opening = attempt.get("openingMaterial")
+        if isinstance(opening, Mapping):
+            randomizer = opening["openingRandomizerHex"]
+            previous = openings.get(reference)
+            if (
+                previous is not None
+                and previous[0] != randomizer
+                and {previous[1], row.kind} != {"VERIFIED_COMPLETE"}
+            ):
+                conflicting = True
+            openings[reference] = (randomizer, row.kind)
+    if conflicting:
+        classified.append(
+            EvidenceAttemptClassification("MALFORMED", "CONFLICTING_DUPLICATE")
+        )
+    return classified
+
+
 def _reduce_evidence_attempt_list(
     authority: ContractAuthority,
     candidates: tuple[ReplayCandidate, ...],
@@ -1920,24 +2131,21 @@ def _reduce_evidence_attempt_list(
 
     if not isinstance(attempts, list):
         raise EvidenceError("NONCANONICAL_MATERIAL")
+    classified = _classify_evidence_attempts(authority, candidates, attempts)
+    terminal = next(
+        (row for row in classified if row.kind in {"MALFORMED", "CORRUPT"}),
+        None,
+    )
+    if terminal is not None:
+        raise EvidenceError(terminal.reason or "NONCANONICAL_MATERIAL")
+    if any(row.kind == "UNKNOWN_REFERENCE" for row in classified):
+        raise EvidenceError("UNKNOWN_EVENT_REFERENCE")
+
     retained: dict[str, Any] = {"contentMaterial": [], "openingMaterial": []}
-    for attempt in attempts:
-        if not isinstance(attempt, Mapping):
+    for row in classified:
+        if row.kind != "VERIFIED_COMPLETE" or row.verified is None:
             continue
-        raw = _attempt_to_internal_evidence(attempt)
-        if raw is None:
-            continue
-        try:
-            verified = _reduce_complete_evidence_attempts(
-                authority, candidates, raw
-            )
-        except EvidenceError as error:
-            if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
-                raise
-            continue
-        if not verified["contentMaterial"]:
-            continue
-        retained, _ = merge_verified_complete_evidence(retained, verified)
+        retained, _ = merge_verified_complete_evidence(retained, row.verified)
     return retained
 
 
@@ -2027,7 +2235,16 @@ def _canonicalize_evidence(
         if descriptor.get("class") == "NONE":
             raise EvidenceError("NONCANONICAL_MATERIAL")
         opening = row.get("openingRandomizerHex")
-        if not isinstance(opening, str):
+        if (
+            not isinstance(opening, str)
+            or re.fullmatch(r"[0-9a-f]{64}", opening) is None
+        ):
+            raise EvidenceError("NONCANONICAL_MATERIAL")
+        try:
+            opening_octets = bytes.fromhex(opening)
+        except ValueError:
+            raise EvidenceError("NONCANONICAL_MATERIAL") from None
+        if len(opening_octets) != 32:
             raise EvidenceError("NONCANONICAL_MATERIAL")
         canonical_opening.append(
             {
@@ -3147,7 +3364,14 @@ def prepare_replay_closure(
             return _local_quarantine_proposal(
                 proposed_genesis, "CONTENT_COMMITMENT"
             )
-        raise
+        return _replay_input_terminal(
+            (
+                "UNKNOWN_EVIDENCE_REFERENCE"
+                if error.code == "UNKNOWN_EVENT_REFERENCE"
+                else "EVIDENCE_NONCANONICAL"
+            ),
+            "EVIDENCE_VALIDATION",
+        )
     return ReplayClosure(
         proposed_genesis=proposed_genesis,
         candidates=candidates,
@@ -3862,6 +4086,13 @@ def evaluate_evidence_update(
         }
     candidates = prior_projection.closure.candidates
     raw_additions = value["additions"]
+    if not isinstance(raw_additions, list):
+        return {
+            "evaluation": {
+                "kind": "TERMINAL_REJECTED",
+                "reason": "NONCANONICAL_MATERIAL",
+            }
+        }
     if not raw_additions:
         return {
             "evaluation": {
@@ -3870,35 +4101,62 @@ def evaluate_evidence_update(
             }
         }
 
-    # Attempt order and presentation IDs are non-authoritative.  Invalid
-    # attempts are reduced independently so none can veto a valid co-present
-    # promotion.  A deterministic diagnostic is selected only when the whole
-    # call contains no promotable or idempotent E value.
+    # Classify the entire batch before any merge or state transition.  Terminal
+    # classes therefore cannot be masked by a co-present verified addition.
+    try:
+        classified = _classify_evidence_attempts(
+            authority, candidates, raw_additions
+        )
+    except EvidenceError as error:
+        if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
+            return {
+                "evaluation": _local_quarantine_proposal(
+                    prior_projection.closure.proposed_genesis,
+                    "CONTENT_COMMITMENT",
+                )
+            }
+        return {
+            "evaluation": {
+                "kind": "TERMINAL_REJECTED",
+                "reason": "NONCANONICAL_MATERIAL",
+            }
+        }
+    malformed = {row.reason for row in classified if row.kind == "MALFORMED"}
+    if malformed:
+        preference = (
+            "PARTIAL_OVERLAP",
+            "CONFLICTING_DUPLICATE",
+            "NONCANONICAL_MATERIAL",
+        )
+        reason = next(item for item in preference if item in malformed)
+        return {
+            "evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}
+        }
+    if any(row.kind == "UNKNOWN_REFERENCE" for row in classified):
+        return {
+            "evaluation": {
+                "kind": "TERMINAL_REJECTED",
+                "reason": "UNKNOWN_EVENT_REFERENCE",
+            }
+        }
+    corrupt = {row.reason for row in classified if row.kind == "CORRUPT"}
+    if corrupt:
+        reason = (
+            "NONCANONICAL_MATERIAL"
+            if "NONCANONICAL_MATERIAL" in corrupt
+            else "EVIDENCE_COMMITMENT_MISMATCH"
+        )
+        return {
+            "evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}
+        }
+
     additions: dict[str, Any] = {"contentMaterial": [], "openingMaterial": []}
-    rejected_reasons: set[str] = set()
-    for attempt in sorted(
-        raw_additions,
-        key=lambda row: json.dumps(
-            row, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-        ).encode("utf-8"),
-    ):
-        raw = _attempt_to_internal_evidence(attempt)
-        if raw is None:
-            rejected_reasons.add("NONCANONICAL_MATERIAL")
-            continue
-        try:
-            verified = _reduce_complete_evidence_attempts(
-                authority, candidates, raw
-            )
-        except EvidenceError as error:
-            rejected_reasons.add(error.code)
-            continue
-        if not verified["contentMaterial"]:
-            rejected_reasons.add("EVIDENCE_COMMITMENT_MISMATCH")
+    for row in classified:
+        if row.kind != "VERIFIED_COMPLETE" or row.verified is None:
             continue
         try:
             additions, _ = merge_verified_complete_evidence(
-                additions, verified
+                additions, row.verified
             )
         except EvidenceError as error:
             if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
@@ -3911,19 +4169,11 @@ def evaluate_evidence_update(
             raise
 
     if not additions["contentMaterial"]:
-        preference = (
-            "UNKNOWN_EVENT_REFERENCE",
-            "PARTIAL_OVERLAP",
-            "CONFLICTING_DUPLICATE",
-            "NONCANONICAL_MATERIAL",
-            "EVIDENCE_COMMITMENT_MISMATCH",
-        )
-        reason = next(
-            (item for item in preference if item in rejected_reasons),
-            "NONCANONICAL_MATERIAL",
-        )
         return {
-            "evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}
+            "evaluation": {
+                "kind": "TERMINAL_REJECTED",
+                "reason": "EMPTY_ADDITION_SET",
+            }
         }
     try:
         merged, changed = merge_verified_complete_evidence(

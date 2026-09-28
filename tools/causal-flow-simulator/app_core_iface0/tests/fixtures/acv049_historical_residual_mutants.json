@@ -273,14 +273,10 @@
       "disposition": "KILLED",
       "expectedOutcomes": [
         {
-          "exceptionClass": "EvidenceError",
-          "exceptionMessage": "NONCANONICAL_MATERIAL",
-          "kind": "REJECTION"
+          "kind": "RESPONSE_DIFF"
         },
         {
-          "exceptionClass": "EvidenceError",
-          "exceptionMessage": "NONCANONICAL_MATERIAL",
-          "kind": "REJECTION"
+          "kind": "RESPONSE_DIFF"
         }
       ],
       "family": "scalar",
@@ -389,14 +385,10 @@
       "disposition": "KILLED",
       "expectedOutcomes": [
         {
-          "exceptionClass": "EvidenceError",
-          "exceptionMessage": "NONCANONICAL_MATERIAL",
-          "kind": "REJECTION"
+          "kind": "RESPONSE_DIFF"
         },
         {
-          "exceptionClass": "EvidenceError",
-          "exceptionMessage": "NONCANONICAL_MATERIAL",
-          "kind": "REJECTION"
+          "kind": "RESPONSE_DIFF"
         }
       ],
       "family": "scalar",
@@ -590,14 +582,10 @@
       "disposition": "KILLED",
       "expectedOutcomes": [
         {
-          "exceptionClass": "EvidenceError",
-          "exceptionMessage": "NONCANONICAL_MATERIAL",
-          "kind": "REJECTION"
+          "kind": "RESPONSE_DIFF"
         },
         {
-          "exceptionClass": "EvidenceError",
-          "exceptionMessage": "NONCANONICAL_MATERIAL",
-          "kind": "REJECTION"
+          "kind": "RESPONSE_DIFF"
         }
       ],
       "family": "scalar",

@@ -21,6 +21,22 @@ public schema meaning in this change.
 
 ## Protocol or owner decision required
 
+### O-04 R7 / payload-observation reconciliation
+
+Tracked in [#312](https://github.com/styx-secure/styx/issues/312), under the
+limitations disclosed in the README's **M1 O-04 known deviations** section:
+
+- reconcile R7/C0.3 `OPENING_MISSING` rejection with payload-commitment
+  §5.4/§5.5;
+- define a typed local observation carrier with independent availability and
+  binding dimensions;
+- authorize and add `INCOMPLETE_EVIDENCE` if selected;
+- reclassify CAR-004 and CAR-007; and
+- add CAR-010/CAR-017 witnesses for operations other than `REPLAY_CONTEXT`.
+
+This work may change O-10/C0.3 cardinalities, pins, relations and corpus
+evidence and therefore is not authorized in M1.
+
 - Define the authority-fold tie rule for equal minimum-sequence siblings.
 - Decide whether nested evidence references must equal their outer reference;
   this would require a new semantic family and mutants.

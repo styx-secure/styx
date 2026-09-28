@@ -218,3 +218,30 @@ response carrier. It deliberately writes no case IDs, inventory or seed rows;
 those remain governed generated artifacts rather than implementation choices.
 
 Generated reports belong outside the repository and must never be committed.
+
+## M1 O-04 known deviations
+
+Follow-up issue [#312](https://github.com/styx-secure/styx/issues/312) owns the
+deferred protocol reconciliation. M1 makes no reachability-conformance claim
+for CAR-004, CAR-007, CAR-010 or CAR-017.
+
+The v0 evidence plane still collapses these payload-commitment §5.4 local
+observations instead of carrying availability and binding independently:
+
+- opening-only;
+- complete bytes without an opening;
+- partial bytes without an opening;
+- partial bytes with an opening; and
+- content bytes and an opening presented in separate attempts.
+
+Those well-formed incomplete attempts are dropped. An evidence-update batch
+containing only such attempts reports the existing `EMPTY_ADDITION_SET` token
+until a separately authorized `INCOMPLETE_EVIDENCE` result exists. Replay uses
+the single `EVIDENCE_NONCANONICAL` token for both signed-length overflow and an
+exact complete value whose opening fails commitment verification.
+
+M1 also admits a DETACHABLE event without an opening. That behavior conflicts
+with R7/C0.3 and the ratified O-10 `OPENING_MISSING` primary (F13R-015, closure
+row 76), for which APP-core has no producer in M1. CAR-010 and CAR-017 are
+witnessed only for `REPLAY_CONTEXT`; no witness for another operation is
+claimed.
