@@ -135,11 +135,19 @@ def _resolve_semantic_target(schema: dict[str, Any], target: str) -> Any:
     segments = target.split(".")
     require(len(segments) >= 2 and segments[0] == "$defs", f"unresolved semantic target: {target}")
     current: Any = schema.get("$defs", {})
-    for segment in segments[1:]:
+    for offset, segment in enumerate(segments[1:]):
         match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*)(?:\[([0-9]+)\])?", segment)
         require(match is not None, f"unresolved semantic target: {target}")
         key, raw_index = match.groups()
-        if isinstance(current, dict) and key in current:
+        final_segment = offset == len(segments) - 2
+        if offset == 0 and isinstance(current, dict) and key in current:
+            current = current[key]
+        elif (
+            offset > 0
+            and segments[offset] == "properties"
+            and isinstance(current, dict)
+            and key in current
+        ):
             current = current[key]
         elif (
             isinstance(current, dict)
@@ -147,6 +155,19 @@ def _resolve_semantic_target(schema: dict[str, Any], target: str) -> Any:
             and key in current["properties"]
         ):
             current = current["properties"][key]
+        elif (
+            isinstance(current, dict)
+            and key in {"allOf", "oneOf", "items"}
+            and key in current
+        ):
+            current = current[key]
+        elif (
+            isinstance(current, dict)
+            and key == "properties"
+            and not final_segment
+            and isinstance(current.get(key), dict)
+        ):
+            current = current[key]
         else:
             require(False, f"unresolved semantic target: {target}")
         if raw_index is not None:
@@ -156,6 +177,7 @@ def _resolve_semantic_target(schema: dict[str, Any], target: str) -> Any:
                 f"unresolved semantic target: {target}",
             )
             current = current[index]
+    require(isinstance(current, dict), f"unresolved semantic target: {target}")
     return current
 
 
@@ -186,12 +208,33 @@ def validate_semantic_targets(schema: dict[str, Any], semantics: dict[str, Any])
                 )
                 for target in value:
                     _resolve_semantic_target(schema, target)
-        dimension = parameters.get("dimension")
-        if dimension is not None:
-            require(
-                isinstance(dimension, str) and dimension in limit_properties,
-                f"unresolved semantic dimension: {rule.get('id')}/{dimension}",
-            )
+        def validate_dimensions(value: Any, dimension_context: bool = False) -> None:
+            if dimension_context:
+                if isinstance(value, str):
+                    require(
+                        value in limit_properties,
+                        f"unresolved semantic dimension: {rule.get('id')}/{value}",
+                    )
+                    return
+                require(
+                    isinstance(value, (dict, list)),
+                    f"unresolved semantic dimension: {rule.get('id')}/{value!r}",
+                )
+            if isinstance(value, dict):
+                for nested_name, nested_value in value.items():
+                    lowered = nested_name.lower()
+                    nested_context = (
+                        dimension_context
+                        or lowered == "dimension"
+                        or lowered.endswith("dimension")
+                        or lowered == "targetdimensions"
+                    )
+                    validate_dimensions(nested_value, nested_context)
+            elif isinstance(value, list):
+                for nested_value in value:
+                    validate_dimensions(nested_value, dimension_context)
+
+        validate_dimensions(parameters)
 
 
 def terminal_rows(
@@ -936,8 +979,8 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(
         phases.get("fixedCountsBeforeSeedPartition")
         == {
-            "BLIND_INPUT_EXECUTION": 649,
-            "POST_OUTPUT_MUTATION": 412,
+            "BLIND_INPUT_EXECUTION": 651,
+            "POST_OUTPUT_MUTATION": 410,
             "VALIDATOR_SELF_TEST": 212,
             "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
             "ACV048PendingCarrierPartition": 783,
@@ -1257,14 +1300,14 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "CAR-007": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
         "CAR-008": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-009": ("RESERVED_UNREACHABLE_V0", []),
-        "CAR-010": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-010": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
         "CAR-011": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-012": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-013": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
         "CAR-014": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-015": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-016": ("RESERVED_UNREACHABLE_V0", []),
-        "CAR-017": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-017": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
         "CAR-018": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-019": ("RESERVED_UNREACHABLE_V0", []),
         "CAR-020": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),

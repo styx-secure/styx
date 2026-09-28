@@ -1719,7 +1719,7 @@ class FinalGateTests(unittest.TestCase):
         decision = {
             "baseSha": BASE_SHA,
             "candidateManifestSha256": (
-                "c70d5d65fc42eeacd763c2bdc822fc060f533aa56f5f767a2270456dc3490220"
+                "7765f3a861ddf8e1fdcb6dfb9a21768fee13e63f8f60f64f93fa222ebdd1726e"
             ),
             "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
             "selectionHead": candidate,

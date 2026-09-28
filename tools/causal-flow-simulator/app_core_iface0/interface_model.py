@@ -2353,28 +2353,7 @@ def _project_content_states(
     relations = _read_json(
         authority.contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
     )
-    legal = {
-        (
-            row["contentClass"],
-            row["localAvailability"],
-            row["bindingObservation"],
-            row["retentionState"],
-            row["replayReadiness"],
-        )
-        for row in relations["contentAxisLegalRelationV0"]
-        if row.get("reachability") != "RESERVED_UNREACHABLE_V0"
-    }
-    reserved = {
-        (
-            row["contentClass"],
-            row["localAvailability"],
-            row["bindingObservation"],
-            row["retentionState"],
-            row["replayReadiness"],
-        )
-        for row in relations["contentAxisLegalRelationV0"]
-        if row.get("reachability") == "RESERVED_UNREACHABLE_V0"
-    }
+    legal, reserved = _content_axis_relation_sets(relations)
     for row in rows:
         observed = (
             row["contentClass"],
@@ -2390,6 +2369,39 @@ def _project_content_states(
     return sorted(rows, key=lambda row: row["eventReferenceHex"]), frozenset(
         pending_roots
     )
+
+
+def _content_axis_relation_sets(
+    relations: Mapping[str, Any],
+) -> tuple[set[tuple[Any, ...]], set[tuple[Any, ...]]]:
+    rows = relations.get("contentAxisLegalRelationV0")
+    if not isinstance(rows, list) or len(rows) != 23:
+        raise HarnessFailure("content-axis relation is absent or has unexpected row count")
+    legal = {
+        (
+            row["contentClass"],
+            row["localAvailability"],
+            row["bindingObservation"],
+            row["retentionState"],
+            row["replayReadiness"],
+        )
+        for row in rows
+        if row.get("reachability") != "RESERVED_UNREACHABLE_V0"
+    }
+    reserved = {
+        (
+            row["contentClass"],
+            row["localAvailability"],
+            row["bindingObservation"],
+            row["retentionState"],
+            row["replayReadiness"],
+        )
+        for row in rows
+        if row.get("reachability") == "RESERVED_UNREACHABLE_V0"
+    }
+    if not reserved:
+        raise HarnessFailure("content-axis relation has no reserved rows")
+    return legal, reserved
 
 
 def _role_tail_projection(fields: Mapping[str, Any]) -> dict[str, str]:
@@ -4163,17 +4175,7 @@ def validate_response_before_release(
     relations = _read_json(
         authority.contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
     )
-    reserved_content_states = {
-        (
-            row["contentClass"],
-            row["localAvailability"],
-            row["bindingObservation"],
-            row["retentionState"],
-            row["replayReadiness"],
-        )
-        for row in relations.get("contentAxisLegalRelationV0", [])
-        if row.get("reachability") == "RESERVED_UNREACHABLE_V0"
-    }
+    _, reserved_content_states = _content_axis_relation_sets(relations)
 
     def reject_reserved_content_states(value: Any) -> None:
         if isinstance(value, dict):

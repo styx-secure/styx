@@ -229,7 +229,7 @@ merged without retaining a second decoded copy.
 
 Its execution-phase partition is the working
 `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256
-`d02ba12ec435edfe96e7a246eaab9f4c942da0499c28705578329c6c796ab961`.
+`2150bc06ba68692d58009a913fb4930a1c798ec70076a644436d039ae0541420`.
 It prevents a response-only hygiene mutation or validator self-test from being
 misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
 counts remain derived from the future 87-row seed-carrier directions.
@@ -238,7 +238,7 @@ candidate relation with exact O-10 stage, ten fork/join-label rows, 16
 authority-projection dimensions, 11 graph-admission dimensions, 16 transcript
 result rows, 17 genesis result rows and 33 terminal-predicate rows; the relation artifact has
 SHA-256
-`ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f`.
+`352a12f90f27b7b7b657d2e5592e3dc507e24317a69a7213de0036684a9cec82`.
 
 The still-to-be-generated 87-row positive seed registry has a closed row schema
 in `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`, SHA-256

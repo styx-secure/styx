@@ -8,8 +8,11 @@ public schema meaning in this change.
 
 - H1: strict scope classification includes the disposition document and nested
   ACV-049 fixture, with a real-tree strict-guard regression.
-- H2: reserved O-04 rows are excluded from derivation and rejected at release.
-- H3: all semantic targets resolve; ACV-038/065/075 are retargeted, while
+- H2: reserved O-04 rows are excluded from derivation and rejected at release;
+  CAR-010 remains reachable because an admitted DETACHABLE event may legally
+  omit content and still be ready for AP folding.
+- H3: all semantic targets resolve; ACV-038 now targets retained proofs (the
+  prior retained-event carrier), and ACV-065/075 are retargeted, while
   ACV-064 and ACV-084 are removed because no semantically faithful public field
   exists. The family/instance counts and digests are repinned.
 - The structural-isolation digest is bound and corrected.
@@ -51,6 +54,11 @@ public schema meaning in this change.
 - Derive decoded-octet maxima independently of JSON maxima and fold every
   non-neutral `allOf` sibling.
 - Bind probe request/response rows to all 19 response cases.
+- Replace the ACV-048 positional `/rules/47/values` pointer with an ID-addressed
+  lookup, or bind that position explicitly to `ACV-048`.
+- Add an artifact-wide orphan-name test for semantic families removed or renamed
+  during H3; target resolution, nested dimensions, schema-keyword rejection and
+  relation closure are covered in this remediation.
 - Key the pinned C0.3 module cache by verified path/digest.
 - Give the Node adapter a closed schema-keyword vocabulary and pin the manifest
   before trusting artifact rows.
@@ -84,3 +92,10 @@ public schema meaning in this change.
   model becomes supported.
 - `generate_structural_witnesses.py` exception-class placement is readability
   only.
+
+## Correction-review MEDIUM gaps (deferred by the bounded cycle)
+
+- Add constructive end-to-end coverage for CAR-017, both CAR-010/CAR-017 rows under `EVALUATE_CANDIDATE` and `EVALUATE_EVIDENCE_UPDATE`, and a table-driven justification or defined terminal rejection for every remaining reserved content-axis tuple.
+- Exercise the proof-group exact-max and max+1 bounds through the public Python request path for both presentation-group schema types, and pin the exact Node schema-group path.
+- Resolve ACV-038 addition-side coverage: restore the `EvidenceAdditionSetV0` target or document why removing that subject carrier is normatively correct.
+- Audit readers of the `closedKeySetCountDimension` to `closedKeySetCountName` parameter rename and document whether the family digest covers semantic targets and parameters.

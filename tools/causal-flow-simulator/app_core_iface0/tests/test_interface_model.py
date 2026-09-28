@@ -46,6 +46,7 @@ from interface_model import (  # noqa: E402
     _protocol_error_reason,
     _reduce_application_proof_group,
     _reduce_complete_evidence_attempts,
+    _selected_limit,
     _selected_envelope_failure,
     _validate_complete_v2_document,
     _validate_structural_v2_evidence,
@@ -170,23 +171,67 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertNotIn("presentationId", vars(forward))
 
     def test_proof_group_limit_precedes_transcript_and_crypto_work(self) -> None:
-        group = {
-            "carriedReferenceHex": "00" * 32,
-            "logicalEvent": {
-                "eventReferenceHex": "00" * 32,
-                "objectKind": "APPLICATION_EVENT",
-                "transcriptHex": "not-hex",
-            },
-            "proofs": [
-                {"presentationId": str(index), "signatureHex": "00" * 64}
-                for index in range(65)
-            ],
-        }
-        result = _reduce_application_proof_group(self.authority, group, "00" * 32)
+        _, candidate = self._replay_fixture(event_type=1)
+        self.assertIsNotNone(candidate)
+        maximum = _selected_limit(self.authority, "SIGNATURE_ATTEMPTS")
+        group = copy.deepcopy(candidate)
+        group["proofs"] = [
+            {"presentationId": str(index), "signatureHex": "00" * 64}
+            for index in range(maximum + 1)
+        ]
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        with patch.object(
+            backend,
+            "ed25519_verify",
+            side_effect=AssertionError("verification must not run above the bound"),
+        ):
+            result = _reduce_application_proof_group(self.authority, group, "00" * 32)
         self.assertFalse(result.authenticated)
         self.assertEqual(result.diagnostic, "PROOF_GROUP_LIMIT_EXCEEDED")
         self.assertEqual(result.signature_attempts, 0)
         self.assertIsNone(result.transcript)
+
+        group["proofs"].pop()
+        with patch.object(backend, "ed25519_verify", return_value=True) as verify:
+            accepted = _reduce_application_proof_group(
+                self.authority, group, "00" * 32
+            )
+        self.assertTrue(accepted.authenticated)
+        self.assertEqual(accepted.signature_attempts, 1)
+        verify.assert_called_once()
+
+    def test_node_proof_group_limit_accepts_max_and_rejects_max_plus_one(self) -> None:
+        maximum = _selected_limit(self.authority, "SIGNATURE_ATTEMPTS")
+
+        def invoke(count: int) -> subprocess.CompletedProcess[bytes]:
+            request = {
+                "direction": "REQUEST",
+                "message": {
+                    "operation": "VALIDATE_TRANSCRIPT",
+                    "input": {"candidate": {"proofs": [{} for _ in range(count)]}},
+                },
+            }
+            return subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--preflight-collections",
+                    "--contract",
+                    str(ROOT / "contract"),
+                ],
+                input=json.dumps(request).encode(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+            )
+
+        accepted = invoke(maximum)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(json.loads(accepted.stdout), {"verdict": "PASS"})
+        rejected = invoke(maximum + 1)
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn(b"PresentationGroupV0.proofs/SIGNATURE_ATTEMPTS", rejected.stderr)
 
     def test_carried_reference_mismatch_precedes_signature_verification(self) -> None:
         _, candidate = self._replay_fixture(event_type=1)
@@ -1758,10 +1803,26 @@ class InterfaceModelTests(unittest.TestCase):
         )
         self.assertIsInstance(detachable_closure, ReplayClosure)
         self.assertEqual(detachable_closure.k_observations[0]["kBindingAdmission"], "ADMITTED")
-        with self.assertRaisesRegex(HarnessFailure, "reserved O-04"):
-            project_replay_state(
-                self.authority, dict(SUPPORTED_PROFILE), detachable_value
-            )
+        detachable = project_replay_state(
+            self.authority, dict(SUPPORTED_PROFILE), detachable_value
+        )
+        self.assertIsInstance(detachable, ReplayProjection)
+        self.assertEqual(detachable.content_states[0]["localAvailability"], "ABSENT")
+        self.assertEqual(detachable.content_states[0]["bindingObservation"], "NOT_CHECKED")
+        self.assertEqual(detachable.records[0]["replayReadiness"], "READY_FOR_AP_FOLD")
+        response = evaluate_interface_request(
+            self.authority,
+            {
+                "interfaceVersion": "0",
+                "operation": "REPLAY_CONTEXT",
+                "profile": dict(SUPPORTED_PROFILE),
+                "input": detachable_value,
+            },
+        )
+        self.assertEqual(response["result"]["kind"], "REPLAY_PROPOSAL_READY")
+        released = response["result"]["proposedContext"]["projection"]
+        self.assertEqual(released["contentStates"][0], detachable.content_states[0])
+        self.assertEqual(released["recordOutcomes"][0]["disposition"], "APPLIED")
 
         verified_detachable = candidate("DETACHABLE", 3)
         detachable_reference = backend.framed_hash(
@@ -2063,34 +2124,69 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertEqual(projected["contentDescriptor"]["commitmentShape"], "SINGLE")
         self.assertEqual(projected["replayReadiness"], "PENDING_OPENING")
 
-    def test_car010_detachable_absent_state_is_not_projected(self) -> None:
-        fields = self._application_fields(
-            content={
-                "class": "DETACHABLE",
-                "commitmentHex": "00" * 32,
-                "contentType": 1,
-                "exactLength": 0,
-                "geometryPredicateResults": {
-                    f"geometryPredicate{index}": "NOT_APPLICABLE"
-                    for index in range(1, 8)
-                },
-                "shape": "SINGLE",
-            }
-        )
+    def test_reserved_content_axis_row_is_filtered_from_derivation(self) -> None:
+        fields = self._application_fields(content={"class": "NONE"})
         candidate = ReplayCandidate(
             {"objectKind": "APPLICATION_EVENT", "signatureHex": "", "transcriptHex": ""},
             "77" * 32,
             b"",
             fields,
         )
-        with self.assertRaisesRegex(HarnessFailure, "reserved O-04"):
-            _project_content_states(
-                self.authority,
-                (candidate,),
-                {"contentMaterial": [], "openingMaterial": []},
+        with tempfile.TemporaryDirectory() as raw:
+            contract = Path(raw)
+            relations = json.loads(
+                (
+                    self.authority.contract
+                    / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+                ).read_text()
             )
+            car001 = next(
+                row for row in relations["contentAxisLegalRelationV0"]
+                if row["id"] == "CAR-001"
+            )
+            car001["reachability"] = "RESERVED_UNREACHABLE_V0"
+            (contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json").write_text(
+                json.dumps(relations)
+            )
+            authority = replace(self.authority, contract=contract)
+            with self.assertRaisesRegex(HarnessFailure, "reserved O-04"):
+                _project_content_states(
+                    authority,
+                    (candidate,),
+                    {"contentMaterial": [], "openingMaterial": []},
+                )
 
-    def test_car010_detachable_absent_state_is_rejected_before_release(self) -> None:
+    def test_content_axis_relation_is_required_and_closed(self) -> None:
+        fields = self._application_fields(content={"class": "NONE"})
+        candidate = ReplayCandidate(
+            {"objectKind": "APPLICATION_EVENT", "signatureHex": "", "transcriptHex": ""},
+            "77" * 32,
+            b"",
+            fields,
+        )
+        relations_path = (
+            self.authority.contract
+            / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+        )
+        for mutation in ("missing", "no-reserved"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as raw:
+                contract = Path(raw)
+                relations = json.loads(relations_path.read_text())
+                if mutation == "missing":
+                    del relations["contentAxisLegalRelationV0"]
+                else:
+                    for row in relations["contentAxisLegalRelationV0"]:
+                        row["reachability"] = "REACHABLE"
+                (contract / relations_path.name).write_text(json.dumps(relations))
+                authority = replace(self.authority, contract=contract)
+                with self.assertRaisesRegex(HarnessFailure, "content-axis relation"):
+                    _project_content_states(
+                        authority,
+                        (candidate,),
+                        {"contentMaterial": [], "openingMaterial": []},
+                    )
+
+    def test_reserved_content_axis_state_is_rejected_before_release(self) -> None:
         proposed, candidate = self._replay_fixture(event_type=1)
         response = evaluate_interface_request(
             self.authority,
@@ -2110,9 +2206,9 @@ class InterfaceModelTests(unittest.TestCase):
         ][0]
         content_state.update(
             {
-                "bindingObservation": "NOT_CHECKED",
-                "contentClass": "DETACHABLE",
-                "localAvailability": "ABSENT",
+                "bindingObservation": "NOT_APPLICABLE",
+                "contentClass": "NONE",
+                "localAvailability": "PRESENT",
                 "replayReadiness": "READY",
                 "retentionState": "ACTIVE",
             }

@@ -1385,8 +1385,8 @@ ACV049-P-TUPLE-FC57231E9DA7F26A79951133
         self.assertEqual(
             report["execution_phase_counts"],
             {
-                "BLIND_INPUT_EXECUTION": 1153,
-                "POST_OUTPUT_MUTATION": 691,
+                "BLIND_INPUT_EXECUTION": 1155,
+                "POST_OUTPUT_MUTATION": 689,
                 "VALIDATOR_SELF_TEST": 212,
                 "TWO_ENVIRONMENT_SOURCE_MUTATION": 300,
             },

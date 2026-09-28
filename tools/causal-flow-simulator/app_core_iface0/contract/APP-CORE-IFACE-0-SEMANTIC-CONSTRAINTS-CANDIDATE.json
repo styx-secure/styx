@@ -652,8 +652,7 @@
         "O04"
       ],
       "targets": [
-        "$defs.EvidenceAdditionSetV0",
-        "$defs.LocalRevalidationSnapshotV0.evidence"
+        "$defs.LocalRevalidationSnapshotV0.retainedProofs"
       ],
       "rule": "ADDITION_REFERENCES_EXIST_IN_REVALIDATED_PRIOR",
       "parameters": {},
@@ -994,7 +993,7 @@
         "partitionRole": "C03_ACTIVATION_CAPABILITY_INPUT",
         "dimensionCount": "5",
         "minimumCapabilityCount": "4",
-        "closedKeySetCountDimension": "ACTIVATION_CAPABILITY_SET"
+        "closedKeySetCountName": "ACTIVATION_CAPABILITY_SET"
       },
       "scenario": "ACI-DESCRIPTOR-CAPABILITY-REQUIREMENT-DRIFT",
       "mutant": "M-ACI-DESCRIPTOR-OMIT-CAPABILITY-REQUIREMENT"

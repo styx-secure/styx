@@ -192,7 +192,7 @@
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
       "role": "SEMANTIC_RULE_FAMILIES",
-      "sha256": "c34b41c362461ecee428e4aa8777a998d5cd6556d184a362dc01f2f3b609702d"
+      "sha256": "42bc0d9793308d0535e0bc441f60c2af71997b9a00be3aeaff072a5c2bd38004"
     },
     {
       "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
@@ -202,12 +202,12 @@
     {
       "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
       "role": "INSTANCE_EXECUTION_PHASES",
-      "sha256": "d02ba12ec435edfe96e7a246eaab9f4c942da0499c28705578329c6c796ab961"
+      "sha256": "2150bc06ba68692d58009a913fb4930a1c798ec70076a644436d039ae0541420"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
       "role": "LITERAL_LEGAL_RELATIONS",
-      "sha256": "ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f"
+      "sha256": "352a12f90f27b7b7b657d2e5592e3dc507e24317a69a7213de0036684a9cec82"
     },
     {
       "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
@@ -252,12 +252,12 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "6c732ef2671478283f244f0cd104649629e6724950224976a0be3d75d78dd290"
+      "sha256": "428ffc46661adcf00929bec0bab364aca7a03dc06ae369acaa32f5e1b94fed67"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "d5541f917a339946001ff5c226b6f9ffa2b57aa3a925f1f15cb8a45ae496ce98"
+      "sha256": "8a2d6f2dac66ae79c4c3eb6f0db631c8ddc1c1d8df97a8c9ae33e285d9525a98"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",

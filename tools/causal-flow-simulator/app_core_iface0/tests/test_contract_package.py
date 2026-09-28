@@ -16,6 +16,22 @@ from inventory import CONTRACT_FILES, InventoryError, verify_contract_package
 
 
 class ContractPackageTests(unittest.TestCase):
+    @staticmethod
+    def _semantic_validator_and_documents():
+        validator_path = ROOT / "contract" / "validate_app_core_contract_candidates.py"
+        spec = importlib.util.spec_from_file_location("app_core_contract_validator", validator_path)
+        assert spec is not None
+        assert spec.loader is not None
+        validator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(validator)
+        schema = json.loads(
+            (ROOT / "contract" / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json").read_text()
+        )
+        semantics = json.loads(
+            (ROOT / "contract" / "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json").read_text()
+        )
+        return validator, schema, semantics
+
     def test_exact_ratified_package_passes(self) -> None:
         manifest = verify_contract_package(ROOT / "contract")
         self.assertEqual(len(manifest["artifacts"]), 27)
@@ -40,24 +56,33 @@ class ContractPackageTests(unittest.TestCase):
                     verify_contract_package(package)
 
     def test_every_semantic_target_resolves_and_dangling_target_fails_closed(self) -> None:
-        validator_path = ROOT / "contract" / "validate_app_core_contract_candidates.py"
-        spec = importlib.util.spec_from_file_location("app_core_contract_validator", validator_path)
-        self.assertIsNotNone(spec)
-        self.assertIsNotNone(spec.loader)
-        validator = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(validator)
-        schema = json.loads(
-            (ROOT / "contract" / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json").read_text()
-        )
-        semantics = json.loads(
-            (ROOT / "contract" / "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json").read_text()
-        )
+        validator, schema, semantics = self._semantic_validator_and_documents()
         validator.validate_semantic_targets(schema, semantics)
 
         dangling = copy.deepcopy(semantics)
         dangling["rules"][0]["targets"][0] = "$defs.DoesNotExist"
         with self.assertRaisesRegex(SystemExit, "unresolved semantic target"):
             validator.validate_semantic_targets(schema, dangling)
+
+    def test_nested_semantic_dimensions_must_resolve(self) -> None:
+        validator, schema, semantics = self._semantic_validator_and_documents()
+        mutated = copy.deepcopy(semantics)
+        rule = next(
+            row
+            for row in mutated["rules"]
+            if "targetDimensions" in row.get("parameters", {})
+        )
+        first_target = next(iter(rule["parameters"]["targetDimensions"]))
+        rule["parameters"]["targetDimensions"][first_target] = "DOES_NOT_EXIST"
+        with self.assertRaisesRegex(SystemExit, "unresolved semantic dimension"):
+            validator.validate_semantic_targets(schema, mutated)
+
+    def test_semantic_targets_cannot_end_at_schema_keywords(self) -> None:
+        validator, schema, semantics = self._semantic_validator_and_documents()
+        mutated = copy.deepcopy(semantics)
+        mutated["rules"][0]["targets"][0] = "$defs.InterfaceLimitsV0.required"
+        with self.assertRaisesRegex(SystemExit, "unresolved semantic target"):
+            validator.validate_semantic_targets(schema, mutated)
 
 
 if __name__ == "__main__":

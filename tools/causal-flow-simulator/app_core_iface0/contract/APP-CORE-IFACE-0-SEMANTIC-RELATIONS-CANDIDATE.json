@@ -99,8 +99,8 @@
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
       "replayReadiness": "READY",
-      "reachability": "RESERVED_UNREACHABLE_V0",
-      "reachableOperations": []
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-011",
@@ -169,8 +169,8 @@
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "LOGICALLY_REMOVED",
       "replayReadiness": "READY",
-      "reachability": "RESERVED_UNREACHABLE_V0",
-      "reachableOperations": []
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-018",
