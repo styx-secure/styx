@@ -1036,6 +1036,7 @@ def _preflight_presentation_group(
     presentation: Any,
     *,
     request_side: bool,
+    exact_signature_width: bool = False,
 ) -> None:
     if not isinstance(presentation, dict):
         return
@@ -1055,7 +1056,8 @@ def _preflight_presentation_group(
     for proof in proofs:
         signature = proof.get("signatureHex") if isinstance(proof, dict) else None
         if isinstance(signature, str) and (
-            len(signature) != maximum if request_side else len(signature) > maximum
+            (request_side and exact_signature_width and len(signature) != maximum)
+            or len(signature) > maximum
         ):
             if request_side:
                 raise RequestRejected()
@@ -1227,7 +1229,10 @@ def _preflight_request_collections(
             authority, value.get("prior"), request_side=True
         )
         _preflight_presentation_group(
-            authority, value.get("candidate"), request_side=True
+            authority,
+            value.get("candidate"),
+            request_side=True,
+            exact_signature_width=request.get("profile") == SUPPORTED_PROFILE,
         )
     elif operation == "EVALUATE_EVIDENCE_UPDATE":
         _preflight_snapshot_collections(

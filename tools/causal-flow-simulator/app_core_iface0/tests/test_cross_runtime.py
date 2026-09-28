@@ -681,6 +681,11 @@ class SeedReachabilityTests(unittest.TestCase):
             "direction": "REQUEST",
             "message": {
                 "operation": "EVALUATE_CANDIDATE",
+                "profile": {
+                    "applicationProfileId": "1",
+                    "applicationProfileVersion": "1",
+                    "styxProtocolVersion": "1",
+                },
                 "input": {"candidate": {"proofs": []}},
             },
         }

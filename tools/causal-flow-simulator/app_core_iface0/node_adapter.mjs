@@ -1033,7 +1033,7 @@ function preflightLogicalEvent(logicalEvent, limits) {
 }
 
 
-function preflightPresentationGroup(presentation, limits) {
+function preflightPresentationGroup(presentation, limits, exactSignatureWidth = false) {
   if (!objectValue(presentation)) return;
   preflightLogicalEvent(presentation.logicalEvent, limits);
   const proofs = presentation.proofs;
@@ -1042,7 +1042,9 @@ function preflightPresentationGroup(presentation, limits) {
   for (const proof of proofs) {
     if (objectValue(proof) && typeof proof.signatureHex === "string") {
       requireCondition(
-        proof.signatureHex.length === 2 * limits.SIGNATURE_OCTETS,
+        exactSignatureWidth
+          ? proof.signatureHex.length === 2 * limits.SIGNATURE_OCTETS
+          : proof.signatureHex.length <= 2 * limits.SIGNATURE_OCTETS,
         "proof signature does not match the ratified width",
       );
     }
@@ -1132,7 +1134,14 @@ function preflightCollections(input, schema, semantics, resourceEnvelope) {
       preflightEvidenceAttempts(value.evidenceAttempts, limits);
     } else if (message.operation === "EVALUATE_CANDIDATE") {
       preflightSnapshotCollections(value.prior, limits);
-      preflightPresentationGroup(value.candidate, limits);
+      preflightPresentationGroup(
+        value.candidate,
+        limits,
+        objectValue(message.profile)
+          && message.profile.applicationProfileId === "1"
+          && message.profile.applicationProfileVersion === "1"
+          && message.profile.styxProtocolVersion === "1",
+      );
     } else if (message.operation === "EVALUATE_EVIDENCE_UPDATE") {
       preflightSnapshotCollections(value.prior, limits);
       preflightEvidenceAttempts(value.additions, limits);
