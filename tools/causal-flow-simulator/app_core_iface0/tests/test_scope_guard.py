@@ -15,6 +15,7 @@ from scope_guard import (
     BASE_SHA,
     EXACT_MUTABLE,
     IMPLEMENTATION_FILES,
+    NATIVE_BASE_SHA,
     SUBTREE,
     TEST_FILES,
     ScopeError,
@@ -167,7 +168,34 @@ class GitObjectScopeGuardTests(unittest.TestCase):
             _verify_subtree(self.repo, tree)
 
     def test_original_git_objects_preserve_exact_native_repin(self) -> None:
-        self.assertEqual(_verify_native_read_only(self.repo, BASE_SHA, "HEAD"), 60)
+        self.assertEqual(
+            _verify_native_read_only(
+                self.repo,
+                NATIVE_BASE_SHA,
+                "HEAD",
+            ),
+            60,
+        )
+
+    def test_pr_candidate_with_out_of_scope_path_fails(self) -> None:
+        self._replace_blob("styx-js/outside-scope.txt", "negative control\n")
+        tree = self._git("write-tree")
+        candidate = self._git(
+            "-c",
+            "user.name=Styx Test",
+            "-c",
+            "user.email=styx-test.invalid",
+            "commit-tree",
+            tree,
+            "-p",
+            BASE_SHA,
+            input_text="out-of-scope PR candidate\n",
+        )
+        with self.assertRaisesRegex(
+            ScopeError,
+            "changed path is outside ratified scope: styx-js/outside-scope.txt",
+        ):
+            build_report(self.repo, BASE_SHA, candidate, "strict")
 
     def test_second_native_repin_fails(self) -> None:
         row = next(
@@ -187,7 +215,7 @@ class GitObjectScopeGuardTests(unittest.TestCase):
         self._write_registry()
         tree = self._git("write-tree")
         with self.assertRaisesRegex(ScopeError, "ratified exact native dependency repin set drift"):
-            _verify_native_read_only(self.repo, BASE_SHA, tree)
+            _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree)
 
     def test_changed_repin_blob_identity_fails(self) -> None:
         self._replace_blob(
@@ -196,7 +224,7 @@ class GitObjectScopeGuardTests(unittest.TestCase):
         )
         tree = self._git("write-tree")
         with self.assertRaisesRegex(ScopeError, "exact native dependency repin drift"):
-            _verify_native_read_only(self.repo, BASE_SHA, tree)
+            _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,17 @@ from typing import Any
 sys.dont_write_bytecode = True
 
 from canonical_report import ReportError, store_report
-from inventory import BASE_SHA, InventoryError, _load_json, verify_contract_package
+from inventory import (
+    BASE_SHA as NATIVE_BASE_SHA,
+    InventoryError,
+    _load_json,
+    verify_contract_package,
+)
+
+
+# The pull-request scope boundary starts at the merged M1 tree. Native dependency
+# identities remain anchored to the earlier ratified inventory base.
+BASE_SHA = "73a0dd245046a0972acc6fa04433cc0c211a34e4"
 
 
 EXACT_MUTABLE = frozenset(
@@ -244,7 +254,7 @@ def build_report(repo: Path, base: str, candidate: str, mode: str) -> dict[str, 
         if not _is_allowed(path):
             raise ScopeError(f"changed path is outside ratified scope: {path}")
     contract_count, implementation_count, test_count = _verify_subtree(repo, head)
-    native_count = _verify_native_read_only(repo, base, head)
+    native_count = _verify_native_read_only(repo, NATIVE_BASE_SHA, head)
     return {
         "changed_path_count": len(rows),
         "contract_file_count": contract_count,
