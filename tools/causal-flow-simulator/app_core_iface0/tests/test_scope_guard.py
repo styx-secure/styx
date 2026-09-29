@@ -94,18 +94,6 @@ class ScopeGuardTests(unittest.TestCase):
         self.assertEqual(_verify_subtree(ROOT.parents[2], "HEAD"), (28, 25, 16))
 
     def test_strict_guard_accepts_actual_candidate_tree(self) -> None:
-        merge = "73a0dd245046a0972acc6fa04433cc0c211a34e4"
-        descendant = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", merge, "HEAD"],
-            cwd=ROOT.parents[2],
-            check=False,
-            capture_output=True,
-            timeout=60,
-        )
-        if descendant.returncode == 0:
-            self.skipTest(
-                "M1 strict scope report is bound to the pre-squash reviewed history"
-            )
         report = build_report(ROOT.parents[2], BASE_SHA, "HEAD", "strict")
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["implementation_file_count"], 25)
