@@ -2103,7 +2103,7 @@ Removal of this file is complete rollback because this card implements no bytes,
           "kind": "replace-range",
           "offset": 8,
           "length": 2,
-          "valueHex": "0001"
+          "valueHex": "0100"
         },
         "determinism": "literal-only; no clock, randomness, environment or unordered iteration"
       }
