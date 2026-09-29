@@ -24,7 +24,7 @@ CAPI-S014 establishes its exact parent and selection evidence. CAPI-S009/S010 pr
 
 Owner decision #328 comment `5892675163` selects option A without changing any C-MUT row. At rest, only the most recent loser is retained. A committed S017 may transiently leave the prior and new loser together, so the transient maximum is two. That commit immediately triggers retention compaction: identify the newest loser from the committed S017 selection evidence, compute and authenticate the complete survivor set containing only it, commit that compacted authority, then logically delete and request database deletion of the older loser. The compaction must commit before any later RS mutation and before a new S014 becomes eligible. If it fails, both records remain but processing fails closed: no later RS mutation and no new S014 eligibility until compaction commits. Therefore a third loser is impossible. Disposed losers leave no digest, counter, reference, or diagnostic trace.
 
-A terminated or invalidated parent/loser is only a compaction candidate after a separately owner-ratified proof establishes absence or supersession of every selection, hold, result, escrow, replay-window, crash-recovery, and restore reference. Without that evidence, retention continues and there is no finality or destruction claim. O-12, O-13, O-15, and O-16 remain blockers.
+For a loser superseded by the next committed S017, owner decision `5892675163` is the exact later safety authority: only the authenticated newest-only survivor commit permits disposal of the older loser. If that commit is absent, both are retained and later RS mutation/new S014 eligibility remain blocked. Separately, an S016-invalidated loser or a terminated/invalidated parent is only a compaction candidate after proof establishes absence or supersession of every selection, hold, result, escrow, replay-window, crash-recovery, and restore reference. O-12, O-13, O-15, and O-16 remain blockers for those other compaction/finality claims; they do not override the owner-authorized post-S017 older-loser compaction.
 
 ## 5. Outcomes, holds, results, and escrow
 
@@ -152,7 +152,7 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
       "UNTIL_AUTHENTICATED_TERMINAL_CLASSIFICATION_AND_C_MUT_CLEARING_EVENT",
       "UNTIL_CAPI_S016_INVALIDATION_OR_CAPI_S017_TERMINATION",
       "WHILE_SELECTION_ELIGIBILITY_OR_UNRESOLVED_OPERATION_CAN_REFERENCE_IT",
-      "UNTIL_LATER_CAPI_S016_INVALIDATION_OR_SEPARATELY_RATIFIED_SAFETY_EVIDENCE",
+      "MOST_RECENT_UNTIL_SUPERSEDED_BY_OWNER_DECISION_5892675163_RETENTION_COMPACTION",
       "UNTIL_DUPLICATE_CONFLICTING_REPLAY_AND_RESTART_CLASSIFICATION_NO_LONGER_NEEDS_IT",
       "UNTIL_TERMINAL_CLASSIFICATION_AND_C_MUT_CLEARING_EVENT",
       "UNTIL_COMMITTED_CONSUMPTION_AND_NO_ACTIVE_OR_HELD_MUTATION_REFERENCE",
@@ -182,8 +182,8 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
       "LOCAL_RESPONSE_EMISSION_NOT_SUCCESSFUL_WHERE_C_MUT_REQUIRES_IT",
       "SELECTION_ELIGIBILITY_OR_LIVE_REFERENCE",
       "LIVE_SELECTION_HOLD_RESULT_ESCROW_REPLAY_OR_CRASH_REFERENCE",
-      "NO_RATIFIED_POST_SELECTION_REFERENCE_CLOSURE_PROOF",
-      "O_12_O_13_O_15_O_16",
+      "MOST_RECENT_LOSER_NOT_YET_SUPERSEDED",
+      "OWNER_DECISION_5892675163_RETENTION_COMPACTION_NOT_COMMITTED",
       "LIVE_HOLD_RECONCILIATION_REPLAY_RESTORE_OR_CRASH_REFERENCE",
       "NO_RATIFIED_BOUNDED_COMPACTION_PROOF",
       "INDETERMINATE_OR_INTERRUPTED_RESPONSE_EMISSION",
@@ -344,11 +344,11 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
       "owner": "SS_RS",
       "confidentiality": "SECRET",
       "creationTrigger": "CAPI_S017_COMMIT",
-      "minimum": "UNTIL_LATER_CAPI_S016_INVALIDATION_OR_SEPARATELY_RATIFIED_SAFETY_EVIDENCE",
+      "minimum": "MOST_RECENT_UNTIL_SUPERSEDED_BY_OWNER_DECISION_5892675163_RETENTION_COMPACTION",
       "maximum": "UNBOUNDED_UNTIL_CONDITION",
       "blockers": [
-        "NO_RATIFIED_POST_SELECTION_REFERENCE_CLOSURE_PROOF",
-        "O_12_O_13_O_15_O_16"
+        "MOST_RECENT_LOSER_NOT_YET_SUPERSEDED",
+        "OWNER_DECISION_5892675163_RETENTION_COMPACTION_NOT_COMMITTED"
       ]
     },
     {
@@ -3140,8 +3140,8 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     "association": "EXACT_SELECTED_TRANSITION_PARENT_AND_SELECTION_EVIDENCE",
     "successiveSelections": "ALLOW_COMMITTED_S017_TO_CREATE_AT_MOST_SECOND_TRANSIENT_LOSER;_COMPACT_BEFORE_ANY_LATER_RS_MUTATION_OR_S014_ELIGIBILITY",
     "capiS016": "INVALIDATES_PRIOR_ELIGIBILITY_AND_EVIDENCE_ROLE_BUT_DOES_NOT_PROVE_PHYSICAL_DISPOSAL",
-    "compactionSafetyEvidence": "SEPARATELY_OWNER_RATIFIED_PROOF_OF_NO_HOLD_RESULT_ESCROW_REPLAY_CRASH_RECOVERY_OR_SELECTION_REFERENCE",
-    "absentEvidence": "RETAIN_AND_NO_FINALITY_OR_DESTRUCTION_CLAIM"
+    "compactionSafetyEvidence": "OWNER_DECISION_5892675163_AUTHORIZES_OLDER_LOSER_DISPOSAL_AFTER_AUTHENTICATED_NEWEST_ONLY_SURVIVOR_COMMIT",
+    "absentEvidence": "IF_RETENTION_COMPACTION_NOT_COMMITTED_RETAIN_BOTH_AND_BLOCK_LATER_RS_MUTATION_AND_NEW_S014_ELIGIBILITY"
   },
   "retentionCompactionRule": {
     "ownerDecision": "ISSUE_328_COMMENT_5892675163_OPTION_A",
