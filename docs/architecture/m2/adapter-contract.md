@@ -75,15 +75,15 @@ The indeterminate response carries `originalStateBefore`. Reconciliation obtains
 
 `CREATE` authenticates a peer framed non-last-resort KeyPackage, commits the founder session and emits an opaque embedded-tree Welcome only after commit. `JOIN_WELCOME` uses an SS/RS-owned unconsumed local KeyPackage reference and AP-supplied opaque Welcome; consumption and joined state commit together. C-BIND owns local KeyPackage issuance at the SS bootstrap boundary. Unsupported or unmatched onboarding rejects before mutation.
 
-`RESTORE` asks RS to distinguish no record, incompatible/legacy state and exactly one candidate M2 record, then synchronously performs SS/RS authentication, complete-record, binding, version and tuple revalidation. Only full success returns `ACTIVE`; decoded bytes never become authoritative. Authenticated inconsistency, including coarse-anchor regression, differs from authentication failure. Coherent whole-profile rollback may remain invisible.
+`RESTORE` classifies the complete stored set into four mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile candidate are ignored and never make it incompatible. SS/RS then synchronously perform authentication, complete-record, binding, version and tuple revalidation. Only full success returns `ACTIVE`; decoded bytes never become authoritative. Authenticated inconsistency, including multiple/mixed nonlegacy candidates or coarse-anchor regression, differs from authentication failure. Coherent whole-profile rollback may remain invisible.
 
 `PROTECT_APPLICATION`/`OPEN_APPLICATION` carry opaque bytes. SS structurally classifies the bounded framing epoch without trusting content: current through current-5 continue, while distance 6+ and future epochs reject. Eligible framing then undergoes key-dependent authentication and replay lookup. Exact duplicate identity emits no duplicate plaintext and makes no second transition.
 
-`SELF_UPDATE` creates an ordinary proposal-free local update and emits opaque protected Commit bytes only after commit. `APPLY_PEER_UPDATE` consumes one opaque incoming Commit. A current-parent ordinary update applies normally. If it instead shares the parent of the immediately preceding authoritative eligible self-update, those are the exact two authenticated depth-one candidates: lower raw authenticated 32-byte committer identity wins, selected complete state commits, and the valid loser remains non-authoritative retained evidence. Application data, digest, arrival, time and transport never select. Proposals, unrelated parents and every other topology reject before mutation.
+`SELF_UPDATE` creates an ordinary proposal-free local update and emits opaque protected Commit bytes only after commit. `APPLY_PEER_UPDATE` consumes one opaque incoming Commit. A current-parent ordinary update applies normally. Selection is available only when the incoming candidate shares the parent of the immediately preceding authoritative local self-update committed through `CAPI-S014` and the two authenticated raw 32-byte committer identities are distinct. The lower identity wins, selected complete state commits, and the valid loser remains non-authoritative retained evidence. Equal-committer pairs, re-presented candidates, peer-predecessor pairs, proposals, unrelated parents and every other topology reject before mutation. Application data, digest, arrival, time and transport never select.
 
 ## 7. Complete tables
 
-Section 10 is canonical. `stateMatrix` covers every operation/state pair. `errorDefinitions` close each value-free error and applicability condition without creating duplicate scenarios. `decisionRows` are mutually exclusive within each allowed operation/state; each has ownership, precedence, persistence, transition, result kind and stable scenario id. No wildcard row exists.
+Section 10 is canonical. `stateMatrix` covers every operation/state pair. `errorDefinitions` close each value-free error and applicability condition; each error row has a stable `CAPI-E` scenario id. `decisionRows` are mutually exclusive within each allowed operation/state; each has ownership, precedence, persistence, transition, result kind and stable scenario id. No wildcard row exists.
 
 ## 8. Total precedence
 
@@ -475,7 +475,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
     "internalFailureBoundary": "FAIL_CLOSED_INTERNAL applies only before any RS commit request; after a request any missing/failed/unknown outcome is INDETERMINATE, and after COMMITTED the adapter emits success or retains reconciliation evidence but never emits REJECTED",
     "framingEpochBeforeAuthentication": "SS structurally parses bounded framing and rejects past distance at least six or a future epoch at P07 without trusting content; only distance 0 through 5 continues to key-dependent authentication at P08 and replay lookup at P09",
     "replayOrder": "for authenticated distance 0 through 5, unseen identity continues and an exact duplicate emits DUPLICATE_IGNORED; framing-window cases and replay cases are disjoint",
-    "candidateSelector": "APPLY_PEER_UPDATE compares the current authoritative candidate with one incoming authenticated same-parent candidate only when the current transition is the immediately preceding eligible proposal-free self-update; unsigned lexicographic comparison of authenticated raw 32-byte committer identities selects the lower; selected complete state commits and the valid loser remains non-authoritative retained evidence",
+    "candidateSelector": "APPLY_PEER_UPDATE compares the current authoritative candidate with one incoming authenticated same-parent candidate only when the current transition is the immediately preceding eligible proposal-free local self-update committed through CAPI-S014 and the authenticated raw 32-byte committer identities are distinct; unsigned lexicographic comparison selects the lower; equal-committer, re-presented, peer-predecessor and every other pair is UNSUPPORTED_COMMIT_SHAPE; selected complete state commits and the valid loser remains non-authoritative retained evidence",
     "payloadRelease": "application, Welcome and Commit bytes appear only in SUCCESS after COMMITTED; never in other kinds",
     "completeLogicalMutation": [
       "session transition",
@@ -483,7 +483,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "replay and retention state",
       "authenticated manifest"
     ],
-    "restore": "RS distinguishes no record, incompatible/legacy record and exactly one candidate record; SS and RS synchronously revalidate the exact record before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure",
+    "restore": "RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure",
     "keyPackageProvisioning": "C-BIND owns local framed KeyPackage issuance at the SS bootstrap boundary; SS/RS own its reference and one-shot state; AP can supply only peer KeyPackage bytes and Welcome bytes",
     "peerMaterial": "CREATE emits opaque embedded-tree Welcome bytes; SELF_UPDATE emits opaque protected Commit bytes; APPLY_PEER_UPDATE consumes one incoming Commit and either applies a current-parent update or selects the exact bounded same-parent pair; no transport semantics follow",
     "singleWriter": "I-LOCK prevents a second active context before it invokes this API; session-active-elsewhere is therefore an outer UI/controller result, not an adapter result",
@@ -880,6 +880,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
   ],
   "errorDefinitions": [
     {
+      "scenario": "CAPI-E001",
       "errorCode": "UNKNOWN_FIELD",
       "condition": "a closed request object contains an unrecognized field",
       "precedenceLevel": "P01",
@@ -894,6 +895,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E002",
       "errorCode": "INVALID_REQUEST",
       "condition": "required framing or field type is missing or malformed",
       "precedenceLevel": "P01",
@@ -908,6 +910,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E003",
       "errorCode": "UNKNOWN_VALUE",
       "condition": "a closed value is unknown, excluding api, profile and operation selectors governed by P02-P04",
       "precedenceLevel": "P01",
@@ -922,6 +925,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E004",
       "errorCode": "UNSUPPORTED_API_VERSION",
       "condition": "request.api is not the exact adapterApi constant or disagrees with profile.adapterApi",
       "precedenceLevel": "P02",
@@ -936,6 +940,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E005",
       "errorCode": "UNSUPPORTED_PROFILE",
       "condition": "any exact profile or tuple field differs",
       "precedenceLevel": "P03",
@@ -950,6 +955,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E006",
       "errorCode": "BINDING_MISMATCH",
       "condition": "AP bindingRef does not match the SS-bound opaque application context",
       "precedenceLevel": "P03",
@@ -964,6 +970,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E007",
       "errorCode": "UNSUPPORTED_OPERATION",
       "condition": "operation is absent from operationEnum",
       "precedenceLevel": "P04",
@@ -978,6 +985,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E008",
       "errorCode": "SESSION_ALREADY_EXISTS",
       "condition": "a create, restore or join operation is requested in ACTIVE",
       "precedenceLevel": "P05",
@@ -992,6 +1000,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E009",
       "errorCode": "NO_ACTIVE_SESSION",
       "condition": "an active-session operation is requested in EMPTY",
       "precedenceLevel": "P05",
@@ -1006,8 +1015,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E010",
       "errorCode": "NO_STORED_SESSION",
-      "condition": "RESTORE finds no M2 session record",
+      "condition": "RESTORE finds no session material of any kind",
       "precedenceLevel": "P05",
       "resultKind": "REJECTED",
       "stateAfter": "UNCHANGED",
@@ -1020,6 +1030,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E011",
       "errorCode": "RECONCILIATION_REQUIRED",
       "condition": "a non-reconciliation operation is requested while reconciliation is required",
       "precedenceLevel": "P05",
@@ -1034,6 +1045,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E012",
       "errorCode": "NO_RECONCILIATION_PENDING",
       "condition": "reconciliation is requested without a held mutation",
       "precedenceLevel": "P05",
@@ -1048,6 +1060,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E013",
       "errorCode": "RECONCILIATION_REFERENCE_MISMATCH",
       "condition": "the echoed opaque reference does not match the held reference",
       "precedenceLevel": "P05",
@@ -1062,6 +1075,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E014",
       "errorCode": "VALUE_OUT_OF_RANGE",
       "condition": "a structural byte/count bound is exceeded before stateful processing",
       "precedenceLevel": "P06",
@@ -1076,6 +1090,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E015",
       "errorCode": "EPOCH_OUTSIDE_RETAINED_WINDOW",
       "condition": "structurally valid framing declares past distance at least six",
       "precedenceLevel": "P07",
@@ -1090,6 +1105,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E016",
       "errorCode": "FUTURE_EPOCH",
       "condition": "structurally valid framing declares a future epoch",
       "precedenceLevel": "P07",
@@ -1104,6 +1120,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E017",
       "errorCode": "AUTHENTICATION_FAILED",
       "condition": "key-dependent authentication or keyed-root validation fails",
       "precedenceLevel": "P08",
@@ -1118,8 +1135,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E018",
       "errorCode": "AUTHENTICATED_STATE_INCONSISTENT",
-      "condition": "authenticated owning-layer state is internally inconsistent",
+      "condition": "authenticated owning-layer state is internally inconsistent, including multiple or mixed nonlegacy session candidates",
       "precedenceLevel": "P08",
       "resultKind": "REJECTED",
       "stateAfter": "UNCHANGED",
@@ -1132,6 +1150,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E019",
       "errorCode": "UNSUPPORTED_ONBOARDING",
       "condition": "authenticated onboarding shape is outside the exact profile",
       "precedenceLevel": "P09",
@@ -1146,8 +1165,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E020",
       "errorCode": "STORED_SESSION_INCOMPATIBLE",
-      "condition": "stored record is legacy or has tuple/version drift",
+      "condition": "RESTORE finds no exact-profile candidate and one or more legacy or tuple/version-drifted session records",
       "precedenceLevel": "P09",
       "resultKind": "REJECTED",
       "stateAfter": "UNCHANGED",
@@ -1160,6 +1180,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E021",
       "errorCode": "WELCOME_NO_MATCHING_KEY_PACKAGE",
       "condition": "authenticated Welcome matches no single unconsumed local KeyPackage",
       "precedenceLevel": "P09",
@@ -1174,6 +1195,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E022",
       "errorCode": "UNSUPPORTED_UPDATE_FORM",
       "condition": "authenticated update is proposal-bearing or otherwise unselected",
       "precedenceLevel": "P09",
@@ -1188,6 +1210,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E023",
       "errorCode": "UNSUPPORTED_COMMIT_SHAPE",
       "condition": "authenticated candidate topology is outside the selected bounded case",
       "precedenceLevel": "P09",
@@ -1202,6 +1225,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E024",
       "errorCode": "KEY_PACKAGE_ALREADY_CONSUMED",
       "condition": "the matching logical KeyPackage was already consumed",
       "precedenceLevel": "P09",
@@ -1216,6 +1240,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       }
     },
     {
+      "scenario": "CAPI-E025",
       "errorCode": "FAIL_CLOSED_INTERNAL",
       "condition": "an unclassified internal failure occurs strictly before any RS commit request",
       "precedenceLevel": "P10",
@@ -1269,7 +1294,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S003",
       "operation": "RESTORE",
       "stateBefore": "EMPTY",
-      "condition": "RS supplies exactly one authenticated complete M2 session record; SS and RS owning-layer revalidation succeeds for exact versions, binding and tuple",
+      "condition": "RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency",
       "precedenceLevel": "P10",
       "persistence": "NONE",
       "stateAfterOnNamedDisposition": "ACTIVE",
@@ -1507,7 +1532,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S017",
       "operation": "APPLY_PEER_UPDATE",
       "stateBefore": "ACTIVE",
-      "condition": "incoming authenticated proposal-free depth-one candidate has the same parent as the immediately preceding authoritative local or peer self-update; together they are exactly two candidates with no application witnesses, zero witness score, ordinary priority and valid tip digests",
+      "condition": "incoming authenticated proposal-free depth-one candidate has the same parent as the immediately preceding authoritative local self-update committed through CAPI-S014; the authenticated raw committer identities are distinct; together they are exactly two candidates with no application witnesses, zero witness score, ordinary priority and valid tip digests",
       "precedenceLevel": "P10",
       "persistence": "RS_TRI_STATE",
       "stateAfterOnNamedDisposition": "ACTIVE",
@@ -1541,7 +1566,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S019",
       "operation": "APPLY_PEER_UPDATE",
       "stateBefore": "ACTIVE",
-      "condition": "candidate parent is neither the current authoritative state nor the immediately preceding eligible self-update parent, or candidate count/topology/witness/priority/digest shape is outside the exact two-candidate profile",
+      "condition": "candidate parent is neither the current authoritative state nor the immediately preceding CAPI-S014 local-self-update parent; or committer identities are equal; or a candidate is re-presented; or candidate count/topology/witness/priority/digest shape is outside the exact two-candidate profile",
       "precedenceLevel": "P09",
       "persistence": "NONE",
       "stateAfterOnNamedDisposition": "ACTIVE",
@@ -1643,7 +1668,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S025",
       "operation": "RESTORE",
       "stateBefore": "EMPTY",
-      "condition": "RS proves that no M2 session record exists",
+      "condition": "RS proves there is no exact-profile candidate, no incompatible session candidate and no legacy session material",
       "precedenceLevel": "P05",
       "persistence": "NONE",
       "stateAfterOnNamedDisposition": "EMPTY",
@@ -1660,7 +1685,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S026",
       "operation": "RESTORE",
       "stateBefore": "EMPTY",
-      "condition": "RS finds legacy bytes, tuple/version drift, or any stored record outside the exact M2 profile",
+      "condition": "RS finds no exact-profile candidate and finds one or more legacy or tuple/version-drifted session records",
       "precedenceLevel": "P09",
       "persistence": "NONE",
       "stateAfterOnNamedDisposition": "EMPTY",
@@ -1704,6 +1729,23 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
         "AP": "opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred",
         "SS": "match the held reconciliation reference and apply or discard the held transition exactly once from RS proof",
         "RS": "supply authoritative reconciliation evidence for the prior commit request; perform no new commit",
+        "TR": "ABSENT"
+      }
+    },
+    {
+      "scenario": "CAPI-S029",
+      "operation": "RESTORE",
+      "stateBefore": "EMPTY",
+      "condition": "RS finds more than one nonlegacy session candidate, or one exact-profile candidate beside an incompatible nonlegacy session candidate; separately preserved legacy bytes do not count",
+      "precedenceLevel": "P08",
+      "persistence": "NONE",
+      "stateAfterOnNamedDisposition": "EMPTY",
+      "namedDisposition": "AUTHENTICATED_STATE_INCONSISTENT",
+      "resultKindOnNamedDisposition": "REJECTED",
+      "ownership": {
+        "AP": "opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred",
+        "SS": "synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE",
+        "RS": "supply the complete stored record set and keyed-root/authenticity evidence; perform no write",
         "TR": "ABSENT"
       }
     }
