@@ -20,7 +20,9 @@ The required rule is current epoch plus up to five immediately preceding eligibl
 
 ## 4. Selection, parent, and losing candidate
 
-CAPI-S014 establishes its exact parent and selection evidence. CAPI-S009/S010 preserve them. CAPI-S016 invalidates eligibility, the parent's selection role, and prior losing-candidate evidence exactly as C-MUT states; invalidation is not physical disposal. CAPI-S017 terminates the selection role and may retain at most one non-authoritative, non-retryable loser associated with that selected transition and exact parent/evidence. If successive selections would require more than one retained loser, processing is **BLOCK** pending an owner decision; no new invalidation is invented.
+CAPI-S014 establishes its exact parent and selection evidence. CAPI-S009/S010 preserve them. CAPI-S016 invalidates eligibility, the parent's selection role, and prior losing-candidate evidence exactly as C-MUT states; invalidation is not physical disposal. CAPI-S017 terminates the selection role and creates at most one non-authoritative, non-retryable loser associated with that selected transition and exact parent/evidence.
+
+Owner decision #328 comment `5892675163` selects option A without changing any C-MUT row. At rest, only the most recent loser is retained. A committed S017 may transiently leave the prior and new loser together, so the transient maximum is two. That commit immediately triggers retention compaction: identify the newest loser from the committed S017 selection evidence, compute and authenticate the complete survivor set containing only it, commit that compacted authority, then logically delete and request database deletion of the older loser. The compaction must commit before any later RS mutation and before a new S014 becomes eligible. If it fails, both records remain but processing fails closed: no later RS mutation and no new S014 eligibility until compaction commits. Therefore a third loser is impossible. Disposed losers leave no digest, counter, reference, or diagnostic trace.
 
 A terminated or invalidated parent/loser is only a compaction candidate after a separately owner-ratified proof establishes absence or supersession of every selection, hold, result, escrow, replay-window, crash-recovery, and restore reference. Without that evidence, retention continues and there is no finality or destruction claim. O-12, O-13, O-15, and O-16 remain blockers.
 
@@ -36,7 +38,7 @@ KeyPackage lifetime is represented only through C-MUT `KEY_PACKAGE_CONSUMPTION` 
 
 ## 7. Compaction and crash atomicity
 
-Only removal inside an existing C-MUT row's `REPLAY_RETENTION_STATE` change is currently part of a ratified mutation. Every other compaction is not a C-MUT row and is **BLOCK** pending a separately ratified mutation contract. Future authorized compaction must compute the complete survivor set; prove no live candidate, parent, epoch, package, result, escrow, hold, restore, or crash reference; atomically commit the new authenticated manifest/root; and only then request database deletion. Failure before authority change preserves the old complete set. Failure after exposes the complete compacted set plus harmless unreachable remnants. A partial survivor set never becomes authoritative. Corruption, quota failure, interrupted compaction, or an ambiguous graph is **BLOCK** and retains the old complete set.
+Only removal inside an existing C-MUT row's `REPLAY_RETENTION_STATE` change and the post-S017 loser compaction authorized by owner decision `5892675163` are currently authorized. Every other compaction is not a C-MUT row and is **BLOCK** pending a separately ratified mutation contract. Authorized compaction must compute the complete survivor set; prove no live candidate, parent, epoch, package, result, escrow, hold, restore, or crash reference; atomically commit the new authenticated manifest/root; and only then request database deletion. Failure before authority change preserves the old complete set. Failure after exposes the complete compacted set plus harmless unreachable remnants. A partial survivor set never becomes authoritative. Corruption, quota failure, interrupted compaction, or an ambiguous graph is **BLOCK** and retains the old complete set.
 
 ## 8. Deletion, lock, and reset limits
 
@@ -50,7 +52,7 @@ Disposal/compaction diagnostics are value-free and expose only allowlisted count
 
 ## 10. Deterministic lifecycle interpretation
 
-Each matrix cell applies if that class exists at the named event. `RETAIN` preserves it. `COMPACTION_CANDIDATE` does not authorize deletion; every named condition and full reference closure must first hold. `LOGICALLY_DELETE` is permitted only for the ordered explicit-reset case. `BLOCK` retains material and forbids authority change or deletion. No absent class is fabricated and no time passage changes a cell.
+Each matrix cell applies if that class exists at the named event. `RETAIN` preserves it. `COMPACTION_CANDIDATE` does not authorize deletion; every named condition and full reference closure must first hold. `LOGICALLY_DELETE` is permitted only for the ordered explicit-reset case or, for all but the most recent loser, after the authenticated retention-compaction survivor commit. `BLOCK` retains material and forbids the action named by the condition; after failed loser compaction it specifically blocks later RS mutation and new S014 eligibility. No absent class is fabricated and no time passage changes a cell.
 
 Creation and commit retain all potentially live classes; row-specific creation is governed by C-MUT. Restart and lock retain logical state. `NOT_COMMITTED`, epoch advancement, and S016/S017 expose only the narrowly listed candidates and never bypass closure. CAPI-S014 preserves/establishes its parent. All corruption, quota, and interrupted-compaction cells block. Explicit reset follows §8.
 
@@ -107,6 +109,7 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
       "CAPI_S014_SELECTION",
       "CAPI_S016_SELECTION",
       "CAPI_S017_SELECTION",
+      "RETENTION_COMPACTION",
       "RESTART",
       "LOCK",
       "CORRUPTION",
@@ -206,6 +209,7 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
       "AUTHENTICATED_TERMINAL_NOT_COMMITTED_AND_C_MUT_CLEARING_EVENT_REQUIRED",
       "C_MUT_ROLE_INVALIDATED_BUT_ALL_REFERENCES_MUST_FIRST_BE_PROVEN_ABSENT_OR_SUPERSEDED",
       "SELECTION_ROLE_TERMINATED_BUT_ALL_REFERENCES_MUST_FIRST_BE_PROVEN_ABSENT_OR_SUPERSEDED",
+      "DISPOSE_ALL_BUT_MOST_RECENT_LOSER_AFTER_COMPLETE_SURVIVOR_COMMIT;_NO_RESIDUAL_DIGEST_OR_COUNTER",
       "REMOVE_OR_INVALIDATE_WRAPPER_FIRST",
       "SEPARATE_OWNER_AND_CLEANUP_CONTRACT_REQUIRED"
     ]
@@ -581,6 +585,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "CURRENT_AUTHORITATIVE_PROVIDER_SESSION_STATE",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "CURRENT_AUTHORITATIVE_PROVIDER_SESSION_STATE",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -671,6 +681,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "PAST_EPOCH_REPLAY_DECRYPTION_MATERIAL",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "PAST_EPOCH_REPLAY_DECRYPTION_MATERIAL",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -761,6 +777,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "REPLAY_WINDOW_STATE",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "REPLAY_WINDOW_STATE",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -851,6 +873,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "BINDING_PROFILE_METADATA",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "BINDING_PROFILE_METADATA",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -936,6 +964,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "AUTHENTICATED_MANIFEST_ROOT_FACTS",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "AUTHENTICATED_MANIFEST_ROOT_FACTS",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -1031,6 +1065,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "MUTATION_CANDIDATE",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "MUTATION_CANDIDATE",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1121,6 +1161,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "ORIGINAL_AUTHORITY_REFERENCE",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "ORIGINAL_AUTHORITY_REFERENCE",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1206,6 +1252,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "RECONCILIATION_IDENTITY",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "RECONCILIATION_IDENTITY",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -1296,6 +1348,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "UNRESOLVED_HOLD",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "UNRESOLVED_HOLD",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -1391,6 +1449,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "SELECTION_METADATA",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "SELECTION_METADATA",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1481,6 +1545,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "RETAINED_PARENT",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "RETAINED_PARENT",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1571,6 +1641,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "LOSING_CANDIDATE_EVIDENCE",
+      "event": "RETENTION_COMPACTION",
+      "transition": "LOGICALLY_DELETE",
+      "condition": "DISPOSE_ALL_BUT_MOST_RECENT_LOSER_AFTER_COMPLETE_SURVIVOR_COMMIT;_NO_RESIDUAL_DIGEST_OR_COUNTER"
+    },
+    {
+      "material": "LOSING_CANDIDATE_EVIDENCE",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1656,6 +1732,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "COMMIT_RESULT_EVIDENCE",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "COMMIT_RESULT_EVIDENCE",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -1751,6 +1833,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "OUTPUT_ESCROW_EMBEDDED_TREE_WELCOME",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "OUTPUT_ESCROW_EMBEDDED_TREE_WELCOME",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1841,6 +1929,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "OUTPUT_ESCROW_PROTECTED_APPLICATION_BYTES",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "OUTPUT_ESCROW_PROTECTED_APPLICATION_BYTES",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -1931,6 +2025,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "OUTPUT_ESCROW_APPLICATION_BYTES",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "OUTPUT_ESCROW_APPLICATION_BYTES",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2021,6 +2121,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "OUTPUT_ESCROW_PROTECTED_COMMIT_BYTES",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "OUTPUT_ESCROW_PROTECTED_COMMIT_BYTES",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2111,6 +2217,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "OUTPUT_ESCROW_SELECTED_CANDIDATE_REF",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "OUTPUT_ESCROW_SELECTED_CANDIDATE_REF",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2201,6 +2313,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "KEY_PACKAGE_PRIVATE_MATERIAL",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "KEY_PACKAGE_PRIVATE_MATERIAL",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2291,6 +2409,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "KEY_PACKAGE_PUBLIC_BYTES",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "KEY_PACKAGE_PUBLIC_BYTES",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2381,6 +2505,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "KEY_PACKAGE_CONSUMPTION_FACT",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "KEY_PACKAGE_CONSUMPTION_FACT",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2471,6 +2601,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "ROOT_STORAGE_KEY",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "ROOT_STORAGE_KEY",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2556,6 +2692,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "KEK_WRAPPER",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "KEK_WRAPPER",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -2651,6 +2793,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "SESSION_NAMESPACE_DERIVED_KEYS",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "SESSION_NAMESPACE_DERIVED_KEYS",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2741,6 +2889,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     },
     {
       "material": "VALUE_FREE_DIAGNOSTIC_RECORD",
+      "event": "RETENTION_COMPACTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "VALUE_FREE_DIAGNOSTIC_RECORD",
       "event": "RESTART",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
@@ -2826,6 +2980,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "LEGACY_BYTES",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "LEGACY_BYTES",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -2916,6 +3076,12 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     {
       "material": "LEGACY_INVALIDATION_MARKERS",
       "event": "CAPI_S017_SELECTION",
+      "transition": "RETAIN",
+      "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
+    },
+    {
+      "material": "LEGACY_INVALIDATION_MARKERS",
+      "event": "RETENTION_COMPACTION",
       "transition": "RETAIN",
       "condition": "LIVE_OR_POTENTIALLY_REFERENCED;_NO_TIME_BASED_DISPOSAL"
     },
@@ -2967,13 +3133,29 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
   },
   "losingCandidateRule": {
     "maximumPerCapiS017Selection": 1,
+    "maximumAtRest": 1,
+    "maximumTransient": 2,
     "authoritative": false,
     "retryable": false,
     "association": "EXACT_SELECTED_TRANSITION_PARENT_AND_SELECTION_EVIDENCE",
-    "successiveSelections": "BLOCK_IF_MORE_THAN_ONE_RETAINED_LOSER_WOULD_BE_REQUIRED",
+    "successiveSelections": "ALLOW_COMMITTED_S017_TO_CREATE_AT_MOST_SECOND_TRANSIENT_LOSER;_COMPACT_BEFORE_ANY_LATER_RS_MUTATION_OR_S014_ELIGIBILITY",
     "capiS016": "INVALIDATES_PRIOR_ELIGIBILITY_AND_EVIDENCE_ROLE_BUT_DOES_NOT_PROVE_PHYSICAL_DISPOSAL",
     "compactionSafetyEvidence": "SEPARATELY_OWNER_RATIFIED_PROOF_OF_NO_HOLD_RESULT_ESCROW_REPLAY_CRASH_RECOVERY_OR_SELECTION_REFERENCE",
     "absentEvidence": "RETAIN_AND_NO_FINALITY_OR_DESTRUCTION_CLAIM"
+  },
+  "retentionCompactionRule": {
+    "ownerDecision": "ISSUE_328_COMMENT_5892675163_OPTION_A",
+    "trigger": "IMMEDIATELY_AFTER_EACH_COMMITTED_CAPI_S017_THAT_LEAVES_TWO_LOSERS",
+    "precondition": "EXACTLY_TWO_LOSERS;_NEWEST_IDENTIFIED_BY_COMMITTED_S017_SELECTION_EVIDENCE",
+    "survivor": "MOST_RECENT_LOSER_ONLY",
+    "disposal": "LOGICALLY_DELETE_OLDER_LOSER_AND_REQUEST_DATABASE_DELETION_AFTER_AUTHENTICATED_COMPACTION_COMMIT",
+    "ordering": "COMPACTION_MUST_COMMIT_BEFORE_ANY_LATER_RS_MUTATION_AND_BEFORE_NEW_CAPI_S014_ELIGIBILITY",
+    "failure": "FAIL_CLOSED;_NO_NEW_CAPI_S014_ELIGIBILITY_AND_NO_LATER_RS_MUTATION_UNTIL_COMPACTION_COMMITS",
+    "thirdLoser": "IMPOSSIBLE_BECAUSE_S014_ELIGIBILITY_IS_CLOSED_WHILE_COMPACTION_PENDING",
+    "atRestMaximum": 1,
+    "transientMaximum": 2,
+    "residualTrace": "NO_DIGEST_COUNTER_REFERENCE_OR_DIAGNOSTIC_DERIVED_FROM_DISPOSED_LOSER",
+    "cMutRowsChanged": false
   },
   "retainedParentRule": {
     "capiS014": "ESTABLISH_PARENT_REQUIRED_BY_CAPI_S017",
@@ -3012,6 +3194,58 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
     "lifetime": "FOLLOW_REFERENCED_ROLE_AND_SESSION_NAMESPACE_DERIVED_KEYS_MATRIX_CLASS",
     "labelsOrVersionsNamed": false,
     "unknownOrMultipleRole": "BLOCK_AND_RETAIN"
+  },
+  "classificationMap": {
+    "componentToMaterialClass": {
+      "SESSION_TRANSITION": "CURRENT_AUTHORITATIVE_PROVIDER_SESSION_STATE",
+      "BINDING_METADATA": "BINDING_PROFILE_METADATA",
+      "REPLAY_RETENTION_STATE": "REPLAY_WINDOW_STATE",
+      "AUTHENTICATED_MANIFEST_UPDATE": "AUTHENTICATED_MANIFEST_ROOT_FACTS",
+      "COMMIT_RESULT_EVIDENCE": "COMMIT_RESULT_EVIDENCE",
+      "KEY_PACKAGE_CONSUMPTION": "KEY_PACKAGE_CONSUMPTION_FACT",
+      "OUTPUT_ESCROW": {
+        "classification": "EXACTLY_ONE_BY_SCENARIO",
+        "byScenario": {
+          "CAPI-S001": "OUTPUT_ESCROW_EMBEDDED_TREE_WELCOME",
+          "CAPI-S009": "OUTPUT_ESCROW_PROTECTED_APPLICATION_BYTES",
+          "CAPI-S010": "OUTPUT_ESCROW_APPLICATION_BYTES",
+          "CAPI-S014": "OUTPUT_ESCROW_PROTECTED_COMMIT_BYTES",
+          "CAPI-S017": "OUTPUT_ESCROW_SELECTED_CANDIDATE_REF"
+        }
+      },
+      "SELECTION_METADATA": "SELECTION_METADATA",
+      "RETAINED_PARENT_REFERENCE": "RETAINED_PARENT",
+      "LOSING_CANDIDATE_EVIDENCE": "LOSING_CANDIDATE_EVIDENCE"
+    },
+    "envelopeFieldToMaterialClass": {
+      "operationIdentity": "RECONCILIATION_IDENTITY",
+      "operation": "RECONCILIATION_IDENTITY",
+      "scenario": "RECONCILIATION_IDENTITY",
+      "originalApiState": "ORIGINAL_AUTHORITY_REFERENCE",
+      "originalAuthority": "ORIGINAL_AUTHORITY_REFERENCE",
+      "bindingProfileIdentity": "BINDING_PROFILE_METADATA",
+      "candidate": "MUTATION_CANDIDATE",
+      "componentSet": "UNRESOLVED_HOLD",
+      "heldOutput": {
+        "classification": "EXACTLY_ONE_OUTPUT_ESCROW_CLASS_BY_SCENARIO_OR_UNRESOLVED_HOLD_WHEN_NONE"
+      },
+      "expectedSuccess": "UNRESOLVED_HOLD",
+      "reconciliationIdentity": "RECONCILIATION_IDENTITY"
+    },
+    "recoveryFactToMaterialClass": {
+      "MUTATION_ENVELOPE_IDENTITY": "RECONCILIATION_IDENTITY",
+      "ORIGINAL_AUTHORITY": "ORIGINAL_AUTHORITY_REFERENCE",
+      "CANDIDATE_IDENTITY": "MUTATION_CANDIDATE",
+      "COMPONENT_SET_IDENTITY": "UNRESOLVED_HOLD",
+      "ESCROW_IDENTITY_AND_CONTENT": {
+        "classification": "EXACTLY_ONE_OUTPUT_ESCROW_CLASS_BY_SCENARIO"
+      },
+      "RECONCILIATION_REFERENCE": "RECONCILIATION_IDENTITY",
+      "EXPECTED_SUCCESS": "UNRESOLVED_HOLD",
+      "AUTHENTICATED_RS_EVIDENCE": "COMMIT_RESULT_EVIDENCE"
+    },
+    "overlapRule": "EACH_LOGICAL_FACT_INSTANCE_IS_OWNED_BY_EXACTLY_ONE_MAPPED_CLASS;_CONTAINER_REFERENCES_DO_NOT_DUPLICATE_CONTENT",
+    "unknownOrMultiple": "BLOCK_AND_RETAIN"
   },
   "cMutCoverage": {
     "components": [
@@ -3780,14 +4014,15 @@ Final literal document and external evidence-bundle SHA-256 values must be recor
       "CAPI-S014": "PROTECTED_COMMIT_BYTES",
       "CAPI-S016": "NONE",
       "CAPI-S017": "SELECTED_CANDIDATE_REF"
-    }
+    },
+    "profilePastEpochWindow": 5
   },
   "compactionRule": {
-    "authority": "ONLY_REMOVAL_INSIDE_EXISTING_C_MUT_REPLAY_RETENTION_STATE_CHANGE_IS_CURRENTLY_AUTHORIZED",
+    "authority": "ONLY_REMOVAL_INSIDE_EXISTING_C_MUT_REPLAY_RETENTION_STATE_CHANGE_OR_OWNER_DECISION_5892675163_LOSER_COMPACTION_IS_CURRENTLY_AUTHORIZED",
     "allOtherCompaction": "BLOCK_PENDING_SEPARATELY_RATIFIED_MUTATION_CONTRACT",
     "steps": [
       "COMPUTE_COMPLETE_SURVIVOR_SET",
-      "VERIFY_NO_LIVE_REFERENCE_TO_CANDIDATE_PARENT_EPOCH_PACKAGE_RESULT_OR_ESCROW",
+      "VERIFY_NO_LIVE_REFERENCE_TO_CANDIDATE_PARENT_EPOCH_PACKAGE_RESULT_ESCROW_HOLD_RESTORE_OR_CRASH_FACT",
       "COMMIT_NEW_AUTHENTICATED_MANIFEST_AND_ROOT",
       "REQUEST_DATABASE_DELETION_OF_OBSOLETE_RECORDS"
     ],
