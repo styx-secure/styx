@@ -34,7 +34,9 @@ const KNOWN_OPERATIONS = new Set(OPERATIONS);
 const NORMAL_STATES = new Set(['EMPTY', 'ACTIVE']);
 const MUTATION_SCENARIOS = new Set(Object.keys(MUTATION_PLANS));
 const HOLD_KEYS = ['originalStateBefore', 'scenario', 'mutationPlanIdentity', 'operationIdentity', 'expectedSuccessCode', 'expectedStateAfter', 'outputKind', 'reconciliationRef', 'selectedCandidateRef', 'terminalEvidenceStatus'];
-const TYPED_ARRAY_LENGTH = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'length').get;
+const TYPED_ARRAY_PROTOTYPE = Object.getPrototypeOf(Uint8Array.prototype);
+const TYPED_ARRAY_TAG = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, Symbol.toStringTag).get;
+const TYPED_ARRAY_BYTE_LENGTH = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, 'byteLength').get;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value) || ArrayBuffer.isView(value)) return false;
@@ -99,7 +101,9 @@ function closedArray(value) {
 
 function isUint8Array(value) {
   try {
-    return ArrayBuffer.isView(value) && Object.getPrototypeOf(value) === Uint8Array.prototype;
+    return ArrayBuffer.isView(value)
+      && TYPED_ARRAY_TAG.call(value) === 'Uint8Array'
+      && Object.getPrototypeOf(value) === Uint8Array.prototype;
   } catch {
     return false;
   }
@@ -298,9 +302,9 @@ function inspectCandidate(candidate) {
   const shape = closedObject(candidate, ['committerId', 'ref']);
   if (shape.error) return { error: shape.error, candidate: null };
   if (!isUint8Array(shape.values.committerId)) return { error: 'UNSUPPORTED_TOPOLOGY', candidate: null };
-  let width;
-  try { width = TYPED_ARRAY_LENGTH.call(shape.values.committerId); } catch { return { error: 'UNSUPPORTED_TOPOLOGY', candidate: null }; }
-  if (width !== 32) return { error: 'UNSUPPORTED_TOPOLOGY', candidate: null };
+  let byteLength;
+  try { byteLength = TYPED_ARRAY_BYTE_LENGTH.call(shape.values.committerId); } catch { return { error: 'UNSUPPORTED_TOPOLOGY', candidate: null }; }
+  if (byteLength !== 32) return { error: 'UNSUPPORTED_TOPOLOGY', candidate: null };
   if (typeof shape.values.ref !== 'string' || shape.values.ref.length === 0) return { error: 'UNKNOWN_VALUE', candidate: null };
   return { error: null, candidate: shape.values };
 }

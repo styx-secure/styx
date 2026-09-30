@@ -16,6 +16,12 @@ const ERROR_ROWS = byScenario(FROZEN.errorRows);
 const DECISION_ROWS = byScenario(FROZEN.decisionRows);
 const ERROR_RANK = new Map(FROZEN.errorOrder.map((code, index) => [code, index]));
 const id = (byte) => new Uint8Array(32).fill(byte);
+const brandSpoof = (Ctor, fill) => {
+  const value = new Ctor(32);
+  value.fill(fill);
+  Object.setPrototypeOf(value, Uint8Array.prototype);
+  return value;
+};
 
 function event(operation, facts, commitOutcome) {
   const value = { operation, applicableErrors: [], facts };
@@ -213,6 +219,11 @@ describe('I-SM closed pure state machine', () => {
   test.each([
     ['EQUAL_COMMITTERS', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: id(1), ref: 'a' }, incoming: { committerId: id(1), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
     ['WRONG_WIDTH', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: new Uint8Array(31), ref: 'a' }, incoming: { committerId: id(2), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
+    ['BRAND_SPOOF_UINT16', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: brandSpoof(Uint16Array, 300), ref: 'a' }, incoming: { committerId: id(2), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
+    ['BRAND_SPOOF_UINT16_INCOMING', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: id(1), ref: 'a' }, incoming: { committerId: brandSpoof(Uint16Array, 300), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
+    ['BRAND_SPOOF_BIGINT64', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: brandSpoof(BigInt64Array, 0n), ref: 'a' }, incoming: { committerId: id(2), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
+    ['BRAND_SPOOF_FLOAT64_NAN_PAIR', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: brandSpoof(Float64Array, NaN), ref: 'a' }, incoming: { committerId: brandSpoof(Float64Array, NaN), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
+    ['BRAND_SPOOF_FLOAT64_EQUAL_VALUES', { kind: 'ELIGIBLE_TWO_CANDIDATE', current: { committerId: brandSpoof(Float64Array, 1), ref: 'a' }, incoming: { committerId: brandSpoof(Float64Array, 1), ref: 'b' } }, 'UNSUPPORTED_COMMIT_SHAPE'],
     ['REPRESENTED', { kind: 'UNSUPPORTED_TOPOLOGY', reason: 'REPRESENTED_CANDIDATE' }, 'UNSUPPORTED_COMMIT_SHAPE'],
     ['PEER_PREDECESSOR', { kind: 'UNSUPPORTED_TOPOLOGY', reason: 'PEER_PREDECESSOR' }, 'UNSUPPORTED_COMMIT_SHAPE'],
     ['UNRELATED_PARENT', { kind: 'UNSUPPORTED_TOPOLOGY', reason: 'UNRELATED_PARENT' }, 'UNSUPPORTED_COMMIT_SHAPE'],
