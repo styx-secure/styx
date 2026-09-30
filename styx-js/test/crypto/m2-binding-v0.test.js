@@ -64,7 +64,14 @@ const insert = (value, offset, addition) =>
   Uint8Array.from([...value.slice(0, offset), ...addition, ...value.slice(offset)]);
 
 function expectCode(fn, code) {
-  expect(fn).toThrow(expect.objectContaining({ code }));
+  try {
+    fn();
+  } catch (error) {
+    expect(error).toBeInstanceOf(BindingV0Error);
+    expect(error.code).toBe(code);
+    return;
+  }
+  throw new Error(`expected ${code}`);
 }
 
 function profileFieldValueOffsets(binding) {
@@ -155,6 +162,10 @@ describe('m2-opaque-binding/v0 malformed fixtures', () => {
     expectCode(() => decodeBindingV0(candidate), 'MALFORMED_BINDING');
   });
 
+  test('a same-length embedded NUL reaches the ASCII wire-type guard', () => {
+    expectCode(() => decodeBindingV0(replace(base, 86, Uint8Array.of(0))), 'MALFORMED_BINDING');
+  });
+
   test.each([
     [null], [undefined], ['not bytes'], [[...base]], [new DataView(base.buffer)],
   ])('rejects non-Uint8Array input %#', (candidate) => {
@@ -235,10 +246,12 @@ describe('m2-opaque-binding/v0 defensive ownership', () => {
   });
 
   test('encoded and decoded arrays never alias caller or each other', () => {
-    const encoded = encodeBindingV0({ localContextId: context, secureSessionIdentity: session });
+    const localContextId = copy(context);
+    const secureSessionIdentity = copy(session);
+    const encoded = encodeBindingV0({ localContextId, secureSessionIdentity });
     const original = copy(encoded);
-    context[0] ^= 1;
-    session[0] ^= 1;
+    localContextId[0] ^= 1;
+    secureSessionIdentity[0] ^= 1;
     expect(encoded).toEqual(original);
 
     const decoded = decodeBindingV0(encoded);
