@@ -139,6 +139,57 @@ class CiAdapterUnitTests(unittest.TestCase):
                     )
                 self.assertEqual(expected_code, caught.exception.code)
 
+    def test_base_ref_acceptance_is_an_exact_closed_set(self) -> None:
+        self.assertEqual(frozenset({"main", "m2/integration"}), ci_adapter.ALLOWED_BASE_REFS)
+
+        event_base_sha = "c" * 40
+        for base_ref in ("main", "m2/integration"):
+            with self.subTest(accepted=base_ref):
+                context = ci_adapter.validate_event(
+                    synthetic_event(base_ref=base_ref, base_sha=event_base_sha),
+                    repository="styx-secure/styx",
+                    run_id="123",
+                    run_attempt="2",
+                    trusted_tool_sha=BASE_SHA,
+                    workflow_sha=BASE_SHA,
+                )
+                self.assertEqual(event_base_sha, context.base_sha)
+
+        rejected_refs = {
+            "m2/integration2",
+            "refs/heads/m2/integration",
+            "M2/integration",
+            "",
+        }
+        for accepted in ci_adapter.ALLOWED_BASE_REFS:
+            rejected_refs.update(
+                {
+                    accepted.upper(),
+                    f" {accepted}",
+                    f"{accepted} ",
+                    f"{accepted}/",
+                    f"origin/{accepted}",
+                    f"refs/heads/{accepted}",
+                    f"x{accepted}",
+                    f"{accepted}x",
+                }
+            )
+        rejected_refs.difference_update(ci_adapter.ALLOWED_BASE_REFS)
+        self.assertTrue(rejected_refs.isdisjoint(ci_adapter.ALLOWED_BASE_REFS))
+
+        for base_ref in sorted(rejected_refs):
+            with self.subTest(rejected=base_ref):
+                with self.assertRaises(ci_adapter.CiAdapterError) as caught:
+                    ci_adapter.validate_event(
+                        synthetic_event(base_ref=base_ref),
+                        repository="styx-secure/styx",
+                        run_id="123",
+                        run_attempt="2",
+                        trusted_tool_sha=BASE_SHA,
+                        workflow_sha=BASE_SHA,
+                    )
+                self.assertEqual("E_CI_EVENT_BASE_REF", caught.exception.code)
+
     def test_workflow_identity_is_strict_and_equal(self) -> None:
         self.assertEqual(
             (BASE_SHA, BASE_SHA),

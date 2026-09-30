@@ -3,11 +3,11 @@ name: WASM integrity
 # Stable, fail-closed integrity gate for OpenMLS and KDF WASM boundaries.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, m2/integration]
   merge_group:
     types: [checks_requested]
   push:
-    branches: [main]
+    branches: [main, m2/integration]
   workflow_dispatch: {}
 
 permissions:

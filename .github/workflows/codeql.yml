@@ -4,9 +4,9 @@ name: CodeQL
 # their dedicated repository gates.
 on:
   push:
-    branches: [main]
+    branches: [main, m2/integration]
   pull_request:
-    branches: [main]
+    branches: [main, m2/integration]
   merge_group:
     types: [checks_requested]
   schedule:

@@ -38,6 +38,7 @@ ALLOWED_ACTIONS = {
     "converted_to_draft",
     "edited",
 }
+ALLOWED_BASE_REFS = frozenset({"main", "m2/integration"})
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 ISSUE_REFERENCE_RE = re.compile(r"^Styx-Task:[ \t]*#([1-9][0-9]*)[ \t]*$")
@@ -228,8 +229,11 @@ def validate_event(
     base_repo = _require_dict(base.get("repo"), "E_CI_EVENT", "pull_request.base.repo")
     if _require_string(base_repo, "full_name", "E_CI_EVENT") != repository:
         raise CiAdapterError("E_CI_EVENT_REPOSITORY", "pull-request base repository is not local")
-    if _require_string(base, "ref", "E_CI_EVENT") != "main":
-        raise CiAdapterError("E_CI_EVENT_BASE_REF", "pull-request base ref must be main")
+    if _require_string(base, "ref", "E_CI_EVENT") not in ALLOWED_BASE_REFS:
+        raise CiAdapterError(
+            "E_CI_EVENT_BASE_REF",
+            "pull-request base ref must be main or m2/integration",
+        )
     base_sha = _require_sha(base.get("sha"), "base SHA")
 
     head = _require_dict(pull.get("head"), "E_CI_EVENT", "pull_request.head")
