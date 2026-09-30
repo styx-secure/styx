@@ -1,9 +1,31 @@
 name: Agent scope evidence
 
+# One control, two event paths.
+#
+# `pull_request_target` is read by GitHub from the repository default branch,
+# including its `branches` filter, so while the default branch is `main` no pull
+# request whose base is `m2/integration` can ever start it. `pull_request` is
+# evaluated from the pull request merge commit, so the `m2/integration` base is
+# served by the second trigger below.
+#
+# The `pull_request` path never trusts the merge commit for anything but its
+# event data: it checks out the pull request BASE commit and runs that commit's
+# adapter, scope guard and contract parser against the head as Git object data,
+# with a read-only token and no secrets. The head is never checked out, imported
+# or executed.
 on:
   pull_request_target:
     branches:
       - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+      - converted_to_draft
+      - edited
+  pull_request:
+    branches:
       - m2/integration
     types:
       - opened
@@ -33,7 +55,12 @@ jobs:
     # (namespace separation, docs/governance/mucc-migration/ruleset-proposal.md).
     # Either would fail with E_CI_ISSUE_REFERENCE_MISSING/INVALID; skipping
     # lets this check stay a required status check without blocking them.
-    if: startsWith(github.head_ref, 'task/') && !startsWith(github.head_ref, 'task/US-')
+    # The event guard keeps this job on the default-branch-sourced path only;
+    # the `pull_request` path is served by the job below.
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      startsWith(github.head_ref, 'task/') &&
+      !startsWith(github.head_ref, 'task/US-')
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -85,6 +112,138 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
             --trusted-tool-sha "$GITHUB_SHA" \
             --workflow-sha "$GITHUB_WORKFLOW_SHA" \
+            --report "$STYX_REPORT_PATH"
+          observation_code=$?
+          set -e
+          case "$observation_code" in
+            0|2|3) ;;
+            *) observation_code=3 ;;
+          esac
+          printf '%s\n' "$observation_code" > "$STYX_RESULT_PATH"
+
+      - name: Upload canonical scope report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: styx-scope-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/styx-task-scope-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+          compression-level: 9
+          overwrite: false
+          include-hidden-files: false
+
+      - name: Write safe job summary
+        if: always()
+        env:
+          STYX_REPORT_PATH: ${{ runner.temp }}/styx-task-scope-report.json
+          STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
+        shell: bash
+        run: |
+          set +e
+          if [[ -f tools/agent-enforcement/ci_adapter.py ]]; then
+            python3 tools/agent-enforcement/ci_adapter.py summarize \
+              --report "$STYX_REPORT_PATH" \
+              --summary "$GITHUB_STEP_SUMMARY"
+            summary_code=$?
+          else
+            printf '%s\n' \
+              '## Styx scope evidence' \
+              '' \
+              '**ERROR** — trusted CI adapter is unavailable.' \
+              >> "$GITHUB_STEP_SUMMARY"
+            summary_code=3
+          fi
+          set -e
+          if [[ "$summary_code" -ne 0 && "$summary_code" -ne 2 && "$summary_code" -ne 3 ]]; then
+            summary_code=3
+          fi
+          if [[ "$summary_code" -eq 3 ]]; then
+            printf '3\n' > "$STYX_RESULT_PATH"
+          fi
+
+      - name: Conclude observation
+        if: always()
+        env:
+          STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
+        shell: bash
+        run: |
+          if [[ ! -f "$STYX_RESULT_PATH" ]]; then
+            exit 3
+          fi
+          observation_code="$(cat "$STYX_RESULT_PATH")"
+          case "$observation_code" in
+            0|2|3) exit "$observation_code" ;;
+            *) exit 3 ;;
+          esac
+
+  scope-evidence-integration:
+    name: Agent scope evidence (observation)
+    # Same task-branch guard as the `pull_request_target` path. The event guard
+    # keeps this job on the `pull_request` path only, so exactly one of the two
+    # jobs can produce the `Agent scope evidence (observation)` status.
+    if: >-
+      github.event_name == 'pull_request' &&
+      startsWith(github.head_ref, 'task/') &&
+      !startsWith(github.head_ref, 'task/US-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Validate pull-request base identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly sha_pattern='^[0-9a-f]{40}$'
+          base_sha='${{ github.event.pull_request.base.sha }}'
+          base_ref='${{ github.event.pull_request.base.ref }}'
+          if [[ ! "$base_sha" =~ $sha_pattern ]]; then
+            echo "::error::pull-request base SHA is not a lowercase full 40-hex SHA"
+            exit 3
+          fi
+          case "$base_ref" in
+            main|m2/integration) ;;
+            *)
+              echo "::error::pull-request base ref is not an accepted base"
+              exit 3
+              ;;
+          esac
+
+      - name: Checkout trusted base commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+          lfs: false
+          submodules: false
+
+      - name: Run trusted-tool scope observation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          STYX_REPORT_PATH: ${{ runner.temp }}/styx-task-scope-report.json
+          STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
+        shell: bash
+        run: |
+          # The runner-provided workflow identity names the untrusted merge
+          # commit, so this path declares the pull-request BASE commit as the
+          # tool provenance instead. The adapter accepts that declaration only
+          # after it has verified that the checkout HEAD equals it, that the
+          # checkout is clean and not shallow, and that the event base is an
+          # ancestor of both the checkout and the event head.
+          set +e
+          python3 tools/agent-enforcement/ci_adapter.py run \
+            --event-file "$GITHUB_EVENT_PATH" \
+            --repo "$GITHUB_WORKSPACE" \
+            --runner-temp "$RUNNER_TEMP" \
+            --repository "$GITHUB_REPOSITORY" \
+            --api-url "$GITHUB_API_URL" \
+            --server-url "$GITHUB_SERVER_URL" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --trusted-tool-sha "${{ github.event.pull_request.base.sha }}" \
+            --workflow-sha "${{ github.event.pull_request.base.sha }}" \
             --report "$STYX_REPORT_PATH"
           observation_code=$?
           set -e
