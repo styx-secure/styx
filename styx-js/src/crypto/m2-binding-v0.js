@@ -79,17 +79,40 @@ function fail(code, message) {
   throw new BindingV0Error(code, message);
 }
 
-function requireIdentifier(value, name) {
-  if (!(value instanceof Uint8Array) || value.length !== IDENTIFIER_LENGTH || isZero(value)) {
-    fail('MALFORMED_BINDING', `${name} must be 32 nonzero bytes`);
+function snapshotBytes(value, name) {
+  if (!(value instanceof Uint8Array)) {
+    fail('MALFORMED_BINDING', `${name} must be a Uint8Array`);
+  }
+  try {
+    return new Uint8Array(value);
+  } catch {
+    fail('MALFORMED_BINDING', `${name} must be readable bytes`);
   }
 }
 
+function requireIdentifier(value, name) {
+  const snapshot = snapshotBytes(value, name);
+  if (snapshot.length !== IDENTIFIER_LENGTH || isZero(snapshot)) {
+    fail('MALFORMED_BINDING', `${name} must be 32 nonzero bytes`);
+  }
+  return snapshot;
+}
+
 function requireEncodeInput(input) {
-  if (input === null || typeof input !== 'object' || Object.getPrototypeOf(input) !== Object.prototype) {
+  if (input === null || typeof input !== 'object') {
     fail('MALFORMED_BINDING', 'binding input must be a plain object');
   }
-  const names = Reflect.ownKeys(input);
+  let names;
+  let prototype;
+  try {
+    prototype = Object.getPrototypeOf(input);
+    names = Reflect.ownKeys(input);
+  } catch {
+    fail('MALFORMED_BINDING', 'binding input shape must be readable');
+  }
+  if (prototype !== Object.prototype) {
+    fail('MALFORMED_BINDING', 'binding input must be a plain object');
+  }
   if (
     names.length !== 2 ||
     !names.includes('localContextId') ||
@@ -97,14 +120,26 @@ function requireEncodeInput(input) {
   ) {
     fail('MALFORMED_BINDING', 'binding input has unknown or missing keys');
   }
+  const descriptors = {};
   for (const name of names) {
-    const descriptor = Object.getOwnPropertyDescriptor(input, name);
+    let descriptor;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(input, name);
+    } catch {
+      fail('MALFORMED_BINDING', 'binding input properties must be readable');
+    }
     if (!descriptor?.enumerable || !Object.hasOwn(descriptor, 'value')) {
       fail('MALFORMED_BINDING', 'binding input keys must be enumerable data properties');
     }
+    descriptors[name] = descriptor;
   }
-  requireIdentifier(input.localContextId, 'localContextId');
-  requireIdentifier(input.secureSessionIdentity, 'secureSessionIdentity');
+  return {
+    localContextId: requireIdentifier(descriptors.localContextId.value, 'localContextId'),
+    secureSessionIdentity: requireIdentifier(
+      descriptors.secureSessionIdentity.value,
+      'secureSessionIdentity',
+    ),
+  };
 }
 
 function readField(bytes, offset, expectedTag, expectedLength) {
@@ -175,26 +210,27 @@ export class BindingV0Error extends Error {
 }
 
 export function encodeBindingV0(input) {
-  requireEncodeInput(input);
-  return encodeCanonical(input.localContextId, input.secureSessionIdentity);
+  const identifiers = requireEncodeInput(input);
+  return encodeCanonical(identifiers.localContextId, identifiers.secureSessionIdentity);
 }
 
 export function decodeBindingV0(bytes) {
-  if (!(bytes instanceof Uint8Array) || bytes.length !== BINDING_LENGTH) {
+  const input = snapshotBytes(bytes, 'binding');
+  if (input.length !== BINDING_LENGTH) {
     fail('MALFORMED_BINDING', 'binding must be exactly 389 bytes');
   }
-  if (!equal(bytes.slice(0, MAGIC.length), MAGIC)) {
+  if (!equal(input.slice(0, MAGIC.length), MAGIC)) {
     fail('MALFORMED_BINDING', 'binding magic is invalid');
   }
-  const version = (bytes[8] << 8) | bytes[9];
+  const version = (input[8] << 8) | input[9];
   if (version !== ENCODING_VERSION) {
     fail('MALFORMED_BINDING', 'binding encoding version is invalid');
   }
 
-  const context = readField(bytes, 10, 1, IDENTIFIER_LENGTH);
-  const session = readField(bytes, context.nextOffset, 2, IDENTIFIER_LENGTH);
-  const profile = readField(bytes, session.nextOffset, 3, PROFILE_LENGTH);
-  if (profile.nextOffset !== bytes.length) {
+  const context = readField(input, 10, 1, IDENTIFIER_LENGTH);
+  const session = readField(input, context.nextOffset, 2, IDENTIFIER_LENGTH);
+  const profile = readField(input, session.nextOffset, 3, PROFILE_LENGTH);
+  if (profile.nextOffset !== input.length) {
     fail('MALFORMED_BINDING', 'binding has trailing bytes');
   }
   requireIdentifier(context.value, 'localContextId');
@@ -202,7 +238,7 @@ export function decodeBindingV0(bytes) {
   validateProductProfile(profile.value);
 
   const canonical = encodeCanonical(context.value, session.value);
-  if (!equal(bytes, canonical)) {
+  if (!equal(input, canonical)) {
     fail('MALFORMED_BINDING', 'binding is not canonical');
   }
   return {

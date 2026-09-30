@@ -167,6 +167,13 @@ describe('m2-opaque-binding/v0 malformed fixtures', () => {
   });
 
   test.each([
+    ['inner tag', replace(base, 83, Uint8Array.of(2))],
+    ['inner length', replace(base, 84, Uint8Array.of(0, 25))],
+  ])('same-length %s corruption is MALFORMED_BINDING', (_name, candidate) => {
+    expectCode(() => decodeBindingV0(candidate), 'MALFORMED_BINDING');
+  });
+
+  test.each([
     [null], [undefined], ['not bytes'], [[...base]], [new DataView(base.buffer)],
   ])('rejects non-Uint8Array input %#', (candidate) => {
     expectCode(() => decodeBindingV0(candidate), 'MALFORMED_BINDING');
@@ -197,6 +204,22 @@ describe('m2-opaque-binding/v0 fail-closed comparisons', () => {
       other.slice(48, 80),
     );
     expectCode(() => compareBindingV0(authoritative, candidate), 'BINDING_MISMATCH');
+  });
+
+  test('profile rejection precedes context and session mismatch', () => {
+    const candidate = replace(
+      replace(replace(authoritative, 13, other.slice(13, 45)), 48, other.slice(48, 80)),
+      86,
+      Uint8Array.of(authoritative[86] ^ 1),
+    );
+    expectCode(() => compareBindingV0(authoritative, candidate), 'UNSUPPORTED_PROFILE');
+  });
+
+  test.each([
+    ['authoritative', replace(authoritative, 0, Uint8Array.of(0)), authoritative],
+    ['candidate', authoritative, replace(authoritative, 0, Uint8Array.of(0))],
+  ])('malformed %s input fails before comparison', (_name, left, right) => {
+    expectCode(() => compareBindingV0(left, right), 'MALFORMED_BINDING');
   });
 
   test.each(profileFieldValueOffsets(authoritative).map((offset, index) => [index + 1, offset]))(
@@ -243,6 +266,33 @@ describe('m2-opaque-binding/v0 defensive ownership', () => {
     inherited.secureSessionIdentity = session;
     expectCode(() => encodeBindingV0(accessor), 'MALFORMED_BINDING');
     expectCode(() => encodeBindingV0(inherited), 'MALFORMED_BINDING');
+  });
+
+  test('encode snapshots data descriptors instead of re-reading a Proxy', () => {
+    const target = { localContextId: context, secureSessionIdentity: session };
+    const input = new Proxy(target, { get: () => new Uint8Array(32) });
+    expect(encodeBindingV0(input)).toEqual(katBytes[0]);
+  });
+
+  test('encode rejects a spoofed identifier length', () => {
+    const tooLong = Uint8Array.from({ length: 33 }, (_value, index) => index + 1);
+    Object.defineProperty(tooLong, 'length', { value: 32 });
+    expectCode(
+      () => encodeBindingV0({ localContextId: tooLong, secureSessionIdentity: session }),
+      'MALFORMED_BINDING',
+    );
+  });
+
+  test('decode snapshots Buffer input into independent Uint8Arrays', () => {
+    const input = Buffer.from(katBytes[0]);
+    const original = Buffer.from(input);
+    const decoded = decodeBindingV0(input);
+    input[13] ^= 0xff;
+    expect(decoded.localContextId[0]).toBe(original[13]);
+    decoded.secureSessionIdentity[0] ^= 0xff;
+    expect(input[48]).toBe(original[48]);
+    expect(decoded.localContextId.constructor).toBe(Uint8Array);
+    expect(decoded.localContextId.buffer).not.toBe(decoded.productProfile.buffer);
   });
 
   test('encoded and decoded arrays never alias caller or each other', () => {
