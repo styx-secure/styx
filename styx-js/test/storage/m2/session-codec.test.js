@@ -3,7 +3,7 @@ import {
   M2StorageCodecError, M2_KIND, M2_LIFECYCLE,
   decodeAad, decodeEnvelope, decodePlaintext, decodeRecordKey, decodeSelectorKey,
   deriveNamespaceKey, deriveRecordAeadKey, deriveSelectorAeadKey,
-  encodePlaintext, openRecord, sealRecord, consumeKeyPackage,
+  encodeAad, encodeEnvelope, encodePlaintext, encodeRecordKey, openRecord, sealRecord, consumeKeyPackage,
 } from '../../../src/storage/m2/session-codec.js';
 
 const VECTORS = [
@@ -883,5 +883,126 @@ describe('closed decode and consumption behavior', () => {
     expect(decodePlaintext(M2_KIND.KEY_PACKAGE, encodePlaintext(M2_KIND.KEY_PACKAGE, max16)).publicKeyPackage).toHaveLength(65535);
     const selector = decodePlaintext(M2_KIND.GENERATION_SELECTOR, hex(active.selector.plaintextHex));
     expect(() => encodePlaintext(M2_KIND.GENERATION_SELECTOR, { ...selector, candidateManifestKey: new Uint8Array(256) })).toThrow(M2StorageCodecError);
+  });
+
+  test('Uint8Array subclass inputs are snapshotted before await and outputs never alias caller memory', async () => {
+    // Node Buffer overrides slice() to return a view, so bytes() must use Uint8Array.prototype.slice.
+    const namespaceKey = await vectorKeys(active);
+    const recordKey = hex(keyPackage.keyHex);
+    const aad = hex(keyPackage.aadHex);
+    const aeadKey = await deriveRecordAeadKey({ namespaceKey, recordKey });
+    // TOCTOU: mutate the caller's Buffer synchronously, after sealRecord's sync prefix but before its await.
+    const plaintext = Buffer.from(hex(keyPackage.plaintextHex));
+    const pending = sealRecord({ aeadKey, recordKind: M2_KIND.KEY_PACKAGE, recordKey, aad, plaintext, nonce: hex(keyPackage.nonceHex) });
+    plaintext[plaintext.length - 1] ^= 1;
+    expect(asHex(await pending)).toBe(keyPackage.envelopeHex);
+    // Decoder output must be a copy, not a view onto the caller's buffer.
+    const keyBuffer = Buffer.from(recordKey);
+    const decodedKey = decodeRecordKey(keyBuffer);
+    const keySnapshot = asHex(decodedKey.objectId);
+    keyBuffer[keyBuffer.length - 1] ^= 1;
+    expect(asHex(decodedKey.objectId)).toBe(keySnapshot);
+    const plaintextBuffer = Buffer.from(hex(keyPackage.plaintextHex));
+    const decodedPlaintext = decodePlaintext(M2_KIND.KEY_PACKAGE, plaintextBuffer);
+    const plaintextSnapshot = decodedPlaintext.publicKeyPackage.length;
+    plaintextBuffer[12] ^= 1;
+    expect(decodedPlaintext.publicKeyPackage.length).toBe(plaintextSnapshot);
+    expect(asHex(encodePlaintext(M2_KIND.KEY_PACKAGE, decodedPlaintext))).toBe(keyPackage.plaintextHex);
+  });
+
+  test('key length violations are MALFORMED_INPUT while version violations are UNSUPPORTED_VALUE', () => {
+    const recordKey = hex(keyPackage.keyHex);
+    expect(() => decodeRecordKey(recordKey.slice(0, 9)))
+      .toThrow(expect.objectContaining({ code: 'MALFORMED_INPUT' }));
+    const selectorKey = hex(active.selector.keyHex);
+    for (const width of [41, 43]) {
+      const resized = new Uint8Array(width);
+      resized.set(selectorKey.slice(0, Math.min(width, selectorKey.length)));
+      expect(() => decodeSelectorKey(resized))
+        .toThrow(expect.objectContaining({ code: 'MALFORMED_INPUT' }));
+    }
+    const wrongVersion = recordKey.slice();
+    wrongVersion[8] = 0; wrongVersion[9] = 2;
+    expect(() => decodeRecordKey(wrongVersion))
+      .toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+    const wrongSelectorVersion = selectorKey.slice();
+    wrongSelectorVersion[8] = 0; wrongSelectorVersion[9] = 2;
+    expect(() => decodeSelectorKey(wrongSelectorVersion))
+      .toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
+  });
+
+  test('an accessor presence is rejected without invoking its getter', () => {
+    const valid = decodePlaintext(M2_KIND.KEY_PACKAGE, hex(keyPackage.plaintextHex));
+    let hits = 0;
+    const value = { ...valid };
+    Object.defineProperty(value, 'presence', { enumerable: true, configurable: true, get() { hits += 1; return 1; } });
+    expect(() => encodePlaintext(M2_KIND.KEY_PACKAGE, value))
+      .toThrow(expect.objectContaining({ code: 'MALFORMED_INPUT' }));
+    expect(hits).toBe(0);
+  });
+
+  test('plaintext length arithmetic is bounded to the C-FMT cap on AAD, envelope and frame sides', async () => {
+    const recordKey = hex(keyPackage.keyHex);
+    const decodedAad = decodeAad(hex(keyPackage.aadHex));
+    const base = {
+      recordKey, localContextId: decodedAad.localContextId, productProfileDigest: decodedAad.productProfileDigest,
+      scope: decodedAad.scope, secureSessionIdentity: null, canonicalBinding: null,
+      writeGeneration: decodedAad.writeGeneration, mutationIdentity: decodedAad.mutationIdentity,
+      recordKind: decodedAad.recordKind,
+    };
+    await expect(encodeAad({ ...base, plaintextLength: 0xffffffff }))
+      .rejects.toMatchObject({ code: 'MALFORMED_INPUT' });
+    expect(() => encodeEnvelope({
+      recordKind: M2_KIND.KEY_PACKAGE, recordKey, aad: hex(keyPackage.aadHex), plaintextLength: 0xffffffff,
+      nonce: hex(keyPackage.nonceHex), ciphertext: new Uint8Array(0), tag: new Uint8Array(16),
+    })).toThrow(expect.objectContaining({ code: 'MALFORMED_INPUT' }));
+    const oversizedAad = hex(keyPackage.aadHex);
+    oversizedAad[oversizedAad.length - 4] = 0xff;
+    expect(() => decodeAad(oversizedAad)).toThrow(expect.objectContaining({ code: 'MALFORMED_INPUT' }));
+    const overCap = encodePlaintext(M2_KIND.SESSION_STATE, { presence: 1, providerState: new Uint8Array(16 * 1024 * 1024 - 20) });
+    expect(overCap).toHaveLength(16 * 1024 * 1024);
+    expect(() => encodePlaintext(M2_KIND.SESSION_STATE, { presence: 1, providerState: new Uint8Array(16 * 1024 * 1024 - 19) }))
+      .toThrow(expect.objectContaining({ code: 'MALFORMED_INPUT' }));
+  });
+
+  test('a selector record whose AAD generation differs from the selected generation fails closed', async () => {
+    const empty = VECTORS.find((v) => v.id === 'FMT-KAT-EMPTY');
+    const namespaceKey = await vectorKeys(empty);
+    const selector = empty.selector;
+    const plaintext = hex(selector.plaintextHex);
+    const decodedAad = decodeAad(hex(selector.aadHex));
+    const bumpedAad = await encodeAad({
+      recordKey: hex(selector.keyHex), localContextId: decodedAad.localContextId,
+      productProfileDigest: decodedAad.productProfileDigest, scope: decodedAad.scope,
+      secureSessionIdentity: null, canonicalBinding: null,
+      writeGeneration: decodedAad.writeGeneration + 1n, mutationIdentity: decodedAad.mutationIdentity,
+      plaintextLength: plaintext.length, recordKind: M2_KIND.GENERATION_SELECTOR,
+    });
+    const aeadKey = await deriveSelectorAeadKey({ namespaceKey, selectorKey: hex(selector.keyHex) });
+    await expect(sealRecord({
+      aeadKey, recordKind: M2_KIND.GENERATION_SELECTOR, recordKey: hex(selector.keyHex),
+      aad: bumpedAad, plaintext, nonce: hex(selector.nonceHex),
+    })).rejects.toMatchObject({ code: 'CONTEXT_MISMATCH' });
+    // Positive control: the ratified selector record still seals byte-identically with a matching generation.
+    const ratifiedEnvelope = await sealRecord({
+      aeadKey, recordKind: M2_KIND.GENERATION_SELECTOR, recordKey: hex(selector.keyHex),
+      aad: hex(selector.aadHex), plaintext, nonce: hex(selector.nonceHex),
+    });
+    expect(asHex(ratifiedEnvelope)).toBe(selector.envelopeHex);
+  });
+
+  test('ISSUANCE_OUTCOME outcome and releaseState are plain u8 with no registry', () => {
+    const issuanceRef = hex(active.rootStorageKeyHex);
+    for (const value of [0, 4, 255]) {
+      const encoded = encodePlaintext(M2_KIND.ISSUANCE_OUTCOME, { presence: 1, issuanceRef, outcome: value, releaseState: value });
+      const roundTrip = decodePlaintext(M2_KIND.ISSUANCE_OUTCOME, encoded);
+      expect(roundTrip.outcome).toBe(value);
+      expect(roundTrip.releaseState).toBe(value);
+    }
+    const commitRecord = active.records.find((r) => r.kind === 'COMMIT_RESULT');
+    const commit = decodePlaintext(M2_KIND.COMMIT_RESULT, hex(commitRecord.plaintextHex));
+    expect(commit.presence).toBe(1);
+    expect(() => encodePlaintext(M2_KIND.COMMIT_RESULT, { ...commit, outcome: 0 }))
+      .toThrow(expect.objectContaining({ code: 'UNSUPPORTED_VALUE' }));
   });
 });
