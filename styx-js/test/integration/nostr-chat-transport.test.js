@@ -148,20 +148,27 @@ describe('NostrChatTransport (real strfry relay)', () => {
     await waitUntil(() => got.length >= 1);
     expect(got).toEqual(['m1']);
 
+    // Everything the relay pushes at this transport before dedupe. White-box
+    // access to the pool emitter matches the existing style of the transport
+    // tests (see test/transport/nostr-chat-transport-verify.test.js, which reads
+    // _pk/_seen/_rejected directly).
+    let rawRelayMessages = 0;
+    bt._pool.messages.on('message', () => { rawRelayMessages += 1; });
+
     // Simulate returning to the foreground: force reconnect (relay replays m1).
     await bt.reconnect();
 
-    // The relay replays the already-stored 'm1' against the new subscription.
-    // There is no observable signal for "the replay has been processed and
-    // dropped", so the absence of a duplicate needs a bounded settlement window.
-    // This is an absence window, not an arrival wait: the arrival waits in this
-    // test are all conditions (waitUntil).
-    await new Promise((r) => setTimeout(r, 500));
+    // The relay replays the already-stored 'm1' at the new subscription. Wait for
+    // the replay to actually reach the transport (an observable condition: the
+    // raw count rises above its pre-reconnect value) before asserting that the
+    // transport dropped the duplicate — no settlement sleep.
+    const rawBeforeReplay = rawRelayMessages;
+    await waitUntil(() => rawRelayMessages > rawBeforeReplay);
     expect(got).toEqual(['m1']); // replayed m1 is deduped, not delivered twice
 
-    // A new message after reconnect still arrives, and the relay already had to
-    // send it after the replayed 'm1' on the same subscription, so this second
-    // assertion is an independent duplicate check.
+    // A new message after reconnect still arrives; the relay sends it after the
+    // replayed 'm1' on the same subscription, so this closing assertion is an
+    // independent duplicate check.
     await at.send(bob.pk, new TextEncoder().encode('m2'));
     await waitUntil(() => got.includes('m2'));
     expect(got).toEqual(['m1', 'm2']); // replayed m1 is deduped, not delivered twice
