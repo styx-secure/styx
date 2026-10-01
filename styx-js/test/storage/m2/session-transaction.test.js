@@ -1210,13 +1210,17 @@ describe('runMutation outcomes', () => {
     expect(hex(store.selector)).toBe(hex(COMMIT_SELECTOR));
   });
 
-  test('the CAPI-S017 row may run against a selector that names another physical generation', async () => {
-    const { result, error } = await runCase('CAPI-S017', M2_OUTCOME.COMMITTED, {}, {
-      selector: COMMIT_SELECTOR,
-      generations: [OLD, NEW],
-    });
-    expect(error).toBeNull();
-    expect(result.commitOutcome).toBe('COMMITTED');
+  test('a stored selector that names another physical generation is a stale parent on every row', async () => {
+    // This row used to be exempt. It is not: a selector that names a generation the candidate does not
+    // replace is a stale parent, and acting on it deletes or re-selects the live authority.
+    for (const scenario of M2_TXN.SCENARIOS) {
+      const { result, error } = await runCase(scenario, M2_OUTCOME.COMMITTED, {}, {
+        selector: COMMIT_SELECTOR,
+        generations: [OLD, NEW],
+      });
+      expect(result).toBeNull();
+      expect(error.code).toBe('STALE_PARENT');
+    }
   });
 
   test('an already-complete new authority is not re-selected by a duplicate request', async () => {

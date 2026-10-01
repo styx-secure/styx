@@ -908,6 +908,24 @@ export async function runMutation(input) {
       + 'RECONCILIATION_REQUIRED and blind retry is forbidden');
   }
 
+  // A candidate may only describe a change of authority from the stored one, and the selector bytes it
+  // asks the port to install must be the selftuple selector for the generation it names. Without this
+  // the module would report a commit the storage contradicts, or clear a generation that is the live
+  // authority, from a candidate no caller should be able to form.
+  if (candidate.generation === candidate.parentGeneration) {
+    fail(CODE.CONTEXT_MISMATCH, 'the candidate generation must differ from the generation it replaces');
+  }
+  const plannedSelector = selectorFacts(candidate.selectorBytes);
+  if (plannedSelector.generation !== candidate.generation
+    || plannedSelector.candidateGeneration !== candidate.generation
+    || !equal(plannedSelector.manifestCipherDigest, candidate.manifestCipherDigest)
+    || !equal(plannedSelector.keyedRoot, candidate.keyedRoot)
+    || (candidate.manifestKey !== null
+      && !equal(plannedSelector.manifestKeyDigest, manifestKeyDigest(candidate.manifestKey)))) {
+    fail(CODE.CONTEXT_MISMATCH,
+      'the selector the candidate would install does not name the candidate generation as its own authority');
+  }
+
   const storedSelector = await storage.readSelector();
   if (storedSelector !== null && storedSelector !== undefined) {
     const current = selectorFacts(storedSelector);
@@ -918,7 +936,7 @@ export async function runMutation(input) {
         'the stored selector is in RECONCILIATION_REQUIRED; the unresolved mutation must be reconciled '
         + 'before a new request is accepted');
     }
-    if (current.generation !== candidate.parentGeneration && envelope.scenario !== 'CAPI-S017') {
+    if (current.generation !== candidate.parentGeneration) {
       fail(CODE.STALE_PARENT,
         'the stored selector names a physical generation that is not the candidate parent');
     }
