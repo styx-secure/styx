@@ -114,6 +114,7 @@ const CODE = Object.freeze({
   EVIDENCE_MISMATCH: 'EVIDENCE_MISMATCH',
   PARTIAL_APPLICATION: 'PARTIAL_APPLICATION',
   NO_RECONCILIATION_PENDING: 'NO_RECONCILIATION_PENDING',
+  HOLD_UNAVAILABLE: 'HOLD_UNAVAILABLE',
 });
 
 /** The only error class this module exports. */
@@ -795,10 +796,10 @@ export function mutationSteps(input) {
       selectorBytes: requireBytes(selectorBytes, 'candidate.selectorBytes'),
       resolveHoldGeneration: generation,
     });
-    if (hasOutput) {
-      push('DURING_ESCROW_OUTPUT_RESPONSE', 'RELEASE_ESCROW',
-        { generation, operationIdentity: envelope.operationIdentity.value });
-    }
+    // Every row ends the reconciliation with the local emission call: it is the step that releases
+    // the retained response hold. A row with no escrow releases nothing but still resolves the hold.
+    push('DURING_ESCROW_OUTPUT_RESPONSE', 'RELEASE_ESCROW',
+      { generation, operationIdentity: envelope.operationIdentity.value });
     push('AFTER_OUTPUT_RESPONSE_LOSS', 'REPORT_RESULT', { commitOutcome: OUTCOME_NAME[outcome] });
   } else if (outcome === M2_OUTCOME.NOT_COMMITTED) {
     // The stored selector must stop naming the candidate before the candidate's bytes are discarded:
@@ -910,6 +911,13 @@ export async function runMutation(input) {
   const storedSelector = await storage.readSelector();
   if (storedSelector !== null && storedSelector !== undefined) {
     const current = selectorFacts(storedSelector);
+    // The durable selector is authority, not the live memory hold: after an SS restart the hold may be
+    // gone while the stored selector still demands reconciliation, and a blind retry stays forbidden.
+    if (current.state === SELECTOR_STATE.RECONCILIATION_REQUIRED) {
+      fail(CODE.BLIND_RETRY,
+        'the stored selector is in RECONCILIATION_REQUIRED; the unresolved mutation must be reconciled '
+        + 'before a new request is accepted');
+    }
     if (current.generation !== candidate.parentGeneration && envelope.scenario !== 'CAPI-S017') {
       fail(CODE.STALE_PARENT,
         'the stored selector names a physical generation that is not the candidate parent');
@@ -1027,6 +1035,9 @@ export async function classifyAuthority(input) {
   } catch (e) {
     partial(`the stored selector is not consistent with the generation it names: ${e.message}`);
   }
+  if (selector.generation === newGeneration && selected.resultEvidence === null) {
+    partial('the new authority names a generation that carries no committed result evidence');
+  }
   const authority = newGeneration !== null && selector.generation === newGeneration ? 'COMPLETE_NEW'
     : (oldGeneration !== null && selector.generation === oldGeneration ? 'COMPLETE_OLD' : null);
   if (authority === null) {
@@ -1071,6 +1082,14 @@ export async function reconcileIndeterminate(input) {
   const reference = nonzero(s.reference, 'reference');
   const held = holdRecordFacts(await storage.readMemoryHold());
   if (held === null) {
+    // Without a hold only the durable selector can say whether anything is pending.
+    const durable = await storage.readSelector();
+    if (durable !== null && durable !== undefined
+      && selectorFacts(durable).state === SELECTOR_STATE.RECONCILIATION_REQUIRED) {
+      fail(CODE.HOLD_UNAVAILABLE,
+        'the stored selector is in RECONCILIATION_REQUIRED although no hold is available to this '
+        + 'profile; the unresolved mutation cannot be reconciled from here');
+    }
     fail(CODE.NO_RECONCILIATION_PENDING, 'no reconciliation is pending for this profile');
   }
   const supplied = holdRecordFacts(s.hold);
@@ -1081,7 +1100,7 @@ export async function reconcileIndeterminate(input) {
   for (const field of ['operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference',
     'candidateDigest', 'candidateReference', 'componentSetDigest', 'componentSetReference',
     'bindingRef', 'profileDigest', 'parentGeneration', 'parentKeyedRoot', 'heldOutputKind',
-    'expectedSuccessCode', 'expectedStateAfter']) {
+    'expectedSuccessCode', 'expectedStateAfter', 'reconciliationReference']) {
     const a = supplied[field];
     const b = held[field];
     const same = (a instanceof Uint8Array || b instanceof Uint8Array) ? equal(a, b) : a === b;
@@ -1122,6 +1141,17 @@ export async function reconcileIndeterminate(input) {
     partial('no stored selector exists although one hold is pending');
   }
   const selector = selectorFacts(storedSelector);
+  // The generation this reconciliation may clear or select is the candidate the STORED hold selector
+  // binds, never whatever candidateGeneration some other selector state happens to carry. A selector
+  // that names its own generation as candidate, or that is not in RECONCILIATION_REQUIRED, is not a
+  // pending hold: reconciling from it would delete or re-select the live authority.
+  if (selector.generation !== held.parentGeneration
+    || selector.candidateGeneration === selector.generation
+    || selector.state !== SELECTOR_STATE.RECONCILIATION_REQUIRED) {
+    fail(CODE.NO_RECONCILIATION_PENDING,
+      'the stored selector does not bind an unresolved candidate to the held parent generation; the '
+      + 'hold is not reconcilable from this stored state');
+  }
 
   if (evidence.outcome === M2_OUTCOME.NOT_COMMITTED) {
     const parent = generationFactsFromStorage(

@@ -1280,14 +1280,11 @@ describe('reconcileIndeterminate', () => {
       expect((await classify(store)).authority).toBe('COMPLETE_NEW');
       // The atomic selector replacement tombstones the candidate's retained hold on every row.
       expect(store.generations.get(NEW_GENERATION).mutationHold.presence).toBe(0);
-      if (row.outputKind === 'NONE') {
-        // No escrow exists to release, so the emission call is the response itself and there is no
-        // durable step for it; the response hold is SS-owned memory state, not durable evidence.
-        expect(added.map((a) => a.kind)).not.toContain('RELEASE_ESCROW');
-      } else {
-        expect(added.filter((a) => a.kind === 'RELEASE_ESCROW')).toHaveLength(1);
-        expect(store.memoryHold).toBeNull();
-      }
+      // Every row ends the reconciliation with the local emission call, which releases the retained
+      // response hold. A row with no escrow releases nothing but still resolves the hold.
+      expect(added.filter((a) => a.kind === 'RELEASE_ESCROW')).toHaveLength(1);
+      expect(store.memoryHold).toBeNull();
+      if (row.outputKind === 'NONE') expect(row.heldOutputKind ?? 'NONE').toBe('NONE');
     }
   });
 
