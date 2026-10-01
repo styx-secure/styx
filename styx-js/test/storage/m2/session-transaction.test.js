@@ -1086,6 +1086,10 @@ describe('acceptance sweep over every plan step', () => {
     expect(SWEEP.durableFaults).toBeGreaterThan(0);
     expect(SWEEP.readAborts).toBe(7 * 3 * 4);
     expect(SWEEP.reconciliationFaults).toBeGreaterThan(0);
+    const byBoundary = Object.keys(SWEEP.byBoundary).sort().map((b) => `${b}=${SWEEP.byBoundary[b]}`).join(' ');
+    console.log(`acceptance sweep size: ${SWEEP.cases} faulted cases `
+      + `(durable before/after ${SWEEP.durableFaults}, pre-request read aborts ${SWEEP.readAborts}, `
+      + `reconciliation ${SWEEP.reconciliationFaults}): ${byBoundary}`);
   });
 });
 
