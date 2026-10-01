@@ -415,7 +415,16 @@ describe('I-CODEC: typed rejection of hostile bytes, canonical keys, caps', () =
       writeGeneration: 1n,
     };
     const notPlain = Object.create({ ...valid });
-    for (const input of [extra, symbol, accessor, missing, notPlain, null, 0, []]) {
+    const substituted = {
+      scope: 1,
+      localContextId: id(1),
+      secureSessionIdentity: null,
+      writeGeneration: 1n,
+      recordKindX: M2_KIND.SESSION_STATE,
+    };
+    const symbolInstead = { scope: 1, localContextId: id(1), secureSessionIdentity: null, writeGeneration: 1n };
+    symbolInstead[Symbol('recordKind')] = M2_KIND.SESSION_STATE;
+    for (const input of [extra, symbol, accessor, missing, notPlain, substituted, symbolInstead, null, 0, []]) {
       expect(() => encodeRecordKey(input)).toThrowError(M2StorageCodecError);
     }
     expect(invoked).toBe(0);
