@@ -1271,7 +1271,7 @@ describe('review corrections: totality, decoding and the published metadata', ()
 
   test('a decoded member named __proto__ is preserved and then rejected, never dropped', () => {
     const canonical = new TextDecoder().decode(toWireBytes(request('RESTORE', {})));
-    const tampered = canonical.replace('{', '{"__proto__":1,');
+    const tampered = canonical.replace(/^\{/, '{"__proto__":1,');
     expectRejection(() => fromWireBytes(new TextEncoder().encode(tampered)),
       'UNKNOWN_FIELD', 'FIELD');
     // The same document through the direct validator, holding a real own member.
