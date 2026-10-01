@@ -151,9 +151,17 @@ describe('NostrChatTransport (real strfry relay)', () => {
     // Simulate returning to the foreground: force reconnect (relay replays m1).
     await bt.reconnect();
 
-    // A new message after reconnect still arrives. Waiting on m2 (an observable
-    // condition) also gives the relay time to replay m1, so the dedupe assertion
-    // is a condition wait rather than a fixed-sleep race.
+    // The relay replays the already-stored 'm1' against the new subscription.
+    // There is no observable signal for "the replay has been processed and
+    // dropped", so the absence of a duplicate needs a bounded settlement window.
+    // This is an absence window, not an arrival wait: the arrival waits in this
+    // test are all conditions (waitUntil).
+    await new Promise((r) => setTimeout(r, 500));
+    expect(got).toEqual(['m1']); // replayed m1 is deduped, not delivered twice
+
+    // A new message after reconnect still arrives, and the relay already had to
+    // send it after the replayed 'm1' on the same subscription, so this second
+    // assertion is an independent duplicate check.
     await at.send(bob.pk, new TextEncoder().encode('m2'));
     await waitUntil(() => got.includes('m2'));
     expect(got).toEqual(['m1', 'm2']); // replayed m1 is deduped, not delivered twice
