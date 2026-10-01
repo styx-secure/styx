@@ -55,17 +55,22 @@ const ERROR_CODES = Object.freeze([
 
 /**
  * C-API `/response/outputBySuccessCode/RECONCILED_COMMITTED` carries the *held*
- * original success code. Only the decision rows whose persistence is `RS_TRI_STATE`
- * can be held, and those are exactly CAPI-S001 `CREATED`, S006 `JOINED`,
- * S009 `APPLICATION_PROTECTED`, S010 `APPLICATION_OPENED`, S014 `SELF_UPDATED`,
- * S016 `PEER_UPDATE_APPLIED` and S017 `CANDIDATE_SELECTED` (C-API `/decisionRows`
- * with C-MUT commit outcomes). `RESTORED` persists nothing and the remaining codes
- * are not mutation dispositions.
+ * original success code. The contract requires it to be a member of
+ * `/successCodeEnum` other than `RECONCILED_COMMITTED` itself: a reconciliation
+ * result cannot describe a previous reconciliation.
+ *
+ * Owner observation, recorded and not enforced: of the enum members only the seven
+ * `RS_TRI_STATE` decision-row dispositions can physically be held — CAPI-S001
+ * `CREATED`, S006 `JOINED`, S009 `APPLICATION_PROTECTED`, S010 `APPLICATION_OPENED`,
+ * S014 `SELF_UPDATED`, S016 `PEER_UPDATE_APPLIED`, S017 `CANDIDATE_SELECTED`
+ * (C-API `/decisionRows`). `RESTORED` persists nothing and `DUPLICATE_IGNORED` is
+ * not a mutation disposition, so both are grammatically permitted here but cannot
+ * arise from a real row. Whether the grammar should be narrowed to the seven is an
+ * owner decision, not a silent choice of this module.
  */
-const ORIGINAL_SUCCESS_CODES = Object.freeze([
-  'CREATED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED', 'SELF_UPDATED',
-  'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED',
-]);
+const ORIGINAL_SUCCESS_CODE_SET = new Set(
+  SUCCESS_CODES.filter((code) => code !== 'RECONCILED_COMMITTED'),
+);
 
 /** The ten C-API `/response/errorShape` `detailTagEnum` members. */
 const DETAIL_TAGS = Object.freeze([
@@ -281,6 +286,33 @@ const TYPED_TAG = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, Symbol.
 const BYTE_LENGTH_GETTER = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, 'byteLength').get;
 const OBJECT_PROTOTYPE = Object.prototype;
 const FORBIDDEN_OWN_KEYS = Object.freeze(['__wbg_ptr', 'ptr']);
+const BUFFER_GETTER = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, 'buffer').get;
+const OWN_INDEX = /^(0|[1-9][0-9]*)$/;
+
+/**
+ * Run one intrinsic inspection of an untrusted value. A revoked proxy or a proxy
+ * whose trap throws raises a raw engine exception, and the contract permits only
+ * `M2WorkerError` to escape, so every other exception becomes `INVALID_REQUEST`.
+ * No free text from the rejected input is ever carried out.
+ */
+function inspect(thunk) {
+  try {
+    return thunk();
+  } catch (error) {
+    if (error instanceof M2WorkerError) throw error;
+    fail('INVALID_REQUEST', 'FIELD');
+  }
+}
+
+/**
+ * Define one own enumerable data property without going through a setter. A decoded
+ * document can carry a member literally named `__proto__`; assigning it would invoke
+ * the `Object.prototype.__proto__` setter and silently drop the member before the
+ * closed-object check ever sees it.
+ */
+const defineMember = (target, key, value) => Object.defineProperty(target, key, {
+  value, writable: true, enumerable: true, configurable: true,
+});
 
 const isUint8 = (value) => {
   try {
@@ -310,10 +342,17 @@ const isArrayBuffer = (value) => {
   return Object.getPrototypeOf(value) === ArrayBuffer.prototype;
 };
 
+/**
+ * A view is shared-backed only when its *intrinsic* buffer is a `SharedArrayBuffer`.
+ * `value.buffer` is an ordinary property and a caller can shadow it with an own data
+ * property, so the intrinsic getter is used instead.
+ */
 const isSharedBacked = (value) => {
-  if (typeof SharedArrayBuffer === 'undefined') return false;
   try {
-    return value.buffer instanceof SharedArrayBuffer;
+    if (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer) return true;
+    if (isUint8(value)) return BUFFER_GETTER.call(value) instanceof SharedArrayBuffer;
+    if (isArrayBuffer(value)) return false;
+    return false;
   } catch {
     return false;
   }
@@ -352,7 +391,9 @@ const isLoneSurrogateFree = (text) => {
   return true;
 };
 
-const CONTROL = /[\u0000-\u001f\u007f]/;
+// C0 (U+0000–U+001F), DEL (U+007F) and the C1 block (U+0080–U+009F) are all Unicode
+// category Cc, and the contract forbids every control character in a carried string.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 
 const newBudget = () => ({ nodes: 0, binaries: 0, opaqueBytes: 0 });
 
@@ -391,6 +432,16 @@ function validateWireValue(value, budget, depth, seen) {
 
   if (isUint8(value) || isArrayBuffer(value)) {
     if (isSharedBacked(value)) fail('INVALID_REQUEST', 'FIELD');
+    const expected = isUint8(value) ? byteLengthOf(value) : 0;
+    // A typed array or a buffer can carry only own integer-indexed properties, and
+    // those are non-configurable, so they can neither be deleted nor shadowed. Any
+    // other own member — `__wbg_ptr`, an attached function or `WebAssembly` object,
+    // a symbol key — raises the count, so the count alone proves there is none.
+    const own = inspect(() => Reflect.ownKeys(value));
+    if (own.length !== expected) fail('INVALID_REQUEST', 'FIELD');
+    for (const key of own) {
+      if (typeof key !== 'string') fail('INVALID_REQUEST', 'FIELD');
+    }
     const length = isUint8(value) ? byteLengthOf(value) : value.byteLength;
     if (length < 0) fail('INVALID_REQUEST', 'FIELD');
     if (length > BOUNDS.MAX_OPAQUE_BYTES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
@@ -406,30 +457,33 @@ function validateWireValue(value, budget, depth, seen) {
   if (seen.has(value)) fail('INVALID_REQUEST', 'FIELD');
   seen.add(value);
   try {
-    if (Array.isArray(value)) {
-      if (value.length > BOUNDS.MAX_ARRAY_LENGTH) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+    if (inspect(() => Array.isArray(value))) {
+      const arrayLength = inspect(() => value.length);
+      if (arrayLength > BOUNDS.MAX_ARRAY_LENGTH) fail('VALUE_OUT_OF_RANGE', 'FIELD');
       const output = [];
-      for (let index = 0; index < value.length; index += 1) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      for (let index = 0; index < arrayLength; index += 1) {
+        const descriptor = inspect(() => Object.getOwnPropertyDescriptor(value, String(index)));
         if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
           fail('INVALID_REQUEST', 'FIELD');
         }
         output.push(validateWireValue(descriptor.value, budget, depth + 1, seen));
       }
-      const own = Reflect.ownKeys(value);
-      if (own.length !== value.length + 1) fail('UNKNOWN_FIELD', 'FIELD');
+      const own = inspect(() => Reflect.ownKeys(value));
+      if (own.length !== arrayLength + 1) fail('UNKNOWN_FIELD', 'FIELD');
       for (const key of own) {
         if (typeof key !== 'string') fail('INVALID_REQUEST', 'FIELD');
         if (key === 'length') continue;
-        if (!/^(0|[1-9][0-9]*)$/.test(key) || Number(key) >= value.length) {
+        if (!OWN_INDEX.test(key) || Number(key) >= arrayLength) {
           fail('UNKNOWN_FIELD', 'FIELD');
         }
       }
       return output;
     }
-    if (Object.getPrototypeOf(value) !== OBJECT_PROTOTYPE) fail('INVALID_REQUEST', 'FIELD');
-    const keys = Reflect.ownKeys(value);
-    const descriptors = Object.getOwnPropertyDescriptors(value);
+    if (inspect(() => Object.getPrototypeOf(value)) !== OBJECT_PROTOTYPE) {
+      fail('INVALID_REQUEST', 'FIELD');
+    }
+    const keys = inspect(() => Reflect.ownKeys(value));
+    const descriptors = inspect(() => Object.getOwnPropertyDescriptors(value));
     const output = {};
     for (const key of keys) {
       if (typeof key !== 'string') fail('INVALID_REQUEST', 'FIELD');
@@ -438,7 +492,7 @@ function validateWireValue(value, budget, depth, seen) {
       if (!Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
         fail('INVALID_REQUEST', 'FIELD');
       }
-      output[key] = validateWireValue(descriptor.value, budget, depth + 1, seen);
+      defineMember(output, key, validateWireValue(descriptor.value, budget, depth + 1, seen));
     }
     return output;
   } finally {
@@ -458,12 +512,15 @@ const wireCheck = (value) => {
  */
 function readClosed(value, allowed, required, onUnknown = 'UNKNOWN_FIELD', onMissing = 'INVALID_REQUEST') {
   const tag = (code) => (code === 'UNSUPPORTED_PROFILE' ? 'PROFILE' : 'FIELD');
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || ArrayBuffer.isView(value)) {
+  if (value === null || typeof value !== 'object'
+      || inspect(() => Array.isArray(value)) || ArrayBuffer.isView(value)) {
     fail('INVALID_REQUEST', 'FIELD');
   }
-  if (Object.getPrototypeOf(value) !== OBJECT_PROTOTYPE) fail('INVALID_REQUEST', 'FIELD');
-  const keys = Reflect.ownKeys(value);
-  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (inspect(() => Object.getPrototypeOf(value)) !== OBJECT_PROTOTYPE) {
+    fail('INVALID_REQUEST', 'FIELD');
+  }
+  const keys = inspect(() => Reflect.ownKeys(value));
+  const descriptors = inspect(() => Object.getOwnPropertyDescriptors(value));
   const values = {};
   for (const key of keys) {
     if (typeof key !== 'string') fail('INVALID_REQUEST', 'FIELD');
@@ -473,7 +530,7 @@ function readClosed(value, allowed, required, onUnknown = 'UNKNOWN_FIELD', onMis
       fail('INVALID_REQUEST', 'FIELD');
     }
     if (!allowed.includes(key)) fail(onUnknown, tag(onUnknown));
-    values[key] = descriptor.value;
+    defineMember(values, key, descriptor.value);
   }
   for (const key of required) {
     if (!Object.hasOwn(descriptors, key)) fail(onMissing, tag(onMissing));
@@ -572,7 +629,7 @@ function checkOutput(value, successCode, depth) {
   for (const key of assigned) {
     if (key === 'originalOutput') {
       const original = values.originalSuccessCode;
-      if (typeof original !== 'string' || !ORIGINAL_SUCCESS_CODES.includes(original)) {
+      if (typeof original !== 'string' || !ORIGINAL_SUCCESS_CODE_SET.has(original)) {
         fail('UNKNOWN_VALUE', 'STATE');
       }
       output.originalSuccessCode = original;
@@ -667,16 +724,25 @@ export function validateWorkerResult(input) {
 // --- classification and dispatch -------------------------------------------
 
 const hasOwn = (value, key) => value !== null && typeof value === 'object'
-  && Object.getPrototypeOf(value) === OBJECT_PROTOTYPE && Object.hasOwn(value, key);
+  && inspect(() => Object.getPrototypeOf(value)) === OBJECT_PROTOTYPE && Object.hasOwn(value, key);
 
 /** Deterministic, total discriminator over the closed grammar. */
 export function classifyWorkerMessage(value) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || ArrayBuffer.isView(value)) {
+  try {
+    return classify(value);
+  } catch {
     return null;
   }
-  if (Object.getPrototypeOf(value) !== OBJECT_PROTOTYPE) return null;
-  if (hasOwn(value, 'input')) return 'REQUEST';
-  const kind = Object.getOwnPropertyDescriptor(value, 'kind');
+}
+
+function classify(value) {
+  if (value === null || typeof value !== 'object'
+      || inspect(() => Array.isArray(value)) || ArrayBuffer.isView(value)) {
+    return null;
+  }
+  if (inspect(() => Object.getPrototypeOf(value)) !== OBJECT_PROTOTYPE) return null;
+  if (inspect(() => hasOwn(value, 'input'))) return 'REQUEST';
+  const kind = inspect(() => Object.getOwnPropertyDescriptor(value, 'kind'));
   if (!kind || !Object.hasOwn(kind, 'value') || kind.enumerable !== true) return null;
   return typeof kind.value === 'string' && RESULT_KIND_SET.has(kind.value) ? kind.value : null;
 }
@@ -688,10 +754,17 @@ export function validateWorkerMessage(value) {
   return kind === 'REQUEST' ? validateWorkerRequest(value) : validateWorkerResult(value);
 }
 
-/** Validate the called kind and sweep every reachable leaf for wire safety. */
+/**
+ * Validate the called kind and sweep every reachable leaf for wire safety.
+ *
+ * The sweep runs over the *caller's* value, not over the validator's output: the
+ * output is rebuilt only from fresh plain objects, strings and fresh `Uint8Array`
+ * copies, so a sweep of it can never reject anything. The validator's output is the
+ * returned message; the caller's value is the untrusted one.
+ */
 export function assertWireSafe(value) {
   const message = validateWorkerMessage(value);
-  wireCheck(message);
+  wireCheck(value);
   const bytes = encodeWire(message);
   if (bytes.length > BOUNDS.MAX_MESSAGE_BYTES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
   return message;
@@ -757,25 +830,39 @@ function base64Decode(text) {
 
 function toJsonValue(value) {
   if (isUint8(value)) return { [BYTES_KEY]: base64Encode(value) };
-  if (Array.isArray(value)) return value.map(toJsonValue);
+  if (inspect(() => Array.isArray(value))) return value.map(toJsonValue);
   if (value !== null && typeof value === 'object') {
     const output = {};
-    for (const key of Object.keys(value)) output[key] = toJsonValue(value[key]);
+    for (const key of Object.keys(value)) defineMember(output, key, toJsonValue(value[key]));
     return output;
   }
   return value;
 }
 
-const fromJsonValue = (value) => {
-  if (Array.isArray(value)) return value.map(fromJsonValue);
+/**
+ * Restore the binary leaves of a parsed document and rebuild every object as a
+ * plain object with own enumerable data properties.
+ *
+ * Depth is bounded *before* the recursion descends, so a deeply nested document
+ * cannot exhaust the stack: `MAX_DEPTH` is `VALUE_OUT_OF_RANGE`/`FIELD` here, the
+ * same code the deep wire-value grammar raises.
+ */
+const fromJsonValue = (value, depth = 0) => {
+  if (depth > BOUNDS.MAX_DEPTH) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+  if (inspect(() => Array.isArray(value))) return value.map((entry) => fromJsonValue(entry, depth + 1));
   if (value !== null && typeof value === 'object') {
-    const keys = Reflect.ownKeys(value);
-    if (keys.length === 1 && keys[0] === BYTES_KEY) {
+    const keys = inspect(() => Reflect.ownKeys(value));
+    for (const key of keys) if (typeof key !== 'string') fail('INVALID_REQUEST', 'FIELD');
+    if (keys.includes(BYTES_KEY)) {
+      // The reserved key owns the whole object: it is a binary leaf and its value
+      // must be a base64 string. A member named `$bytes` beside any other member is
+      // not a leaf at all and is a message field the grammar does not allow.
+      if (keys.length !== 1) fail('UNKNOWN_FIELD', 'FIELD');
+      if (typeof value[BYTES_KEY] !== 'string') fail('INVALID_REQUEST', 'FIELD');
       return base64Decode(value[BYTES_KEY]);
     }
-    if (keys.includes(BYTES_KEY)) fail('INVALID_REQUEST', 'FIELD');
     const output = {};
-    for (const key of Object.keys(value)) output[key] = fromJsonValue(value[key]);
+    for (const key of keys) defineMember(output, key, fromJsonValue(value[key], depth + 1));
     return output;
   }
   return value;
@@ -802,7 +889,9 @@ export function fromWireBytes(bytes) {
   if (typeof TextDecoder === 'undefined') throw new Error('TextDecoder unavailable');
   let text;
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    // `ignoreBOM: true` keeps a leading U+FEFF in the decoded text instead of
+    // silently stripping it, so a byte-order-marked document is not a valid one.
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
     fail('INVALID_REQUEST', 'FIELD');
   }
@@ -815,22 +904,20 @@ export function fromWireBytes(bytes) {
   return assertWireSafe(fromJsonValue(parsed));
 }
 
-/** Frozen metadata: the closed sets, the copied constants and the chosen bounds. */
+/** Frozen metadata: exactly the closed members the contract names. */
 export const M2_WORKER = Object.freeze({
   PROTOCOL_VERSION,
   API,
   MESSAGE_KINDS: Object.freeze(['REQUEST'].concat(RESULT_KINDS)),
   RESULT_KINDS,
-  COMMIT_OUTCOMES,
   SUCCESS_CODES,
-  ORIGINAL_SUCCESS_CODES,
   ERROR_CODES,
   DETAIL_TAGS,
+  COMMIT_OUTCOMES,
   STATES,
   OPERATIONS,
   CODE_TO_KIND,
   PROFILE,
-  INPUT_BY_OPERATION,
   OUTPUT_BY_SUCCESS_CODE,
   BOUNDS,
 });

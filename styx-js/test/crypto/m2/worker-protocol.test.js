@@ -20,6 +20,7 @@ import {
   validateWorkerResult,
 } from '../../../src/crypto/mls/m2/worker-protocol.js';
 import { OPERATIONS, STATES } from '../../../src/crypto/mls/m2/state-machine.js';
+import { encodeBindingV0 } from '../../../src/crypto/m2-binding-v0.js';
 
 const B = M2_WORKER.BOUNDS;
 const SEED = 20261001;
@@ -152,7 +153,7 @@ describe('closed sets and merged-table binding', () => {
     expect(M2_WORKER.ERROR_CODES).toHaveLength(25);
     expect(M2_WORKER.DETAIL_TAGS).toHaveLength(10);
     expect(Object.keys(M2_WORKER.CODE_TO_KIND)).toHaveLength(37);
-    expect(Object.keys(M2_WORKER.INPUT_BY_OPERATION)).toHaveLength(8);
+    expect(Object.keys(INPUT_FOR)).toHaveLength(8);
     expect(Object.keys(M2_WORKER.OUTPUT_BY_SUCCESS_CODE)).toHaveLength(10);
     expect(M2_WORKER.COMMIT_OUTCOMES).toEqual(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
   });
@@ -306,7 +307,7 @@ describe('negative grammar: closed request fields', () => {
 
   test('rejects an unassigned input member for every operation', () => {
     for (const operation of OPERATIONS) {
-      const assigned = M2_WORKER.INPUT_BY_OPERATION[operation];
+      const assigned = Object.keys(INPUT_FOR[operation]);
       const foreign = assigned.includes('applicationBytes') ? 'embeddedTreeWelcome' : 'applicationBytes';
       expectRejection(
         () => validateWorkerRequest(request(operation, { ...INPUT_FOR[operation], [foreign]: bytes(1) })),
@@ -524,15 +525,19 @@ describe('negative grammar: closed result fields', () => {
     })), 'UNKNOWN_FIELD', 'FIELD');
     expectRejection(() => validateWorkerResult(result('SUCCESS', {
       successCode: 'RECONCILED_COMMITTED',
+      output: { originalSuccessCode: 'RESTORED', originalOutput: { extra: bytes(1) } },
+    })), 'UNKNOWN_FIELD', 'FIELD');
+    expect(validateWorkerResult(result('SUCCESS', {
+      successCode: 'RECONCILED_COMMITTED',
       output: { originalSuccessCode: 'RESTORED', originalOutput: {} },
-    })), 'UNKNOWN_VALUE', 'STATE');
+    })).output.originalSuccessCode).toBe('RESTORED');
     expectRejection(() => validateWorkerResult(result('SUCCESS', {
       successCode: 'RECONCILED_COMMITTED',
       output: { originalSuccessCode: 'NOT_A_CODE', originalOutput: {} },
     })), 'UNKNOWN_VALUE', 'STATE');
     expectRejection(() => validateWorkerResult(result('SUCCESS', {
       successCode: 'RECONCILED_COMMITTED',
-      output: { originalSuccessCode: 'DUPLICATE_IGNORED', originalOutput: {} },
+      output: { originalSuccessCode: 'RECONCILED_COMMITTED', originalOutput: {} },
     })), 'UNKNOWN_VALUE', 'STATE');
     expectRejection(() => validateWorkerResult(result('SUCCESS', {
       successCode: 'RECONCILED_COMMITTED',
@@ -544,29 +549,41 @@ describe('negative grammar: closed result fields', () => {
     })), 'INVALID_REQUEST', 'FIELD');
   });
 
-  test('only the seven RS_TRI_STATE disposition codes can be a held original code', () => {
-    expect(M2_WORKER.ORIGINAL_SUCCESS_CODES).toEqual([
-      'CREATED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED', 'SELF_UPDATED',
-      'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED',
-    ]);
+  test('a held original code is any /successCodeEnum member but RECONCILED_COMMITTED', () => {
+    // The contract: "`originalSuccessCode` is in `/successCodeEnum` and must not be
+    // `RECONCILED_COMMITTED`". The module implements exactly that and records, without
+    // enforcing it, that only the seven RS_TRI_STATE decision-row dispositions can
+    // physically be held.
     const outputFor = {
       CREATED: { embeddedTreeWelcome: bytes(1) },
+      RESTORED: {},
       JOINED: {},
       APPLICATION_PROTECTED: { protectedApplicationBytes: bytes(2) },
       APPLICATION_OPENED: { applicationBytes: bytes(3) },
       SELF_UPDATED: { protectedCommitBytes: bytes(4) },
       PEER_UPDATE_APPLIED: {},
       CANDIDATE_SELECTED: { selectedCandidateRef: 'candidate:1' },
+      DUPLICATE_IGNORED: {},
     };
-    for (const code of M2_WORKER.ORIGINAL_SUCCESS_CODES) {
+    const held = M2_WORKER.SUCCESS_CODES.filter((code) => code !== 'RECONCILED_COMMITTED');
+    expect(held).toHaveLength(M2_WORKER.SUCCESS_CODES.length - 1);
+    // Every permitted held code is exercised, so none can be skipped silently.
+    expect(Object.keys(outputFor).sort()).toEqual([...held].sort());
+    for (const code of held) {
+      const output = outputFor[code];
       const validated = validateWorkerResult(result('SUCCESS', {
         successCode: 'RECONCILED_COMMITTED',
-        output: { originalSuccessCode: code, originalOutput: outputFor[code] },
+        output: { originalSuccessCode: code, originalOutput: output },
       }));
       expect(validated.output.originalSuccessCode).toBe(code);
-      expect(Object.keys(validated.output.originalOutput)).toEqual(Object.keys(outputFor[code]));
+      expect(Object.keys(validated.output.originalOutput)).toEqual(Object.keys(output));
     }
-    for (const code of ['RESTORED', 'DUPLICATE_IGNORED', 'RECONCILED_COMMITTED']) {
+    // RESTORED and DUPLICATE_IGNORED are permitted by the grammar even though no
+    // C-API decision row can produce them; that is recorded for the owner.
+    for (const code of ['RESTORED', 'DUPLICATE_IGNORED']) {
+      expect(held).toContain(code);
+    }
+    for (const code of ['RECONCILED_COMMITTED', 'NOT_A_CODE']) {
       expectRejection(() => validateWorkerResult(result('SUCCESS', {
         successCode: 'RECONCILED_COMMITTED',
         output: { originalSuccessCode: code, originalOutput: {} },
@@ -659,9 +676,10 @@ describe('bounds', () => {
   });
 
   test('the closed grammar itself caps recursion at the held original code', () => {
-    // The only recursive member is originalOutput, and originalSuccessCode is
-    // restricted to the seven RS_TRI_STATE dispositions, so an encoding cannot nest
-    // beyond one level: the second level sees a foreign member.
+    // The only recursive member is originalOutput, and originalSuccessCode may not
+    // itself be RECONCILED_COMMITTED, so an encoding cannot nest beyond one level:
+    // the second level sees a foreign member. The `MAX_DEPTH` limit proper is
+    // exercised below through assertWireSafe, which sweeps the caller's value.
     let nested = {};
     for (let index = 0; index < B.MAX_DEPTH; index += 1) {
       nested = { originalSuccessCode: 'CREATED', originalOutput: nested };
@@ -674,6 +692,36 @@ describe('bounds', () => {
   test('an over-limit message is rejected before it is parsed', () => {
     expectRejection(() => fromWireBytes(new Uint8Array(B.MAX_MESSAGE_BYTES + 1)),
       'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_DEPTH, MAX_NODES, MAX_ARRAY_LENGTH, MAX_BINARY_LEAVES and the opaque total are defence in depth', () => {
+    // These limits are checked by the wire sweep, but *no* message the closed
+    // grammar accepts can reach them, and this test states why rather than pretending
+    // otherwise: an array is not an allowed member anywhere (readClosed rejects one),
+    // the deepest valid shape is the held `originalOutput` at depth 4 against
+    // MAX_DEPTH 16, and a message carries at most two opaque leaves.
+    expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), input: [] }),
+      'INVALID_REQUEST', 'FIELD');
+    expectRejection(() => assertWireSafe({ ...result('REJECTED', { error: { code: 'INVALID_REQUEST' } }),
+      output: [] }), 'UNKNOWN_FIELD', 'FIELD');
+    const widestInput = Math.max(...Object.values(INPUT_FOR).map((value) => Object.keys(value).length));
+    const deepestOutput = 2; // RECONCILED_COMMITTED holding one nested output
+    expect(widestInput).toBeLessThan(B.MAX_BINARY_LEAVES);
+    expect(deepestOutput).toBeLessThan(B.MAX_BINARY_LEAVES);
+    expect(deepestOutput * B.MAX_OPAQUE_BYTES).toBeLessThan(B.MAX_TOTAL_OPAQUE_BYTES);
+    expect(4).toBeLessThan(B.MAX_DEPTH);
+  });
+
+  test('MAX_BINDING_REF_BYTES, MAX_OPAQUE_BYTES and MAX_STRING_CHARS are VALUE_OUT_OF_RANGE', () => {
+    expectRejection(() => validateWorkerRequest(request('RESTORE', {}, {
+      bindingRef: bytes(1, B.MAX_BINDING_REF_BYTES + 1),
+    })), 'VALUE_OUT_OF_RANGE', 'BINDING');
+    expectRejection(() => validateWorkerRequest(request('CREATE', {
+      peerFramedKeyPackage: bytes(1, B.MAX_OPAQUE_BYTES + 1),
+    })), 'VALUE_OUT_OF_RANGE', 'FIELD');
+    expectRejection(() => validateWorkerRequest(request('RECONCILE_INDETERMINATE', {
+      reconciliationRef: 'x'.repeat(B.MAX_STRING_CHARS + 1),
+    })), 'VALUE_OUT_OF_RANGE', 'FIELD');
   });
 });
 
@@ -801,9 +849,11 @@ describe('wire encoding', () => {
   });
 
   test('refuses a field literally named $bytes at the envelope', () => {
-    expectRejection(() => fromWireBytes(new TextEncoder().encode(JSON.stringify({
-      ...request('RESTORE', {}), $bytes: 'AAAA',
-    }))), 'INVALID_REQUEST', 'FIELD');
+    const canonical = new TextDecoder().decode(toWireBytes(request('RESTORE', {})));
+    const tampered = canonical.replace(/^\{/, '{"$bytes":"AAAA",');
+    expect(tampered).not.toEqual(canonical);
+    expectRejection(() => fromWireBytes(new TextEncoder().encode(tampered)),
+      'UNKNOWN_FIELD', 'FIELD');
   });
 
   test('refuses malformed bytes, non-bytes and over-limit input', () => {
@@ -1159,6 +1209,151 @@ const SCENARIO_PROBE = {
       'UNKNOWN_FIELD', 'FIELD');
   },
 };
+
+describe('review corrections: totality, decoding and the published metadata', () => {
+  test('a revoked or throwing proxy never escapes a raw engine exception', () => {
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    const throwing = new Proxy({}, {
+      getPrototypeOf: () => { throw new Error('trap'); },
+      ownKeys: () => { throw new Error('trap'); },
+      getOwnPropertyDescriptor: () => { throw new Error('trap'); },
+      has: () => { throw new Error('trap'); },
+    });
+    for (const value of [revoked.proxy, throwing]) {
+      expect(classifyWorkerMessage(value)).toBeNull();
+      expectRejection(() => validateWorkerMessage(value), 'INVALID_REQUEST', 'FIELD');
+      expectRejection(() => validateWorkerRequest(value), 'INVALID_REQUEST', 'FIELD');
+      expectRejection(() => validateWorkerResult(value), 'INVALID_REQUEST', 'FIELD');
+    }
+    // A proxy that looks like a request but throws on inspection is still total.
+    const trap = new Proxy(request('RESTORE', {}), {
+      getOwnPropertyDescriptor: (target, key) => (
+        key === 'api' ? (() => { throw new Error('trap'); })() : Reflect.getOwnPropertyDescriptor(target, key)
+      ),
+    });
+    expectRejection(() => validateWorkerRequest(trap), 'INVALID_REQUEST', 'FIELD');
+  });
+
+  test('a typed array or buffer carries no own member other than its indices', () => {
+    const carriers = [
+      (blob) => { blob.__wbg_ptr = 1; return blob; },
+      (blob) => { blob.ptr = 1; return blob; },
+      (blob) => { blob.attached = () => {}; return blob; },
+      (blob) => { blob.memory = new WebAssembly.Memory({ initial: 1 }); return blob; },
+      (blob) => Object.defineProperty(blob, 'extra', { value: 1, enumerable: false }),
+    ];
+    for (const carrier of carriers) {
+      const blob = bytes(9, 32);
+      carrier(blob);
+      expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), bindingRef: blob }),
+        'INVALID_REQUEST', 'FIELD');
+    }
+    const buffer = new ArrayBuffer(8);
+    Object.defineProperty(buffer, 'ptr', { value: 1, enumerable: false });
+    // A raw `ArrayBuffer` is not a valid binding reference at all: the field takes a
+    // `Uint8Array` view and a buffer is rejected before the wire sweep.
+    expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), bindingRef: buffer }),
+      'VALUE_OUT_OF_RANGE', 'BINDING');
+  });
+
+  test('a decoded member named __proto__ is preserved and then rejected, never dropped', () => {
+    const canonical = new TextDecoder().decode(toWireBytes(request('RESTORE', {})));
+    const tampered = canonical.replace('{', '{"__proto__":1,');
+    expectRejection(() => fromWireBytes(new TextEncoder().encode(tampered)),
+      'UNKNOWN_FIELD', 'FIELD');
+    // The same document through the direct validator, holding a real own member.
+    const carrying = { ...request('RESTORE', {}) };
+    Object.defineProperty(carrying, '__proto__', { value: 1, enumerable: true, configurable: true });
+    expect(Object.getPrototypeOf(carrying)).toBe(Object.prototype);
+    expectRejection(() => validateWorkerRequest(carrying), 'UNKNOWN_FIELD', 'FIELD');
+  });
+
+  test('a $bytes marker must be a base64 string and must own its object', () => {
+    const canonical = new TextDecoder().decode(toWireBytes(request('RESTORE', {})));
+    for (const replacement of ['null', '7', '{}', '[]', 'true']) {
+      const tampered = canonical.replace(/\{"\$bytes":"[^"]*"\}/, `{"$bytes":${replacement}}`);
+      expect(tampered).not.toEqual(canonical);
+      expectRejection(() => fromWireBytes(new TextEncoder().encode(tampered)),
+        'INVALID_REQUEST', 'FIELD');
+    }
+    const beside = canonical.replace('"bindingRef":{', '"bindingRef":{"$bytes":"AAAA","extra":1,');
+    expectRejection(() => fromWireBytes(new TextEncoder().encode(beside)), 'UNKNOWN_FIELD', 'FIELD');
+  });
+
+  test('a deeply nested document is a closed rejection, not a stack overflow', () => {
+    const open = `${'['.repeat(B.MAX_DEPTH + 8)}1${']'.repeat(B.MAX_DEPTH + 8)}`;
+    expectRejection(() => fromWireBytes(new TextEncoder().encode(open)), 'VALUE_OUT_OF_RANGE', 'FIELD');
+    const deepObject = `${'{"a":'.repeat(B.MAX_DEPTH + 8)}1${'}'.repeat(B.MAX_DEPTH + 8)}`;
+    expectRejection(() => fromWireBytes(new TextEncoder().encode(deepObject)),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+    // Far deeper than the stack can recurse: still a closed rejection, whichever
+    // of the two closed codes the parser and the depth bound produce.
+    const enormous = `${'['.repeat(20000)}1${']'.repeat(20000)}`;
+    const error = thrown(() => fromWireBytes(new TextEncoder().encode(enormous)));
+    expect(error).toBeInstanceOf(M2WorkerError);
+    expect(['VALUE_OUT_OF_RANGE', 'INVALID_REQUEST']).toContain(error.code);
+    expect(error.valueFree).toBe(true);
+  });
+
+  test('a shared view cannot hide behind a forged own buffer property', () => {
+    // The attack: a view whose *real* buffer is shared, with an own `buffer` data
+    // property returning a normal `ArrayBuffer` to evade `value.buffer instanceof …`.
+    const evading = new Uint8Array(new SharedArrayBuffer(32));
+    Object.defineProperty(evading, 'buffer', { value: new ArrayBuffer(32), enumerable: false });
+    const shared = new Uint8Array(new SharedArrayBuffer(32));
+    for (const blob of [shared, evading]) {
+      expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: blob })),
+        'INVALID_REQUEST', 'BINDING');
+      expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), bindingRef: blob }),
+        'INVALID_REQUEST', 'BINDING');
+      expectRejection(() => toWireBytes(request('RESTORE', {}, { bindingRef: blob })),
+        'INVALID_REQUEST', 'BINDING');
+    }
+    // The reverse decoy — a normal view carrying a shared buffer as an own property —
+    // is simply ignored, because only the intrinsic buffer is consulted.
+    const decoy = new Uint8Array(32);
+    Object.defineProperty(decoy, 'buffer', { value: shared.buffer, enumerable: false });
+    expect(validateWorkerRequest(request('RESTORE', {}, { bindingRef: decoy })).bindingRef)
+      .toHaveLength(32);
+  });
+
+  test('a real encodeBindingV0 output travels as the binding reference', () => {
+    const encoded = encodeBindingV0({
+      localContextId: bytes(0x11, 32),
+      secureSessionIdentity: bytes(0x22, 32),
+    });
+    expect(encoded).toHaveLength(389);
+    const validated = validateWorkerRequest(request('RESTORE', {}, { bindingRef: encoded }));
+    expect(validated.bindingRef).toHaveLength(389);
+    expect(validated.bindingRef).not.toBe(encoded);
+    expect(Array.from(validated.bindingRef)).toEqual(Array.from(encoded));
+    // The validated copy is independent of the caller's array.
+    encoded[0] ^= 0xff;
+    expect(validated.bindingRef[0]).not.toBe(encoded[0]);
+  });
+
+  test('a byte-order mark and C1 control characters are not carried values', () => {
+    const canonical = toWireBytes(request('RESTORE', {}));
+    const withBom = new Uint8Array(canonical.length + 3);
+    withBom.set([0xef, 0xbb, 0xbf], 0);
+    withBom.set(canonical, 3);
+    expectRejection(() => fromWireBytes(withBom), 'INVALID_REQUEST', 'FIELD');
+    expectRejection(() => validateWorkerRequest({ ...request('RESTORE', {}), requestId: 'a\u0085b' }),
+      'INVALID_REQUEST', 'FIELD');
+    expectRejection(() => validateWorkerRequest({ ...request('RESTORE', {}), requestId: 'a\u009fb' }),
+      'INVALID_REQUEST', 'FIELD');
+  });
+
+  test('M2_WORKER exposes exactly the closed members the contract names', () => {
+    expect(Object.keys(M2_WORKER).sort()).toEqual([
+      'API', 'BOUNDS', 'CODE_TO_KIND', 'COMMIT_OUTCOMES', 'DETAIL_TAGS', 'ERROR_CODES',
+      'MESSAGE_KINDS', 'OPERATIONS', 'OUTPUT_BY_SUCCESS_CODE', 'PROFILE', 'PROTOCOL_VERSION',
+      'RESULT_KINDS', 'STATES', 'SUCCESS_CODES',
+    ]);
+    expect(Object.isFrozen(M2_WORKER)).toBe(true);
+  });
+});
 
 describe('ratified O-SCEN scenario mapping', () => {
   test('every mapped pointer has at least one ratified scenario and every probe exists', () => {
