@@ -251,9 +251,23 @@ export class M2WorkerError extends Error {
   }
 }
 
+/**
+ * Every error this module raises is registered here at construction. A caller can
+ * forge an object that passes `instanceof M2WorkerError` (a plain
+ * `Object.create(M2WorkerError.prototype)`), so shape alone cannot decide whether an
+ * escaping exception is ours: membership of this WeakSet can. A forged error is never
+ * rethrown and never lets its open `code`/free text out.
+ */
+const OWN_ERRORS = new WeakSet();
+
 const fail = (code, detailTag) => {
-  throw new M2WorkerError(code, detailTag);
+  const error = new M2WorkerError(code, detailTag);
+  OWN_ERRORS.add(error);
+  throw error;
 };
+
+/** True only for errors this module itself constructed. */
+const isOwnError = (error) => typeof error === 'object' && error !== null && OWN_ERRORS.has(error);
 
 // --- closed-set membership -------------------------------------------------
 
@@ -285,7 +299,10 @@ const TYPED_ARRAY_PROTOTYPE = Object.getPrototypeOf(Uint8Array.prototype);
 const TYPED_TAG = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, Symbol.toStringTag).get;
 const BYTE_LENGTH_GETTER = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, 'byteLength').get;
 const OBJECT_PROTOTYPE = Object.prototype;
-const FORBIDDEN_OWN_KEYS = Object.freeze(['__wbg_ptr', 'ptr']);
+// The contract names four own keys a closed plain object may not carry: the two
+// wasm-bindgen handle fields, the `$$` marker and `Symbol.toStringTag`. Symbol keys are
+// refused outright by the key-type check, so only the three string keys are listed.
+const FORBIDDEN_OWN_KEYS = Object.freeze(['__wbg_ptr', 'ptr', '$$']);
 const BUFFER_GETTER = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, 'buffer').get;
 const OWN_INDEX = /^(0|[1-9][0-9]*)$/;
 
@@ -299,7 +316,7 @@ function inspect(thunk) {
   try {
     return thunk();
   } catch (error) {
-    if (error instanceof M2WorkerError) throw error;
+    if (isOwnError(error)) throw error;
     fail('INVALID_REQUEST', 'FIELD');
   }
 }
@@ -336,23 +353,57 @@ const isArrayBuffer = (value) => {
   if (typeof ArrayBuffer === 'undefined') return false;
   try {
     if (!(value instanceof ArrayBuffer)) return false;
+    return Object.getPrototypeOf(value) === ArrayBuffer.prototype;
   } catch {
     return false;
   }
-  return Object.getPrototypeOf(value) === ArrayBuffer.prototype;
+};
+
+const ARRAY_BUFFER_BYTE_LENGTH_GETTER = typeof ArrayBuffer === 'undefined'
+  ? null
+  : Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, 'byteLength').get;
+
+/** Brand-checked byte length of a raw buffer, or -1 when it is not one. */
+const arrayBufferByteLength = (value) => {
+  if (ARRAY_BUFFER_BYTE_LENGTH_GETTER === null) return -1;
+  try {
+    return ARRAY_BUFFER_BYTE_LENGTH_GETTER.call(value);
+  } catch {
+    return -1;
+  }
 };
 
 /**
- * A view is shared-backed only when its *intrinsic* buffer is a `SharedArrayBuffer`.
- * `value.buffer` is an ordinary property and a caller can shadow it with an own data
- * property, so the intrinsic getter is used instead.
+ * Brand check for `SharedArrayBuffer`. `instanceof` walks the prototype chain of an
+ * untrusted value, so a caller can re-prototype a shared buffer
+ * (`Object.setPrototypeOf(sab, ArrayBuffer.prototype)`) or forge one and defeat it.
+ * Calling the intrinsic `SharedArrayBuffer.prototype.byteLength` getter succeeds only
+ * for a real shared buffer (the internal slot is not forgeable and is realm-public).
+ */
+const SHARED_BYTE_LENGTH_GETTER = typeof SharedArrayBuffer === 'undefined'
+  ? null
+  : Object.getOwnPropertyDescriptor(SharedArrayBuffer.prototype, 'byteLength').get;
+
+const isSharedBuffer = (value) => {
+  if (SHARED_BYTE_LENGTH_GETTER === null) return false;
+  try {
+    SHARED_BYTE_LENGTH_GETTER.call(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * A view is shared-backed only when its *intrinsic* buffer is a `SharedArrayBuffer`,
+ * and sharedness is decided by brand check, never by `instanceof`. `value.buffer` is an
+ * ordinary property that a caller can shadow with an own data property, so the
+ * intrinsic getter is used instead.
  */
 const isSharedBacked = (value) => {
   try {
-    if (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer) return true;
-    if (isUint8(value)) return BUFFER_GETTER.call(value) instanceof SharedArrayBuffer;
-    if (isArrayBuffer(value)) return false;
-    return false;
+    if (isUint8(value)) return isSharedBuffer(BUFFER_GETTER.call(value));
+    return isSharedBuffer(value);
   } catch {
     return false;
   }
@@ -427,7 +478,7 @@ function validateWireValue(value, budget, depth, seen) {
   if (type === 'function' || type === 'symbol' || type === 'bigint' || type === 'undefined') {
     fail('INVALID_REQUEST', 'FIELD');
   }
-  if (value instanceof Promise) fail('INVALID_REQUEST', 'FIELD');
+  if (inspect(() => value instanceof Promise)) fail('INVALID_REQUEST', 'FIELD');
   if (isOpaqueObject(value) !== null) fail('INVALID_REQUEST', 'FIELD');
 
   if (isUint8(value) || isArrayBuffer(value)) {
@@ -500,9 +551,70 @@ function validateWireValue(value, budget, depth, seen) {
   }
 }
 
-const wireCheck = (value) => {
+/**
+ * Bounds-only pass. It walks the caller's value looking *only* for bound violations,
+ * so an over-limit value is `VALUE_OUT_OF_RANGE` even when it sits under a member the
+ * closed-object grammar refuses for a different reason. Kind violations — a function,
+ * a promise, an opaque handle, an exotic prototype, a cycle, an accessor — are left to
+ * the grammar and to the full sweep that runs after it, so a foreign member holding
+ * one of those still reports `UNKNOWN_FIELD` rather than `INVALID_REQUEST`.
+ *
+ * The walk is trap-safe: any engine error raised by an untrusted value stops that
+ * branch and is left to the full sweep, which reports it as `INVALID_REQUEST`.
+ */
+function sweepBounds(value, budget, depth, seen) {
+  if (depth > BOUNDS.MAX_DEPTH) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+  spendNode(budget);
+  if (typeof value !== 'object' || value === null) {
+    if (typeof value === 'string' && value.length > BOUNDS.MAX_STRING_CHARS) {
+      fail('VALUE_OUT_OF_RANGE', 'FIELD');
+    }
+    return;
+  }
+  try {
+    if (isUint8(value) || isArrayBuffer(value)) {
+      if (isSharedBacked(value)) return; // the full sweep reports the shared buffer
+      const length = isUint8(value) ? byteLengthOf(value) : arrayBufferByteLength(value);
+      if (length < 0) return;
+      if (length > BOUNDS.MAX_OPAQUE_BYTES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+      budget.binaries += 1;
+      budget.opaqueBytes += length;
+      if (budget.binaries > BOUNDS.MAX_BINARY_LEAVES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+      if (budget.opaqueBytes > BOUNDS.MAX_TOTAL_OPAQUE_BYTES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+      return;
+    }
+    if (ArrayBuffer.isView(value)) return;
+    if (Object.getPrototypeOf(value) !== OBJECT_PROTOTYPE && !Array.isArray(value)) return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      const arrayLength = value.length;
+      if (arrayLength > BOUNDS.MAX_ARRAY_LENGTH) fail('VALUE_OUT_OF_RANGE', 'FIELD');
+      for (let index = 0; index < arrayLength; index += 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (descriptor && Object.hasOwn(descriptor, 'value')) {
+          sweepBounds(descriptor.value, budget, depth + 1, seen);
+        }
+      }
+      return;
+    }
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== 'string') continue;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor && Object.hasOwn(descriptor, 'value')) {
+        sweepBounds(descriptor.value, budget, depth + 1, seen);
+      }
+    }
+  } catch (error) {
+    if (isOwnError(error)) throw error;
+  }
+}
+
+const wireCheck = (value, boundsOnly = false) => {
   const budget = newBudget();
-  return validateWireValue(value, budget, 0, new Set());
+  const seen = new Set();
+  if (boundsOnly) return sweepBounds(value, budget, 0, seen);
+  return validateWireValue(value, budget, 0, seen);
 };
 
 /**
@@ -550,6 +662,18 @@ function opaqueBytes(value, maxBytes, tag = 'BINDING') {
   if (isSharedBacked(value)) fail('INVALID_REQUEST', tag);
   const length = byteLengthOf(value);
   if (length < 1 || length > maxBytes) fail('VALUE_OUT_OF_RANGE', tag);
+  // A view whose own members are not exactly its indices carries something other than
+  // bytes — typically a wasm-bindgen handle such as `__wbg_ptr`. The wire sweep rejects
+  // it; the field-level copy must agree with the sweep rather than silently accepting a
+  // decoy the sweep would refuse. A `Uint8Array` has no own `length` (it lives on the
+  // prototype), so its own keys are exactly the byte indices.
+  const own = inspect(() => Reflect.ownKeys(value));
+  if (own.length !== length) fail('INVALID_REQUEST', tag);
+  for (const key of own) {
+    if (typeof key !== 'string' || !OWN_INDEX.test(key) || Number(key) >= length) {
+      fail('INVALID_REQUEST', tag);
+    }
+  }
   const copy = new Uint8Array(length);
   copy.set(value);
   return copy;
@@ -566,10 +690,13 @@ function checkOperation(value) {
 }
 
 function checkRequestId(value) {
-  if (typeof value !== 'string' || value.length === 0 || value.length > BOUNDS.MAX_REQUEST_ID_CHARS
+  if (typeof value !== 'string' || value.length === 0
       || CONTROL.test(value) || !isLoneSurrogateFree(value)) {
     fail('INVALID_REQUEST', 'FIELD');
   }
+  // The bounds table is normative: an over-limit value is VALUE_OUT_OF_RANGE, never
+  // truncated and never folded into the malformed-value code.
+  if (value.length > BOUNDS.MAX_REQUEST_ID_CHARS) fail('VALUE_OUT_OF_RANGE', 'FIELD');
   return value;
 }
 
@@ -586,7 +713,7 @@ function checkProfile(value) {
 // --- requests --------------------------------------------------------------
 
 /** Validate exactly the closed C-API `/request` record for its operation. */
-export function validateWorkerRequest(input) {
+function validateRequestTotal(input) {
   const { values } = readClosed(input, REQUEST_FIELDS, REQUEST_FIELDS);
   checkApi(values.api);
   const operation = checkOperation(values.operation);
@@ -660,12 +787,12 @@ function checkErrorShape(value) {
 }
 
 /** Validate exactly `{code}` plus an optional C-API `detailTag`. */
-export function validateWorkerError(value) {
+function validateErrorTotal(value) {
   return freezeDeep(checkErrorShape(value));
 }
 
 /** Validate one closed result of any of the five C-API kinds. */
-export function validateWorkerResult(input) {
+function validateResultTotal(input) {
   const { values, keys } = readClosed(input, RESULT_UNION, RESULT_COMMON);
   checkApi(values.api);
   const requestId = checkRequestId(values.requestId);
@@ -748,7 +875,7 @@ function classify(value) {
 }
 
 /** Validate a message of either family by classification. */
-export function validateWorkerMessage(value) {
+function validateMessageTotal(value) {
   const kind = classifyWorkerMessage(value);
   if (kind === null) fail('INVALID_REQUEST', 'FIELD');
   return kind === 'REQUEST' ? validateWorkerRequest(value) : validateWorkerResult(value);
@@ -757,12 +884,18 @@ export function validateWorkerMessage(value) {
 /**
  * Validate the called kind and sweep every reachable leaf for wire safety.
  *
- * The sweep runs over the *caller's* value, not over the validator's output: the
+ * The caller's value is swept twice: a bounds-only pass *before* the grammar, then the
+ * full wire sweep *after* it. The bounds pass makes every numeric bound observable — an
+ * over-limit value is `VALUE_OUT_OF_RANGE` even under a member the grammar would refuse
+ * for another reason, which is what the acceptance criteria's per-bound named
+ * rejections require. The full sweep then decides everything the bounds pass left to
+ * the grammar: opaque handles, exotic prototypes, cycles, accessors and shared buffers.
+ * Both sweeps run over the *caller's* value, never over the validator's output: the
  * output is rebuilt only from fresh plain objects, strings and fresh `Uint8Array`
- * copies, so a sweep of it can never reject anything. The validator's output is the
- * returned message; the caller's value is the untrusted one.
+ * copies, so a sweep of it could never reject anything.
  */
-export function assertWireSafe(value) {
+function assertSafeTotal(value) {
+  wireCheck(value, true);
   const message = validateWorkerMessage(value);
   wireCheck(value);
   const bytes = encodeWire(message);
@@ -874,7 +1007,7 @@ function encodeWire(message) {
 }
 
 /** Make a validated message wire-safe and return its canonical encoding. */
-export function toWireBytes(message) {
+function toWireTotal(message) {
   const safe = assertWireSafe(message);
   const bytes = encodeWire(safe);
   if (bytes.length > BOUNDS.MAX_MESSAGE_BYTES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
@@ -882,7 +1015,7 @@ export function toWireBytes(message) {
 }
 
 /** Decode and validate a canonical message; bounded before it is parsed. */
-export function fromWireBytes(bytes) {
+function fromWireTotal(bytes) {
   if (!isUint8(bytes)) fail('INVALID_REQUEST', 'FIELD');
   const length = byteLengthOf(bytes);
   if (length > BOUNDS.MAX_MESSAGE_BYTES) fail('VALUE_OUT_OF_RANGE', 'FIELD');
@@ -903,6 +1036,38 @@ export function fromWireBytes(bytes) {
   }
   return assertWireSafe(fromJsonValue(parsed));
 }
+
+// --- public surface ---------------------------------------------------------
+
+/**
+ * Make totality a property of the exported surface rather than of each inspection
+ * site. The contract permits only `M2WorkerError` to escape, but a raw engine
+ * exception can still be raised anywhere an untrusted value reaches an intrinsic:
+ * a revoked proxy, a proxy trap that throws, or a class with a hostile
+ * `Symbol.hasInstance` reached through `instanceof`. The wrapper maps anything that is
+ * not an error this module constructed to `INVALID_REQUEST`/`FIELD`, and rethrows our
+ * own errors unchanged, so no forged error and no engine text can escape.
+ */
+const total = (implementation) => {
+  const wrapped = function totalValidator(value) {
+    try {
+      return implementation(value);
+    } catch (error) {
+      if (isOwnError(error)) throw error;
+      fail('INVALID_REQUEST', 'FIELD');
+    }
+  };
+  Object.defineProperty(wrapped, 'name', { value: implementation.name, configurable: true });
+  return wrapped;
+};
+
+export const validateWorkerRequest = total(validateRequestTotal);
+export const validateWorkerResult = total(validateResultTotal);
+export const validateWorkerError = total(validateErrorTotal);
+export const validateWorkerMessage = total(validateMessageTotal);
+export const assertWireSafe = total(assertSafeTotal);
+export const toWireBytes = total(toWireTotal);
+export const fromWireBytes = total(fromWireTotal);
 
 /** Frozen metadata: exactly the closed members the contract names. */
 export const M2_WORKER = Object.freeze({

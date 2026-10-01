@@ -153,7 +153,7 @@ describe('closed sets and merged-table binding', () => {
     expect(M2_WORKER.ERROR_CODES).toHaveLength(25);
     expect(M2_WORKER.DETAIL_TAGS).toHaveLength(10);
     expect(Object.keys(M2_WORKER.CODE_TO_KIND)).toHaveLength(37);
-    expect(Object.keys(INPUT_FOR)).toHaveLength(8);
+    expect(Object.keys(INPUT_FOR)).toEqual(M2_WORKER.OPERATIONS);
     expect(Object.keys(M2_WORKER.OUTPUT_BY_SUCCESS_CODE)).toHaveLength(10);
     expect(M2_WORKER.COMMIT_OUTCOMES).toEqual(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
   });
@@ -292,8 +292,14 @@ describe('negative grammar: closed request fields', () => {
   const base = request('CREATE', INPUT_FOR.CREATE);
 
   test('rejects every unrecognized request field', () => {
-    for (const field of ['type', 'apiVersion', 'commitOutcome', 'epoch', 'stateBefore', '$$', 'a b']) {
+    for (const field of ['type', 'apiVersion', 'commitOutcome', 'epoch', 'stateBefore', 'a b']) {
       expectRejection(() => validateWorkerRequest({ ...base, [field]: 1 }), 'UNKNOWN_FIELD', 'FIELD');
+    }
+    // The four keys the contract names as never-own are refused as malformed rather
+    // than as foreign: `$$` and the two wasm-bindgen handles are handle markers, not
+    // unknown fields.
+    for (const field of ['$$', '__wbg_ptr', 'ptr']) {
+      expectRejection(() => validateWorkerRequest({ ...base, [field]: 1 }), 'INVALID_REQUEST', 'FIELD');
     }
   });
 
@@ -370,7 +376,11 @@ describe('negative grammar: closed request fields', () => {
   });
 
   test('rejects requestId outside its bounds', () => {
-    for (const requestId of ['', 'x'.repeat(B.MAX_REQUEST_ID_CHARS + 1), 'a\nb', 7, null, {}]) {
+    // The bounds table is normative: an over-limit value is VALUE_OUT_OF_RANGE, and a
+    // malformed one is INVALID_REQUEST.
+    expectRejection(() => validateWorkerRequest({ ...base, requestId: 'x'.repeat(B.MAX_REQUEST_ID_CHARS + 1) }),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+    for (const requestId of ['', 'a\nb', 7, null, {}]) {
       expectRejection(() => validateWorkerRequest({ ...base, requestId }), 'INVALID_REQUEST', 'FIELD');
     }
     expect(validateWorkerRequest({ ...base, requestId: 'x'.repeat(B.MAX_REQUEST_ID_CHARS) })).toBeTruthy();
@@ -418,9 +428,13 @@ describe('negative grammar: closed request fields', () => {
 
 describe('negative grammar: closed result fields', () => {
   test('rejects every unrecognized result field', () => {
-    for (const field of ['input', 'error', 'epoch', 'kindOverride', '$$', 'success']) {
+    for (const field of ['input', 'error', 'epoch', 'kindOverride', 'success']) {
       if (field in SUCCESS_RESULT) continue;
       expectRejection(() => validateWorkerResult({ ...SUCCESS_RESULT, [field]: 1 }), 'UNKNOWN_FIELD', 'FIELD');
+    }
+    for (const field of ['$$', '__wbg_ptr', 'ptr']) {
+      expectRejection(() => validateWorkerResult({ ...SUCCESS_RESULT, [field]: 1 }),
+        'INVALID_REQUEST', 'FIELD');
     }
   });
 
@@ -694,22 +708,19 @@ describe('bounds', () => {
       'VALUE_OUT_OF_RANGE', 'FIELD');
   });
 
-  test('MAX_DEPTH, MAX_NODES, MAX_ARRAY_LENGTH, MAX_BINARY_LEAVES and the opaque total are defence in depth', () => {
-    // These limits are checked by the wire sweep, but *no* message the closed
-    // grammar accepts can reach them, and this test states why rather than pretending
-    // otherwise: an array is not an allowed member anywhere (readClosed rejects one),
-    // the deepest valid shape is the held `originalOutput` at depth 4 against
-    // MAX_DEPTH 16, and a message carries at most two opaque leaves.
+  test('the bounds pass runs before the closed-object grammar', () => {
+    // The bounds pass runs first, so an over-limit value is `VALUE_OUT_OF_RANGE` even
+    // when it sits under a member the grammar would refuse for another reason. A member
+    // that is merely foreign, with a valid wire value, still reaches the grammar and is
+    // `UNKNOWN_FIELD`, and so does a foreign member holding an opaque value.
     expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), input: [] }),
       'INVALID_REQUEST', 'FIELD');
+    expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), extra: 1 }),
+      'UNKNOWN_FIELD', 'FIELD');
+    expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), extra: () => 1 }),
+      'UNKNOWN_FIELD', 'FIELD');
     expectRejection(() => assertWireSafe({ ...result('REJECTED', { error: { code: 'INVALID_REQUEST' } }),
       output: [] }), 'UNKNOWN_FIELD', 'FIELD');
-    const widestInput = Math.max(...Object.values(INPUT_FOR).map((value) => Object.keys(value).length));
-    const deepestOutput = 2; // RECONCILED_COMMITTED holding one nested output
-    expect(widestInput).toBeLessThan(B.MAX_BINARY_LEAVES);
-    expect(deepestOutput).toBeLessThan(B.MAX_BINARY_LEAVES);
-    expect(deepestOutput * B.MAX_OPAQUE_BYTES).toBeLessThan(B.MAX_TOTAL_OPAQUE_BYTES);
-    expect(4).toBeLessThan(B.MAX_DEPTH);
   });
 
   test('MAX_BINDING_REF_BYTES, MAX_OPAQUE_BYTES and MAX_STRING_CHARS are VALUE_OUT_OF_RANGE', () => {
@@ -1246,8 +1257,9 @@ describe('review corrections: totality, decoding and the published metadata', ()
     for (const carrier of carriers) {
       const blob = bytes(9, 32);
       carrier(blob);
+      // The field-level copy runs before the full sweep, so the tag is the field's.
       expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), bindingRef: blob }),
-        'INVALID_REQUEST', 'FIELD');
+        'INVALID_REQUEST', 'BINDING');
     }
     const buffer = new ArrayBuffer(8);
     Object.defineProperty(buffer, 'ptr', { value: 1, enumerable: false });
@@ -1310,12 +1322,15 @@ describe('review corrections: totality, decoding and the published metadata', ()
       expectRejection(() => toWireBytes(request('RESTORE', {}, { bindingRef: blob })),
         'INVALID_REQUEST', 'BINDING');
     }
-    // The reverse decoy — a normal view carrying a shared buffer as an own property —
-    // is simply ignored, because only the intrinsic buffer is consulted.
+    // The reverse decoy — a normal view carrying an own property that claims a shared
+    // buffer — carries an own member that is not one of its indices, so the field-level
+    // copy refuses it exactly as the wire sweep does, instead of accepting it.
     const decoy = new Uint8Array(32);
     Object.defineProperty(decoy, 'buffer', { value: shared.buffer, enumerable: false });
-    expect(validateWorkerRequest(request('RESTORE', {}, { bindingRef: decoy })).bindingRef)
-      .toHaveLength(32);
+    expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: decoy })),
+      'INVALID_REQUEST', 'BINDING');
+    expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), bindingRef: decoy }),
+      'INVALID_REQUEST', 'BINDING');
   });
 
   test('a real encodeBindingV0 output travels as the binding reference', () => {
@@ -1386,5 +1401,239 @@ describe('ratified O-SCEN scenario mapping', () => {
   ))('ratified O-SCEN %s discharges the clause bound at %s', (id, pointer) => {
     expect(id).toMatch(/^OSC-[0-9a-f]{16}$/);
     SCENARIO_PROBE[pointer]();
+  });
+});
+
+// --- review corrections -----------------------------------------------------
+
+describe('correction: only this module\'s own errors may escape', () => {
+  const ENTRIES = [
+    ['validateWorkerRequest', validateWorkerRequest],
+    ['validateWorkerResult', validateWorkerResult],
+    ['validateWorkerError', validateWorkerError],
+    ['validateWorkerMessage', validateWorkerMessage],
+    ['assertWireSafe', assertWireSafe],
+    ['toWireBytes', toWireBytes],
+    ['fromWireBytes', fromWireBytes],
+  ];
+
+  const hostileProxy = (thrown) => new Proxy({}, {
+    getPrototypeOf() { throw thrown(); },
+    getOwnPropertyDescriptor() { throw thrown(); },
+    ownKeys() { throw thrown(); },
+    has() { throw thrown(); },
+    get() { throw thrown(); },
+  });
+
+  test('a proxy trap that throws an engine error yields INVALID_REQUEST, never the raw error', () => {
+    for (const [name, entry] of ENTRIES) {
+      for (const thrown of [() => new TypeError('x'), () => new RangeError('x'), () => 12345]) {
+        const value = hostileProxy(thrown);
+        const error = expectRejection(() => entry(value), 'INVALID_REQUEST', 'FIELD');
+        expect(error.constructor).toBe(M2WorkerError);
+      }
+    }
+  });
+
+  test('a forged M2WorkerError never escapes with its open code or free text', () => {
+    const forged = Object.create(M2WorkerError.prototype);
+    forged.code = 'MALFORMED_BINDING';
+    forged.detailTag = 'secret-detail-from-caller';
+    forged.valueFree = false;
+    expect(forged).toBeInstanceOf(M2WorkerError);
+    const hostile = new Proxy({}, {
+      getOwnPropertyDescriptor() { throw forged; },
+    });
+    for (const [, entry] of ENTRIES) {
+      const error = expectRejection(() => entry(hostile), 'INVALID_REQUEST', 'FIELD');
+      expect(error).not.toBe(forged);
+      expect(error.valueFree).toBe(true);
+    }
+  });
+
+  test('every entry point is total against proxies and exotic values', () => {
+    const values = [
+      hostileProxy(() => new Error('x')),
+      new Proxy({}, { get() { throw 'a string'; } }),
+      Object.create(null),
+      new Proxy(Object.create(null), { ownKeys() { throw new URIError('x'); } }),
+    ];
+    for (const [name, entry] of ENTRIES) {
+      for (const value of values) {
+        let caught;
+        try {
+          entry(value);
+        } catch (error) {
+          caught = error;
+        }
+        expect([name, caught instanceof M2WorkerError]).toEqual([name, true]);
+        expect(M2_WORKER.ERROR_CODES).toContain(caught.code);
+        expect(M2_WORKER.DETAIL_TAGS).toContain(caught.detailTag);
+        expect(caught.valueFree).toBe(true);
+      }
+    }
+  });
+
+  test('a shared buffer re-prototyped to ArrayBuffer is still shared', () => {
+    const SharedCtor = typeof SharedArrayBuffer === 'undefined' ? null : SharedArrayBuffer;
+    if (SharedCtor === null) return;
+    const shared = new SharedCtor(8);
+    Object.setPrototypeOf(shared, ArrayBuffer.prototype);
+    // A re-prototyped shared buffer is still brand-checked as shared; the field takes a
+    // `Uint8Array` view, so a raw buffer is VALUE_OUT_OF_RANGE/BINDING either way.
+    expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: shared })),
+      'VALUE_OUT_OF_RANGE', 'BINDING');
+    expectRejection(() => assertWireSafe(request('RESTORE', {}, { bindingRef: shared })),
+      'VALUE_OUT_OF_RANGE', 'BINDING');
+    const view = new Uint8Array(new SharedCtor(8));
+    expectRejection(() => assertWireSafe(request('RESTORE', {}, { bindingRef: view })),
+      'INVALID_REQUEST', 'BINDING');
+    expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: view })),
+      'INVALID_REQUEST', 'BINDING');
+  });
+
+  test('a view whose own members are not its indices is refused by both entry points', () => {
+    const decoy = bytes(0x5a, 8);
+    Object.defineProperty(decoy, 'buffer', { value: new ArrayBuffer(8), enumerable: true });
+    expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: decoy })),
+      'INVALID_REQUEST', 'BINDING');
+    expectRejection(() => assertWireSafe(request('RESTORE', {}, { bindingRef: decoy })),
+      'INVALID_REQUEST', 'BINDING');
+    const handle = bytes(0x5a, 8);
+    handle.__wbg_ptr = 7;
+    expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: handle })),
+      'INVALID_REQUEST', 'BINDING');
+  });
+});
+
+describe('correction: every numeric bound is observable through the wire entry points', () => {
+  const restore = (overrides) => ({ ...request('RESTORE', {}), ...overrides });
+
+  test('MAX_MESSAGE_BYTES rejects an over-limit document', () => {
+    expectRejection(() => fromWireBytes(new Uint8Array(B.MAX_MESSAGE_BYTES + 1)),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_DEPTH rejects a nesting one level over the limit', () => {
+    let value = 1;
+    for (let index = 0; index < B.MAX_DEPTH + 1; index += 1) value = [value];
+    expectRejection(() => assertWireSafe(restore({ input: value })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_ARRAY_LENGTH rejects an array one element over the limit', () => {
+    expectRejection(() => assertWireSafe(restore({ input: new Array(B.MAX_ARRAY_LENGTH + 1).fill(1) })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_NODES rejects an object graph one node over the limit', () => {
+    const value = Array.from({ length: B.MAX_NODES / 16 }, () => new Array(16).fill(1));
+    expectRejection(() => assertWireSafe(restore({ input: value })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_STRING_CHARS and MAX_REQUEST_ID_CHARS reject a string one character over', () => {
+    expectRejection(() => assertWireSafe(restore({ input: { reason: 'x'.repeat(B.MAX_STRING_CHARS + 1) } })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+    expectRejection(() => validateWorkerRequest(restore({ requestId: 'x'.repeat(B.MAX_REQUEST_ID_CHARS + 1) })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_BINDING_REF_BYTES rejects a reference one byte over the limit', () => {
+    expectRejection(() => validateWorkerRequest(
+      request('RESTORE', {}, { bindingRef: bytes(0x11, B.MAX_BINDING_REF_BYTES + 1) }),
+    ), 'VALUE_OUT_OF_RANGE', 'BINDING');
+  });
+
+  test('MAX_OPAQUE_BYTES rejects a leaf one byte over the limit', () => {
+    expectRejection(() => assertWireSafe(restore({ input: { blob: bytes(0x11, B.MAX_OPAQUE_BYTES + 1) } })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_TOTAL_OPAQUE_BYTES rejects a set of leaves one byte over the total', () => {
+    const leaf = bytes(0x11, B.MAX_OPAQUE_BYTES);
+    const leaves = new Array(Math.floor(B.MAX_TOTAL_OPAQUE_BYTES / B.MAX_OPAQUE_BYTES) + 1).fill(leaf);
+    expectRejection(() => assertWireSafe(restore({ input: leaves })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('MAX_BINARY_LEAVES rejects one leaf over the limit', () => {
+    const leaves = Array.from({ length: B.MAX_BINARY_LEAVES + 1 }, () => bytes(0x11, 1));
+    expectRejection(() => assertWireSafe(restore({ input: leaves })),
+      'VALUE_OUT_OF_RANGE', 'FIELD');
+  });
+
+  test('WebAssembly.Instance and WebAssembly.Table are refused wherever they appear', () => {
+    if (typeof WebAssembly === 'undefined' || typeof WebAssembly.Table !== 'function') return;
+    const module = new WebAssembly.Module(Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0));
+    const opaque = [
+      ['instance', new WebAssembly.Instance(module)],
+      ['table', new WebAssembly.Table({ element: 'anyfunc', initial: 1 })],
+    ];
+    for (const [, value] of opaque) {
+      expectRejection(() => validateWorkerRequest(request('RESTORE', {}, { bindingRef: value })),
+        'VALUE_OUT_OF_RANGE', 'BINDING');
+      expectRejection(() => validateWorkerRequest(
+        request('PROTECT_APPLICATION', { applicationBytes: value }),
+      ), 'VALUE_OUT_OF_RANGE', 'FIELD');
+      expectRejection(() => assertWireSafe({ ...request('RESTORE', {}, { bindingRef: value }) }),
+        'VALUE_OUT_OF_RANGE', 'BINDING');
+      expectRejection(() => assertWireSafe({ ...request('RESTORE', {}), extra: value }),
+        'UNKNOWN_FIELD', 'FIELD');
+    }
+  });
+
+  test('the copied profile agrees with the merged m2-binding-v0 profile bytes', async () => {
+    const binding = await import('../../../src/crypto/m2-binding-v0.js');
+    const decoded = binding.decodeBindingV0(binding.encodeBindingV0({
+      localContextId: bytes(0x11, 32),
+      secureSessionIdentity: bytes(0x22, 32),
+    }));
+    // Recover the 13 framed profile fields from the adapter's own wire bytes.
+    const profile = decoded.productProfile;
+    const text = (part) => String.fromCharCode(...part);
+    const hex = (part) => Array.from(part).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    const be = (part) => part.reduce((total, byte) => (total * 256) + byte, 0);
+    const read = [];
+    for (let offset = 0; offset < profile.length;) {
+      const tag = profile[offset];
+      const length = (profile[offset + 1] << 8) | profile[offset + 2];
+      read.push([tag, profile.slice(offset + 3, offset + 3 + length)]);
+      offset += 3 + length;
+    }
+    expect(read.map(([tag]) => tag)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    const values = read.map(([, value]) => value);
+    const keys = Object.keys(M2_WORKER.PROFILE);
+    expect(keys).toHaveLength(13);
+    expect(M2_WORKER.PROFILE[keys[0]]).toBe(text(values[0]));
+    expect(M2_WORKER.PROFILE[keys[1]]).toBe(text(values[1]));
+    expect(M2_WORKER.PROFILE[keys[2]]).toBe(text(values[2]));
+    expect(M2_WORKER.PROFILE[keys[3]]).toBe(text(values[3]));
+    expect(M2_WORKER.PROFILE[keys[4]]).toBe(text(values[4]));
+    expect(M2_WORKER.PROFILE[keys[5]]).toBe(text(values[5]));
+    expect(M2_WORKER.PROFILE[keys[6]]).toBe(hex(values[6]));
+    expect(M2_WORKER.PROFILE[keys[7]]).toBe(text(values[7]));
+    expect(M2_WORKER.PROFILE[keys[8]]).toBe(hex(values[8]));
+    expect(M2_WORKER.PROFILE[keys[9]]).toBe(`0x${be(values[9]).toString(16).padStart(4, '0')}`);
+    expect(M2_WORKER.PROFILE[keys[10]]).toBe(text(values[10]));
+    expect(M2_WORKER.PROFILE[keys[11]]).toBe(hex(values[11]));
+    expect(M2_WORKER.PROFILE[keys[12]]).toBe(be(values[12]));
+  });
+
+  test('every accepted message round-trips through the canonical encoding', () => {
+    const messages = [
+      ...M2_WORKER.OPERATIONS.map((operation) => request(operation, INPUT_FOR[operation])),
+      SUCCESS_RESULT,
+      result('SUCCESS', { successCode: 'CREATED', output: { embeddedTreeWelcome: bytes(0x22, 4) } }),
+      NO_CHANGE_RESULT,
+      NOT_COMMITTED_RESULT,
+      INDETERMINATE_RESULT,
+      REJECTED_RESULT,
+    ];
+    for (const message of messages) {
+      const decoded = fromWireBytes(toWireBytes(message));
+      expect(decoded).toEqual(assertWireSafe(message));
+      expect(fromWireBytes(toWireBytes(decoded))).toEqual(decoded);
+    }
   });
 });
