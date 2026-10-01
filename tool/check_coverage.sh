@@ -53,7 +53,11 @@ for PKG in $(cd "$ROOT" && melos list --parsable); do
   find "$PKG/test" -name '*_test.dart' -print -quit | grep -q . || continue
 
   pushd "$PKG" >/dev/null
-  dart test --coverage=coverage >/dev/null 2>&1 || true
+  if ! dart test --coverage=coverage >/dev/null 2>&1; then
+    echo "ERROR $NAME — 'dart test' failed; the coverage gate fails closed." >&2
+    rm -rf coverage; popd >/dev/null
+    exit 1
+  fi
   dart pub global run coverage:format_coverage \
     --lcov --in=coverage --out=coverage/lcov.info --report-on=lib/ >/dev/null 2>&1 || true
 
