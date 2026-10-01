@@ -25,6 +25,15 @@ from scope_guard import (
     build_report,
 )
 
+# APP-core's own ratified candidate for the PR-boundary guard: the tip of the M1
+# post-merge scope-guard repair (#315). The guard's boundary is the fixed pair
+# BASE_SHA..RATIFIED_CANDIDATE_SHA, so the candidate is pinned to APP-core's own
+# commit instead of a moving "HEAD". The live integration head also carries
+# later commits outside APP-core scope (for example the scope-evidence
+# workflow), and diffing those against APP-core's own base makes this suite fail
+# for changes APP-core never made.
+RATIFIED_CANDIDATE_SHA = "e1538ef9c070e463a8256872a3fd0882c424e2ef"
+
 
 class ScopeGuardTests(unittest.TestCase):
     def test_only_exact_shared_paths_and_closed_subtree_are_allowed(self) -> None:
@@ -91,8 +100,11 @@ class ScopeGuardTests(unittest.TestCase):
         self.assertEqual(_verify_subtree(ROOT.parents[2], "HEAD"), (28, 23, 15))
 
     def test_strict_guard_accepts_actual_candidate_tree(self) -> None:
-        report = build_report(ROOT.parents[2], BASE_SHA, "HEAD", "strict")
+        report = build_report(
+            ROOT.parents[2], BASE_SHA, RATIFIED_CANDIDATE_SHA, "strict"
+        )
         self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["changed_path_count"], 2)
         self.assertEqual(report["implementation_file_count"], 23)
         self.assertEqual(report["test_module_count"], 15)
 
@@ -108,7 +120,7 @@ class GitObjectScopeGuardTests(unittest.TestCase):
             capture_output=True,
             timeout=60,
         )
-        self._git("read-tree", "HEAD")
+        self._git("read-tree", RATIFIED_CANDIDATE_SHA)
         name = "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
         self.registry = json.loads((ROOT / "contract" / name).read_text())
         self.registry_path = self.repo / SUBTREE / "contract" / name
@@ -182,6 +194,27 @@ class GitObjectScopeGuardTests(unittest.TestCase):
         ):
             build_report(self.repo, BASE_SHA, candidate, "strict")
 
+    def test_later_governance_path_is_still_out_of_scope(self) -> None:
+        path = ".github/workflows/agent-scope-evidence.yml"
+        self._replace_blob(path, "governance change outside APP-core scope\n")
+        tree = self._git("write-tree")
+        candidate = self._git(
+            "-c",
+            "user.name=Styx Test",
+            "-c",
+            "user.email=styx-test.invalid",
+            "commit-tree",
+            tree,
+            "-p",
+            BASE_SHA,
+            input_text="out-of-scope governance PR candidate\n",
+        )
+        with self.assertRaisesRegex(
+            ScopeError,
+            r"changed path is outside ratified scope: "
+            r"\.github/workflows/agent-scope-evidence\.yml",
+        ):
+            build_report(self.repo, BASE_SHA, candidate, "strict")
     def test_second_native_repin_fails(self) -> None:
         row = next(
             row for row in self.registry["dependencies"]
