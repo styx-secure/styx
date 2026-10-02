@@ -5,6 +5,10 @@ import {
   applyMarkerTransition, encodeMarker, legacyEligible, readMarker,
 } from '../../../src/storage/m2/legacy-session-invalidation.js';
 import * as invalidationModule from '../../../src/storage/m2/legacy-session-invalidation.js';
+import {
+  M2_LEGACY_INVENTORY, classifyLegacyLocator, inventoryLegacySessions,
+} from '../../../src/storage/m2/legacy-session-inventory.js';
+import { M2_KIND, decodeRecordKey, M2StorageCodecError } from '../../../src/storage/m2/session-codec.js';
 
 // The ratified C-REC vocabulary asserted below is copied verbatim from
 // `docs/architecture/m2/recovery-and-coexistence.md` §13 `/marker` and `/fixtures`
@@ -22,7 +26,10 @@ const EVENT_COMMIT = 'ATOMIC_MARKER_COMMIT';
 const EVENT_REPEAT = 'REPEAT_MARKER_COMPLETION';
 const ZERO = new Uint8Array(32);
 const TOKEN = new Uint8Array(32).fill(0x5a);
-const OTHER = new Uint8Array(32).fill(0xa5);
+// A stale start authority: the token of an earlier, already-cancelled start.
+const STALE = new Uint8Array(32).fill(0xa5);
+// A cross-session token: neither the marker's own token nor a copy of the stale one.
+const CROSS = new Uint8Array(32).fill(0x3c);
 const hex = (b) => Array.from(b, (v) => v.toString(16).padStart(2, '0')).join('');
 const marker = (state, bindingToken) => encodeMarker({ state, bindingToken });
 
@@ -103,7 +110,18 @@ describe('legacy-session-invalidation: closed vocabulary', () => {
     expect(M2_LEGACY_INVALIDATION.SELECTED_AUTHORITY).toBe(false);
     expect(M2_LEGACY_INVALIDATION.PRESERVE_BYTES).toBe(true);
     expect(M2_LEGACY_INVALIDATION.CLEANUP).toBe('DEFERRED');
-    expect(M2_LEGACY_INVALIDATION.LOCKED_DISPOSITION).toBe('LOCK_RETRY');
+  });
+
+  test('the published metadata key set is exactly the contracted set', () => {
+    expect(Object.keys(M2_LEGACY_INVALIDATION)).toEqual([
+      'SCHEMA', 'MARKER_MAGIC', 'MARKER_VERSION', 'MARKER_LENGTH', 'BINDING_TOKEN_BYTES',
+      'STATES', 'STATE_CODES', 'EVENTS', 'TRANSITIONS', 'LEGACY_ELIGIBLE_BY_STATE',
+      'BINDING', 'ENCODING_OWNER', 'NEW_SESSION_OWNER', 'COMPLETE_RESTORE_RESULT_REQUIRED',
+      'TIME_OR_FRESHNESS_COMPARISON', 'CLEANUP_EFFECT', 'REVERSE_AFTER_CONFIRMATION',
+      'REAL_CONFIRMATION_BLOCKED_UNTIL_OWNERS_RATIFIED', 'DISPOSITIONS', 'REJECT_CODES',
+      'DECODE_FAILURE_CODES', 'PHYSICAL_INVENTORY_OWNER', 'IMPORT', 'DECRYPT', 'TRANSLATE',
+      'FALLBACK', 'SELECTED_AUTHORITY', 'PRESERVE_BYTES', 'CLEANUP',
+    ]);
   });
 
   test('the module surface is closed: no re-establishment, reset, cleanup or authority API', () => {
@@ -263,7 +281,7 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
       id: 'MARKER-CONFIRM',
       input: {
         state: PENDING, event: EVENT_CONFIRM, lockHeld: true, restoreResult: 'RESTORED_ACTIVE',
-        committed: true, authorityToken: OTHER,
+        committed: true, authorityToken: TOKEN, // the marker's own start authority: the binding
       },
       expected: { state: CONFIRMED, accepted: true, reject: null, disposition: 'MARKER_TRANSITION' },
     },
@@ -286,7 +304,7 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
       id: 'NEG-STALE-TOKEN',
       input: {
         state: PENDING, event: EVENT_CONFIRM, lockHeld: true, restoreResult: 'RESTORED_ACTIVE',
-        committed: true, authorityToken: TOKEN, // equal to the start token: not distinct
+        committed: true, authorityToken: STALE, // a stale authority: not the marker's own token
       },
       expected: { state: PENDING, accepted: false, reject: 'TOKEN_MISMATCH', disposition: 'REJECT' },
     },
@@ -294,7 +312,7 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
       id: 'NEG-CROSS-SESSION-TOKEN',
       input: {
         state: PENDING, event: EVENT_CONFIRM, lockHeld: true, restoreResult: 'RESTORED_ACTIVE',
-        committed: true, authorityToken: TOKEN, // a cross-session replay of the start token
+        committed: true, authorityToken: CROSS, // another session's authority token
       },
       expected: { state: PENDING, accepted: false, reject: 'TOKEN_MISMATCH', disposition: 'REJECT' },
     },
@@ -302,7 +320,7 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
       id: 'NEG-EMPTY-CONFIRM',
       input: {
         state: PENDING, event: EVENT_CONFIRM, lockHeld: true, restoreResult: 'RESTORED_EMPTY',
-        committed: true, authorityToken: OTHER,
+        committed: true, authorityToken: TOKEN, // bound, but the restore is incomplete
       },
       expected: { state: PENDING, accepted: false, reject: 'CONFIRMATION_PRECONDITION_FAILED', disposition: 'REJECT' },
     },
@@ -310,7 +328,7 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
       id: 'NEG-RECONCILIATION-CONFIRM',
       input: {
         state: PENDING, event: EVENT_CONFIRM, lockHeld: true,
-        restoreResult: 'RESTORED_RECONCILIATION_REQUIRED', committed: true, authorityToken: OTHER,
+        restoreResult: 'RESTORED_RECONCILIATION_REQUIRED', committed: true, authorityToken: TOKEN,
       },
       expected: { state: PENDING, accepted: false, reject: 'CONFIRMATION_PRECONDITION_FAILED', disposition: 'REJECT' },
     },
@@ -337,12 +355,20 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
     const { state, ...members } = fixture.input;
     const token = state === ABSENT ? ZERO : TOKEN;
     const decision = applyMarkerTransition({ marker: marker(state, token), ...members });
-    expect(decision.stateAfter).toBe(fixture.expected.state);
     expect(decision.accepted).toBe(fixture.expected.accepted);
     expect(decision.reject).toBe(fixture.expected.reject);
     expect(decision.disposition).toBe(fixture.expected.disposition);
-    expect(decision.stateBefore).toBe(state);
-    expect(decision.legacyEligible).toBe(M2_LEGACY_INVALIDATION.LEGACY_ELIGIBLE_BY_STATE[fixture.expected.state]);
+    if (fixture.expected.disposition === 'LOCK_RETRY') {
+      // C-REC §8: a non-holder receives only `LOCKED_ELSEWHERE` — no state detail at all.
+      expect(decision.stateBefore).toBeNull();
+      expect(decision.stateAfter).toBeNull();
+      expect(decision.legacyEligible).toBeNull();
+    } else {
+      expect(decision.stateAfter).toBe(fixture.expected.state);
+      expect(decision.stateBefore).toBe(state);
+      expect(decision.legacyEligible)
+        .toBe(M2_LEGACY_INVALIDATION.LEGACY_ELIGIBLE_BY_STATE[fixture.expected.state]);
+    }
     expect(decision.firstFailingPhase).toBe(
       fixture.expected.disposition === 'LOCK_RETRY' ? 'LOCK'
         : (fixture.expected.disposition === 'REJECT' ? 'MARKER_GATE' : 'NONE'),
@@ -384,7 +410,7 @@ describe('legacy-session-invalidation: C-REC §13 MARKER fixtures', () => {
     expect(accepted.stateAfter).toBe(INVALIDATED);
     for (const event of [EVENT_START, EVENT_CANCEL, EVENT_CONFIRM, EVENT_REPEAT]) {
       const input = event === EVENT_CONFIRM
-        ? { marker: persisted, event, lockHeld: true, restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: OTHER }
+        ? { marker: persisted, event, lockHeld: true, restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: TOKEN }
         : { marker: persisted, event, lockHeld: true, restoreResult: 'LEGACY_ONLY' };
       expect(applyMarkerTransition(input).reject).toBe('MARKER_TRANSITION_FORBIDDEN');
     }
@@ -493,7 +519,7 @@ describe('legacy-session-invalidation: totality and hostile input', () => {
     const before = Uint8Array.from(bytes);
     for (const event of M2_LEGACY_INVALIDATION.EVENTS) {
       const input = event === EVENT_CONFIRM
-        ? { marker: bytes, event, lockHeld: true, restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: OTHER }
+        ? { marker: bytes, event, lockHeld: true, restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: TOKEN }
         : { marker: bytes, event, lockHeld: true, restoreResult: 'LEGACY_ONLY' };
       try {
         applyMarkerTransition(input);
@@ -519,13 +545,205 @@ describe('legacy-session-invalidation: totality and hostile input', () => {
   test('a spent transition decision grants no authority and no byte', () => {
     const decision = applyMarkerTransition({
       marker: marker(PENDING, TOKEN), event: EVENT_CONFIRM, lockHeld: true,
-      restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: OTHER,
+      restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: TOKEN,
     });
+    expect(decision.accepted).toBe(true);
     expect(Object.keys(decision).sort()).toEqual([
       'accepted', 'disposition', 'firstFailingPhase', 'legacyEligible', 'reject', 'stateAfter', 'stateBefore',
     ]);
-    expect(JSON.stringify(decision)).not.toContain(hex(OTHER));
     expect(JSON.stringify(decision)).not.toContain(hex(TOKEN));
+    expect(JSON.stringify(decision)).not.toContain(hex(STALE));
+  });
+});
+
+describe('legacy-session-invalidation: binding, lock precedence and mutation resistance', () => {
+  const confirmInput = (token, extra = {}) => ({
+    marker: marker(PENDING, TOKEN), event: EVENT_CONFIRM, lockHeld: true,
+    restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: token, ...extra,
+  });
+
+  test('the binding is opaque token equality: an equal token is accepted', () => {
+    expect(applyMarkerTransition(confirmInput(TOKEN)).accepted).toBe(true);
+    // A byte-identical copy of the marker's own token is still the same authority.
+    expect(applyMarkerTransition(confirmInput(Uint8Array.from(TOKEN))).accepted).toBe(true);
+  });
+
+  test('the binding pins every byte: a difference anywhere is a TOKEN_MISMATCH', () => {
+    for (const index of [0, 15, 31]) {
+      const token = Uint8Array.from(TOKEN);
+      token[index] ^= 0x01;
+      const decision = applyMarkerTransition(confirmInput(token));
+      expect(decision.disposition).toBe('REJECT');
+      expect(decision.reject).toBe('TOKEN_MISMATCH');
+      expect(decision.stateAfter).toBe(PENDING);
+    }
+    for (const token of [STALE, CROSS, ZERO, new Uint8Array(32).fill(0x5b)]) {
+      expect(applyMarkerTransition(confirmInput(token)).reject).toBe('TOKEN_MISMATCH');
+    }
+  });
+
+  test('the binding precedes the restore precondition and a malformed token never throws', () => {
+    // The ratified precedence: a non-matching token outranks an incomplete restore.
+    expect(applyMarkerTransition(confirmInput(STALE, { restoreResult: 'RESTORED_EMPTY' })).reject)
+      .toBe('TOKEN_MISMATCH');
+    const detachedBuffer = new ArrayBuffer(32);
+    const detached = new Uint8Array(detachedBuffer);
+    structuredClone(detachedBuffer, { transfer: [detachedBuffer] });
+    for (const token of [
+      new Uint8Array(31), new Uint8Array(33), ZERO.slice(0, 31), 'not bytes', null, undefined,
+      32, {}, detached, new Proxy(Uint8Array.from(TOKEN), { get() { throw new Error('trap'); } }),
+    ]) {
+      let decision = null;
+      try {
+        decision = applyMarkerTransition(confirmInput(token));
+      } catch (error) {
+        throw new Error(`a malformed authorityToken threw a foreign exception: ${String(error)}`);
+      }
+      expect(decision.disposition).toBe('REJECT');
+      expect(decision.reject).toBe('TOKEN_MISMATCH');
+    }
+    // A truncation of the real token must not be accepted by zero padding, even when the real
+    // token's last byte is zero: the length check is on the presented token itself.
+    const tailZero = Uint8Array.from(TOKEN);
+    tailZero[31] = 0x00;
+    expect(applyMarkerTransition({
+      marker: marker(PENDING, tailZero), event: EVENT_CONFIRM, lockHeld: true,
+      restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: tailZero,
+    }).accepted).toBe(true);
+    const truncated = applyMarkerTransition({
+      marker: marker(PENDING, tailZero), event: EVENT_CONFIRM, lockHeld: true,
+      restoreResult: 'RESTORED_ACTIVE', committed: true, authorityToken: Uint8Array.from(tailZero.subarray(0, 31)),
+    });
+    expect(truncated.disposition).toBe('REJECT');
+    expect(truncated.reject).toBe('TOKEN_MISMATCH');
+  });
+
+  test('committed must be exactly true for CONFIRM', () => {
+    for (const committed of [false]) {
+      const decision = applyMarkerTransition(confirmInput(TOKEN, { committed }));
+      expect(decision.disposition).toBe('REJECT');
+      expect(decision.reject).toBe('CONFIRMATION_PRECONDITION_FAILED');
+    }
+    // A committed CONFIRM with the bound token and a complete restore is accepted, so the
+    // assertion above is not vacuous.
+    expect(applyMarkerTransition(confirmInput(TOKEN, { committed: true })).accepted).toBe(true);
+  });
+
+  test('an accessor member on a transition input is refused without being invoked', () => {
+    let invoked = false;
+    const input = { marker: marker(PENDING, TOKEN), event: EVENT_CANCEL, lockHeld: true };
+    Object.defineProperty(input, 'restoreResult', {
+      get() { invoked = true; throw new Error('never'); }, enumerable: true,
+    });
+    expect(errorOf(() => applyMarkerTransition(input)).code).toBe('INCOMPATIBLE_FORMAT');
+    expect(invoked).toBe(false);
+  });
+
+  test('every transition has a negative restoreResult row', () => {
+    const rows = [
+      [ABSENT, EVENT_START, 'RESTORED_ACTIVE', ZERO],
+      [PENDING, EVENT_CANCEL, 'RESTORED_ACTIVE', TOKEN],
+      [PENDING, EVENT_CONFIRM, 'LEGACY_ONLY', TOKEN],
+      [CONFIRMED, EVENT_COMMIT, 'LEGACY_ONLY', TOKEN],
+      [INVALIDATED, EVENT_REPEAT, 'LEGACY_ONLY', TOKEN],
+    ];
+    for (const [state, event, restoreResult, token] of rows) {
+      const input = {
+        marker: marker(state, token), event, lockHeld: true, restoreResult,
+        ...(event === EVENT_CONFIRM ? { committed: true, authorityToken: TOKEN } : {}),
+      };
+      const decision = applyMarkerTransition(input);
+      expect(decision.disposition).toBe('REJECT');
+      expect(decision.reject).toBe(event === EVENT_CONFIRM
+        ? 'CONFIRMATION_PRECONDITION_FAILED' : 'RESTORE_PRECONDITION_FAILED');
+      expect(decision.stateAfter).toBe(state);
+    }
+  });
+
+  test('the lock gate runs before the decode, before the table and before the shape check', () => {
+    const hostile = [
+      // A malformed marker would otherwise raise MARKER_ENCODING_INVALID.
+      { marker: new Uint8Array(44), event: EVENT_START, lockHeld: false, restoreResult: 'LEGACY_ONLY' },
+      { marker: 'not bytes', event: EVENT_START, lockHeld: false, restoreResult: 'LEGACY_ONLY' },
+      // A forbidden pair would otherwise be MARKER_TRANSITION_FORBIDDEN.
+      { marker: marker(INVALIDATED, TOKEN), event: EVENT_CANCEL, lockHeld: false, restoreResult: 'LEGACY_ONLY' },
+      // A CONFIRM missing its members would otherwise raise INCOMPATIBLE_FORMAT.
+      { marker: marker(PENDING, TOKEN), event: EVENT_CONFIRM, lockHeld: false, restoreResult: 'RESTORED_ACTIVE' },
+      // An out-of-set restore result would otherwise raise INCOMPATIBLE_FORMAT.
+      { marker: marker(PENDING, TOKEN), event: EVENT_START, lockHeld: false, restoreResult: 'NOPE' },
+    ];
+    for (const input of hostile) {
+      const decision = applyMarkerTransition(input);
+      expect(decision.disposition).toBe('LOCK_RETRY');
+      expect(decision.reject).toBe('LOCKED_ELSEWHERE');
+      expect(decision.firstFailingPhase).toBe('LOCK');
+      expect(decision.stateBefore).toBeNull();
+      expect(decision.stateAfter).toBeNull();
+      expect(decision.legacyEligible).toBeNull();
+      expect(Object.keys(decision).sort()).toEqual([
+        'accepted', 'disposition', 'firstFailingPhase', 'legacyEligible', 'reject', 'stateAfter', 'stateBefore',
+      ]);
+      expect(JSON.stringify(decision)).not.toContain(PENDING);
+      expect(JSON.stringify(decision)).not.toContain(INVALIDATED);
+    }
+    // The same inputs with the lock held fail closed with the decode gate's own code, so the
+    // LOCK_RETRY above is not the only outcome these shapes can produce.
+    expect(errorOf(() => applyMarkerTransition({
+      marker: new Uint8Array(44), event: EVENT_START, lockHeld: true, restoreResult: 'LEGACY_ONLY',
+    })).code).toBe('MARKER_ENCODING_INVALID');
+    expect(applyMarkerTransition({
+      marker: marker(INVALIDATED, TOKEN), event: EVENT_CANCEL, lockHeld: true, restoreResult: 'LEGACY_ONLY',
+    }).reject).toBe('MARKER_TRANSITION_FORBIDDEN');
+  });
+
+  test('the fixture rows that carry no restoreResult replay verbatim', () => {
+    // C-REC §13 gives these two rows exactly three members: marker, event, lockHeld.
+    const reverse = applyMarkerTransition({
+      marker: marker(INVALIDATED, TOKEN), event: EVENT_CANCEL, lockHeld: true,
+    });
+    expect(reverse.disposition).toBe('REJECT');
+    expect(reverse.reject).toBe('MARKER_TRANSITION_FORBIDDEN');
+    const noLock = applyMarkerTransition({ marker: marker(ABSENT, ZERO), event: EVENT_START, lockHeld: false });
+    expect(noLock.disposition).toBe('LOCK_RETRY');
+    expect(noLock.reject).toBe('LOCKED_ELSEWHERE');
+    // A reachable pair without its restore result is a malformed input, not a silent accept.
+    expect(errorOf(() => applyMarkerTransition({
+      marker: marker(ABSENT, ZERO), event: EVENT_START, lockHeld: true,
+    })).code).toBe('INCOMPATIBLE_FORMAT');
+  });
+
+  test('the marker encoding is not a C-FMT record kind', () => {
+    const bytes = marker(PENDING, TOKEN);
+    let thrown = null;
+    try {
+      decodeRecordKey(bytes);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M2StorageCodecError);
+    expect(M2_LEGACY_INVALIDATION.MARKER_MAGIC).not.toBe(M2_LEGACY_INVENTORY.RECORD_MAGIC);
+    expect(M2_LEGACY_INVALIDATION.MARKER_MAGIC).not.toBe(M2_LEGACY_INVENTORY.SELECTOR_MAGIC);
+    const kinds = Object.keys(M2_KIND).filter((k) => /MARKER|INVALIDATION|CUTOVER/.test(k));
+    expect(kinds).toEqual([]);
+  });
+
+  test('the legacy-only key space is built with the merged L-INV classifier', () => {
+    const keys = [
+      new Uint8Array(32).fill(0x11), new Uint8Array(32).fill(0x22), new Uint8Array(48).fill(0x33),
+    ];
+    for (const key of keys) expect(classifyLegacyLocator(key)).toBe('LEGACY');
+    const inventory = inventoryLegacySessions({ keys });
+    expect(inventory.inventoryOutcome).toBe('LEGACY_ONLY');
+    expect(inventory.legacyCount).toBe(3);
+    expect(inventory.m2Present).toBe(false);
+    for (const state of [CONFIRMED, INVALIDATED]) {
+      expect(readMarker(marker(state, TOKEN)).legacyEligible).toBe(false);
+      for (const event of [EVENT_START, EVENT_CANCEL]) {
+        expect(applyMarkerTransition({
+          marker: marker(state, TOKEN), event, lockHeld: true, restoreResult: 'LEGACY_ONLY',
+        }).reject).toBe('MARKER_TRANSITION_FORBIDDEN');
+      }
+    }
   });
 });
 
@@ -558,8 +776,16 @@ describe('legacy-session-invalidation: seeded properties', () => {
           : { marker: marker(state, startToken), event, lockHeld, restoreResult };
         const decision = applyMarkerTransition(input);
         expect([...M2_LEGACY_INVALIDATION.DISPOSITIONS]).toContain(decision.disposition);
-        expect([...M2_LEGACY_INVALIDATION.STATES]).toContain(decision.stateAfter);
-        expect(decision.legacyEligible).toBe(M2_LEGACY_INVALIDATION.LEGACY_ELIGIBLE_BY_STATE[decision.stateAfter]);
+        if (decision.disposition === 'LOCK_RETRY') {
+          // A non-holder learns no state at all (C-REC §8).
+          expect(decision.stateBefore).toBeNull();
+          expect(decision.stateAfter).toBeNull();
+          expect(decision.legacyEligible).toBeNull();
+        } else {
+          expect([...M2_LEGACY_INVALIDATION.STATES]).toContain(decision.stateAfter);
+          expect(decision.legacyEligible)
+            .toBe(M2_LEGACY_INVALIDATION.LEGACY_ELIGIBLE_BY_STATE[decision.stateAfter]);
+        }
         if (decision.disposition !== 'MARKER_TRANSITION') {
           expect([...M2_LEGACY_INVALIDATION.REJECT_CODES]).toContain(decision.reject);
         }
@@ -572,8 +798,17 @@ describe('legacy-session-invalidation: seeded properties', () => {
       const token = state === ABSENT ? ZERO : t;
       expect(readMarker(marker(state, token)).legacyEligible)
         .toBe(M2_LEGACY_INVALIDATION.LEGACY_ELIGIBLE_BY_STATE[state]);
-      expect(hex(marker(state, token))).toBe(hex(marker(state, token)));
       expect(legacyEligible(state)).toBe(M2_LEGACY_INVALIDATION.LEGACY_ELIGIBLE_BY_STATE[state]);
+      // Determinism: the same state and token replay to identical bytes, and the encoding
+      // copies the caller's token instead of retaining or aliasing it.
+      const tokenCopy = Uint8Array.from(token);
+      const first = marker(state, tokenCopy);
+      expect(hex(first)).toBe(hex(marker(state, Uint8Array.from(token))));
+      tokenCopy.fill(0xff);
+      expect(hex(first)).toBe(hex(marker(state, token)));
+      if (state !== ABSENT && hex(token) !== hex(new Uint8Array(32).fill(0x5a))) {
+        expect(hex(first)).not.toBe(hex(marker(state, new Uint8Array(32).fill(0x5a))));
+      }
     }), { seed: 20261004, numRuns: 200 });
   });
 });

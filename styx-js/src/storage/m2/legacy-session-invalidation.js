@@ -13,6 +13,11 @@
 // invalidation kind. The marker therefore uses its own canonical encoding here and is
 // never written as, or read back by, a re-classified legacy locator or a C-FMT record.
 //
+// The binding is `/marker/binding` = `OPAQUE_START_AUTHORITY_CONFIRMATION_TOKEN_EQUALITY`:
+// a `CONFIRM` is accepted only when the presented 32-byte opaque token is byte-EQUAL to the
+// start-authority token stored in the marker. Any other token, and any malformed or
+// detached token, is the closed decision `TOKEN_MISMATCH` — never a throw.
+//
 // The marker is one-way. `reverseAfterConfirmation` is false, no transition leads from
 // `NEW_SESSION_CONFIRMED` or `LEGACY_INVALIDATED` to a legacy-eligible state, and every
 // event that would return there is refused with `MARKER_TRANSITION_FORBIDDEN`. Invalidation
@@ -23,9 +28,11 @@
 // decodes as M2 or falls back to legacy, and creates no session (that is `L-REEST`).
 //
 // Totality: every input is untrusted. Members are read from their own property descriptors,
-// so no accessor is ever invoked; the marker bytes are copied through the `%TypedArray%`
-// internal slot, never through a caller-controlled `length`, `buffer`, `Symbol.species` or
-// own `constructor`. Every failure path leaves through `M2LegacyInvalidationError` with one
+// so no accessor is ever invoked; bytes are copied through the `%TypedArray%` internal
+// slot, never through a caller-controlled `length`, `buffer`, `Symbol.species` or own
+// `constructor`, and never through `.slice()`. A non-holder is told only
+// `LOCKED_ELSEWHERE`: the lock gate runs before any decode and its decision discloses no
+// state (C-REC §8). Every failure path leaves through `M2LegacyInvalidationError` with one
 // of the three closed decode codes, or through a closed `REJECT` decision — never a foreign
 // exception.
 
@@ -129,10 +136,6 @@ export const M2_LEGACY_INVALIDATION = Object.freeze({
   SELECTED_AUTHORITY: false,
   PRESERVE_BYTES: true,
   CLEANUP: 'DEFERRED',
-  // `/precedence/lockedDisposition`.
-  LOCKED_DISPOSITION: 'LOCK_RETRY',
-  // The exact C-REC state names of the two states after which no reverse transition exists.
-  CONFIRMED_STATES: IMMUTABLE([CONFIRMED, INVALIDATED]),
 });
 
 export class M2LegacyInvalidationError extends Error {
@@ -164,6 +167,16 @@ function isByteSequence(value) {
   }
 }
 
+// The declared length of an untrusted view, through the internal slot only. A detached
+// view reports 0 rather than throwing; a throwing intrinsic is caught by the caller.
+function byteLengthOf(value) {
+  try {
+    return TYPED_ARRAY_LENGTH.call(value);
+  } catch {
+    return -1;
+  }
+}
+
 // One snapshot per value, and it is the only bytes any later step reads. `new Uint8Array(len)`
 // plus `set` consult neither `Symbol.species` nor an own `constructor`/`length`, so a caller
 // cannot redirect, shorten or alias the copy. A detached view throws in `set`.
@@ -177,6 +190,29 @@ function snapshot(value, name) {
     mapFailure('INCOMPATIBLE_FORMAT', `${name} could not be read as a byte sequence`);
   }
   return copy;
+}
+
+// Copy a 32-byte opaque token by indexed reads (internal slot), never `.slice()` or a
+// species constructor. Returns `null` for anything that is not exactly a 32-byte view —
+// a detached view included — so a malformed token becomes a closed decision, not a throw.
+function tokenOrNull(value) {
+  if (!isByteSequence(value)) return null;
+  if (byteLengthOf(value) !== BINDING_TOKEN_BYTES) return null;
+  let out = null;
+  try {
+    out = new Uint8Array(BINDING_TOKEN_BYTES);
+    for (let i = 0; i < BINDING_TOKEN_BYTES; i += 1) out[i] = value[i];
+  } catch {
+    return null;
+  }
+  return out;
+}
+
+// Copy exactly `count` bytes out of an already-trusted snapshot, by indexed reads.
+function copyBytes(source, offset, count) {
+  const out = new Uint8Array(count);
+  for (let i = 0; i < count; i += 1) out[i] = source[offset + i];
+  return out;
 }
 
 function isPlainObject(value) {
@@ -266,7 +302,7 @@ export function legacyEligible(state) {
 /**
  * Canonical encoding of a `{ state, bindingToken }` marker. `bindingToken` is the opaque
  * start-authority token: `ABSENT` requires it to be all-zero, every other state requires a
- * nonzero token. Returns a fresh `Uint8Array(43)`; the caller's memory is never written and
+ * nonzero token. Returns a fresh `Uint8Array(44)`; the caller's memory is never written and
  * never aliased.
  */
 export function encodeMarker(marker) {
@@ -288,20 +324,23 @@ export function encodeMarker(marker) {
 }
 
 // The internal decode that keeps the start token. `readMarker` below is the value-free
-// public view; this one never escapes the module.
+// public view; this one never escapes the module. The length is checked before any byte is
+// copied, so a huge malformed input is not duplicated.
 function readMarkerInternal(bytes) {
+  if (!isByteSequence(bytes)) fail('INCOMPATIBLE_FORMAT', 'marker must be a Uint8Array');
+  if (byteLengthOf(bytes) !== MARKER_LENGTH) {
+    fail('MARKER_ENCODING_INVALID', 'marker length is not canonical');
+  }
   const b = snapshot(bytes, 'marker');
-  if (b.length < MAGIC_LENGTH + 2) fail('MARKER_ENCODING_INVALID', 'marker is shorter than its header');
   for (let i = 0; i < MAGIC_LENGTH; i += 1) {
     if (b[i] !== MAGIC_BYTES[i]) fail('MARKER_ENCODING_INVALID', 'marker magic is not canonical');
   }
   const version = b[MAGIC_LENGTH] * 256 + b[MAGIC_LENGTH + 1];
   if (version !== MARKER_VERSION) fail('UNSUPPORTED_VERSION', 'unknown marker version');
-  if (b.length !== MARKER_LENGTH) fail('MARKER_ENCODING_INVALID', 'marker length is not canonical');
   const code = b[MAGIC_LENGTH + 2];
   if (code >= STATE_BY_CODE.length) fail('MARKER_ENCODING_INVALID', 'unknown marker state code');
   const state = STATE_BY_CODE[code];
-  const token = b.slice(MAGIC_LENGTH + 3);
+  const token = copyBytes(b, MAGIC_LENGTH + 3, BINDING_TOKEN_BYTES);
   const zero = isZeroToken(token);
   if (state === ABSENT && !zero) fail('MARKER_ENCODING_INVALID', 'an ABSENT marker carries no start token');
   if (state !== ABSENT && zero) fail('MARKER_ENCODING_INVALID', 'a started marker carries a start token');
@@ -335,50 +374,49 @@ function settle(state, disposition, stateAfter, reject, firstFailingPhase) {
     accepted: disposition === 'MARKER_TRANSITION',
     stateBefore: state,
     stateAfter,
-    legacyEligible: LEGACY_ELIGIBLE_BY_STATE[stateAfter],
+    legacyEligible: stateAfter === null ? null : LEGACY_ELIGIBLE_BY_STATE[stateAfter],
     reject,
     firstFailingPhase,
   });
 }
 
-// `/precedence/lockedDisposition` is `LOCK_RETRY`; a non-holder learns nothing else.
-const lockRetry = (state) => settle(state, 'LOCK_RETRY', state, 'LOCKED_ELSEWHERE', 'LOCK');
+// C-REC §8 + `/precedence/lockedDisposition`: a non-holder receives only `LOCKED_ELSEWHERE`
+// and its closed `LOCK_RETRY` disposition, and NO state detail is exposed — hence the nulls.
+const lockRetry = () => settle(null, 'LOCK_RETRY', null, 'LOCKED_ELSEWHERE', 'LOCK');
 
 // The four states and five transitions are closed, so any other pair is forbidden.
 const forbidden = (state) => settle(state, 'REJECT', state, 'MARKER_TRANSITION_FORBIDDEN', 'MARKER_GATE');
 
-function decide(state, startToken, event, lockHeld, restoreResult, committed, authorityToken) {
-  const settled = (disposition, stateAfter, reject, firstFailingPhase) => settle(
-    state, disposition, stateAfter, reject, firstFailingPhase,
-  );
+function decide(state, startToken, event, restoreResult, committed, authorityToken) {
+  const settled = (stateAfter, reject) => settle(state, 'REJECT', stateAfter, reject, 'MARKER_GATE');
 
-  // 1. LOCK.
-  if (lockHeld !== true) return lockRetry(state);
-
-  // 2. MARKER_GATE — the (state, event) pair must be one of the five ratified transitions.
+  // 1. MARKER_GATE — the (state, event) pair must be one of the five ratified transitions.
   const transition = transitionFor(state, event);
   if (transition === null) return forbidden(state);
 
+  if (transition.id === 'CONFIRM') {
+    // 2. MARKER_GATE — the binding. `/marker/binding` is opaque token EQUALITY, and the
+    // fixture's abstract `distinct: false` rows are exactly the rows whose presented token
+    // is not the marker's own start token. A malformed or detached token is `TOKEN_MISMATCH`
+    // too: a closed decision, never a throw.
+    const presented = tokenOrNull(authorityToken);
+    if (presented === null || !tokensEqual(presented, startToken)) {
+      return settled(state, 'TOKEN_MISMATCH');
+    }
+  }
+
   // 3. MARKER_GATE — the raised restore precondition.
   if (typeof restoreResult !== 'string' || !transition.allowedRestoreResults.includes(restoreResult)) {
-    return settled('REJECT', state, transition.id === 'CONFIRM'
-      ? 'CONFIRMATION_PRECONDITION_FAILED' : 'RESTORE_PRECONDITION_FAILED', 'MARKER_GATE');
+    return settled(state, transition.id === 'CONFIRM'
+      ? 'CONFIRMATION_PRECONDITION_FAILED' : 'RESTORE_PRECONDITION_FAILED');
   }
 
-  if (transition.id === 'CONFIRM') {
-    // 4. MARKER_GATE — a C-FMT COMMITTED authority is required.
-    if (committed !== true) return settled('REJECT', state, 'CONFIRMATION_PRECONDITION_FAILED', 'MARKER_GATE');
-    // 5. MARKER_GATE — opaque token equality: the authority must be a *distinct* post-start one.
-    if (!isByteSequence(authorityToken)) {
-      return settled('REJECT', state, 'TOKEN_MISMATCH', 'MARKER_GATE');
-    }
-    const token = snapshot(authorityToken, 'authorityToken');
-    if (token.length !== BINDING_TOKEN_BYTES || tokensEqual(token, startToken)) {
-      return settled('REJECT', state, 'TOKEN_MISMATCH', 'MARKER_GATE');
-    }
+  // 4. MARKER_GATE — a C-FMT COMMITTED authority is required.
+  if (transition.id === 'CONFIRM' && committed !== true) {
+    return settled(state, 'CONFIRMATION_PRECONDITION_FAILED');
   }
 
-  return settled('MARKER_TRANSITION', transition.to, null, 'NONE');
+  return settle(state, 'MARKER_TRANSITION', transition.to, null, 'NONE');
 }
 
 /**
@@ -387,9 +425,16 @@ function decide(state, startToken, event, lockHeld, restoreResult, committed, au
  * `CONFIRM` event only; `marker`, `event` and `lockHeld` are always required, `restoreResult` is
  * required for every reachable (state, event) pair. Returns exactly one frozen decision record;
  * throws only `M2LegacyInvalidationError`, and only when the input record itself is malformed.
+ *
+ * The lock gate is evaluated first and discloses nothing: when `lockHeld` is not `true` the
+ * marker is not even decoded and the returned `LOCK_RETRY` record carries no state, eligibility
+ * or decode detail (C-REC §8).
  */
 export function applyMarkerTransition(input) {
   if (!isPlainObject(input)) fail('INCOMPATIBLE_FORMAT', 'transition input must be a plain object');
+  const lockHeld = descriptorValue(input, 'lockHeld');
+  if (typeof lockHeld !== 'boolean') fail('INCOMPATIBLE_FORMAT', 'lockHeld must be a boolean');
+  if (lockHeld !== true) return lockRetry();
   const event = descriptorValue(input, 'event');
   if (typeof event !== 'string') fail('INCOMPATIBLE_FORMAT', 'transition event must be a string');
   const confirm = event === EVENT_CONFIRM;
@@ -398,7 +443,6 @@ export function applyMarkerTransition(input) {
     : ['marker', 'event', 'lockHeld', 'restoreResult'];
   const required = confirm ? allowed : ['marker', 'event', 'lockHeld'];
   const v = readClosed(input, allowed, required, 'transition input');
-  if (typeof v.lockHeld !== 'boolean') fail('INCOMPATIBLE_FORMAT', 'lockHeld must be a boolean');
   if (Object.hasOwn(v, 'restoreResult')
       && (typeof v.restoreResult !== 'string' || !C_REST_RESULTS.includes(v.restoreResult))) {
     fail('INCOMPATIBLE_FORMAT', 'restoreResult is not a closed C-REST result');
@@ -407,12 +451,9 @@ export function applyMarkerTransition(input) {
     fail('INCOMPATIBLE_FORMAT', 'committed must be a boolean');
   }
   const marker = readMarkerInternal(v.marker);
-  if (v.lockHeld !== true) return lockRetry(marker.state);
   if (transitionFor(marker.state, event) === null) return forbidden(marker.state);
   if (!Object.hasOwn(v, 'restoreResult')) {
     fail('INCOMPATIBLE_FORMAT', 'restoreResult is required for a reachable transition');
   }
-  return decide(marker.state, marker.token, event, v.lockHeld, v.restoreResult,
-    v.committed, v.authorityToken);
+  return decide(marker.state, marker.token, event, v.restoreResult, v.committed, v.authorityToken);
 }
-
