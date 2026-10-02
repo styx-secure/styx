@@ -3,11 +3,11 @@ name: styx-js web
 # Always reports a stable gate on pull requests and merge-group commits.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, m3/integration]
   merge_group:
     types: [checks_requested]
   push:
-    branches: [main]
+    branches: [main, m3/integration]
 
 permissions:
   contents: read

@@ -139,6 +139,57 @@ class CiAdapterUnitTests(unittest.TestCase):
                     )
                 self.assertEqual(expected_code, caught.exception.code)
 
+    def test_base_ref_acceptance_is_an_exact_closed_set(self) -> None:
+        self.assertEqual(frozenset({"main", "m3/integration"}), ci_adapter.ALLOWED_BASE_REFS)
+
+        event_base_sha = "c" * 40
+        for base_ref in ("main", "m3/integration"):
+            with self.subTest(accepted=base_ref):
+                context = ci_adapter.validate_event(
+                    synthetic_event(base_ref=base_ref, base_sha=event_base_sha),
+                    repository="styx-secure/styx",
+                    run_id="123",
+                    run_attempt="2",
+                    trusted_tool_sha=BASE_SHA,
+                    workflow_sha=BASE_SHA,
+                )
+                self.assertEqual(event_base_sha, context.base_sha)
+
+        rejected_refs = {
+            "m3/integration2",
+            "refs/heads/m3/integration",
+            "M2/integration",
+            "",
+        }
+        for accepted in ci_adapter.ALLOWED_BASE_REFS:
+            rejected_refs.update(
+                {
+                    accepted.upper(),
+                    f" {accepted}",
+                    f"{accepted} ",
+                    f"{accepted}/",
+                    f"origin/{accepted}",
+                    f"refs/heads/{accepted}",
+                    f"x{accepted}",
+                    f"{accepted}x",
+                }
+            )
+        rejected_refs.difference_update(ci_adapter.ALLOWED_BASE_REFS)
+        self.assertTrue(rejected_refs.isdisjoint(ci_adapter.ALLOWED_BASE_REFS))
+
+        for base_ref in sorted(rejected_refs):
+            with self.subTest(rejected=base_ref):
+                with self.assertRaises(ci_adapter.CiAdapterError) as caught:
+                    ci_adapter.validate_event(
+                        synthetic_event(base_ref=base_ref),
+                        repository="styx-secure/styx",
+                        run_id="123",
+                        run_attempt="2",
+                        trusted_tool_sha=BASE_SHA,
+                        workflow_sha=BASE_SHA,
+                    )
+                self.assertEqual("E_CI_EVENT_BASE_REF", caught.exception.code)
+
     def test_workflow_identity_is_strict_and_equal(self) -> None:
         self.assertEqual(
             (BASE_SHA, BASE_SHA),
@@ -472,6 +523,7 @@ class CiAdapterUnitTests(unittest.TestCase):
     def test_workflow_is_read_only_trusted_base_and_fully_pinned(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("pull_request_target:", workflow)
+        self.assertIn("pull_request:", workflow)
         for event_type in (
             "opened",
             "reopened",
@@ -484,17 +536,22 @@ class CiAdapterUnitTests(unittest.TestCase):
         for permission in ("contents: read", "issues: read", "pull-requests: read", "actions: read"):
             self.assertIn(permission, workflow)
         self.assertNotIn(": write", workflow)
+        # Two event paths: the default-branch-sourced one keeps `main` only, and
+        # the merge-commit-sourced one serves the frozen `m3/integration` base.
         self.assertIn("branches:\n      - main", workflow)
+        self.assertIn("branches:\n      - m3/integration", workflow)
         self.assertIn("ref: ${{ github.sha }}", workflow)
-        self.assertNotIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
         self.assertNotIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
         self.assertIn('--trusted-tool-sha "$GITHUB_SHA"', workflow)
         self.assertIn('--workflow-sha "$GITHUB_WORKFLOW_SHA"', workflow)
+        self.assertIn('--trusted-tool-sha "${{ github.event.pull_request.base.sha }}"', workflow)
+        self.assertIn('--workflow-sha "${{ github.event.pull_request.base.sha }}"', workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("--no-write-fetch-head", (ROOT / "tools" / "agent-enforcement" / "ci_adapter.py").read_text(encoding="utf-8"))
 
         uses_lines = [line.strip() for line in workflow.splitlines() if line.strip().startswith("uses:")]
-        self.assertEqual(2, len(uses_lines))
+        self.assertEqual(4, len(uses_lines))
         for line in uses_lines:
             action, sha = line.split("@", 1)
             sha = sha.split()[0]
@@ -515,6 +572,19 @@ class CiAdapterUnitTests(unittest.TestCase):
             self.assertNotIn(untrusted, precheck)
         self.assertIn("GITHUB_SHA", precheck)
         self.assertIn("GITHUB_WORKFLOW_SHA", precheck)
+
+    def test_workflow_declares_one_check_name_and_two_event_guarded_jobs(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertEqual(2, workflow.count("name: Agent scope evidence (observation)"))
+        self.assertEqual(1, workflow.count("github.event_name == 'pull_request_target'"))
+        self.assertEqual(1, workflow.count("github.event_name == 'pull_request'"))
+        self.assertIn("startsWith(github.head_ref, 'task/')", workflow)
+        self.assertIn("!startsWith(github.head_ref, 'task/US-')", workflow)
+        # The pull-request path validates its own base identity before use and
+        # derives nothing from a head-controlled ref.
+        self.assertIn("- name: Validate pull-request base identity", workflow)
+        self.assertIn("base_sha='${{ github.event.pull_request.base.sha }}'", workflow)
+        self.assertIn("base_ref='${{ github.event.pull_request.base.ref }}'", workflow)
 
 
 class CiAdapterIntegrationTests(GuardIntegrationCase):
@@ -760,6 +830,167 @@ class CiAdapterIntegrationTests(GuardIntegrationCase):
             for item in json.loads(report_path.read_text(encoding="utf-8"))["diagnostics"]
         }
         self.assertIn("E_CI_GIT_ANCESTRY", codes)
+
+
+class CiAdapterPullRequestPathTests(GuardIntegrationCase):
+    """The `pull_request` path: base-sourced tooling decides the head diff."""
+
+    maxDiff = None
+
+    @staticmethod
+    def _real_guard_runner(context, **kwargs):
+        result = subprocess.run(
+            [
+                "python3",
+                str(ROOT / "tools" / "agent-enforcement" / "scope_guard.py"),
+                "--issue-number",
+                str(context.issue_number),
+                "--issue-body-file",
+                str(kwargs["issue_body_path"]),
+                "--base-sha",
+                context.base_sha,
+                "--head-sha",
+                context.head_sha,
+                "--worktree-sha",
+                context.trusted_tool_sha,
+                "--execution-id",
+                context.execution_id,
+                "--output",
+                str(kwargs["report_path"]),
+                "--repo",
+                str(kwargs["repo"]),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return result.returncode
+
+    def _observe(
+        self,
+        *,
+        changed_path: str,
+        allowed: tuple[str, ...],
+        forbidden: tuple[str, ...] = (".github/**",),
+        base_ref: str = "m3/integration",
+        head_writes: dict[str, str] | None = None,
+    ) -> tuple[int, dict, dict]:
+        self.repo.write(changed_path, "base\n")
+        base = self.repo.commit("base")
+        self.repo.write(changed_path, "base\nhead\n")
+        for relative, data in (head_writes or {}).items():
+            self.repo.write(relative, data)
+        head = self.repo.commit("head")
+        run(["git", "checkout", "-q", base], self.repo.root)
+        before = self.repo.snapshot()
+
+        event_file = self.root / "event-pull.json"
+        event_file.write_text(
+            json.dumps(
+                synthetic_event(
+                    base_sha=base,
+                    head_sha=head,
+                    base_ref=base_ref,
+                    head_repository="styx-secure/styx",
+                )
+            ),
+            encoding="utf-8",
+        )
+        runner_temp = self.root / "runner-pull"
+        runner_temp.mkdir(exist_ok=True)
+        report_path = runner_temp / "report.json"
+        body = contract_body(allowed=allowed, forbidden=forbidden, base_sha=base).encode("utf-8")
+
+        exit_code = ci_adapter.run_observation(
+            event_file=event_file,
+            repo=self.repo.root,
+            runner_temp=runner_temp,
+            repository="styx-secure/styx",
+            api_url="https://api.github.com",
+            server_url="https://github.com",
+            run_id="123",
+            run_attempt="1",
+            report_path=report_path,
+            token="ephemeral-token",
+            trusted_tool_sha=base,
+            workflow_sha=base,
+            issue_fetcher=lambda *_args, **_kwargs: body,
+            head_fetcher=lambda *_args, **_kwargs: None,
+            guard_runner=self._real_guard_runner,
+        )
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        return exit_code, report, before
+
+    def test_pass_when_every_changed_path_is_allowlisted(self) -> None:
+        exit_code, report, before = self._observe(
+            changed_path="tools/agent-enforcement/example.txt",
+            allowed=("tools/agent-enforcement/**",),
+        )
+        self.assertEqual(EXIT_PASS, exit_code)
+        self.assertEqual("PASS", report["verdict"])
+        self.assertEqual(before, self.repo.snapshot())
+
+    def test_fail_when_the_head_rewrites_the_scope_workflow(self) -> None:
+        exit_code, report, before = self._observe(
+            changed_path=".github/workflows/agent-scope-evidence.yml",
+            allowed=("tools/agent-enforcement/**",),
+        )
+        self.assertEqual(EXIT_FAIL, exit_code)
+        self.assertEqual("FAIL", report["verdict"])
+        self.assertIn("PATH_NOT_ALLOWED", json.dumps(report))
+        self.assertEqual(before, self.repo.snapshot())
+
+    def test_fail_when_the_head_rewrites_the_adapter_outside_the_allowlist(self) -> None:
+        exit_code, report, before = self._observe(
+            changed_path="tools/agent-enforcement/ci_adapter.py",
+            allowed=("docs/**",),
+        )
+        self.assertEqual(EXIT_FAIL, exit_code)
+        self.assertEqual("FAIL", report["verdict"])
+        self.assertIn("PATH_NOT_ALLOWED", json.dumps(report))
+        self.assertEqual(before, self.repo.snapshot())
+
+    def test_base_tooling_decides_a_head_that_rewrites_guard_and_adapter(self) -> None:
+        exit_code, report, before = self._observe(
+            changed_path="tools/agent-enforcement/example.txt",
+            allowed=("tools/agent-enforcement/**",),
+            head_writes={
+                "tools/agent-enforcement/scope_guard.py": "raise SystemExit('head guard executed')\n",
+                "tools/agent-enforcement/ci_adapter.py": "raise SystemExit('head adapter executed')\n",
+            },
+        )
+        self.assertEqual(EXIT_PASS, exit_code)
+        self.assertEqual("PASS", report["verdict"])
+        self.assertEqual(before, self.repo.snapshot())
+
+    def test_pull_request_path_requires_an_accepted_base_ref(self) -> None:
+        for base_ref in ("task/m2-trig", "m3/integration2", "refs/heads/m3/integration", "main "):
+            with self.subTest(base_ref=base_ref):
+                with self.assertRaises(ci_adapter.CiAdapterError) as caught:
+                    ci_adapter.validate_event(
+                        synthetic_event(base_ref=base_ref),
+                        repository="styx-secure/styx",
+                        run_id="123",
+                        run_attempt="2",
+                        trusted_tool_sha=BASE_SHA,
+                        workflow_sha=BASE_SHA,
+                    )
+                self.assertEqual("E_CI_EVENT_BASE_REF", caught.exception.code)
+
+    def test_pull_request_path_accepts_both_ratified_bases(self) -> None:
+        for base_ref in ("main", "m3/integration"):
+            with self.subTest(base_ref=base_ref):
+                event_base = "c" * 40
+                context = ci_adapter.validate_event(
+                    synthetic_event(base_sha=event_base, base_ref=base_ref),
+                    repository="styx-secure/styx",
+                    run_id="123",
+                    run_attempt="2",
+                    trusted_tool_sha=event_base,
+                    workflow_sha=event_base,
+                )
+                self.assertEqual(event_base, context.base_sha)
+                self.assertEqual(event_base, context.trusted_tool_sha)
 
 
 if __name__ == "__main__":
