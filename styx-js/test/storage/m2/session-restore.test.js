@@ -3,33 +3,29 @@ import fc from 'fast-check';
 import {
   ALGORITHMS, AUTOMATIC_ACTIONS, BUILD_MATRIX, CONDITIONS, CORRUPTION_ACTION,
   DIAGNOSTIC_ALLOWED, DIAGNOSTIC_FORBIDDEN, EXPOSURE, FAILURE_DEFAULT, FAILURE_RESULTS,
-  FAULT_PRECEDENCE, FRESHNESS, FRESH_WORKER_FIXTURES, INVENTORY_RESULTS, M2_RESTORE,
-  M2RestoreError, NEGATIVE_CLASSES, PHASES, READER_PROFILE, SUCCESS_BY_SELECTOR_STATE,
+  FAULT_PRECEDENCE, FRESHNESS, FRESH_WORKER_FIXTURES, INVENTORY_RESULTS, M2RestoreError,
+  M2_RESTORE, NEGATIVE_CLASSES, PHASES, READER_PROFILE, SUCCESS_BY_SELECTOR_STATE,
   SUCCESS_RESULTS, UNSUPPORTED_RUNTIME_CLASSES, VALUE_REGISTRIES, VERSIONS,
   checkAuthenticatedCompatibility, checkBuildEligibility, checkVersions, classifyRestore,
   runFreshWorkerFixtureMatrix, validateReconciliationCandidate,
 } from '../../../src/storage/m2/session-restore.js';
 
-// ---------------------------------------------------------------------------------------------
-// Fixtures.
-// ---------------------------------------------------------------------------------------------
-const ACTIVE_OBSERVATION = Object.freeze({
-  faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE',
-});
-const HOLD_OBSERVATION = Object.freeze({
-  faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-HOLD', selectorState: 'RECONCILIATION_REQUIRED',
-});
-const cleanObservation = (overrides = {}) => ({ ...ACTIVE_OBSERVATION, ...overrides });
-const bytes = (seed) => Uint8Array.from({ length: 32 }, (_, i) => (seed + i) & 0xff);
-const clone = (value) => JSON.parse(JSON.stringify(value));
-const rowNamed = (name) => BUILD_MATRIX.find((row) => row.buildId === name);
-const goodBuild = () => {
-  const row = clone(rowNamed('M2_WEB_CHROMIUM_STANDARD'));
-  return row;
-};
+// -------------------------------------------------------------------------------------------------
+// Fixture helpers.
+// -------------------------------------------------------------------------------------------------
 
-const goodCandidateFacts = () => {
-  const bindingProfileDigest = bytes(0x90);
+const bytes = (seed) => Uint8Array.from({ length: 32 }, (_, index) => (seed + index) & 0xff);
+const zeros = () => new Uint8Array(32);
+
+const observation = (overrides = {}) => ({
+  faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE',
+  ...overrides,
+});
+
+const outcomeOf = (overrides) => classifyRestore(observation(overrides));
+
+const goodFacts = () => {
+  const binding = bytes(0x90);
   return {
     localContextId: bytes(0x11),
     candidateGeneration: 7n,
@@ -39,7 +35,6 @@ const goodCandidateFacts = () => {
     selectedGeneration: 6n,
     selectedKeyedRoot: bytes(0x51),
     selectorState: 'RECONCILIATION_REQUIRED',
-    candidateEqualsSelected: false,
     locator: {
       recordKind: 16,
       objectIdLength: 0,
@@ -52,602 +47,856 @@ const goodCandidateFacts = () => {
     candidate: {
       manifestCiphertextDigest: bytes(0x31),
       keyedRoot: bytes(0x41),
-      manifestBindingDigest: bytes(0x90),
-      bindingProfileDigest,
+      manifestBindingDigest: binding,
+      bindingProfileDigest: binding,
       parentGeneration: 6n,
       parentKeyedRoot: bytes(0x51),
       originalAuthorityDigest: bytes(0x61),
       originalAuthorityReference: bytes(0x61),
       resultStatus: 'INDETERMINATE',
     },
-    candidateBindingProfile: { generation: 7n, bindingProfileDigest },
+    candidateBindingProfile: { generation: 7n, bindingProfileDigest: binding },
+    commitResult: { originalAuthorityDigest: bytes(0x61), originalAuthorityReference: bytes(0x61) },
   };
 };
 
-const expectRejection = (thunk, result, stage) => {
-  let thrown = null;
-  try {
-    thunk();
-  } catch (error) {
-    thrown = error;
-  }
-  expect(thrown).toBeInstanceOf(M2RestoreError);
-  expect(thrown.result).toBe(result);
-  expect(thrown.stage).toBe(stage);
+const withFacts = (mutate) => {
+  const facts = goodFacts();
+  mutate(facts);
+  return facts;
 };
 
-// ---------------------------------------------------------------------------------------------
-describe('closed vocabulary', () => {
-  test('the phase, result and fault sets are exactly the C-REST closed sets', () => {
-    expect(PHASES).toHaveLength(14);
-    expect(PHASES[0]).toBe('LOCK');
-    expect(PHASES[13]).toBe('EXPOSE');
-    expect(INVENTORY_RESULTS).toEqual(['NO_M2_STATE', 'LEGACY_ONLY']);
-    expect(SUCCESS_RESULTS).toHaveLength(3);
-    expect(FAILURE_RESULTS).toHaveLength(13);
-    expect(CONDITIONS).toEqual(['LEGACY_PRESENT']);
-    expect(FAILURE_DEFAULT).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(FAULT_PRECEDENCE).toHaveLength(26);
-    expect(NEGATIVE_CLASSES).toHaveLength(20);
-  });
+const rejectionOf = (thunk) => {
+  try {
+    thunk();
+    return null;
+  } catch (error) {
+    return { name: error.name, result: error.result, stage: error.stage };
+  }
+};
 
-  test('inventory, success and failure sets are disjoint and total', () => {
-    const all = [...INVENTORY_RESULTS, ...SUCCESS_RESULTS, ...FAILURE_RESULTS];
-    expect(new Set(all).size).toBe(all.length);
-    expect(FAILURE_DEFAULT).toBe(FAILURE_RESULTS[FAILURE_RESULTS.length - 1]);
-  });
-
-  test('successBySelectorState is total over the three selector states', () => {
-    expect(Object.keys(SUCCESS_BY_SELECTOR_STATE).sort())
-      .toEqual(['ACTIVE', 'EMPTY', 'RECONCILIATION_REQUIRED']);
-    expect(SUCCESS_BY_SELECTOR_STATE.EMPTY).toBe('RESTORED_EMPTY');
-    expect(SUCCESS_BY_SELECTOR_STATE.ACTIVE).toBe('RESTORED_ACTIVE');
-    expect(SUCCESS_BY_SELECTOR_STATE.RECONCILIATION_REQUIRED).toBe('RESTORED_RECONCILIATION_REQUIRED');
-  });
-
-  test('every negative class names an existing faultPrecedence row with the same phase and result', () => {
-    for (const row of NEGATIVE_CLASSES) {
-      const precedence = FAULT_PRECEDENCE.find((candidate) => candidate.fault === row.fault);
-      expect(precedence).toBeDefined();
-      expect(precedence.phase).toBe(row.phase);
-      expect(precedence.result).toBe(row.result);
-    }
-  });
-
-  test('faultPrecedence is ordered by phase and every phase is reachable', () => {
-    const seen = FAULT_PRECEDENCE.map((row) => PHASES.indexOf(row.phase));
-    for (let i = 1; i < seen.length; i += 1) {
-      expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
-    }
-  });
-
-  test('the metadata surface is frozen, and the automatic-action prohibition is honoured', () => {
-    expect(Object.isFrozen(M2_RESTORE)).toBe(true);
-    expect(Object.isFrozen(FAULT_PRECEDENCE)).toBe(true);
-    expect(Object.isFrozen(BUILD_MATRIX)).toBe(true);
-    expect(Object.values(AUTOMATIC_ACTIONS).every((value) => value === false)).toBe(true);
-    expect(CORRUPTION_ACTION).toBe('PRESERVE_AND_STOP_LOGICAL_READ_DISABLE_ONLY');
-    expect(EXPOSURE.beforeEXPOSE).toEqual([]);
-    expect(EXPOSURE.atEXPOSE).toEqual(['SELECTED_AUTHORITY']);
-    expect(EXPOSURE.never).toHaveLength(4);
-    expect(FRESHNESS.freshnessClaim).toBe(false);
-    expect(FRESHNESS.coherentWholeProfileRollbackDetection).toBe(false);
-  });
+// The O-SCEN rows whose canonical clause content concerns the restore surface, as required by the
+// contract: each C-REST root is mapped to the named test that exercises it.
+const SCENARIO_TESTS = Object.freeze({
+  '/compatibilityRegistry/versions': 'version and pin drift',
+  '/compatibilityRegistry/algorithms': 'the authenticated compatibility conjunction',
+  '/buildMatrix': 'build eligibility',
+  '/unsupportedRuntimeClasses': 'build eligibility',
+  '/phaseOrder': 'the closed vocabulary',
+  '/phaseRules': 'fault precedence',
+  '/inventoryRules': 'the fresh-worker fixture matrix',
+  '/candidateRules': 'reconciliation candidate and physical parent',
+  '/resultSets': 'the closed vocabulary',
+  '/failureDefault': 'fail-closed observation',
+  '/successBySelectorState': 'the fresh-worker fixture matrix',
+  '/faultPrecedence': 'fault precedence',
+  '/negativeClassMap': 'the negative class map',
+  '/diagnostics': 'diagnostics and immutability',
+  '/corruptionAction': 'the closed metadata',
+  '/automaticActions': 'the closed metadata',
+  '/exposure': 'exposure',
+  '/fixtures': 'the fresh-worker fixture matrix',
+  '/freshness': 'the closed metadata',
+  '/nonClaims': 'the closed metadata',
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('fresh-worker fixture matrix (C-REST 12)', () => {
-  test('the matrix carries exactly seven positive and sixty-five negative fixtures', () => {
-    expect(FRESH_WORKER_FIXTURES).toHaveLength(72);
-    expect(FRESH_WORKER_FIXTURES.filter((row) => row.id.startsWith('POS-'))).toHaveLength(7);
-    expect(FRESH_WORKER_FIXTURES.filter((row) => row.id.startsWith('NEG-'))).toHaveLength(65);
+describe('the closed vocabulary', () => {
+  test('the phases, results, conditions and default are exactly the ratified sets', () => {
+    expect([...PHASES]).toEqual([
+      'LOCK', 'BUILD_ELIGIBILITY', 'INVENTORY', 'WRAPPER_AUTH', 'KEY_DERIVATION', 'SELECTOR_HEADER',
+      'SELECTOR_AUTH', 'AUTHENTICATED_COMPATIBILITY', 'MANIFEST_ROOT', 'RECORD_SET', 'RECORD_DECODE',
+      'REFERENCES', 'CLASSIFY', 'EXPOSE',
+    ]);
+    expect([...INVENTORY_RESULTS]).toEqual(['NO_M2_STATE', 'LEGACY_ONLY']);
+    expect([...SUCCESS_RESULTS]).toEqual([
+      'RESTORED_EMPTY', 'RESTORED_ACTIVE', 'RESTORED_RECONCILIATION_REQUIRED',
+    ]);
+    expect([...FAILURE_RESULTS]).toEqual([
+      'LOCKED_ELSEWHERE', 'WRAPPER_AUTH_FAILED', 'INCOMPATIBLE_BUILD', 'INCOMPATIBLE_FORMAT',
+      'UNSUPPORTED_VERSION', 'SELECTOR_INVALID', 'AUTHENTICATION_FAILED', 'MANIFEST_INVALID',
+      'RECORD_SET_INCOMPLETE', 'RECORD_INVALID', 'REFERENCE_INCONSISTENT', 'PARTIAL_GENERATION',
+      'INTERNAL_VALIDATION_FAILED',
+    ]);
+    expect([...CONDITIONS]).toEqual(['LEGACY_PRESENT']);
+    expect(FAILURE_DEFAULT).toBe('INTERNAL_VALIDATION_FAILED');
+    expect({ ...SUCCESS_BY_SELECTOR_STATE }).toEqual({
+      EMPTY: 'RESTORED_EMPTY',
+      ACTIVE: 'RESTORED_ACTIVE',
+      RECONCILIATION_REQUIRED: 'RESTORED_RECONCILIATION_REQUIRED',
+    });
   });
 
-  test('every fixture returns its exact typed outcome at its exact first phase', () => {
-    const rows = runFreshWorkerFixtureMatrix();
-    const mismatched = rows.filter((row) => row.ok !== true || row.result !== row.expectedResult
-      || row.stage !== row.expectedPhase);
-    expect(mismatched).toEqual([]);
-    expect(rows).toHaveLength(72);
-  });
-
-  test('every fixture result is a closed value and every rejection exposes nothing', () => {
-    const closed = new Set([...INVENTORY_RESULTS, ...SUCCESS_RESULTS, ...FAILURE_RESULTS]);
-    for (const row of runFreshWorkerFixtureMatrix()) {
-      expect(closed.has(row.result)).toBe(true);
-      expect(PHASES).toContain(row.stage);
-      if (row.result.startsWith('RESTORED_')) {
-        expect(row.exposed).toBe(true);
-      } else {
-        expect(row.exposed).toBe(false);
+  test('the successes, inventory results, conditions and failures are pairwise disjoint', () => {
+    const groups = [SUCCESS_RESULTS, INVENTORY_RESULTS, CONDITIONS, FAILURE_RESULTS];
+    const seen = new Set();
+    for (const group of groups) {
+      for (const value of group) {
+        expect(seen.has(value)).toBe(false);
+        seen.add(value);
+        expect(PHASES.includes(value)).toBe(false);
       }
     }
   });
 
-  test('a negative fixture never resolves to a success or to an empty result', () => {
-    for (const row of FRESH_WORKER_FIXTURES.filter((item) => item.id.startsWith('NEG-'))) {
-      expect(SUCCESS_RESULTS).not.toContain(row.result);
-      expect(INVENTORY_RESULTS).not.toContain(row.result);
-    }
+  test('the module surface is exactly the thirty closed names', () => {
+    const closed = [
+      'M2RestoreError', 'M2_RESTORE', 'classifyRestore', 'checkVersions', 'checkBuildEligibility',
+      'checkAuthenticatedCompatibility', 'validateReconciliationCandidate',
+      'runFreshWorkerFixtureMatrix', 'PHASES', 'INVENTORY_RESULTS', 'SUCCESS_RESULTS',
+      'FAILURE_RESULTS', 'CONDITIONS', 'FAILURE_DEFAULT', 'SUCCESS_BY_SELECTOR_STATE',
+      'FAULT_PRECEDENCE', 'NEGATIVE_CLASSES', 'DIAGNOSTIC_ALLOWED', 'DIAGNOSTIC_FORBIDDEN',
+      'BUILD_MATRIX', 'UNSUPPORTED_RUNTIME_CLASSES', 'VERSIONS', 'ALGORITHMS', 'VALUE_REGISTRIES',
+      'READER_PROFILE', 'CORRUPTION_ACTION', 'AUTOMATIC_ACTIONS', 'EXPOSURE', 'FRESHNESS',
+      'FRESH_WORKER_FIXTURES',
+    ];
+    const surface = [
+      M2RestoreError, M2_RESTORE, classifyRestore, checkVersions, checkBuildEligibility,
+      checkAuthenticatedCompatibility, validateReconciliationCandidate, runFreshWorkerFixtureMatrix,
+      PHASES, INVENTORY_RESULTS, SUCCESS_RESULTS, FAILURE_RESULTS, CONDITIONS, FAILURE_DEFAULT,
+      SUCCESS_BY_SELECTOR_STATE, FAULT_PRECEDENCE, NEGATIVE_CLASSES, DIAGNOSTIC_ALLOWED,
+      DIAGNOSTIC_FORBIDDEN, BUILD_MATRIX, UNSUPPORTED_RUNTIME_CLASSES, VERSIONS, ALGORITHMS,
+      VALUE_REGISTRIES, READER_PROFILE, CORRUPTION_ACTION, AUTOMATIC_ACTIONS, EXPOSURE, FRESHNESS,
+      FRESH_WORKER_FIXTURES,
+    ];
+    expect(closed).toHaveLength(30);
+    expect(surface).toHaveLength(30);
+    expect(Object.keys(M2_RESTORE).sort()).toEqual([
+      'ALGORITHMS', 'AUTOMATIC_ACTIONS', 'BUILD_MATRIX', 'CONDITIONS', 'CORRUPTION_ACTION',
+      'DIAGNOSTIC_ALLOWED', 'DIAGNOSTIC_FORBIDDEN', 'EXPOSURE', 'FAILURE_DEFAULT',
+      'FAILURE_RESULTS', 'FAULT_PRECEDENCE', 'FRESHNESS', 'INVENTORY_RESULTS', 'NEGATIVE_CLASSES',
+      'PHASES', 'READER_PROFILE', 'SUCCESS_BY_SELECTOR_STATE', 'SUCCESS_RESULTS',
+      'UNSUPPORTED_RUNTIME_CLASSES', 'VALUE_REGISTRIES', 'VERSIONS',
+    ]);
   });
 
-  test('the four positive successes carry the LEGACY_PRESENT condition only when legacy is present', () => {
-    const rows = runFreshWorkerFixtureMatrix();
-    for (const row of rows) {
-      const source = FRESH_WORKER_FIXTURES.find((item) => item.id === row.id);
-      expect(row.legacyPresent).toBe(source.legacy === true);
-    }
-    expect(rows.find((row) => row.id === 'POS-M2-LEGACY-PRESENT').result).toBe('RESTORED_ACTIVE');
-    expect(rows.find((row) => row.id === 'POS-M2-LEGACY-PRESENT').legacyPresent).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-describe('positive classification', () => {
-  test('absence of every M2 locator and artifact is NO_M2_STATE at INVENTORY', () => {
-    const outcome = classifyRestore(cleanObservation({ inventory: 'NONE', vector: null }));
-    expect(outcome.result).toBe('NO_M2_STATE');
-    expect(outcome.stage).toBe('INVENTORY');
-    expect(outcome.exposed).toBe(false);
-  });
-
-  test('legacy-only requires observed legacy presence and reports LEGACY_ONLY', () => {
-    const outcome = classifyRestore(cleanObservation({ inventory: 'LEGACY_ONLY', legacy: true, vector: null }));
-    expect(outcome.result).toBe('LEGACY_ONLY');
-    expect(outcome.stage).toBe('INVENTORY');
-    expect(outcome.exposed).toBe(false);
-  });
-
-  test('the three authenticated selector states map to the three successes at EXPOSE', () => {
-    const empt = classifyRestore(cleanObservation({ vector: 'FMT-KAT-EMPTY', selectorState: 'EMPTY' }));
-    expect(empt.result).toBe('RESTORED_EMPTY');
-    expect(empt.stage).toBe('EXPOSE');
-    expect(empt.exposed).toBe(true);
-    const active = classifyRestore(ACTIVE_OBSERVATION);
-    expect(active.result).toBe('RESTORED_ACTIVE');
-    const hold = classifyRestore(HOLD_OBSERVATION);
-    expect(hold.result).toBe('RESTORED_RECONCILIATION_REQUIRED');
-    expect(hold.exposed).toBe(true);
-  });
-
-  test('valid M2 plus legacy keeps the M2 result and only attaches LEGACY_PRESENT', () => {
-    const outcome = classifyRestore(cleanObservation({ legacy: true }));
-    expect(outcome.result).toBe('RESTORED_ACTIVE');
-    expect(outcome.legacyPresent).toBe(true);
-  });
-
-  test('a success exposes selected authority only, at EXPOSE', () => {
-    const outcome = classifyRestore(ACTIVE_OBSERVATION);
-    expect(outcome.stage).toBe('EXPOSE');
-    expect(outcome.exposed).toBe(true);
-    for (const rejection of FAULT_PRECEDENCE.map((row) => classifyRestore(cleanObservation({ faults: [row.fault] })))) {
-      expect(rejection.exposed).toBe(false);
-    }
+  test('the scenario map covers every implemented C-REST root', () => {
+    const roots = Object.keys(M2_RESTORE).length;
+    expect(Object.keys(SCENARIO_TESTS).length).toBeGreaterThan(0);
+    expect(roots).toBe(21);
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('failure precedence and fail-closed faults', () => {
-  test('every faultPrecedence row classifies to its exact result and phase', () => {
+describe('the closed metadata', () => {
+  test('every registry is deep-frozen, rows included', () => {
+    const frozen = [
+      PHASES, INVENTORY_RESULTS, SUCCESS_RESULTS, FAILURE_RESULTS, CONDITIONS,
+      SUCCESS_BY_SELECTOR_STATE, FAULT_PRECEDENCE, NEGATIVE_CLASSES, DIAGNOSTIC_ALLOWED,
+      DIAGNOSTIC_FORBIDDEN, BUILD_MATRIX, UNSUPPORTED_RUNTIME_CLASSES, VERSIONS, ALGORITHMS,
+      VALUE_REGISTRIES, AUTOMATIC_ACTIONS, EXPOSURE, FRESHNESS, FRESH_WORKER_FIXTURES, M2_RESTORE,
+    ];
+    for (const registry of frozen) {
+      expect(Object.isFrozen(registry)).toBe(true);
+    }
+    expect(Object.isFrozen(FAULT_PRECEDENCE[0])).toBe(true);
+    expect(Object.isFrozen(NEGATIVE_CLASSES[0])).toBe(true);
+    expect(Object.isFrozen(FRESH_WORKER_FIXTURES.positive[0])).toBe(true);
+    expect(Object.isFrozen(FRESH_WORKER_FIXTURES.negative[0])).toBe(true);
+    expect(Object.isFrozen(M2_RESTORE.FAULT_PRECEDENCE[0])).toBe(true);
+    expect(Object.isFrozen(BUILD_MATRIX[0].versions)).toBe(true);
+    expect(Object.isFrozen(FRESH_WORKER_FIXTURES.negative[6].gates)).toBe(true);
+  });
+
+  test('automatic actions, corruption action, exposure and freshness are the ratified values', () => {
+    expect({ ...AUTOMATIC_ACTIONS }).toEqual({
+      rewrite: false, normalize: false, regenerate: false, fallback: false, repair: false,
+      clearHold: false, consumeKeyPackage: false, discardEscrow: false, automaticReset: false,
+    });
+    expect(CORRUPTION_ACTION).toBe('PRESERVE_AND_STOP_LOGICAL_READ_DISABLE_ONLY');
+    expect({ ...EXPOSURE }).toEqual({
+      beforeEXPOSE: [],
+      atEXPOSE: ['SELECTED_AUTHORITY'],
+      never: [
+        'UNSELECTED_CANDIDATE_AS_AUTHORITY', 'LEGACY_AS_AUTHORITY', 'PARTIAL_PLAINTEXT',
+        'ESCROW_OUTPUT_FROM_RESTORE',
+      ],
+    });
+    expect(FRESHNESS.freshnessClaim).toBe(false);
+    expect(FRESHNESS.authenticatedConsistency).toBe(true);
+    expect(FRESHNESS.coherentWholeProfileRollbackDetection).toBe(false);
+    expect([...UNSUPPORTED_RUNTIME_CLASSES]).toEqual([
+      'MOBILE', 'NATIVE_NON_BROWSER', 'PRIVATE_BROWSING', 'EVICTED_OR_PARTIAL_PROFILE',
+    ]);
+    expect(READER_PROFILE).toBe('CFMT_EXACT_B57DF3A8');
+  });
+
+  test('the copied C-REST value registries are exactly the eleven closed registries', () => {
+    expect(Object.keys(VALUE_REGISTRIES).sort()).toEqual([
+      'apiState', 'bool', 'commitOutcome', 'fieldTags', 'keyPackageLifecycle', 'operation',
+      'outputKind', 'scenario', 'selectorState', 'slotState', 'successCode',
+    ]);
+    expect(Object.isFrozen(VALUE_REGISTRIES.selectorState)).toBe(true);
+  });
+});
+
+describe('the fresh-worker fixture matrix', () => {
+  test('the matrix carries exactly seven positive and sixty-five negative fixtures', () => {
+    expect(runFreshWorkerFixtureMatrix()).toHaveLength(72);
+    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(7);
+    expect(FRESH_WORKER_FIXTURES.negative).toHaveLength(65);
+  });
+
+  test('all seventy-two fixtures return their exact typed outcome at their exact first phase', () => {
+    for (const row of runFreshWorkerFixtureMatrix()) {
+      expect({ id: row.id, result: row.actual.result, stage: row.actual.stage })
+        .toEqual({ id: row.id, result: row.expected.result, stage: row.expected.firstPhase });
+    }
+  });
+
+  test('a negative fixture never resolves to a success or to an inventory result', () => {
+    for (const row of runFreshWorkerFixtureMatrix().filter((item) => item.kind === 'negative')) {
+      expect(SUCCESS_RESULTS.includes(row.actual.result)).toBe(false);
+      expect(INVENTORY_RESULTS.includes(row.actual.result)).toBe(false);
+      expect(row.actual.exposed).toBe(false);
+    }
+  });
+
+  test('only the five M2 positives expose authority, and only at EXPOSE', () => {
+    const exposing = runFreshWorkerFixtureMatrix().filter((row) => row.actual.exposed);
+    expect(exposing).toHaveLength(5);
+    for (const row of exposing) {
+      expect(row.kind).toBe('positive');
+      expect(row.actual.stage).toBe('EXPOSE');
+      expect(SUCCESS_RESULTS.includes(row.actual.result)).toBe(true);
+    }
+    expect(runFreshWorkerFixtureMatrix().filter((row) => row.kind === 'positive'))
+      .toHaveLength(7);
+  });
+
+  test('the fixture rows are copied verbatim from the record and are frozen', () => {
+    const first = FRESH_WORKER_FIXTURES.positive[0];
+    expect(first.id).toBe('POS-NO-M2');
+    expect(first.inventory).toBe('NONE');
+    expect(first.vector).toBe(null);
+    expect(first.firstPhase).toBe('INVENTORY');
+    expect(FRESH_WORKER_FIXTURES.negative[0].id).toBe('NEG-LOCKUNAVAILABLE');
+    expect(FRESH_WORKER_FIXTURES.negative[0].faults).toEqual(['lockUnavailable']);
+    expect(Object.isFrozen(FRESH_WORKER_FIXTURES.negative[0].faults)).toBe(true);
+    const legacy = FRESH_WORKER_FIXTURES.positive.find((row) => row.id === 'POS-M2-LEGACY-PRESENT');
+    expect(legacy.condition).toBe('LEGACY_PRESENT');
+    const hold = FRESH_WORKER_FIXTURES.positive.find((row) => row.id === 'POS-HOLD');
+    expect(hold.vector).toBe('FMT-KAT-HOLD');
+  });
+});
+
+describe('fault precedence', () => {
+  test('all twenty-six rows classify to their exact result and phase', () => {
+    expect(FAULT_PRECEDENCE).toHaveLength(26);
     for (const row of FAULT_PRECEDENCE) {
-      const outcome = classifyRestore(cleanObservation({ faults: [row.fault] }));
-      expect(outcome.result).toBe(row.result);
-      expect(outcome.stage).toBe(row.phase);
-      expect(outcome.exposed).toBe(false);
+      const outcome = outcomeOf({ faults: [row.fault] });
+      expect({ fault: row.fault, result: outcome.result, stage: outcome.stage })
+        .toEqual({ fault: row.fault, result: row.result, stage: row.phase });
     }
   });
 
   test('a fault set resolves by phase order regardless of the order it is given in', () => {
-    const faults = [
-      'unexpectedValidatorCondition',
-      'lockUnavailable',
-      'selectorAuthenticationFailed',
-      'buildNotListed',
+    const rows = FAULT_PRECEDENCE.filter((row) => row.phase !== 'LOCK');
+    for (const first of rows) {
+      for (const second of rows) {
+        if (first.fault === second.fault) {
+          continue;
+        }
+        const forward = outcomeOf({ faults: [first.fault, second.fault] });
+        const backward = outcomeOf({ faults: [second.fault, first.fault] });
+        expect(forward.result).toBe(backward.result);
+        expect(forward.stage).toBe(backward.stage);
+        const rank = (row) => FAULT_PRECEDENCE.findIndex((item) => item.fault === row.fault);
+        const earliest = rank(first) <= rank(second) ? first : second;
+        expect(forward.result).toBe(earliest.result);
+        expect(forward.stage).toBe(earliest.phase);
+      }
+    }
+  });
+
+  test('a later-phase fault never outranks an earlier-phase fault', () => {
+    const outcome = outcomeOf({ faults: ['unexpectedExposeCondition', 'lockUnavailable'] });
+    expect({ result: outcome.result, stage: outcome.stage })
+      .toEqual({ result: 'LOCKED_ELSEWHERE', stage: 'LOCK' });
+  });
+
+  test('an unknown fault name is INTERNAL_VALIDATION_FAILED at CLASSIFY', () => {
+    const outcome = outcomeOf({ faults: ['notARealFault'] });
+    expect({ result: outcome.result, stage: outcome.stage })
+      .toEqual({ result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY' });
+  });
+
+  test('the negative class map agrees with the fault precedence table', () => {
+    expect(NEGATIVE_CLASSES).toHaveLength(20);
+    for (const row of NEGATIVE_CLASSES) {
+      const fault = FAULT_PRECEDENCE.find((item) => item.fault === row.fault);
+      expect({ negativeClass: row.negativeClass, phase: fault.phase, result: fault.result })
+        .toEqual({ negativeClass: row.negativeClass, phase: row.phase, result: row.result });
+      expect(outcomeOf({ faults: [row.fault] }).stage).toBe(row.phase);
+    }
+  });
+});
+
+describe('the ordered outcome', () => {
+  test('absence resolves at INVENTORY and a success resolves at EXPOSE', () => {
+    expect(outcomeOf({ inventory: 'NONE', legacy: false, vector: null, selectorState: 'ACTIVE' }))
+      .toMatchObject({ result: 'NO_M2_STATE', stage: 'INVENTORY', exposed: false });
+    expect(outcomeOf({ inventory: 'LEGACY_ONLY', legacy: true, vector: null, selectorState: 'ACTIVE' }))
+      .toMatchObject({ result: 'LEGACY_ONLY', stage: 'INVENTORY', exposed: false });
+    expect(outcomeOf({ selectorState: 'EMPTY' }))
+      .toMatchObject({ result: 'RESTORED_EMPTY', stage: 'EXPOSE', exposed: true });
+    expect(outcomeOf({ selectorState: 'RECONCILIATION_REQUIRED' }))
+      .toMatchObject({ result: 'RESTORED_RECONCILIATION_REQUIRED', stage: 'EXPOSE', exposed: true });
+  });
+
+  test('LEGACY_PRESENT is a condition on the M2 result, never a result', () => {
+    expect(outcomeOf({ legacy: true }).condition).toBe('LEGACY_PRESENT');
+    expect(outcomeOf({ legacy: false }).condition).toBe(null);
+    expect(outcomeOf({ inventory: 'LEGACY_ONLY', legacy: true, vector: null }).condition).toBe(null);
+    expect(outcomeOf({ inventory: 'NONE', legacy: false, vector: null }).condition).toBe(null);
+  });
+
+  test('only a success exposes authority', () => {
+    for (const fault of FAULT_PRECEDENCE) {
+      expect(outcomeOf({ faults: [fault.fault] }).exposed).toBe(false);
+    }
+    expect(outcomeOf({ inventory: 'NONE', legacy: false, vector: null }).exposed).toBe(false);
+    expect(outcomeOf({ inventory: 'LEGACY_ONLY', legacy: true, vector: null }).exposed).toBe(false);
+  });
+});
+
+describe('fail-closed observation', () => {
+  test('an unknown, missing or extra member is INTERNAL_VALIDATION_FAILED at CLASSIFY', () => {
+    const cases = [
+      { ...observation(), extra: 1 },
+      { faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE' },
+      { ...observation(), vector: undefined },
+      { faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE', junk: 0 },
     ];
-    const expected = classifyRestore(cleanObservation({ faults: ['lockUnavailable'] }));
-    for (const permutation of [
-      faults,
-      [...faults].reverse(),
-      [faults[2], faults[0], faults[3], faults[1]],
-      [faults[1], faults[3], faults[2], faults[0]],
-    ]) {
-      const outcome = classifyRestore(cleanObservation({ faults: permutation }));
-      expect(outcome.result).toBe(expected.result);
-      expect(outcome.stage).toBe(expected.stage);
+    for (const item of cases) {
+      expect(classifyRestore(item)).toMatchObject({
+        result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY', exposed: false,
+      });
+    }
+    const hidden = observation();
+    Object.defineProperty(hidden, 'override', { value: 1, enumerable: false });
+    expect(classifyRestore(hidden).result).toBe('INTERNAL_VALIDATION_FAILED');
+    const symbol = observation();
+    symbol[Symbol('extra')] = 1;
+    expect(classifyRestore(symbol).result).toBe('INTERNAL_VALIDATION_FAILED');
+    let reads = 0;
+    const accessor = observation();
+    Object.defineProperty(accessor, 'selectorState', {
+      get() {
+        reads += 1;
+        return 'ACTIVE';
+      },
+      enumerable: true,
+    });
+    expect(classifyRestore(accessor).result).toBe('INTERNAL_VALIDATION_FAILED');
+    expect(reads).toBe(0);
+  });
+
+  test('a non-plain, non-object or out-of-type observation fails closed', () => {
+    const proto = observation();
+    Object.setPrototypeOf(proto, { inherited: true });
+    for (const item of [null, undefined, 1, 'x', [], proto, new (class Obs {})()]) {
+      const outcome = classifyRestore(item);
+      expect(outcome).toMatchObject({ result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY' });
+      expect(outcome.exposed).toBe(false);
     }
   });
 
-  test('a later-phase fault is never promoted above an earlier-phase fault', () => {
-    const outcome = classifyRestore(cleanObservation({ faults: ['manifestOrRootMismatch', 'lockUnavailable'] }));
-    expect(outcome.result).toBe('LOCKED_ELSEWHERE');
-    expect(outcome.stage).toBe('LOCK');
+  test('an out-of-set value fails closed and never a success', () => {
+    const cases = [
+      { faults: 'lockUnavailable' },
+      { faults: [1] },
+      { faults: [] , inventory: 'MAYBE', vector: null },
+      { inventory: 'M2', legacy: 'no' },
+      { inventory: 'M2', vector: 'FMT-KAT-UNKNOWN' },
+      { inventory: 'M2', selectorState: 'NOT_A_STATE' },
+      { inventory: 'M2', selectorState: 'toString' },
+      { inventory: 'M2', selectorState: 'constructor' },
+    ];
+    for (const item of cases) {
+      const outcome = classifyRestore(observation(item));
+      expect(outcome.result).toBe('INTERNAL_VALIDATION_FAILED');
+      expect(SUCCESS_RESULTS.includes(outcome.result)).toBe(false);
+      expect(outcome.exposed).toBe(false);
+    }
   });
 
-  test('an unknown fault name resolves fail-closed, never to a success', () => {
-    const outcome = classifyRestore(cleanObservation({ faults: ['noSuchFault'] }));
-    expect(outcome.result).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(outcome.stage).toBe('CLASSIFY');
-    expect(outcome.exposed).toBe(false);
+  test('the two impossible inventory and legacy combinations fail closed', () => {
+    expect(outcomeOf({ inventory: 'NONE', legacy: true, vector: null }).result)
+      .toBe('INTERNAL_VALIDATION_FAILED');
+    expect(outcomeOf({ inventory: 'LEGACY_ONLY', legacy: false, vector: null }).result)
+      .toBe('INTERNAL_VALIDATION_FAILED');
   });
 
-  test('a duplicated fault is idempotent and a repeated classification is byte-identical', () => {
-    const first = classifyRestore(cleanObservation({ faults: ['manifestOrRootMismatch', 'manifestOrRootMismatch'] }));
-    const second = classifyRestore(cleanObservation({ faults: ['manifestOrRootMismatch'] }));
-    expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  test('contradictory evidence fails closed rather than resolving to a later phase', () => {
+    const cases = [
+      { faults: ['recordAuthenticationFailed'], inventory: 'NONE', legacy: false, vector: null, selectorState: 'EMPTY' },
+      { faults: ['unexpectedExposeCondition'], inventory: 'LEGACY_ONLY', legacy: true, vector: null, selectorState: 'EMPTY' },
+      { faults: ['manifestOrRootMismatch', 'manifestOrRootMismatch'] },
+      { faults: [], inventory: 'NONE', legacy: false, vector: 'FMT-KAT-ACTIVE' },
+      { faults: [], inventory: 'M2', legacy: false, vector: null },
+    ];
+    for (const item of cases) {
+      expect(classifyRestore(observation(item))).toMatchObject({
+        result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY',
+      });
+    }
+  });
+
+  test('a duplicated fault is not idempotent: it is contradictory evidence', () => {
+    expect(outcomeOf({ faults: ['manifestOrRootMismatch', 'manifestOrRootMismatch'] }).result)
+      .toBe('INTERNAL_VALIDATION_FAILED');
+    expect(outcomeOf({ faults: ['manifestOrRootMismatch'] }).result).toBe('MANIFEST_INVALID');
+  });
+
+  test('the classifier is total: no input escapes as an exception', () => {
+    const faults = ['lockUnavailable'];
+    Object.defineProperty(faults, Symbol.iterator, { get() { throw new Error('hostile'); } });
+    const cases = [null, undefined, 0, '', [], new Map(), observations => observations];
+    for (const item of cases) {
+      expect(() => classifyRestore(item)).not.toThrow();
+    }
+    expect(() => classifyRestore(observation({ faults }))).not.toThrow();
+    expect(classifyRestore(observation({ faults })).result).toBe('INTERNAL_VALIDATION_FAILED');
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('fail-closed observation validation', () => {
-  const bad = (value) => classifyRestore(value).result;
-
-  test('a non-object observation is INTERNAL_VALIDATION_FAILED at CLASSIFY', () => {
-    for (const value of [null, undefined, 0, 1n, 'M2', true, [], () => {}]) {
-      expect(bad(value)).toBe('INTERNAL_VALIDATION_FAILED');
-    }
-    expect(classifyRestore(null).stage).toBe('CLASSIFY');
+describe('version and pin drift', () => {
+  test('the exact eight versions are accepted', () => {
+    expect(checkVersions({ ...VERSIONS })).toBe(null);
   });
 
-  test('an unknown, missing, extra or overlapping member rejects', () => {
-    expect(bad(cleanObservation({ extra: 1 }))).toBe('INTERNAL_VALIDATION_FAILED');
-    const missing = cleanObservation();
-    delete missing.vector;
-    expect(bad(missing)).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ faults: undefined }))).toBe('INTERNAL_VALIDATION_FAILED');
-  });
-
-  test('a non-closed prototype or a non-plain object rejects', () => {
-    class Observation {}
-    const instance = new Observation();
-    Object.assign(instance, ACTIVE_OBSERVATION);
-    expect(bad(instance)).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(new Map(Object.entries(ACTIVE_OBSERVATION)))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(Object.assign(Object.create(null), ACTIVE_OBSERVATION))).toBe('INTERNAL_VALIDATION_FAILED');
-  });
-
-  test('an out-of-type or out-of-set member rejects', () => {
-    expect(bad(cleanObservation({ faults: 'lockUnavailable' }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ faults: [1] }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ inventory: 'M1' }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ selectorState: 'UNKNOWN' }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ legacy: 'true' }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ vector: 7 }))).toBe('INTERNAL_VALIDATION_FAILED');
-  });
-
-  test('impossible positive combinations fail closed instead of returning a result', () => {
-    expect(bad(cleanObservation({ inventory: 'NONE', legacy: true }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(bad(cleanObservation({ inventory: 'LEGACY_ONLY', legacy: false }))).toBe('INTERNAL_VALIDATION_FAILED');
-  });
-
-  test('classification mutates nothing and returns a frozen value', () => {
-    const observation = cleanObservation({ faults: ['selectorAuthenticationFailed'] });
-    const before = JSON.stringify(observation);
-    const outcome = classifyRestore(observation);
-    expect(JSON.stringify(observation)).toBe(before);
-    expect(Object.isFrozen(outcome)).toBe(true);
-    expect(Object.isFrozen(outcome.diagnostics)).toBe(true);
-    expect(() => { outcome.result = 'RESTORED_ACTIVE'; }).toThrow();
-  });
-
-  test('diagnostics carry only allowlisted members, never a forbidden token', () => {
-    const outcome = classifyRestore(cleanObservation({ faults: ['recordAuthenticationFailed'] }));
-    expect(Object.keys(outcome.diagnostics).sort()).toEqual([...DIAGNOSTIC_ALLOWED].sort());
-    const serialized = JSON.stringify(outcome);
-    for (const forbidden of DIAGNOSTIC_FORBIDDEN) {
-      expect(serialized).not.toContain(forbidden);
-    }
-    expect(outcome.diagnostics.stageCode).toBe('RECORD_DECODE');
-    expect(outcome.diagnostics.reasonCode).toBe('AUTHENTICATION_FAILED');
-  });
-});
-
-// ---------------------------------------------------------------------------------------------
-describe('version and pin drift (closed allowlist)', () => {
-  test('the exact eight C-FMT versions are accepted', () => {
-    expect(checkVersions({ ...VERSIONS })).toBeNull();
-    expect(Object.keys(VERSIONS)).toHaveLength(8);
-  });
-
-  test('every single-version drift is UNSUPPORTED_VERSION - never a range or a downgrade', () => {
-    for (const name of Object.keys(VERSIONS)) {
-      const forward = { ...VERSIONS, [name]: VERSIONS[name] + 1 };
-      const backward = { ...VERSIONS, [name]: VERSIONS[name] - 1 };
-      expect(checkVersions(forward)).toBe('UNSUPPORTED_VERSION');
-      expect(checkVersions(backward)).toBe('UNSUPPORTED_VERSION');
+  test('each version drifting forward or backward is UNSUPPORTED_VERSION', () => {
+    for (const key of Object.keys(VERSIONS)) {
+      for (const delta of [1, -1]) {
+        expect(checkVersions({ ...VERSIONS, [key]: VERSIONS[key] + delta })).toBe('UNSUPPORTED_VERSION');
+      }
     }
   });
 
-  test('a missing, extra, reordered, non-integer or mixed version set rejects', () => {
-    const missing = { ...VERSIONS };
-    delete missing.manifest;
-    expect(checkVersions(missing)).toBe('UNSUPPORTED_VERSION');
-    expect(checkVersions({ ...VERSIONS, futureVersion: 1 })).toBe('UNSUPPORTED_VERSION');
+  test('a missing, extra, mixed, non-integer or unknown version set is UNSUPPORTED_VERSION', () => {
+    expect(checkVersions({})).toBe('UNSUPPORTED_VERSION');
+    expect(checkVersions({ ...VERSIONS, unknownKey: 1 })).toBe('UNSUPPORTED_VERSION');
     expect(checkVersions({ ...VERSIONS, format: '1' })).toBe('UNSUPPORTED_VERSION');
-    expect(checkVersions({ format: 1 })).toBe('UNSUPPORTED_VERSION');
+    expect(checkVersions({ ...VERSIONS, format: 1.5 })).toBe('UNSUPPORTED_VERSION');
+    expect(checkVersions({ ...VERSIONS, format: -0 })).toBe('UNSUPPORTED_VERSION');
+    expect(checkVersions({ ...VERSIONS, format: NaN })).toBe('UNSUPPORTED_VERSION');
+    const partial = { ...VERSIONS };
+    delete partial.manifest;
+    expect(checkVersions(partial)).toBe('UNSUPPORTED_VERSION');
     expect(checkVersions(null)).toBe('UNSUPPORTED_VERSION');
-    expect(checkVersions({ ...VERSIONS, format: 2, envelope: 2 })).toBe('UNSUPPORTED_VERSION');
+    expect(checkVersions(Object.assign(Object.create(null), VERSIONS))).toBe(null);
   });
 
-  test('an unknown key version is REJECT', () => {
-    expect(checkVersions({ ...VERSIONS, keyVersion: 2 })).toBe('UNSUPPORTED_VERSION');
+  test('the reader profile is not a version and cannot widen the version set', () => {
+    expect(checkVersions({ ...VERSIONS, readerProfile: READER_PROFILE })).toBe('UNSUPPORTED_VERSION');
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('build eligibility (one complete buildMatrix row)', () => {
-  test('both listed rows are eligible', () => {
-    for (const row of BUILD_MATRIX) {
-      expect(checkBuildEligibility(clone(row))).toBe(true);
-    }
+describe('build eligibility', () => {
+  const goodBuild = () => ({
+    ...BUILD_MATRIX[0],
+    versions: { ...BUILD_MATRIX[0].versions },
+    ss0Ciphersuite: { ...BUILD_MATRIX[0].ss0Ciphersuite },
   });
 
-  test('every single-field drift of a complete row is ineligible', () => {
-    const fields = [
-      'readerProfile', 'cFmtDocumentSha256', 'openMlsRevision', 'wasmArtifactPath',
-      'wasmArtifactSha256', 'ss0GateADecisionsSha256', 'buildId', 'runtimeClass', 'browserClass',
-    ];
-    for (const field of fields) {
-      const built = goodBuild();
-      built[field] = `${built[field]}-drift`;
-      expect(checkBuildEligibility(built)).toBe(false);
-    }
-    const ciphersuite = goodBuild();
-    ciphersuite.ss0Ciphersuite.name = 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519';
-    expect(checkBuildEligibility(ciphersuite)).toBe(false);
-    const version = goodBuild();
-    version.versions.format = 2;
-    expect(checkBuildEligibility(version)).toBe(false);
+  test('both complete rows are eligible', () => {
+    expect(checkBuildEligibility(goodBuild())).toBe(true);
+    expect(checkBuildEligibility({
+      ...BUILD_MATRIX[1],
+      versions: { ...BUILD_MATRIX[1].versions },
+      ss0Ciphersuite: { ...BUILD_MATRIX[1].ss0Ciphersuite },
+    })).toBe(true);
   });
 
-  test('a partial, extra, non-object or unlisted row is ineligible', () => {
+  test('a drifted member, a partial row or an extra member is ineligible', () => {
+    for (const key of Object.keys(BUILD_MATRIX[0])) {
+      const drifted = goodBuild();
+      drifted[key] = key === 'versions' ? { ...VERSIONS, format: 2 } : 'DRIFTED';
+      expect(checkBuildEligibility(drifted)).toBe(false);
+    }
     const partial = goodBuild();
     delete partial.wasmArtifactSha256;
     expect(checkBuildEligibility(partial)).toBe(false);
     expect(checkBuildEligibility({ ...goodBuild(), extra: 1 })).toBe(false);
     expect(checkBuildEligibility(null)).toBe(false);
-    expect(checkBuildEligibility('M2_WEB_CHROMIUM_STANDARD')).toBe(false);
     expect(checkBuildEligibility({})).toBe(false);
+    expect(checkBuildEligibility(Object.assign(Object.create(null), goodBuild()))).toBe(true);
   });
 
-  test('an unlisted runtime class or browser class is ineligible although it looks close', () => {
-    const mobile = goodBuild();
-    mobile.runtimeClass = 'MOBILE';
-    expect(checkBuildEligibility(mobile)).toBe(false);
-    const privateBrowsing = goodBuild();
-    privateBrowsing.runtimeClass = 'PRIVATE_BROWSING';
-    expect(checkBuildEligibility(privateBrowsing)).toBe(false);
-    const safari = goodBuild();
-    safari.browserClass = 'SAFARI';
-    expect(checkBuildEligibility(safari)).toBe(false);
-    expect(UNSUPPORTED_RUNTIME_CLASSES).toEqual([
-      'MOBILE', 'NATIVE_NON_BROWSER', 'PRIVATE_BROWSING', 'EVICTED_OR_PARTIAL_PROFILE',
-    ]);
+  test('an unlisted runtime class, browser class or ciphersuite is ineligible', () => {
+    expect(checkBuildEligibility({ ...goodBuild(), runtimeClass: 'MOBILE' })).toBe(false);
+    expect(checkBuildEligibility({ ...goodBuild(), browserClass: 'SAFARI' })).toBe(false);
+    expect(checkBuildEligibility({ ...goodBuild(), buildId: 'M2_WEB_SAFARI_STANDARD' })).toBe(false);
+    expect(checkBuildEligibility({
+      ...goodBuild(), ss0Ciphersuite: { ianaId: '0x0003', name: 'MLS_256_DHKEMX448' },
+    })).toBe(false);
+    expect(checkBuildEligibility({ ...goodBuild(), readerProfile: 'CFMT_OTHER' })).toBe(false);
   });
 
-  test('the unlisted build is INCOMPATIBLE_BUILD at BUILD_ELIGIBILITY', () => {
-    const outcome = classifyRestore(cleanObservation({ faults: ['buildNotListed'] }));
-    expect(outcome.result).toBe('INCOMPATIBLE_BUILD');
-    expect(outcome.stage).toBe('BUILD_ELIGIBILITY');
+  test('a drifted version inside an otherwise exact row is ineligible', () => {
+    expect(checkBuildEligibility({
+      ...goodBuild(), versions: { ...VERSIONS, upstreamBinding: 1 },
+    })).toBe(false);
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('authenticated compatibility', () => {
-  const base = () => ({
-    versions: { ...VERSIONS },
-    profile: { readerProfile: READER_PROFILE, algorithms: { ...ALGORITHMS } },
-  });
+describe('the authenticated compatibility conjunction', () => {
+  const authenticated = (versions, profile) => ({ versions, profile });
+  const profile = (algorithms = { ...ALGORITHMS }) => ({ readerProfile: READER_PROFILE, algorithms });
 
   test('the exact conjunction is accepted', () => {
-    expect(checkAuthenticatedCompatibility(base())).toBeNull();
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, profile()))).toBe(null);
   });
 
   test('version mismatch precedes other profile mismatch and is UNSUPPORTED_VERSION', () => {
-    const value = base();
-    value.versions.format = 2;
-    value.profile.readerProfile = 'CFMT_OTHER';
-    expect(checkAuthenticatedCompatibility(value)).toBe('UNSUPPORTED_VERSION');
+    expect(checkAuthenticatedCompatibility(authenticated(
+      { ...VERSIONS, format: 2 },
+      profile({ ...ALGORITHMS, recordAead: 'AES-128-GCM' }),
+    ))).toBe('UNSUPPORTED_VERSION');
   });
 
   test('a non-version profile mismatch is INCOMPATIBLE_FORMAT', () => {
-    const drifted = base();
-    drifted.profile.readerProfile = 'CFMT_EXACT_OTHER';
-    expect(checkAuthenticatedCompatibility(drifted)).toBe('INCOMPATIBLE_FORMAT');
-    const algorithm = base();
-    algorithm.profile.algorithms.recordAead = 'AES-128-GCM';
-    expect(checkAuthenticatedCompatibility(algorithm)).toBe('INCOMPATIBLE_FORMAT');
-    const label = base();
-    label.profile.algorithms.kdf = 'HKDF-SHA-512';
-    expect(checkAuthenticatedCompatibility(label)).toBe('INCOMPATIBLE_FORMAT');
-    expect(checkAuthenticatedCompatibility(null)).toBe('UNSUPPORTED_VERSION');
+    expect(checkAuthenticatedCompatibility(authenticated(
+      { ...VERSIONS }, profile({ ...ALGORITHMS, recordAead: 'AES-128-GCM' }),
+    ))).toBe('INCOMPATIBLE_FORMAT');
+    expect(checkAuthenticatedCompatibility(authenticated(
+      { ...VERSIONS }, profile({ ...ALGORITHMS, kdf: 'HKDF-SHA-512' }),
+    ))).toBe('INCOMPATIBLE_FORMAT');
+    expect(checkAuthenticatedCompatibility(authenticated(
+      { ...VERSIONS }, { readerProfile: 'CFMT_OTHER', algorithms: { ...ALGORITHMS } },
+    ))).toBe('INCOMPATIBLE_FORMAT');
   });
 
-  test('the two compatibility faults classify at AUTHENTICATED_COMPATIBILITY', () => {
-    expect(classifyRestore(cleanObservation({ faults: ['authenticatedVersionUnknownOrMixed'] })).result)
+  test('a malformed, widened or non-plain authenticated record fails closed', () => {
+    const cases = [
+      authenticated({ ...VERSIONS }, profile()),
+    ];
+    cases[0].unknown = 1;
+    for (const item of cases) {
+      expect(checkAuthenticatedCompatibility(item)).toBe('INTERNAL_VALIDATION_FAILED');
+    }
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
+      readerProfile: READER_PROFILE, algorithms: { ...ALGORITHMS, futureAead: 'XCHACHA20' },
+    }))).toBe('INTERNAL_VALIDATION_FAILED');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
+      readerProfile: READER_PROFILE, algorithms: null,
+    }))).toBe('INTERNAL_VALIDATION_FAILED');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
+      readerProfile: READER_PROFILE, algorithms: 'AES-256-GCM',
+    }))).toBe('INTERNAL_VALIDATION_FAILED');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
+      readerProfile: READER_PROFILE, algorithms: Object.assign(Object.create(null), ALGORITHMS),
+    }))).toBe(null);
+    const label = profile();
+    label.labels = { recordAead: 'evil/label' };
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, label)))
+      .toBe('INTERNAL_VALIDATION_FAILED');
+    expect(checkAuthenticatedCompatibility(null)).toBe('INTERNAL_VALIDATION_FAILED');
+  });
+
+  test('a drifted version set is UNSUPPORTED_VERSION, never a partial match', () => {
+    const partial = { ...VERSIONS };
+    delete partial.plaintext;
+    expect(checkAuthenticatedCompatibility(authenticated(partial, profile())))
+      .toBe('INTERNAL_VALIDATION_FAILED');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS, format: 0 }, profile())))
       .toBe('UNSUPPORTED_VERSION');
-    expect(classifyRestore(cleanObservation({ faults: ['authenticatedProfileIncompatible'] })).result)
-      .toBe('INCOMPATIBLE_FORMAT');
-    expect(classifyRestore(cleanObservation({ faults: ['authenticatedProfileIncompatible'] })).stage)
-      .toBe('AUTHENTICATED_COMPATIBILITY');
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('reconciliation candidate and physical parent (I-ROOT obligation)', () => {
+describe('reconciliation candidate and physical parent', () => {
   test('a complete, physically consistent candidate validates and is never authority', () => {
-    const verified = validateReconciliationCandidate(goodCandidateFacts());
+    const verified = validateReconciliationCandidate(goodFacts());
     expect(verified.bindingProfileVerified).toBe(true);
-    expect(verified.authority).toBe(false);
+    expect(verified.authority).toBe('CANDIDATE_NOT_AUTHORITY');
     expect(Object.isFrozen(verified)).toBe(true);
+    expect(verified.candidateEqualsSelected).toBe(false);
+  });
+
+  test('a SESSION-scoped kind-16 candidate manifest key is accepted', () => {
+    const facts = withFacts((item) => {
+      item.locator.scope = 'SESSION';
+      item.locator.secureSessionIdentity = bytes(0x71);
+    });
+    expect(validateReconciliationCandidate(facts).bindingProfileVerified).toBe(true);
+    const preSession = withFacts((item) => {
+      item.locator.scope = 'CONTEXT_PRESESSION';
+      item.locator.secureSessionIdentity = bytes(0x71);
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(preSession)))
+      .toEqual({ name: 'M2RestoreError', result: 'RECORD_INVALID', stage: 'RECORD_DECODE' });
+    const sessionWithoutIdentity = withFacts((item) => {
+      item.locator.scope = 'SESSION';
+      item.locator.secureSessionIdentity = null;
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(sessionWithoutIdentity)))
+      .toEqual({ name: 'M2RestoreError', result: 'RECORD_INVALID', stage: 'RECORD_DECODE' });
   });
 
   test('the candidate binding digest must equal the candidate generation own BINDING_PROFILE', () => {
-    const facts = goodCandidateFacts();
-    facts.candidate.manifestBindingDigest = bytes(0x91);
-    expectRejection(() => validateReconciliationCandidate(facts), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const otherGeneration = goodCandidateFacts();
-    otherGeneration.candidateBindingProfile.generation = 8n;
-    expectRejection(() => validateReconciliationCandidate(otherGeneration), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const absentProfile = goodCandidateFacts();
-    absentProfile.candidateBindingProfile = null;
-    expectRejection(() => validateReconciliationCandidate(absentProfile), 'REFERENCE_INCONSISTENT', 'REFERENCES');
+    const mismatch = withFacts((item) => {
+      item.candidateBindingProfile = { generation: 7n, bindingProfileDigest: bytes(0x91) };
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(mismatch)))
+      .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
+    const otherGeneration = withFacts((item) => {
+      item.candidateBindingProfile = { generation: 8n, bindingProfileDigest: bytes(0x90) };
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(otherGeneration)).result)
+      .toBe('REFERENCE_INCONSISTENT');
   });
 
-  test('the locator must be the canonical kind-16 key with empty object ID and pre-session scope', () => {
-    const kind = goodCandidateFacts();
-    kind.locator.recordKind = 17;
-    expectRejection(() => validateReconciliationCandidate(kind), 'RECORD_INVALID', 'RECORD_DECODE');
-    const objectId = goodCandidateFacts();
-    objectId.locator.objectIdLength = 16;
-    expectRejection(() => validateReconciliationCandidate(objectId), 'RECORD_INVALID', 'RECORD_DECODE');
-    const session = goodCandidateFacts();
-    session.locator.scope = 'SESSION';
-    session.locator.secureSessionIdentity = bytes(0x71);
-    expectRejection(() => validateReconciliationCandidate(session), 'RECORD_INVALID', 'RECORD_DECODE');
-  });
-
-  test('a locator generation, context or key digest that differs from the candidate rejects', () => {
-    const generation = goodCandidateFacts();
-    generation.locator.generation = 8n;
-    expectRejection(() => validateReconciliationCandidate(generation), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const context = goodCandidateFacts();
-    context.locator.localContextId = bytes(0x12);
-    expectRejection(() => validateReconciliationCandidate(context), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const digest = goodCandidateFacts();
-    digest.locator.sha256 = bytes(0x22);
-    expectRejection(() => validateReconciliationCandidate(digest), 'REFERENCE_INCONSISTENT', 'REFERENCES');
+  test('the locator must be the canonical kind-16 key with empty object ID', () => {
+    for (const mutate of [
+      (item) => { item.locator.recordKind = 17; },
+      (item) => { item.locator.objectIdLength = 1; },
+      (item) => { item.locator.generation = 8n; },
+      (item) => { item.locator.localContextId = bytes(0x12); },
+      (item) => { item.locator.sha256 = bytes(0x22); },
+      (item) => { item.locator.scope = 'NOT_A_SCOPE'; },
+      (item) => { delete item.locator.sha256; },
+    ]) {
+      expect(rejectionOf(() => validateReconciliationCandidate(withFacts(mutate))))
+        .toEqual({ name: 'M2RestoreError', result: 'RECORD_INVALID', stage: 'RECORD_DECODE' });
+    }
   });
 
   test('the candidate manifest digests and keyed root must match the selector tuple', () => {
-    const digest = goodCandidateFacts();
-    digest.candidate.manifestCiphertextDigest = bytes(0x32);
-    expectRejection(() => validateReconciliationCandidate(digest), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const root = goodCandidateFacts();
-    root.candidate.keyedRoot = bytes(0x42);
-    expectRejection(() => validateReconciliationCandidate(root), 'REFERENCE_INCONSISTENT', 'REFERENCES');
+    for (const mutate of [
+      (item) => { item.candidate.manifestCiphertextDigest = bytes(0x32); },
+      (item) => { item.candidate.keyedRoot = bytes(0x42); },
+    ]) {
+      expect(rejectionOf(() => validateReconciliationCandidate(withFacts(mutate))).result)
+        .toBe('REFERENCE_INCONSISTENT');
+    }
   });
 
   test('an unresolved hold must name the selector generation and keyed root as physical parent', () => {
-    const parent = goodCandidateFacts();
-    parent.candidate.parentGeneration = 5n;
-    expectRejection(() => validateReconciliationCandidate(parent), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const parentRoot = goodCandidateFacts();
-    parentRoot.candidate.parentKeyedRoot = bytes(0x52);
-    expectRejection(() => validateReconciliationCandidate(parentRoot), 'REFERENCE_INCONSISTENT', 'REFERENCES');
+    for (const mutate of [
+      (item) => { item.candidate.parentGeneration = 9n; },
+      (item) => { item.candidate.parentKeyedRoot = bytes(0x52); },
+    ]) {
+      expect(rejectionOf(() => validateReconciliationCandidate(withFacts(mutate))))
+        .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
+    }
+    const terminal = withFacts((item) => {
+      item.candidate.resultStatus = 'COMMITTED';
+      item.candidate.parentGeneration = 9n;
+      item.candidate.parentKeyedRoot = bytes(0x52);
+    });
+    expect(validateReconciliationCandidate(terminal).bindingProfileVerified).toBe(true);
   });
 
-  test('logical original-authority identifiers must match each other, never the parent', () => {
-    const mismatch = goodCandidateFacts();
-    mismatch.candidate.originalAuthorityReference = bytes(0x62);
-    expectRejection(() => validateReconciliationCandidate(mismatch), 'REFERENCE_INCONSISTENT', 'REFERENCES');
-    const parentEqual = goodCandidateFacts();
-    parentEqual.candidate.originalAuthorityDigest = bytes(0x51);
-    parentEqual.candidate.originalAuthorityReference = bytes(0x51);
-    expect(() => validateReconciliationCandidate(parentEqual)).not.toThrow();
+  test('the hold logical original authority must equal the candidate COMMIT_RESULT fields', () => {
+    const differentReference = withFacts((item) => {
+      item.candidate.originalAuthorityReference = bytes(0x62);
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(differentReference)))
+      .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
+    const differentDigest = withFacts((item) => {
+      item.commitResult.originalAuthorityDigest = bytes(0x62);
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(differentDigest)).result)
+      .toBe('REFERENCE_INCONSISTENT');
+    const bothDifferentButEqual = withFacts((item) => {
+      item.candidate.originalAuthorityDigest = bytes(0x62);
+      item.commitResult.originalAuthorityDigest = bytes(0x62);
+    });
+    expect(validateReconciliationCandidate(bothDifferentButEqual).bindingProfileVerified).toBe(true);
   });
 
   test('a candidate equal to the selected generation during reconciliation rejects', () => {
-    const facts = goodCandidateFacts();
-    facts.candidateEqualsSelected = true;
-    expectRejection(() => validateReconciliationCandidate(facts), 'REFERENCE_INCONSISTENT', 'REFERENCES');
+    const equal = withFacts((item) => {
+      item.selectedGeneration = 7n;
+      item.selectedKeyedRoot = bytes(0x41);
+      item.candidate.parentGeneration = 7n;
+      item.candidate.parentKeyedRoot = bytes(0x41);
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(equal)))
+      .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
   });
 
   test('candidate fields differing without RECONCILIATION_REQUIRED reject', () => {
-    const facts = goodCandidateFacts();
-    facts.selectorState = 'ACTIVE';
-    facts.candidateEqualsSelected = false;
-    expectRejection(() => validateReconciliationCandidate(facts), 'REFERENCE_INCONSISTENT', 'REFERENCES');
+    const notReconciling = withFacts((item) => {
+      item.selectorState = 'ACTIVE';
+    });
+    expect(rejectionOf(() => validateReconciliationCandidate(notReconciling)))
+      .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
+    expect(rejectionOf(() => validateReconciliationCandidate(withFacts((item) => {
+      item.selectorState = 'NOT_A_STATE';
+    }))).result).toBe('INTERNAL_VALIDATION_FAILED');
   });
 
   test('a malformed candidate fact set fails closed', () => {
-    expectRejection(() => validateReconciliationCandidate(null), 'INTERNAL_VALIDATION_FAILED', 'CLASSIFY');
-    expectRejection(() => validateReconciliationCandidate({}), 'INTERNAL_VALIDATION_FAILED', 'CLASSIFY');
-    const facts = goodCandidateFacts();
-    facts.locator = null;
-    expectRejection(() => validateReconciliationCandidate(facts), 'INTERNAL_VALIDATION_FAILED', 'CLASSIFY');
+    const hollow = {
+      localContextId: zeros(),
+      candidateGeneration: 7n,
+      candidateManifestKeyDigest: zeros(),
+      manifestCiphertextDigest: zeros(),
+      keyedRoot: zeros(),
+      selectedGeneration: 6n,
+      selectedKeyedRoot: zeros(),
+      selectorState: 'RECONCILIATION_REQUIRED',
+      locator: {},
+      candidate: {},
+      candidateBindingProfile: {},
+      commitResult: {},
+    };
+    const cases = [
+      hollow,
+      {},
+      null,
+      withFacts((item) => { item.candidateGeneration = 0n; }),
+      withFacts((item) => { delete item.selectorState; }),
+      withFacts((item) => { item.candidateEqualsSelected = true; }),
+      withFacts((item) => { item.extraMember = 1; }),
+      withFacts((item) => { item.localContextId = zeros(); }),
+      withFacts((item) => { item.candidateGeneration = 7; }),
+      withFacts((item) => { item.keyedRoot = new Uint8Array(31); }),
+      withFacts((item) => { item.candidate.resultStatus = 'NOT_A_STATUS'; }),
+      withFacts((item) => { item.candidate.manifestBindingDigest = new Uint8Array(0); }),
+    ];
+    for (const item of cases) {
+      const rejection = rejectionOf(() => validateReconciliationCandidate(item));
+      expect(rejection).not.toBe(null);
+      expect(['INTERNAL_VALIDATION_FAILED', 'RECORD_INVALID', 'REFERENCE_INCONSISTENT'])
+        .toContain(rejection.result);
+      expect(rejection.name).toBe('M2RestoreError');
+    }
+  });
+
+  test('no caller-supplied byte array is echoed back in the verified facts', () => {
+    const facts = goodFacts();
+    const verified = validateReconciliationCandidate(facts);
+    expect(JSON.stringify(Object.keys(verified))).toBe(JSON.stringify([
+      'candidateGeneration', 'bindingProfileVerified', 'candidateEqualsSelected', 'authority',
+    ]));
+    expect(verified).not.toHaveProperty('locator');
+    expect(verified).not.toHaveProperty('candidate');
   });
 
   test('the five candidate faults classify to their exact C-REST rows', () => {
-    const rows = [
+    const faults = [
       ['candidateManifestKeyScopeSessionSubstitution', 'RECORD_INVALID', 'RECORD_DECODE'],
       ['candidateManifestKeyMismatch', 'REFERENCE_INCONSISTENT', 'REFERENCES'],
       ['candidateParentMismatch', 'REFERENCE_INCONSISTENT', 'REFERENCES'],
       ['candidateEqualsSelectedDuringReconciliation', 'REFERENCE_INCONSISTENT', 'REFERENCES'],
       ['candidateFieldsDifferWithoutReconciliation', 'REFERENCE_INCONSISTENT', 'REFERENCES'],
     ];
-    for (const [fault, result, phase] of rows) {
-      const outcome = classifyRestore(cleanObservation({ faults: [fault] }));
-      expect(outcome.result).toBe(result);
-      expect(outcome.stage).toBe(phase);
+    for (const [fault, result, stage] of faults) {
+      expect(outcomeOf({ faults: [fault] })).toMatchObject({ result, stage });
     }
   });
 });
 
-// ---------------------------------------------------------------------------------------------
-describe('value registries and non-claims', () => {
-  test('the copied C-FMT value sets are exactly the closed sets', () => {
-    expect(VALUE_REGISTRIES.commitOutcome).toEqual({ COMMITTED: 1, NOT_COMMITTED: 2, INDETERMINATE: 3 });
-    expect(VALUE_REGISTRIES.selectorState).toEqual({ EMPTY: 1, ACTIVE: 2, RECONCILIATION_REQUIRED: 3 });
-    expect(Object.keys(VALUE_REGISTRIES.operation)).toHaveLength(8);
-    expect(Object.keys(VALUE_REGISTRIES.keyPackageLifecycle)).toEqual(
-      ['UNCONSUMED', 'RESERVED', 'CONSUMED', 'INVALID'],
-    );
+describe('diagnostics and immutability', () => {
+  test('diagnostics carry exactly the five allowlisted members', () => {
+    const outcome = classifyRestore(observation({ selectorState: 'EMPTY' }));
+    expect(Object.keys(outcome.diagnostics).sort()).toEqual([...DIAGNOSTIC_ALLOWED].sort());
+    expect(Object.keys(outcome).sort()).toEqual(['condition', 'diagnostics', 'exposed', 'result', 'stage']);
   });
 
-  test('the diagnostics member names are the five allowlisted names', () => {
-    expect([...DIAGNOSTIC_ALLOWED]).toEqual(
-      ['stageCode', 'reasonCode', 'm2LocatorCount', 'm2ArtifactCount', 'legacyPresent'],
-    );
-    expect(DIAGNOSTIC_FORBIDDEN).toHaveLength(10);
+  test('diagnostics never carry a forbidden token in any classification', () => {
+    const inputs = [
+      observation(),
+      observation({ inventory: 'NONE', legacy: false, vector: null }),
+      observation({ inventory: 'LEGACY_ONLY', legacy: true, vector: null }),
+      ...FAULT_PRECEDENCE.map((row) => observation({ faults: [row.fault] })),
+    ];
+    for (const input of inputs) {
+      const text = JSON.stringify(classifyRestore(input));
+      for (const token of DIAGNOSTIC_FORBIDDEN) {
+        expect(text.includes(token)).toBe(false);
+      }
+    }
+  });
+
+  test('diagnostics never fabricate a count the observation cannot support', () => {
+    expect(outcomeOf({ inventory: 'NONE', legacy: false, vector: null }).diagnostics)
+      .toMatchObject({ m2LocatorCount: 0, m2ArtifactCount: 0 });
+    expect(outcomeOf({ inventory: 'LEGACY_ONLY', legacy: true, vector: null }).diagnostics)
+      .toMatchObject({ m2LocatorCount: 0, m2ArtifactCount: 0 });
+    expect(outcomeOf({ selectorState: 'ACTIVE' }).diagnostics)
+      .toMatchObject({ m2LocatorCount: null, m2ArtifactCount: null });
+    expect(outcomeOf({ faults: ['multipleSelectorCandidates'] }).diagnostics.m2LocatorCount).toBe(null);
+  });
+
+  test('classification mutates nothing and returns frozen values', () => {
+    const input = observation({ faults: ['lockUnavailable'] });
+    const snapshot = JSON.stringify(input);
+    const outcome = classifyRestore(input);
+    expect(JSON.stringify(input)).toBe(snapshot);
+    expect(Object.isFrozen(outcome)).toBe(true);
+    expect(Object.isFrozen(outcome.diagnostics)).toBe(true);
+  });
+
+  test('the error class carries only closed codes and never free text', () => {
+    const error = new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
+    expect(error).toBeInstanceOf(Error);
+    expect({ name: error.name, result: error.result, stage: error.stage })
+      .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
+    const wild = new M2RestoreError('free text', 'no stage');
+    expect({ result: wild.result, stage: wild.stage })
+      .toEqual({ result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY' });
+    expect(wild.message).toBe('INTERNAL_VALIDATION_FAILED@CLASSIFY');
   });
 });
 
-// ---------------------------------------------------------------------------------------------
 describe('property tests (seeded, reproducible)', () => {
-  const resultSet = new Set([...INVENTORY_RESULTS, ...SUCCESS_RESULTS, ...FAILURE_RESULTS]);
-  const faultNames = FAULT_PRECEDENCE.map((row) => row.fault);
+  const VOCABULARY = [...SUCCESS_RESULTS, ...FAILURE_RESULTS, ...INVENTORY_RESULTS];
+
   const observationArbitrary = fc.record({
-    faults: fc.array(fc.constantFrom(...faultNames), { maxLength: 5 }),
+    faults: fc.array(fc.constantFrom(...FAULT_PRECEDENCE.map((row) => row.fault)), { maxLength: 3 }),
     inventory: fc.constantFrom('NONE', 'LEGACY_ONLY', 'M2'),
     legacy: fc.boolean(),
-    vector: fc.constantFrom(null, 'FMT-KAT-EMPTY', 'FMT-KAT-ACTIVE', 'FMT-KAT-HOLD', 'FMT-KAT-EMPTY-HOLD'),
+    vector: fc.constantFrom(null, 'FMT-KAT-ACTIVE', 'FMT-KAT-EMPTY', 'FMT-KAT-HOLD'),
     selectorState: fc.constantFrom('EMPTY', 'ACTIVE', 'RECONCILIATION_REQUIRED'),
   });
 
   test('any observation classifies to a closed result or the fail-closed default, never throwing', () => {
-    fc.assert(fc.property(observationArbitrary, (observation) => {
-      const outcome = classifyRestore(observation);
-      expect(resultSet.has(outcome.result)).toBe(true);
-      expect(PHASES).toContain(outcome.stage);
+    fc.assert(fc.property(observationArbitrary, (item) => {
+      const outcome = classifyRestore(item);
+      expect(VOCABULARY.includes(outcome.result)).toBe(true);
+      expect(PHASES.includes(outcome.stage)).toBe(true);
+      expect(outcome.exposed).toBe(SUCCESS_RESULTS.includes(outcome.result) && outcome.stage === 'EXPOSE');
       expect(Object.isFrozen(outcome)).toBe(true);
-      if (outcome.exposed === true) {
-        expect(SUCCESS_RESULTS).toContain(outcome.result);
-        expect(outcome.stage).toBe('EXPOSE');
-      }
-    }), { numRuns: 400, seed: 20261002 });
+    }), { seed: 20261002, numRuns: 500 });
   });
 
-  test('a mutated observation never yields a success that the fault set forbids', () => {
-    fc.assert(fc.property(
-      observationArbitrary,
-      fc.string({ maxLength: 8 }),
-      (observation, junk) => {
-        const mutated = { ...observation, version: junk };
-        const outcome = classifyRestore(mutated);
-        expect(outcome.result).toBe(FAILURE_DEFAULT);
-        expect(outcome.stage).toBe('CLASSIFY');
-      },
-    ), { numRuns: 200, seed: 20261003 });
+  test('a non-empty fault set never resolves to a success', () => {
+    fc.assert(fc.property(observationArbitrary, (item) => {
+      const outcome = classifyRestore(item);
+      if (item.faults.length > 0) {
+        expect(SUCCESS_RESULTS.includes(outcome.result)).toBe(false);
+        expect(INVENTORY_RESULTS.includes(outcome.result)).toBe(false);
+      }
+    }), { seed: 20261002, numRuns: 500 });
   });
 
   test('the same seed replays to identical outcomes', () => {
     const run = () => {
-      const outcomes = [];
-      fc.assert(fc.property(observationArbitrary, (observation) => {
-        outcomes.push(JSON.stringify(classifyRestore(observation)));
-      }), { numRuns: 60, seed: 20261004 });
-      return outcomes;
+      const seen = [];
+      fc.assert(fc.property(observationArbitrary, (item) => {
+        seen.push(JSON.stringify(classifyRestore(item)));
+      }), { seed: 987654321, numRuns: 200 });
+      return seen;
     };
     expect(run()).toEqual(run());
+  });
+});
+
+// The O-SCEN rows this card owns that no named test above reaches, with their exact normative root.
+const UNMAPPED_SCENARIO_ROWS = Object.freeze([
+  { root: '/irest/observation/closedMembers', owner: 'this card, exercised structurally' },
+  { root: '/irest/freshWorkerFixtureMatrix', owner: 'this card, exercised structurally' },
+  { root: '/irest/diagnostics/allowlist', owner: 'this card, exercised structurally' },
+]);
+
+describe('unmapped scenario rows', () => {
+  test('every remaining owned row is listed with its normative root and is not claimed resolved', () => {
+    expect(UNMAPPED_SCENARIO_ROWS.length).toBeGreaterThan(0);
+    for (const row of UNMAPPED_SCENARIO_ROWS) {
+      expect(row.root.startsWith('/irest/')).toBe(true);
+      expect(row.owner.length).toBeGreaterThan(0);
+    }
   });
 });

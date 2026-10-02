@@ -2,104 +2,102 @@
 // Internal-only: no barrel export.
 //
 // This module is the executable form of the ratified C-REST contract
-// (`docs/architecture/m2/restore-compatibility.md`, SHA-256
-// 853dbc41778d86ff42432d5cc0bc75d8c51ac32606daae9240271c1ce78766b6). It carries the closed
-// restore vocabulary - fourteen ordered phases, two inventory outcomes, three authenticated
-// successes, thirteen failures, one condition, twenty-six fault-precedence rows and twenty
-// negative classes - and it classifies one restore observation fail-closed.
+// (`docs/architecture/m2/restore-compatibility.md` at commit 99c1565d6a8bd47494e5fb20365e9f948eb51c1e,
+// SHA-256 853dbc41778d86ff42432d5cc0bc75d8c51ac32606daae9240271c1ce78766b6): the ordered
+// fourteen-phase restore decision, the closed result vocabulary, the twenty-six fault-precedence rows,
+// the seventy-two fixtures, the eight-version allowlist, the two build-matrix rows and the §7
+// reconciliation-candidate rules. It performs no I/O, storage, worker, browser, crypto, lock, network,
+// migration, retention, recovery or UI behaviour, and it exposes no restore implementation.
 //
-// The observation is an injected record because C-REST leaves the physical storage design to a
-// later card (B-CHR). This module therefore executes no storage, no crypto, no browser and no
-// worker call: it decides, from the facts it is handed, exactly the closed outcome C-REST
-// mandates, and it refuses to accept a fact, a version, a pin, a build row or an observation
-// member that is not in a closed allowlist.
+// Two properties are load-bearing and are enforced structurally rather than by convention:
 //
-// Fail-closed rule of the module: anything unknown, missing, duplicate, reordered, extra,
-// overlapping or out of type resolves to `INTERNAL_VALIDATION_FAILED` at `CLASSIFY` - never to a
-// success, never to an empty result, never to legacy-only and never to a repair path.
+// 1. **Closure.** Every accepted input is checked against an exact member set with `Reflect.ownKeys`,
+//    so an extra enumerable member, an extra non-enumerable member, a symbol-keyed member and an
+//    accessor member all reject. Every accepted value is drawn from a closed set, and every rejection
+//    is a C-REST failure code at a C-REST phase.
+// 2. **Totality.** `classifyRestore` never throws and never returns a value outside the closed sets: an
+//    unexpected input resolves to `INTERNAL_VALIDATION_FAILED` at `CLASSIFY`, the C-REST failure
+//    default. The exported registries are deep-frozen so the decision table cannot be edited through
+//    the module's own surface.
 //
-// `M2_RESTORE.VERSIONS` is a closed allowlist of equality, never a range: equality of the eight
-// C-FMT versions and equality of a complete `buildMatrix` row. There is no semver rule, no
-// minimum, no downgrade and no partial recognition.
-//
-// The fresh-worker fixture matrix of §12 is executable here as
-// `runFreshWorkerFixtureMatrix()`: the seven positive fixtures and the sixty-five negative
-// fixtures of C-REST are classified through `classifyRestore` and return their exact typed
-// outcomes (`result`) at their exact `firstPhase`.
+// The observation is the card's own closed record of fresh-worker evidence: `faults`, `inventory`,
+// `legacy`, `vector` and `selectorState`. It carries no caller-supplied result, no caller-supplied
+// count and no caller-supplied verdict, so nothing here echoes authority back to the caller.
 
-/** The only exported error class. `result` is a closed failure; `stage` a closed phase. */
-export class M2RestoreError extends Error {
-  constructor(result, stage) {
-    if (!FAILURE_RESULTS.includes(result) || !PHASES.includes(stage)) {
-      throw new Error('M2RestoreError requires a closed result and a closed stage');
-    }
-    super('M2_RESTORE_REJECTED');
-    this.name = 'M2RestoreError';
-    this.result = result;
-    this.stage = stage;
-  }
-}
+// The observation is the card's own closed record of fresh-worker evidence.
 
-/** The fourteen C-REST phases, in exactly the normative `phaseOrder`. */
-export const PHASES = Object.freeze([
-  'LOCK',
-  'BUILD_ELIGIBILITY',
-  'INVENTORY',
-  'WRAPPER_AUTH',
-  'KEY_DERIVATION',
-  'SELECTOR_HEADER',
-  'SELECTOR_AUTH',
-  'AUTHENTICATED_COMPATIBILITY',
-  'MANIFEST_ROOT',
-  'RECORD_SET',
-  'RECORD_DECODE',
-  'REFERENCES',
-  'CLASSIFY',
-  'EXPOSE',
+// ------------------------------------------------------------------------------------------------
+// Closed vocabulary, exactly the ratified C-REST record.
+// ------------------------------------------------------------------------------------------------
+
+//
+// §4/§9/§10 closed sets. The phases are the `phaseOrder`; the inventory set is the card's fresh-worker
+// store classification (`NONE` and `LEGACY_ONLY` are the two C-REST inventory results, and `M2` names a
+// store whose fixed locator and generation artifacts are present); the successes, failures and the
+// single condition are `resultSets`; the selector states are `successBySelectorState`; the failure
+// default is `failureDefault`.
+//
+
+/**
+ * The fourteen C-REST phases, in `phaseOrder`.
+ */
+export const PHASES = deepFreeze([
+  'LOCK', 'BUILD_ELIGIBILITY', 'INVENTORY', 'WRAPPER_AUTH', 'KEY_DERIVATION', 'SELECTOR_HEADER',
+  'SELECTOR_AUTH', 'AUTHENTICATED_COMPATIBILITY', 'MANIFEST_ROOT', 'RECORD_SET', 'RECORD_DECODE',
+  'REFERENCES', 'CLASSIFY', 'EXPOSE',
 ]);
 
-/** §10 `resultSets.inventory`: the two unauthenticated inventory outcomes. */
-export const INVENTORY_RESULTS = Object.freeze(['NO_M2_STATE', 'LEGACY_ONLY']);
+/**
+ * The observed store classification. `NONE` and `LEGACY_ONLY` are C-REST inventory results; `M2` names
+ * a store whose fixed locator and generation artifacts are present.
+ */
+const OBSERVED_INVENTORY = deepFreeze(['NONE', 'LEGACY_ONLY', 'M2']);
 
-/** §10 `resultSets.success`: the three authenticated successes. */
-export const SUCCESS_RESULTS = Object.freeze([
-  'RESTORED_EMPTY',
-  'RESTORED_ACTIVE',
-  'RESTORED_RECONCILIATION_REQUIRED',
+/**
+ * The two C-REST inventory results (results, not store classifications).
+ */
+export const INVENTORY_RESULTS = deepFreeze(['NO_M2_STATE', 'LEGACY_ONLY']);
+
+/**
+ * The three C-REST successes.
+ */
+export const SUCCESS_RESULTS = deepFreeze([
+  'RESTORED_EMPTY', 'RESTORED_ACTIVE', 'RESTORED_RECONCILIATION_REQUIRED',
 ]);
 
-/** §10 `resultSets.failure`: exactly thirteen closed failures. */
-export const FAILURE_RESULTS = Object.freeze([
-  'LOCKED_ELSEWHERE',
-  'WRAPPER_AUTH_FAILED',
-  'INCOMPATIBLE_BUILD',
-  'INCOMPATIBLE_FORMAT',
-  'UNSUPPORTED_VERSION',
-  'SELECTOR_INVALID',
-  'AUTHENTICATION_FAILED',
-  'MANIFEST_INVALID',
-  'RECORD_SET_INCOMPLETE',
-  'RECORD_INVALID',
-  'REFERENCE_INCONSISTENT',
-  'PARTIAL_GENERATION',
+/**
+ * The thirteen C-REST failures.
+ */
+export const FAILURE_RESULTS = deepFreeze([
+  'LOCKED_ELSEWHERE', 'WRAPPER_AUTH_FAILED', 'INCOMPATIBLE_BUILD', 'INCOMPATIBLE_FORMAT',
+  'UNSUPPORTED_VERSION', 'SELECTOR_INVALID', 'AUTHENTICATION_FAILED', 'MANIFEST_INVALID',
+  'RECORD_SET_INCOMPLETE', 'RECORD_INVALID', 'REFERENCE_INCONSISTENT', 'PARTIAL_GENERATION',
   'INTERNAL_VALIDATION_FAILED',
 ]);
 
-/** §10 `resultSets.condition`: a condition attached to the applicable M2 result. */
-export const CONDITIONS = Object.freeze(['LEGACY_PRESENT']);
+/**
+ * The single C-REST condition. A condition is never itself a result.
+ */
+export const CONDITIONS = deepFreeze(['LEGACY_PRESENT']);
 
-/** `failureDefault`: every unresolved case resolves here. */
+/**
+ * The C-REST failure default.
+ */
 export const FAILURE_DEFAULT = 'INTERNAL_VALIDATION_FAILED';
 
-/** `successBySelectorState`: the only mapping from authenticated selector state to success. */
-export const SUCCESS_BY_SELECTOR_STATE = Object.freeze({
+/**
+ * The authenticated selector state maps to exactly one success.
+ */
+export const SUCCESS_BY_SELECTOR_STATE = deepFreeze({
   EMPTY: 'RESTORED_EMPTY',
   ACTIVE: 'RESTORED_ACTIVE',
   RECONCILIATION_REQUIRED: 'RESTORED_RECONCILIATION_REQUIRED',
 });
 
-/** `faultPrecedence`: phase order first, then the unique row for a fault. */
-export const FAULT_PRECEDENCE = Object.freeze([
+/**
+ * The twenty-six `faultPrecedence` rows, in the record's order (phase order first).
+ */
+export const FAULT_PRECEDENCE = deepFreeze([
   { fault: 'lockUnavailable', phase: 'LOCK', result: 'LOCKED_ELSEWHERE' },
   { fault: 'buildNotListed', phase: 'BUILD_ELIGIBILITY', result: 'INCOMPATIBLE_BUILD' },
   { fault: 'inventoryAmbiguous', phase: 'INVENTORY', result: 'INTERNAL_VALIDATION_FAILED' },
@@ -111,25 +109,58 @@ export const FAULT_PRECEDENCE = Object.freeze([
   { fault: 'selectorHeaderStructureIncompatible', phase: 'SELECTOR_HEADER', result: 'INCOMPATIBLE_FORMAT' },
   { fault: 'selectorMalformedOrMultiple', phase: 'SELECTOR_AUTH', result: 'SELECTOR_INVALID' },
   { fault: 'selectorAuthenticationFailed', phase: 'SELECTOR_AUTH', result: 'AUTHENTICATION_FAILED' },
-  { fault: 'authenticatedVersionUnknownOrMixed', phase: 'AUTHENTICATED_COMPATIBILITY', result: 'UNSUPPORTED_VERSION' },
-  { fault: 'authenticatedProfileIncompatible', phase: 'AUTHENTICATED_COMPATIBILITY', result: 'INCOMPATIBLE_FORMAT' },
+  {
+    fault: 'authenticatedVersionUnknownOrMixed',
+    phase: 'AUTHENTICATED_COMPATIBILITY',
+    result: 'UNSUPPORTED_VERSION',
+  },
+  {
+    fault: 'authenticatedProfileIncompatible',
+    phase: 'AUTHENTICATED_COMPATIBILITY',
+    result: 'INCOMPATIBLE_FORMAT',
+  },
   { fault: 'manifestOrRootMismatch', phase: 'MANIFEST_ROOT', result: 'MANIFEST_INVALID' },
-  { fault: 'recordMissingExtraDuplicateReordered', phase: 'RECORD_SET', result: 'RECORD_SET_INCOMPLETE' },
+  {
+    fault: 'recordMissingExtraDuplicateReordered',
+    phase: 'RECORD_SET',
+    result: 'RECORD_SET_INCOMPLETE',
+  },
   { fault: 'partialSelectedOrCandidateGeneration', phase: 'RECORD_SET', result: 'PARTIAL_GENERATION' },
   { fault: 'recordAuthenticationFailed', phase: 'RECORD_DECODE', result: 'AUTHENTICATION_FAILED' },
-  { fault: 'recordCanonicalKeyKindVersionGenerationInvalid', phase: 'RECORD_DECODE', result: 'RECORD_INVALID' },
-  { fault: 'candidateManifestKeyScopeSessionSubstitution', phase: 'RECORD_DECODE', result: 'RECORD_INVALID' },
+  {
+    fault: 'recordCanonicalKeyKindVersionGenerationInvalid',
+    phase: 'RECORD_DECODE',
+    result: 'RECORD_INVALID',
+  },
+  {
+    fault: 'candidateManifestKeyScopeSessionSubstitution',
+    phase: 'RECORD_DECODE',
+    result: 'RECORD_INVALID',
+  },
   { fault: 'referenceOrLifecycleInconsistent', phase: 'REFERENCES', result: 'REFERENCE_INCONSISTENT' },
   { fault: 'candidateManifestKeyMismatch', phase: 'REFERENCES', result: 'REFERENCE_INCONSISTENT' },
   { fault: 'candidateParentMismatch', phase: 'REFERENCES', result: 'REFERENCE_INCONSISTENT' },
-  { fault: 'candidateEqualsSelectedDuringReconciliation', phase: 'REFERENCES', result: 'REFERENCE_INCONSISTENT' },
-  { fault: 'candidateFieldsDifferWithoutReconciliation', phase: 'REFERENCES', result: 'REFERENCE_INCONSISTENT' },
+  {
+    fault: 'candidateEqualsSelectedDuringReconciliation',
+    phase: 'REFERENCES',
+    result: 'REFERENCE_INCONSISTENT',
+  },
+  {
+    fault: 'candidateFieldsDifferWithoutReconciliation',
+    phase: 'REFERENCES',
+    result: 'REFERENCE_INCONSISTENT',
+  },
   { fault: 'unexpectedValidatorCondition', phase: 'CLASSIFY', result: 'INTERNAL_VALIDATION_FAILED' },
   { fault: 'unexpectedExposeCondition', phase: 'EXPOSE', result: 'INTERNAL_VALIDATION_FAILED' },
 ]);
 
-/** `negativeClassMap`: every C-REST negative class and its unique fault/phase/result. */
-export const NEGATIVE_CLASSES = Object.freeze([
+const FAULT_RANK = new Map(FAULT_PRECEDENCE.map((row, index) => [row.fault, index]));
+const FAULT_ROW = new Map(FAULT_PRECEDENCE.map((row) => [row.fault, row]));
+
+/**
+ * The twenty `negativeClassMap` rows, in the record's order.
+ */
+export const NEGATIVE_CLASSES = deepFreeze([
   { negativeClass: 'UNKNOWN_MISSING_DUPLICATE_REORDERED_JSON_FIELD', fault: 'unexpectedValidatorCondition', phase: 'CLASSIFY', result: 'INTERNAL_VALIDATION_FAILED' },
   { negativeClass: 'UNKNOWN_MISSING_DUPLICATE_REORDERED_PLAINTEXT_FIELD', fault: 'recordCanonicalKeyKindVersionGenerationInvalid', phase: 'RECORD_DECODE', result: 'RECORD_INVALID' },
   { negativeClass: 'UNKNOWN_KIND_VERSION_ALGORITHM_LABEL', fault: 'authenticatedVersionUnknownOrMixed', phase: 'AUTHENTICATED_COMPATIBILITY', result: 'UNSUPPORTED_VERSION' },
@@ -152,158 +183,815 @@ export const NEGATIVE_CLASSES = Object.freeze([
   { negativeClass: 'CANDIDATE_MANIFEST_KEY_SCOPE_SESSION_SUBSTITUTION', fault: 'candidateManifestKeyScopeSessionSubstitution', phase: 'RECORD_DECODE', result: 'RECORD_INVALID' },
 ]);
 
-/** `diagnostics`: the five allowlisted diagnostic members and the ten forbidden ones. */
-export const DIAGNOSTIC_ALLOWED = Object.freeze([
+/**
+ * §9 `diagnostics.allowed`.
+ */
+export const DIAGNOSTIC_ALLOWED = deepFreeze([
   'stageCode', 'reasonCode', 'm2LocatorCount', 'm2ArtifactCount', 'legacyPresent',
 ]);
-export const DIAGNOSTIC_FORBIDDEN = Object.freeze([
-  'raw keys', 'nonces', 'plaintext', 'binding bytes', 'context identifiers',
-  'session identifiers', 'package references', 'digests', 'record keys', 'escrow content',
+
+/**
+ * §9 `diagnostics.forbidden`.
+ */
+export const DIAGNOSTIC_FORBIDDEN = deepFreeze([
+  'raw keys', 'nonces', 'plaintext', 'binding bytes', 'context identifiers', 'session identifiers',
+  'package references', 'digests', 'record keys', 'escrow content',
 ]);
 
-/** §3 `buildMatrix` + `unsupportedRuntimeClasses`: the closed build eligibility allowlist. */
-export const BUILD_MATRIX = Object.freeze([
-  Object.freeze({
+/**
+ * §3 `buildMatrix`: both rows are complete; no flag or partial row widens the matrix.
+ */
+export const BUILD_MATRIX = deepFreeze([
+  {
     readerProfile: 'CFMT_EXACT_B57DF3A8',
     cFmtDocumentSha256: 'b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812',
-    versions: Object.freeze({
-      format: 1, envelope: 1, recordKey: 1, plaintext: 1,
-      manifest: 1, keySchedule: 1, upstreamBinding: 0, upstreamMutationTable: 1,
-    }),
+    versions: {
+      format: 1, envelope: 1, recordKey: 1, plaintext: 1, manifest: 1, keySchedule: 1,
+      upstreamBinding: 0, upstreamMutationTable: 1,
+    },
     openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
     wasmArtifactPath: 'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm',
     wasmArtifactSha256: 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
-    ss0Ciphersuite: Object.freeze({ ianaId: '0x0001', name: 'MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519' }),
+    ss0Ciphersuite: { ianaId: '0x0001', name: 'MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519' },
     ss0GateADecisionsSha256: '235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07',
     buildId: 'M2_WEB_CHROMIUM_STANDARD',
     runtimeClass: 'BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED',
     browserClass: 'CHROMIUM',
-  }),
-  Object.freeze({
+  },
+  {
     readerProfile: 'CFMT_EXACT_B57DF3A8',
     cFmtDocumentSha256: 'b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812',
-    versions: Object.freeze({
-      format: 1, envelope: 1, recordKey: 1, plaintext: 1,
-      manifest: 1, keySchedule: 1, upstreamBinding: 0, upstreamMutationTable: 1,
-    }),
+    versions: {
+      format: 1, envelope: 1, recordKey: 1, plaintext: 1, manifest: 1, keySchedule: 1,
+      upstreamBinding: 0, upstreamMutationTable: 1,
+    },
     openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
     wasmArtifactPath: 'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm',
     wasmArtifactSha256: 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
-    ss0Ciphersuite: Object.freeze({ ianaId: '0x0001', name: 'MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519' }),
+    ss0Ciphersuite: { ianaId: '0x0001', name: 'MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519' },
     ss0GateADecisionsSha256: '235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07',
     buildId: 'M2_WEB_FIREFOX_STANDARD',
     runtimeClass: 'BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED',
     browserClass: 'FIREFOX',
-  }),
+  },
 ]);
 
-export const UNSUPPORTED_RUNTIME_CLASSES = Object.freeze([
+/**
+ * §2 `unsupportedRuntimeClasses`.
+ */
+export const UNSUPPORTED_RUNTIME_CLASSES = deepFreeze([
   'MOBILE', 'NATIVE_NON_BROWSER', 'PRIVATE_BROWSING', 'EVICTED_OR_PARTIAL_PROFILE',
 ]);
 
-/** §2 `compatibilityRegistry.versions`: the closed equality allowlist - never a range. */
-export const VERSIONS = Object.freeze({
-  format: 1,
-  envelope: 1,
-  recordKey: 1,
-  plaintext: 1,
-  manifest: 1,
-  keySchedule: 1,
-  upstreamBinding: 0,
-  upstreamMutationTable: 1,
+/**
+ * §2 `versions`, the closed eight-member allowlist.
+ */
+export const VERSIONS = deepFreeze({
+  format: 1, envelope: 1, recordKey: 1, plaintext: 1, manifest: 1, keySchedule: 1,
+  upstreamBinding: 0, upstreamMutationTable: 1,
 });
 
-export const ALGORITHMS = Object.freeze({
-  recordAead: 'AES-256-GCM',
-  nonceBytes: 12,
-  tagBytes: 16,
-  hash: 'SHA-256',
-  mac: 'HMAC-SHA-256',
-  kdf: 'HKDF-SHA-256',
-  integerEndian: 'big',
+/**
+ * §2 `algorithms`.
+ */
+export const ALGORITHMS = deepFreeze({
+  recordAead: 'AES-256-GCM', nonceBytes: 12, tagBytes: 16, hash: 'SHA-256', mac: 'HMAC-SHA-256',
+  kdf: 'HKDF-SHA-256', integerEndian: 'big',
 });
 
-/** `compatibilityRegistry.valueRegistries`: the closed value sets of the readable profile. */
-export const VALUE_REGISTRIES = Object.freeze({
-  slotState: Object.freeze({ EMPTY: 1, ISSUANCE_HELD: 2, BOUND: 3, RECONCILIATION_REQUIRED: 4 }),
-  keyPackageLifecycle: Object.freeze({ UNCONSUMED: 1, RESERVED: 2, CONSUMED: 3, INVALID: 4 }),
-  commitOutcome: Object.freeze({ COMMITTED: 1, NOT_COMMITTED: 2, INDETERMINATE: 3 }),
-  apiState: Object.freeze({ EMPTY: 1, ACTIVE: 2, RECONCILIATION_REQUIRED: 3 }),
-  selectorState: Object.freeze({ EMPTY: 1, ACTIVE: 2, RECONCILIATION_REQUIRED: 3 }),
-  operation: Object.freeze({
-    CREATE: 1, RESTORE: 2, JOIN_WELCOME: 3, PROTECT_APPLICATION: 4, OPEN_APPLICATION: 5,
-    SELF_UPDATE: 6, APPLY_PEER_UPDATE: 7, RECONCILE_INDETERMINATE: 8,
-  }),
-  outputKind: Object.freeze({
-    NONE: 1, EMBEDDED_TREE_WELCOME: 2, PROTECTED_APPLICATION_BYTES: 3, APPLICATION_BYTES: 4,
-    PROTECTED_COMMIT_BYTES: 5, SELECTED_CANDIDATE_REF: 6,
-  }),
-  bool: Object.freeze({ false: 0, true: 1 }),
-});
+const VERSION_KEYS = Object.freeze(Object.keys(VERSIONS));
+const ALGORITHM_KEYS = Object.freeze(Object.keys(ALGORITHMS));
+const BUILD_ROW_KEYS = Object.freeze(Object.keys(BUILD_MATRIX[0]));
 
+/**
+ * §3 `readerProfile`.
+ */
 export const READER_PROFILE = 'CFMT_EXACT_B57DF3A8';
+
+/**
+ * §9 `corruptionAction`.
+ */
 export const CORRUPTION_ACTION = 'PRESERVE_AND_STOP_LOGICAL_READ_DISABLE_ONLY';
 
-/** §9 `automaticActions`: every automatic action is forbidden, and the module honours it. */
-export const AUTOMATIC_ACTIONS = Object.freeze({
-  rewrite: false,
-  normalize: false,
-  regenerate: false,
-  fallback: false,
-  repair: false,
-  clearHold: false,
-  consumeKeyPackage: false,
-  discardEscrow: false,
-  automaticReset: false,
+/**
+ * §9 `automaticActions`: every one is `false`.
+ */
+export const AUTOMATIC_ACTIONS = deepFreeze({
+  rewrite: false, normalize: false, regenerate: false, fallback: false, repair: false, clearHold: false,
+  consumeKeyPackage: false, discardEscrow: false, automaticReset: false,
 });
 
-/** §9 `exposure`: nothing is exposed before EXPOSE, and never these four. */
-export const EXPOSURE = Object.freeze({
-  beforeEXPOSE: Object.freeze([]),
-  atEXPOSE: Object.freeze(['SELECTED_AUTHORITY']),
-  never: Object.freeze([
+/**
+ * §9 `exposure`.
+ */
+export const EXPOSURE = deepFreeze({
+  beforeEXPOSE: [],
+  atEXPOSE: ['SELECTED_AUTHORITY'],
+  never: [
     'UNSELECTED_CANDIDATE_AS_AUTHORITY', 'LEGACY_AS_AUTHORITY', 'PARTIAL_PLAINTEXT',
     'ESCROW_OUTPUT_FROM_RESTORE',
-  ]),
+  ],
 });
 
-/** §11 `freshness`: authentication proves consistency, not freshness. */
-export const FRESHNESS = Object.freeze({
+/**
+ * §11 `freshness`.
+ */
+export const FRESHNESS = deepFreeze({
   authenticatedConsistency: true,
   freshnessClaim: false,
   coherentWholeProfileRollbackDetection: false,
+  statement: 'A coherent replay of a complete same-key browser profile, including wrapper, selector, '
+    + 'and anchors, can restore successfully and may be undetectable.',
 });
 
-/** Closed observation vocabulary. Anything outside these sets is unknown and rejects. */
-const LOCK_VALUES = Object.freeze(['HELD', 'UNAVAILABLE']);
-const INVENTORY_VALUES = Object.freeze(['NONE', 'LEGACY_ONLY', 'M2']);
-const SELECTOR_STATE_VALUES = Object.freeze(['EMPTY', 'ACTIVE', 'RECONCILIATION_REQUIRED']);
-const OBSERVATION_KEYS = Object.freeze(['faults', 'inventory', 'legacy', 'vector', 'selectorState']);
+/**
+ * The vector values carried by the ratified fixtures. The observation's `vector` member is drawn from
+ * this closed set, or is `null` for a store with no M2 generation (`NONE` and `LEGACY_ONLY`).
+ */
+const VECTOR_ALLOWLIST = deepFreeze([
+  'FMT-KAT-EMPTY', 'FMT-KAT-ACTIVE', 'FMT-KAT-HOLD', 'FMT-KAT-EMPTY-HOLD',
+]);
 
-const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
-const isPlainObject = (value) => value !== null && typeof value === 'object'
-  && Object.getPrototypeOf(value) === Object.prototype;
-const isString = (value) => typeof value === 'string';
-const isBoolean = (value) => typeof value === 'boolean';
+const OBSERVATION_KEYS = deepFreeze(['faults', 'inventory', 'legacy', 'vector', 'selectorState']);
+const SELECTOR_STATES = Object.freeze(Object.keys(SUCCESS_BY_SELECTOR_STATE));
+const RECORD_SCOPES = deepFreeze(['CONTEXT_PRESESSION', 'SESSION']);
+const RESULT_STATUSES = deepFreeze(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
 
-const freezeDeep = (value) => {
+const C_REST_FIXTURES = deepFreeze(Object.assign(Object.create(null), {
+  positive: [
+    { "id": "POS-NO-M2", "inventory": "NONE", "vector": null, "legacy": false, "result": "NO_M2_STATE", "firstPhase": "INVENTORY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [] },
+    { "id": "POS-LEGACY-ONLY", "inventory": "LEGACY_ONLY", "vector": null, "legacy": true, "result": "LEGACY_ONLY", "firstPhase": "INVENTORY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "legacy", "kind": "LEGACY_ENVELOPE" }] },
+    { "id": "POS-EMPTY", "inventory": "M2", "vector": "FMT-KAT-EMPTY", "legacy": false, "result": "RESTORED_EMPTY", "firstPhase": "EXPOSE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "POS-ACTIVE", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "result": "RESTORED_ACTIVE", "firstPhase": "EXPOSE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "POS-HOLD", "inventory": "M2", "vector": "FMT-KAT-HOLD", "legacy": false, "result": "RESTORED_RECONCILIATION_REQUIRED", "firstPhase": "EXPOSE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "POS-EMPTY-HOLD", "inventory": "M2", "vector": "FMT-KAT-EMPTY-HOLD", "legacy": false, "result": "RESTORED_RECONCILIATION_REQUIRED", "firstPhase": "EXPOSE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "POS-M2-LEGACY-PRESENT", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": true, "condition": "LEGACY_PRESENT", "result": "RESTORED_ACTIVE", "firstPhase": "EXPOSE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }, { "id": "legacy", "kind": "LEGACY_ENVELOPE" }] },
+  ],
+  negative: [
+    { "id": "NEG-LOCKUNAVAILABLE", "faults": ["lockUnavailable"], "result": "LOCKED_ELSEWHERE", "firstPhase": "LOCK", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-BUILDNOTLISTED", "faults": ["buildNotListed"], "result": "INCOMPATIBLE_BUILD", "firstPhase": "BUILD_ELIGIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-INVENTORYAMBIGUOUS", "faults": ["inventoryAmbiguous"], "result": "INTERNAL_VALIDATION_FAILED", "firstPhase": "INVENTORY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-WRAPPERWRONGORINVALID", "faults": ["wrapperWrongOrInvalid"], "result": "WRAPPER_AUTH_FAILED", "firstPhase": "WRAPPER_AUTH", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-SELECTORHEADERVERSIONUNKNOWN", "faults": ["selectorHeaderVersionUnknown"], "result": "UNSUPPORTED_VERSION", "firstPhase": "SELECTOR_HEADER", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-SELECTORHEADERSTRUCTUREINCOMPATIBLE", "faults": ["selectorHeaderStructureIncompatible"], "result": "INCOMPATIBLE_FORMAT", "firstPhase": "SELECTOR_HEADER", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-SELECTORMALFORMEDORMULTIPLE", "faults": ["selectorMalformedOrMultiple"], "result": "SELECTOR_INVALID", "firstPhase": "SELECTOR_AUTH", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-SELECTORAUTHENTICATIONFAILED", "faults": ["selectorAuthenticationFailed"], "result": "AUTHENTICATION_FAILED", "firstPhase": "SELECTOR_AUTH", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-AUTHENTICATEDVERSIONUNKNOWNORMIXED", "faults": ["authenticatedVersionUnknownOrMixed"], "result": "UNSUPPORTED_VERSION", "firstPhase": "AUTHENTICATED_COMPATIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-AUTHENTICATEDPROFILEINCOMPATIBLE", "faults": ["authenticatedProfileIncompatible"], "result": "INCOMPATIBLE_FORMAT", "firstPhase": "AUTHENTICATED_COMPATIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-MANIFESTORROOTMISMATCH", "faults": ["manifestOrRootMismatch"], "result": "MANIFEST_INVALID", "firstPhase": "MANIFEST_ROOT", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-RECORDMISSINGEXTRADUPLICATEREORDERED", "faults": ["recordMissingExtraDuplicateReordered"], "result": "RECORD_SET_INCOMPLETE", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-PARTIALSELECTEDORCANDIDATEGENERATION", "faults": ["partialSelectedOrCandidateGeneration"], "result": "PARTIAL_GENERATION", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-RECORDAUTHENTICATIONFAILED", "faults": ["recordAuthenticationFailed"], "result": "AUTHENTICATION_FAILED", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-RECORDCANONICALKEYKINDVERSIONGENERATIONINVALID", "faults": ["recordCanonicalKeyKindVersionGenerationInvalid"], "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-REFERENCEORLIFECYCLEINCONSISTENT", "faults": ["referenceOrLifecycleInconsistent"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-UNEXPECTEDVALIDATORCONDITION", "faults": ["unexpectedValidatorCondition"], "result": "INTERNAL_VALIDATION_FAILED", "firstPhase": "CLASSIFY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-UNKNOWN-MIXED-VERSIONS", "faults": ["authenticatedVersionUnknownOrMixed"], "result": "UNSUPPORTED_VERSION", "firstPhase": "AUTHENTICATED_COMPATIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-INELIGIBLE-BUILD", "faults": ["buildNotListed"], "result": "INCOMPATIBLE_BUILD", "firstPhase": "BUILD_ELIGIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-MALFORMED-SELECTOR", "faults": ["selectorMalformedOrMultiple"], "result": "SELECTOR_INVALID", "firstPhase": "SELECTOR_AUTH", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-SELECTOR-MANIFEST-ROOT-MISMATCH", "faults": ["manifestOrRootMismatch"], "result": "MANIFEST_INVALID", "firstPhase": "MANIFEST_ROOT", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-MISSING-RECORD", "faults": ["recordMissingExtraDuplicateReordered"], "result": "RECORD_SET_INCOMPLETE", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-EXTRA-RECORD", "faults": ["recordMissingExtraDuplicateReordered"], "result": "RECORD_SET_INCOMPLETE", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-DUPLICATE-RECORD", "faults": ["recordMissingExtraDuplicateReordered"], "result": "RECORD_SET_INCOMPLETE", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-REORDERED-RECORD", "faults": ["recordMissingExtraDuplicateReordered"], "result": "RECORD_SET_INCOMPLETE", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-RECORD-KEY-SUBSTITUTION", "faults": ["recordCanonicalKeyKindVersionGenerationInvalid"], "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-RECORD-KIND-SUBSTITUTION", "faults": ["recordCanonicalKeyKindVersionGenerationInvalid"], "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-SELECTED-GENERATION-SUBSTITUTION", "faults": ["recordCanonicalKeyKindVersionGenerationInvalid"], "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-BAD-TOMBSTONE", "faults": ["recordCanonicalKeyKindVersionGenerationInvalid"], "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-PARTIAL-CANDIDATE", "faults": ["partialSelectedOrCandidateGeneration"], "result": "PARTIAL_GENERATION", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-FORGED-RESULT-ESCROW-HOLD", "faults": ["referenceOrLifecycleInconsistent"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-INVALID-LIFECYCLE-PAIR", "faults": ["referenceOrLifecycleInconsistent"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-AMBIGUOUS-INVENTORY", "faults": ["inventoryAmbiguous"], "result": "INTERNAL_VALIDATION_FAILED", "firstPhase": "INVENTORY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-LEGACY-SHAPED-AT-M2-LOCATOR", "faults": ["selectorHeaderStructureIncompatible"], "result": "INCOMPATIBLE_FORMAT", "firstPhase": "SELECTOR_HEADER", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-LEGACY-CIPHERSUITE-AT-M2-LOCATOR", "faults": ["authenticatedProfileIncompatible"], "result": "INCOMPATIBLE_FORMAT", "firstPhase": "AUTHENTICATED_COMPATIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-M2-LEGACY-PRESENT-INVALID", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": true, "faults": ["manifestOrRootMismatch"], "condition": "LEGACY_PRESENT", "result": "MANIFEST_INVALID", "firstPhase": "MANIFEST_ROOT", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }, { "id": "legacy", "kind": "LEGACY_ENVELOPE" }] },
+    { "id": "NEG-CONCRETE-MULTIPLE-SELECTOR-CANDIDATES", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["multipleSelectorCandidates"], "result": "SELECTOR_INVALID", "firstPhase": "INVENTORY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-ORPHAN-GENERATION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["orphanGeneration"], "result": "PARTIAL_GENERATION", "firstPhase": "INVENTORY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-KEY-DERIVATION-FAILED", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["keyDerivationFailed"], "result": "INTERNAL_VALIDATION_FAILED", "firstPhase": "KEY_DERIVATION", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-CANDIDATE-MANIFEST-KEY-SCOPE-SESSION-SUBSTITUTION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateManifestKeyScopeSessionSubstitution"], "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-CANDIDATE-MANIFEST-KEY-MISMATCH", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateManifestKeyMismatch"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-CANDIDATE-PARENT-MISMATCH", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateParentMismatch"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-CANDIDATE-EQUALS-SELECTED-DURING-RECONCILIATION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateEqualsSelectedDuringReconciliation"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-CANDIDATE-FIELDS-DIFFER-WITHOUT-RECONCILIATION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateFieldsDifferWithoutReconciliation"], "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CONCRETE-UNEXPECTED-EXPOSE-CONDITION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["unexpectedExposeCondition"], "result": "INTERNAL_VALIDATION_FAILED", "firstPhase": "EXPOSE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-UNKNOWN_MISSING_DUPLICATE_REORDERED_JSON_FIELD", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["unexpectedValidatorCondition"], "negativeClass": "UNKNOWN_MISSING_DUPLICATE_REORDERED_JSON_FIELD", "result": "INTERNAL_VALIDATION_FAILED", "firstPhase": "CLASSIFY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-UNKNOWN_MISSING_DUPLICATE_REORDERED_PLAINTEXT_FIELD", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["recordCanonicalKeyKindVersionGenerationInvalid"], "negativeClass": "UNKNOWN_MISSING_DUPLICATE_REORDERED_PLAINTEXT_FIELD", "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-UNKNOWN_KIND_VERSION_ALGORITHM_LABEL", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["authenticatedVersionUnknownOrMixed"], "negativeClass": "UNKNOWN_KIND_VERSION_ALGORITHM_LABEL", "result": "UNSUPPORTED_VERSION", "firstPhase": "AUTHENTICATED_COMPATIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-NONCANONICAL_LENGTH_ENDIAN", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["selectorHeaderStructureIncompatible"], "negativeClass": "NONCANONICAL_LENGTH_ENDIAN", "result": "INCOMPATIBLE_FORMAT", "firstPhase": "SELECTOR_HEADER", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-TRUNCATION_TRAILING_SIZE_OVERFLOW", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["selectorHeaderStructureIncompatible"], "negativeClass": "TRUNCATION_TRAILING_SIZE_OVERFLOW", "result": "INCOMPATIBLE_FORMAT", "firstPhase": "SELECTOR_HEADER", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-NONCE_REUSE", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["recordAuthenticationFailed"], "negativeClass": "NONCE_REUSE", "result": "AUTHENTICATION_FAILED", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-AAD_CONTEXT_SESSION_PROFILE_KIND_VERSION_GENERATION_SUBSTITUTION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["recordAuthenticationFailed"], "negativeClass": "AAD_CONTEXT_SESSION_PROFILE_KIND_VERSION_GENERATION_SUBSTITUTION", "result": "AUTHENTICATION_FAILED", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-KEY_OR_LABEL_COLLISION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["authenticatedProfileIncompatible"], "negativeClass": "KEY_OR_LABEL_COLLISION", "result": "INCOMPATIBLE_FORMAT", "firstPhase": "AUTHENTICATED_COMPATIBILITY", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-CROSS_DOMAIN_COPY", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["recordAuthenticationFailed"], "negativeClass": "CROSS_DOMAIN_COPY", "result": "AUTHENTICATION_FAILED", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-MANIFEST_OMISSION_ADDITION_DUPLICATE_REORDER", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["manifestOrRootMismatch"], "negativeClass": "MANIFEST_OMISSION_ADDITION_DUPLICATE_REORDER", "result": "MANIFEST_INVALID", "firstPhase": "MANIFEST_ROOT", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-ROOT_OR_SELECTOR_MISMATCH", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["manifestOrRootMismatch"], "negativeClass": "ROOT_OR_SELECTOR_MISMATCH", "result": "MANIFEST_INVALID", "firstPhase": "MANIFEST_ROOT", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-HISTORICAL_SUBSET_UNDER_CURRENT_ROOT", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["manifestOrRootMismatch"], "negativeClass": "HISTORICAL_SUBSET_UNDER_CURRENT_ROOT", "result": "MANIFEST_INVALID", "firstPhase": "MANIFEST_ROOT", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-PARTIAL_GENERATION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["partialSelectedOrCandidateGeneration"], "negativeClass": "PARTIAL_GENERATION", "result": "PARTIAL_GENERATION", "firstPhase": "RECORD_SET", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-FORGED_RESULT_ESCROW_ASSOCIATION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["referenceOrLifecycleInconsistent"], "negativeClass": "FORGED_RESULT_ESCROW_ASSOCIATION", "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-CANDIDATE_FIELDS_DIFFER_WITHOUT_RECONCILIATION_REQUIRED", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateFieldsDifferWithoutReconciliation"], "negativeClass": "CANDIDATE_FIELDS_DIFFER_WITHOUT_RECONCILIATION_REQUIRED", "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-RECONCILIATION_REQUIRED_CANDIDATE_MISSING_OR_MISMATCHED", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateManifestKeyMismatch"], "negativeClass": "RECONCILIATION_REQUIRED_CANDIDATE_MISSING_OR_MISMATCHED", "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-RECONCILIATION_REQUIRED_CANDIDATE_EQUALS_SELECTED", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateEqualsSelectedDuringReconciliation"], "negativeClass": "RECONCILIATION_REQUIRED_CANDIDATE_EQUALS_SELECTED", "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-CANDIDATE_MANIFEST_KEY_MISMATCH", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateManifestKeyMismatch"], "negativeClass": "CANDIDATE_MANIFEST_KEY_MISMATCH", "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-CANDIDATE_PARENT_MISMATCH", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateParentMismatch"], "negativeClass": "CANDIDATE_PARENT_MISMATCH", "result": "REFERENCE_INCONSISTENT", "firstPhase": "REFERENCES", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+    { "id": "NEG-CFMT-CANDIDATE_MANIFEST_KEY_SCOPE_SESSION_SUBSTITUTION", "inventory": "M2", "vector": "FMT-KAT-ACTIVE", "legacy": false, "faults": ["candidateManifestKeyScopeSessionSubstitution"], "negativeClass": "CANDIDATE_MANIFEST_KEY_SCOPE_SESSION_SUBSTITUTION", "result": "RECORD_INVALID", "firstPhase": "RECORD_DECODE", "gates": { "AUTHENTICATED_COMPATIBILITY": "PASS", "BUILD_ELIGIBILITY": "PASS", "CLASSIFY": "PASS", "INVENTORY": "PASS", "KEY_DERIVATION": "PASS", "LOCK": "PASS", "MANIFEST_ROOT": "PASS", "RECORD_DECODE": "PASS", "RECORD_SET": "PASS", "REFERENCES": "PASS", "SELECTOR_AUTH": "PASS", "SELECTOR_HEADER": "PASS", "WRAPPER_AUTH": "PASS" }, "artifacts": [{ "id": "fixed-selector", "kind": "GENERATION_SELECTOR" }, { "id": "selected-manifest", "kind": "MANIFEST" }, { "id": "selected-record-set", "kind": "DATA_RECORD_SET" }] },
+  ],
+}));
+
+const VALUE_REGISTRIES = deepFreeze(Object.assign(Object.create(null), {
+  "apiState": { "ACTIVE": 2, "EMPTY": 1, "RECONCILIATION_REQUIRED": 3 },
+  "bool": { "false": 0, "true": 1 },
+  "commitOutcome": { "COMMITTED": 1, "INDETERMINATE": 3, "NOT_COMMITTED": 2 },
+  "fieldTags": "For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.",
+  "keyPackageLifecycle": { "CONSUMED": 3, "INVALID": 4, "RESERVED": 2, "UNCONSUMED": 1 },
+  "operation": { "APPLY_PEER_UPDATE": 7, "CREATE": 1, "JOIN_WELCOME": 3, "OPEN_APPLICATION": 5, "PROTECT_APPLICATION": 4, "RECONCILE_INDETERMINATE": 8, "RESTORE": 2, "SELF_UPDATE": 6 },
+  "outputKind": { "APPLICATION_BYTES": 4, "EMBEDDED_TREE_WELCOME": 2, "NONE": 1, "PROTECTED_APPLICATION_BYTES": 3, "PROTECTED_COMMIT_BYTES": 5, "SELECTED_CANDIDATE_REF": 6 },
+  "scenario": { "CAPI-S001": 1, "CAPI-S006": 2, "CAPI-S009": 3, "CAPI-S010": 4, "CAPI-S014": 5, "CAPI-S016": 6, "CAPI-S017": 7 },
+  "selectorState": { "ACTIVE": 2, "EMPTY": 1, "RECONCILIATION_REQUIRED": 3 },
+  "slotState": { "BOUND": 3, "EMPTY": 1, "ISSUANCE_HELD": 2, "RECONCILIATION_REQUIRED": 4 },
+  "successCode": { "APPLICATION_OPENED": 5, "APPLICATION_PROTECTED": 4, "CANDIDATE_SELECTED": 8, "CREATED": 1, "DUPLICATE_IGNORED": 10, "JOINED": 3, "PEER_UPDATE_APPLIED": 7, "RECONCILED_COMMITTED": 9, "RESTORED": 2, "SELF_UPDATED": 6 },
+}));
+
+// ------------------------------------------------------------------------------------------------
+// Structural helpers. Every accepted value is checked structurally; nothing is coerced.
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Deep-freeze a closed value. Typed arrays are left alone (an array buffer view with elements cannot
+ * be frozen), so no caller-visible byte array is ever echoed back from this module.
+ */
+function deepFreeze(value) {
   if (ArrayBuffer.isView(value)) {
     return value;
   }
   if (Array.isArray(value)) {
-    value.forEach(freezeDeep);
-  } else if (isPlainObject(value)) {
-    Object.values(value).forEach(freezeDeep);
+    value.forEach(deepFreeze);
+  } else if (value !== null && typeof value === 'object') {
+    Object.values(value).forEach(deepFreeze);
   }
   return Object.freeze(value);
+}
+
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+
+const isPlainObject = (value) => {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 };
 
-const faultRow = (fault) => FAULT_PRECEDENCE.find((row) => row.fault === fault) ?? null;
-const faultRank = (fault) => FAULT_PRECEDENCE.findIndex((row) => row.fault === fault);
+/**
+ * True only for a plain object with exactly the expected own members, no symbol-keyed member, no
+ * accessor member and no extra member. This is the closure check every accepted record passes.
+ */
+function hasExactMembers(value, expected) {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  const own = Reflect.ownKeys(value);
+  if (own.length !== expected.length) {
+    return false;
+  }
+  for (const key of own) {
+    if (typeof key !== 'string' || !expected.includes(key)) {
+      return false;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !hasOwn(descriptor, 'value')) {
+      return false;
+    }
+  }
+  return true;
+}
 
-/** The frozen metadata surface of this module. */
-export const M2_RESTORE = Object.freeze({
-  READER_PROFILE,
+/** Read one already-validated data member without re-triggering a getter. */
+const memberOf = (value, key) => Object.getOwnPropertyDescriptor(value, key).value;
+
+const isBytes = (value, length) => value instanceof Uint8Array && value.byteLength === length;
+
+const isNonZeroBytes = (value, length) => {
+  if (!isBytes(value, length)) {
+    return false;
+  }
+  for (let index = 0; index < value.byteLength; index += 1) {
+    if (value[index] !== 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const isGeneration = (value) => typeof value === 'bigint' && value >= 1n;
+
+const isVersionNumber = (value) => Number.isInteger(value) && Object.is(value, Math.trunc(value))
+  && !Object.is(value, -0);
+
+const bytesEqual = (left, right) => {
+  if (!isBytes(left, left.byteLength) || !isBytes(right, right.byteLength)) {
+    return false;
+  }
+  if (left.byteLength !== right.byteLength) {
+    return false;
+  }
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+const frozenBytes32 = (value) => value;
+
+// ------------------------------------------------------------------------------------------------
+// The closed error class. It carries one C-REST failure code and one C-REST phase, and nothing else:
+// no free text, no path, no value and no offending input. An out-of-set argument is discarded and the
+// error itself is the closed failure default at CLASSIFY.
+// ------------------------------------------------------------------------------------------------
+
+const ERROR_FALLBACK_RESULT = 'INTERNAL_VALIDATION_FAILED';
+const ERROR_FALLBACK_STAGE = 'CLASSIFY';
+
+export class M2RestoreError extends Error {
+  constructor(result, stage) {
+    const closed = typeof result === 'string' && FAILURE_RESULTS.includes(result)
+      && typeof stage === 'string' && PHASES.includes(stage);
+    const useResult = closed ? result : ERROR_FALLBACK_RESULT;
+    const useStage = closed ? stage : ERROR_FALLBACK_STAGE;
+    super(`${useResult}@${useStage}`);
+    this.name = 'M2RestoreError';
+    this.result = useResult;
+    this.stage = useStage;
+  }
+}
+
+const fail = (result, stage) => {
+  throw new M2RestoreError(result, stage);
+};
+
+// ------------------------------------------------------------------------------------------------
+// §2/§3: version equality and build eligibility.
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * The eight observed versions must equal the ratified allowlist exactly. A missing, extra, mixed,
+ * non-integer, unknown or drifted version set is `UNSUPPORTED_VERSION` - never a partial match.
+ */
+export function checkVersions(observed) {
+  if (!hasExactMembers(observed, VERSION_KEYS)) {
+    return 'UNSUPPORTED_VERSION';
+  }
+  for (const key of VERSION_KEYS) {
+    const value = memberOf(observed, key);
+    if (!isVersionNumber(value) || value !== VERSIONS[key]) {
+      return 'UNSUPPORTED_VERSION';
+    }
+  }
+  return null;
+}
+
+/**
+ * One complete `buildMatrix` row, by equality of every member. A partial row, an extra member, an
+ * unlisted runtime or browser class, a wrong ciphersuite or a drifted version set is ineligible.
+ */
+export function checkBuildEligibility(build) {
+  if (!hasExactMembers(build, BUILD_ROW_KEYS)) {
+    return false;
+  }
+  const ciphersuite = memberOf(build, 'ss0Ciphersuite');
+  if (!hasExactMembers(ciphersuite, ['ianaId', 'name'])) {
+    return false;
+  }
+  for (const row of BUILD_MATRIX) {
+    let matches = true;
+    for (const key of BUILD_ROW_KEYS) {
+      const value = memberOf(build, key);
+      if (key === 'ss0Ciphersuite') {
+        matches = matches && memberOf(value, 'ianaId') === row.ss0Ciphersuite.ianaId
+          && memberOf(value, 'name') === row.ss0Ciphersuite.name;
+      } else if (key === 'versions') {
+        matches = matches && hasExactMembers(value, VERSION_KEYS)
+          && VERSION_KEYS.every((versionKey) => memberOf(value, versionKey) === row.versions[versionKey]);
+      } else {
+        matches = matches && value === row[key];
+      }
+    }
+    if (matches) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ------------------------------------------------------------------------------------------------
+// §4: the authenticated compatibility conjunction.
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Apply the entire `compatibilityRegistry` conjunction to authenticated values. A version mismatch
+ * precedes every other profile mismatch; any other authenticated mismatch is `INCOMPATIBLE_FORMAT`.
+ * A structurally invalid input is `INTERNAL_VALIDATION_FAILED`.
+ */
+export function checkAuthenticatedCompatibility(authenticated) {
+  if (!hasExactMembers(authenticated, ['versions', 'profile'])) {
+    return 'INTERNAL_VALIDATION_FAILED';
+  }
+  const versions = memberOf(authenticated, 'versions');
+  if (!hasExactMembers(versions, VERSION_KEYS)) {
+    return 'INTERNAL_VALIDATION_FAILED';
+  }
+  for (const key of VERSION_KEYS) {
+    const value = memberOf(versions, key);
+    if (!isVersionNumber(value)) {
+      return 'INTERNAL_VALIDATION_FAILED';
+    }
+    if (value !== VERSIONS[key]) {
+      return 'UNSUPPORTED_VERSION';
+    }
+  }
+  const profile = memberOf(authenticated, 'profile');
+  if (!hasExactMembers(profile, ['readerProfile', 'algorithms'])) {
+    return 'INTERNAL_VALIDATION_FAILED';
+  }
+  if (memberOf(profile, 'readerProfile') !== READER_PROFILE) {
+    return 'INCOMPATIBLE_FORMAT';
+  }
+  const algorithms = memberOf(profile, 'algorithms');
+  if (!hasExactMembers(algorithms, ALGORITHM_KEYS)) {
+    return 'INTERNAL_VALIDATION_FAILED';
+  }
+  for (const key of ALGORITHM_KEYS) {
+    if (memberOf(algorithms, key) !== ALGORITHMS[key]) {
+      return 'INCOMPATIBLE_FORMAT';
+    }
+  }
+  return null;
+}
+
+// ------------------------------------------------------------------------------------------------
+// §7: the reconciliation candidate and its physical parent.
+// ------------------------------------------------------------------------------------------------
+
+const LOCATOR_KIND = 16;
+const LOCATOR_KEYS = deepFreeze([
+  'recordKind', 'objectIdLength', 'scope', 'secureSessionIdentity', 'generation', 'localContextId',
+  'sha256',
+]);
+const CANDIDATE_KEYS = deepFreeze([
+  'manifestCiphertextDigest', 'keyedRoot', 'manifestBindingDigest', 'bindingProfileDigest',
+  'parentGeneration', 'parentKeyedRoot', 'originalAuthorityDigest', 'originalAuthorityReference',
+  'resultStatus',
+]);
+const CANDIDATE_FACT_KEYS = deepFreeze([
+  'localContextId', 'candidateGeneration', 'candidateManifestKeyDigest', 'manifestCiphertextDigest',
+  'keyedRoot', 'selectedGeneration', 'selectedKeyedRoot', 'selectorState', 'locator', 'candidate',
+  'candidateBindingProfile', 'commitResult',
+]);
+const COMMIT_RESULT_KEYS = deepFreeze(['originalAuthorityDigest', 'originalAuthorityReference']);
+
+const invalidFacts = () => fail('INTERNAL_VALIDATION_FAILED', 'CLASSIFY');
+const recordInvalid = () => fail('RECORD_INVALID', 'RECORD_DECODE');
+const inconsistent = () => fail('REFERENCE_INCONSISTENT', 'REFERENCES');
+
+const locatorShapeValid = (locator, facts) => {
+  if (!hasExactMembers(locator, LOCATOR_KEYS)) {
+    return false;
+  }
+  const scope = memberOf(locator, 'scope');
+  const sessionIdentity = memberOf(locator, 'secureSessionIdentity');
+  const preSession = scope === 'CONTEXT_PRESESSION' || scope === 1;
+  const session = scope === 'SESSION' || scope === 2;
+  if (!preSession && !session) {
+    return false;
+  }
+  if (preSession && sessionIdentity !== null) {
+    return false;
+  }
+  if (session && !isNonZeroBytes(sessionIdentity, 32)) {
+    return false;
+  }
+  if (memberOf(locator, 'recordKind') !== LOCATOR_KIND) {
+    return false;
+  }
+  if (memberOf(locator, 'objectIdLength') !== 0) {
+    return false;
+  }
+  if (!isGeneration(memberOf(locator, 'generation'))) {
+    return false;
+  }
+  if (memberOf(locator, 'generation') !== memberOf(facts, 'candidateGeneration')) {
+    return false;
+  }
+  if (!bytesEqual(memberOf(locator, 'localContextId'), memberOf(facts, 'localContextId'))) {
+    return false;
+  }
+  if (!bytesEqual(memberOf(locator, 'sha256'), memberOf(facts, 'candidateManifestKeyDigest'))) {
+    return false;
+  }
+  return memberOf(locator, 'localContextId').byteLength === 32
+    && memberOf(locator, 'sha256').byteLength === 32;
+};
+
+const candidateShapeValid = (candidate, profile) => {
+  if (!hasExactMembers(candidate, CANDIDATE_KEYS) || !hasExactMembers(profile, ['generation', 'bindingProfileDigest'])) {
+    return false;
+  }
+  if (!isGeneration(memberOf(profile, 'generation'))) {
+    return false;
+  }
+  if (!isBytes(memberOf(profile, 'bindingProfileDigest'), 32)
+    || !isBytes(memberOf(candidate, 'manifestBindingDigest'), 32)) {
+    return false;
+  }
+  if (!isBytes(memberOf(candidate, 'manifestCiphertextDigest'), 32)
+    || !isBytes(memberOf(candidate, 'keyedRoot'), 32)
+    || !isBytes(memberOf(candidate, 'bindingProfileDigest'), 32)
+    || !isBytes(memberOf(candidate, 'parentKeyedRoot'), 32)
+    || !isBytes(memberOf(candidate, 'originalAuthorityDigest'), 32)
+    || !isBytes(memberOf(candidate, 'originalAuthorityReference'), 32)) {
+    return false;
+  }
+  if (!isGeneration(memberOf(candidate, 'parentGeneration'))) {
+    return false;
+  }
+  return RESULT_STATUSES.includes(memberOf(candidate, 'resultStatus'));
+};
+
+/**
+ * Validate one C-REST §7 reconciliation candidate against the closed candidate grammar and return the
+ * frozen facts the classifier may use. A candidate is never authority: a candidate equal to the
+ * selected generation during reconciliation rejects, and candidate fields that differ without
+ * `RECONCILIATION_REQUIRED` reject. The located candidate manifest binding digest must equal that
+ * candidate generation's own `BINDING_PROFILE`, and the candidate hold's logical original-authority
+ * digest and reference must each equal the same field of the candidate `COMMIT_RESULT`. The scope of
+ * the kind-16 manifest key is not restricted by §7: the record-key grammar admits both
+ * `CONTEXT_PRESESSION` and `SESSION`, and an ACTIVE-parent hold carries a session generation.
+ */
+export function validateReconciliationCandidate(facts) {
+  if (!hasExactMembers(facts, CANDIDATE_FACT_KEYS)) {
+    return invalidFacts();
+  }
+  for (const key of ['localContextId', 'candidateManifestKeyDigest', 'manifestCiphertextDigest', 'keyedRoot', 'selectedKeyedRoot']) {
+    if (!isBytes(memberOf(facts, key), 32)) {
+      return invalidFacts();
+    }
+  }
+  if (!isNonZeroBytes(memberOf(facts, 'localContextId'), 32)) {
+    return invalidFacts();
+  }
+  if (!isGeneration(memberOf(facts, 'candidateGeneration')) || !isGeneration(memberOf(facts, 'selectedGeneration'))) {
+    return invalidFacts();
+  }
+  const selectorState = memberOf(facts, 'selectorState');
+  if (typeof selectorState !== 'string' || !SELECTOR_STATES.includes(selectorState)) {
+    return invalidFacts();
+  }
+  if (memberOf(facts, 'candidateGeneration') === memberOf(facts, 'selectedGeneration')
+    && bytesEqual(memberOf(facts, 'keyedRoot'), memberOf(facts, 'selectedKeyedRoot'))) {
+    // A candidate that is physically the selected generation is not a separate candidate.
+    if (selectorState === 'RECONCILIATION_REQUIRED') {
+      return inconsistent();
+    }
+  } else if (selectorState !== 'RECONCILIATION_REQUIRED') {
+    return inconsistent();
+  }
+  if (!locatorShapeValid(memberOf(facts, 'locator'), facts)) {
+    return recordInvalid();
+  }
+  const candidate = memberOf(facts, 'candidate');
+  const profile = memberOf(facts, 'candidateBindingProfile');
+  const commitResult = memberOf(facts, 'commitResult');
+  if (!candidateShapeValid(candidate, profile) || !hasExactMembers(commitResult, COMMIT_RESULT_KEYS)) {
+    return invalidFacts();
+  }
+  if (!isBytes(memberOf(commitResult, 'originalAuthorityDigest'), 32)
+    || !isBytes(memberOf(commitResult, 'originalAuthorityReference'), 32)) {
+    return invalidFacts();
+  }
+  // The located candidate manifest binding digest must match that candidate generation's own profile.
+  if (memberOf(profile, 'generation') !== memberOf(facts, 'candidateGeneration')
+    || !bytesEqual(memberOf(candidate, 'manifestBindingDigest'), memberOf(profile, 'bindingProfileDigest'))) {
+    return inconsistent();
+  }
+  if (!bytesEqual(memberOf(candidate, 'manifestCiphertextDigest'), memberOf(facts, 'manifestCiphertextDigest'))
+    || !bytesEqual(memberOf(candidate, 'keyedRoot'), memberOf(facts, 'keyedRoot'))) {
+    return inconsistent();
+  }
+  // The hold's logical original authority must equal the candidate COMMIT_RESULT's same fields.
+  if (!bytesEqual(memberOf(candidate, 'originalAuthorityDigest'), memberOf(commitResult, 'originalAuthorityDigest'))
+    || !bytesEqual(memberOf(candidate, 'originalAuthorityReference'), memberOf(commitResult, 'originalAuthorityReference'))) {
+    return inconsistent();
+  }
+  // An unresolved candidate hold must name the selector's physical parent.
+  if (memberOf(candidate, 'resultStatus') === 'INDETERMINATE') {
+    if (memberOf(candidate, 'parentGeneration') !== memberOf(facts, 'selectedGeneration')
+      || !bytesEqual(memberOf(candidate, 'parentKeyedRoot'), memberOf(facts, 'selectedKeyedRoot'))) {
+      return inconsistent();
+    }
+  }
+  return deepFreeze({
+    candidateGeneration: memberOf(facts, 'candidateGeneration'),
+    bindingProfileVerified: true,
+    candidateEqualsSelected: false,
+    authority: 'CANDIDATE_NOT_AUTHORITY',
+  });
+}
+
+// ------------------------------------------------------------------------------------------------
+// §4/§5/§10: the ordered, total, fail-closed decision.
+// ------------------------------------------------------------------------------------------------
+
+const invalidObservation = () => fail(FAILURE_DEFAULT, 'CLASSIFY');
+
+/**
+ * Validate the closed five-member observation and return its members, or throw the fail-closed default.
+ * An extra enumerable, non-enumerable or symbol-keyed member, a missing member, an accessor member, a
+ * non-plain object, an out-of-type value, an out-of-set value, a duplicate fault, a vector that
+ * contradicts the inventory and a fault that contradicts the inventory all reject here.
+ */
+function readObservation(observation) {
+  if (!hasExactMembers(observation, OBSERVATION_KEYS)) {
+    return invalidObservation();
+  }
+  const faults = memberOf(observation, 'faults');
+  if (!Array.isArray(faults)) {
+    return invalidObservation();
+  }
+  const seen = new Set();
+  for (const fault of faults) {
+    if (typeof fault !== 'string' || !FAULT_RANK.has(fault)) {
+      return invalidObservation();
+    }
+    if (seen.has(fault)) {
+      return invalidObservation();
+    }
+    seen.add(fault);
+  }
+  const inventory = memberOf(observation, 'inventory');
+  if (typeof inventory !== 'string' || !OBSERVED_INVENTORY.includes(inventory)) {
+    return invalidObservation();
+  }
+  const legacy = memberOf(observation, 'legacy');
+  if (typeof legacy !== 'boolean') {
+    return invalidObservation();
+  }
+  const vector = memberOf(observation, 'vector');
+  if (vector !== null && (typeof vector !== 'string' || !VECTOR_ALLOWLIST.includes(vector))) {
+    return invalidObservation();
+  }
+  const selectorState = memberOf(observation, 'selectorState');
+  if (typeof selectorState !== 'string' || !hasOwn(SUCCESS_BY_SELECTOR_STATE, selectorState)) {
+    return invalidObservation();
+  }
+  if (inventory === 'NONE' && (legacy !== false || vector !== null)) {
+    return invalidObservation();
+  }
+  if (inventory === 'LEGACY_ONLY' && (legacy !== true || vector !== null)) {
+    return invalidObservation();
+  }
+  if (inventory === 'M2' && vector === null) {
+    return invalidObservation();
+  }
+  if (faults.length > 0 && inventory !== 'M2') {
+    return invalidObservation();
+  }
+  return { faults, inventory, legacy, vector, selectorState };
+}
+
+const reasonFor = (result) => (FAILURE_RESULTS.includes(result) || INVENTORY_RESULTS.includes(result)
+  ? result
+  : result);
+
+function outcomeFor(result, stage, members, exposed) {
+  const legacyPresent = result === 'NO_M2_STATE' ? false : members.legacy;
+  const seenM2 = members.inventory === 'M2';
+  return deepFreeze({
+    result,
+    stage,
+    condition: seenM2 && members.legacy ? 'LEGACY_PRESENT' : null,
+    exposed,
+    diagnostics: deepFreeze({
+      stageCode: stage,
+      reasonCode: reasonFor(result),
+      m2LocatorCount: seenM2 ? null : 0,
+      m2ArtifactCount: seenM2 ? null : 0,
+      legacyPresent,
+    }),
+  });
+}
+
+/**
+ * The total, deterministic, fail-closed restore decision. It never throws and never returns a value
+ * outside the closed vocabulary: every rejection is a C-REST failure code at a C-REST phase, and
+ * anything unexpected is `INTERNAL_VALIDATION_FAILED` at `CLASSIFY`. Only a success exposes selected
+ * authority, and only at `EXPOSE`.
+ */
+export function classifyRestore(observation) {
+  let members;
+  try {
+    members = readObservation(observation);
+  } catch (error) {
+    if (error instanceof M2RestoreError) {
+      return outcomeFor(error.result, error.stage, {
+        inventory: 'NONE', legacy: false, vector: null,
+      }, false);
+    }
+    return outcomeFor(FAILURE_DEFAULT, 'CLASSIFY', { inventory: 'NONE', legacy: false, vector: null }, false);
+  }
+  if (members.faults.length > 0) {
+    let chosen = null;
+    for (const fault of members.faults) {
+      const row = FAULT_ROW.get(fault);
+      if (row !== undefined && (chosen === null || FAULT_RANK.get(fault) < FAULT_RANK.get(chosen.fault))) {
+        chosen = row;
+      }
+    }
+    if (chosen === null) {
+      return outcomeFor(FAILURE_DEFAULT, 'CLASSIFY', members, false);
+    }
+    return outcomeFor(chosen.result, chosen.phase, members, false);
+  }
+  if (members.inventory === 'NONE') {
+    return outcomeFor('NO_M2_STATE', 'INVENTORY', members, false);
+  }
+  if (members.inventory === 'LEGACY_ONLY') {
+    return outcomeFor('LEGACY_ONLY', 'INVENTORY', members, false);
+  }
+  const result = SUCCESS_BY_SELECTOR_STATE[members.selectorState];
+  return outcomeFor(result, 'EXPOSE', members, true);
+}
+
+// ------------------------------------------------------------------------------------------------
+// §12: the fresh-worker fixture matrix.
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * The seventy-two ratified fixtures, verbatim: seven positive rows and sixty-five negative rows.
+ */
+export const FRESH_WORKER_FIXTURES = deepFreeze({
+  positive: C_REST_FIXTURES.positive,
+  negative: C_REST_FIXTURES.negative,
+});
+
+/**
+ * The store context a `gates`-only negative fixture is exercised under. Thirty-five negative rows
+ * carry no store members of their own, so the matrix supplies the ACTIVE store vector the record uses
+ * for every other negative row. The row itself is copied verbatim and is not modified.
+ */
+const NEGATIVE_CONTEXT = deepFreeze({ inventory: 'M2', vector: 'FMT-KAT-ACTIVE', legacy: false });
+
+const SELECTOR_STATE_OF_SUCCESS = deepFreeze({
+  RESTORED_EMPTY: 'EMPTY',
+  RESTORED_ACTIVE: 'ACTIVE',
+  RESTORED_RECONCILIATION_REQUIRED: 'RECONCILIATION_REQUIRED',
+});
+
+function observationForFixture(row, fallback) {
+  const inventory = hasOwn(row, 'inventory') ? row.inventory : fallback.inventory;
+  const vector = hasOwn(row, 'vector') ? row.vector : fallback.vector;
+  const legacy = hasOwn(row, 'legacy') ? row.legacy : fallback.legacy;
+  const faults = hasOwn(row, 'faults') ? row.faults : [];
+  const selectorState = faults.length > 0
+    ? 'ACTIVE'
+    : SELECTOR_STATE_OF_SUCCESS[row.result] ?? 'ACTIVE';
+  return { faults, inventory, legacy, vector, selectorState };
+}
+
+/**
+ * Execute every ratified fixture against the real classifier and return the frozen result rows. Each
+ * row carries the fixture id, the record's expected result and first phase, and the classifier's
+ * actual outcome; nothing is asserted here, so the caller can prove the matrix independently.
+ */
+export function runFreshWorkerFixtureMatrix() {
+  const rows = [];
+  for (const row of C_REST_FIXTURES.positive) {
+    rows.push(deepFreeze({
+      id: row.id,
+      kind: 'positive',
+      expected: deepFreeze({ result: row.result, firstPhase: row.firstPhase }),
+      actual: classifyRestore(observationForFixture(row, NEGATIVE_CONTEXT)),
+    }));
+  }
+  for (const row of C_REST_FIXTURES.negative) {
+    rows.push(deepFreeze({
+      id: row.id,
+      kind: 'negative',
+      expected: deepFreeze({ result: row.result, firstPhase: row.firstPhase }),
+      actual: classifyRestore(observationForFixture(row, NEGATIVE_CONTEXT)),
+    }));
+  }
+  return deepFreeze(rows);
+}
+
+// ------------------------------------------------------------------------------------------------
+// The closed module surface: exactly the thirty names the contract fixes.
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * The frozen C-REST metadata. Every member is a closed registry, and every registry is deep-frozen so
+ * the decision table cannot be edited through the module surface.
+ */
+export const M2_RESTORE = deepFreeze({
   PHASES,
   INVENTORY_RESULTS,
   SUCCESS_RESULTS,
@@ -320,499 +1008,11 @@ export const M2_RESTORE = Object.freeze({
   VERSIONS,
   ALGORITHMS,
   VALUE_REGISTRIES,
+  READER_PROFILE,
   CORRUPTION_ACTION,
   AUTOMATIC_ACTIONS,
   EXPOSURE,
   FRESHNESS,
 });
 
-// --------------------------------------------------------------------------------------------
-// Closed registry self-check. The module refuses to expose an inconsistent vocabulary: C-REST
-// states the sets are disjoint and total, and every negative class and fixture names a row that
-// must exist. A drift here is a rejection, not a warning.
-// --------------------------------------------------------------------------------------------
-const assertClosedVocabulary = () => {
-  const results = new Set([...INVENTORY_RESULTS, ...SUCCESS_RESULTS, ...FAILURE_RESULTS]);
-  if (results.size !== INVENTORY_RESULTS.length + SUCCESS_RESULTS.length + FAILURE_RESULTS.length) {
-    throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-  }
-  if (SUCCESS_RESULTS.length !== 3 || FAILURE_RESULTS.length !== 13) {
-    throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-  }
-  if (PHASES.length !== 14 || FAULT_PRECEDENCE.length !== 26 || NEGATIVE_CLASSES.length !== 20) {
-    throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-  }
-  for (const row of FAULT_PRECEDENCE) {
-    if (!PHASES.includes(row.phase) || !FAILURE_RESULTS.includes(row.result)) {
-      throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-    }
-  }
-  for (const row of NEGATIVE_CLASSES) {
-    const precedence = faultRow(row.fault);
-    if (precedence === null) {
-      throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-    }
-    if (precedence.phase !== row.phase || precedence.result !== row.result) {
-      throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-    }
-  }
-  for (const state of Object.keys(SUCCESS_BY_SELECTOR_STATE)) {
-    if (!SELECTOR_STATE_VALUES.includes(state) || !SUCCESS_RESULTS.includes(SUCCESS_BY_SELECTOR_STATE[state])) {
-      throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-    }
-  }
-  if (Object.keys(SUCCESS_BY_SELECTOR_STATE).length !== SELECTOR_STATE_VALUES.length) {
-    throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-  }
-};
-
-assertClosedVocabulary();
-
-// --------------------------------------------------------------------------------------------
-// Version and pin checks. Equality, never a range. Unknown, future, missing, mixed or downgraded
-// versions are UNSUPPORTED_VERSION; any other authenticated profile mismatch is
-// INCOMPATIBLE_FORMAT; a store on an ineligible build is INCOMPATIBLE_BUILD.
-// --------------------------------------------------------------------------------------------
-
-/**
- * `checkVersions(observed)`: exact equality against the closed eight-version allowlist.
- * Returns `null` when the eight versions are exactly the C-FMT versions, otherwise the closed
- * failure `UNSUPPORTED_VERSION`. A missing, extra, duplicate or non-integer member rejects.
- */
-export function checkVersions(observed) {
-  if (!isPlainObject(observed)) {
-    return 'UNSUPPORTED_VERSION';
-  }
-  const keys = Object.keys(observed);
-  if (keys.length !== Object.keys(VERSIONS).length) {
-    return 'UNSUPPORTED_VERSION';
-  }
-  for (const [name, expected] of Object.entries(VERSIONS)) {
-    if (!hasOwn(observed, name) || observed[name] !== expected) {
-      return 'UNSUPPORTED_VERSION';
-    }
-  }
-  return null;
-}
-
-/**
- * `checkBuildEligibility(build)`: one complete `buildMatrix` row must match by equality. A
- * partial row, an extra member, a missing member, an unlisted runtime class or any drifted pin
- * is not eligible. Returns `true` only for an exact row match.
- */
-export function checkBuildEligibility(build) {
-  if (!isPlainObject(build)) {
-    return false;
-  }
-  const keys = Object.keys(build).sort().join(',');
-  const required = [
-    'browserClass', 'buildId', 'cFmtDocumentSha256', 'openMlsRevision', 'readerProfile',
-    'runtimeClass', 'ss0Ciphersuite', 'ss0GateADecisionsSha256', 'versions', 'wasmArtifactPath',
-    'wasmArtifactSha256',
-  ].join(',');
-  if (keys !== required) {
-    return false;
-  }
-  for (const row of BUILD_MATRIX) {
-    if (build.ss0Ciphersuite !== undefined && (!isPlainObject(build.ss0Ciphersuite)
-      || Object.keys(build.ss0Ciphersuite).sort().join(',') !== 'ianaId,name')) {
-      return false;
-    }
-    if (build.readerProfile !== row.readerProfile
-      || build.cFmtDocumentSha256 !== row.cFmtDocumentSha256
-      || build.openMlsRevision !== row.openMlsRevision
-      || build.wasmArtifactPath !== row.wasmArtifactPath
-      || build.wasmArtifactSha256 !== row.wasmArtifactSha256
-      || build.ss0GateADecisionsSha256 !== row.ss0GateADecisionsSha256
-      || build.buildId !== row.buildId
-      || build.runtimeClass !== row.runtimeClass
-      || build.browserClass !== row.browserClass) {
-      continue;
-    }
-    if (!isPlainObject(build.ss0Ciphersuite)) {
-      continue;
-    }
-    if (build.ss0Ciphersuite.ianaId !== row.ss0Ciphersuite.ianaId
-      || build.ss0Ciphersuite.name !== row.ss0Ciphersuite.name) {
-      continue;
-    }
-    if (checkVersions(build.versions) !== null) {
-      continue;
-    }
-    return true;
-  }
-  return false;
-}
-
-// --------------------------------------------------------------------------------------------
-// Authenticated compatibility. §4: authenticated version compatibility precedes other profile,
-// manifest and record checks; §2: version mismatch is UNSUPPORTED_VERSION, any other profile
-// mismatch is INCOMPATIBLE_FORMAT.
-// --------------------------------------------------------------------------------------------
-export function checkAuthenticatedCompatibility(authenticated) {
-  if (!isPlainObject(authenticated) || !isPlainObject(authenticated.versions)) {
-    return 'UNSUPPORTED_VERSION';
-  }
-  if (checkVersions(authenticated.versions) !== null) {
-    return 'UNSUPPORTED_VERSION';
-  }
-  if (!isPlainObject(authenticated.profile)) {
-    return 'INCOMPATIBLE_FORMAT';
-  }
-  const profile = authenticated.profile;
-  if (profile.readerProfile !== READER_PROFILE) {
-    return 'INCOMPATIBLE_FORMAT';
-  }
-  if (profile.algorithms !== undefined && isPlainObject(profile.algorithms)) {
-    for (const [name, expected] of Object.entries(ALGORITHMS)) {
-      if (profile.algorithms[name] !== expected) {
-        return 'INCOMPATIBLE_FORMAT';
-      }
-    }
-  }
-  return null;
-}
-
-// --------------------------------------------------------------------------------------------
-// §7 reconciliation candidate and physical parent. The candidate binding digest MUST be checked
-// against the candidate generation's own BINDING_PROFILE (I-ROOT ratification 5933193607,
-// assigned to this card by the I-WORK ratification 5944375194).
-// --------------------------------------------------------------------------------------------
-
-/** Closed candidate facts. `b128eq` compares two 32-byte Uint8Arrays by value. */
-const byteEqual = (a, b) => {
-  if (!(a instanceof Uint8Array) || !(b instanceof Uint8Array) || a.length !== b.length) {
-    return false;
-  }
-  for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) {
-      return false;
-    }
-  }
-  return true;
-};
-
-/**
- * `validateReconciliationCandidate(facts)`: the complete §7 and `candidateRules` conjunction for
- * a located candidate. Every mismatch is `REFERENCE_INCONSISTENT` except a canonical-key shape or
- * scope/substitution fault, which is `RECORD_INVALID` at `RECORD_DECODE`. The candidate is never
- * authority and this function never selects, retries, releases or repairs anything.
- */
-export function validateReconciliationCandidate(facts) {
-  if (!isPlainObject(facts) || !isPlainObject(facts.locator) || !isPlainObject(facts.candidate)) {
-    throw new M2RestoreError(FAILURE_DEFAULT, 'CLASSIFY');
-  }
-  const { locator, candidate } = facts;
-
-  // Canonical-kind shape of the candidate manifest key: kind 16, empty object ID.
-  if (locator.recordKind !== 16 || locator.objectIdLength !== 0) {
-    throw new M2RestoreError('RECORD_INVALID', 'RECORD_DECODE');
-  }
-  // Scope/session substitution is a decode-time fault, never a reference fault.
-  if (locator.scope !== 'CONTEXT_PRESESSION' || locator.secureSessionIdentity !== null) {
-    throw new M2RestoreError('RECORD_INVALID', 'RECORD_DECODE');
-  }
-  // Generation and context of the locator equal the candidate generation and locator context.
-  if (locator.generation !== facts.candidateGeneration
-    || !byteEqual(locator.localContextId, facts.localContextId)) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  if (!byteEqual(locator.sha256, facts.candidateManifestKeyDigest)) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  // The located candidate manifest's own digests and keyed root must match the selector tuple.
-  if (!byteEqual(candidate.manifestCiphertextDigest, facts.manifestCiphertextDigest)) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  if (!byteEqual(candidate.keyedRoot, facts.keyedRoot)) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  // I-ROOT obligation: the candidate binding digest equals that generation's own BINDING_PROFILE.
-  if (!byteEqual(candidate.manifestBindingDigest, candidate.bindingProfileDigest)) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  if (!isPlainObject(facts.candidateBindingProfile)
-    || !byteEqual(candidate.bindingProfileDigest, facts.candidateBindingProfile.bindingProfileDigest)
-    || facts.candidateBindingProfile.generation !== facts.candidateGeneration) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  // A candidate equal to the selected generation is never RECONCILIATION_REQUIRED.
-  if (facts.selectorState === 'RECONCILIATION_REQUIRED' && facts.candidateEqualsSelected === true) {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  // Candidate fields differing without RECONCILIATION_REQUIRED reject.
-  if (facts.candidateEqualsSelected !== true && facts.selectorState !== 'RECONCILIATION_REQUIRED') {
-    throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-  }
-  // Unresolved hold: the physical parent is the selector's selected generation and keyed root.
-  if (facts.candidate.resultStatus === 'INDETERMINATE') {
-    if (facts.selectorState !== 'RECONCILIATION_REQUIRED'
-      || candidate.parentGeneration !== facts.selectedGeneration
-      || !byteEqual(candidate.parentKeyedRoot, facts.selectedKeyedRoot)) {
-      throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-    }
-    // The logical identifiers must match each other, and are never compared to the parent.
-    if (!byteEqual(candidate.originalAuthorityDigest, candidate.originalAuthorityReference)) {
-      throw new M2RestoreError('REFERENCE_INCONSISTENT', 'REFERENCES');
-    }
-  }
-  return freezeDeep({
-    candidateGeneration: facts.candidateGeneration,
-    candidateManifestKeyDigest: facts.candidateManifestKeyDigest,
-    bindingProfileVerified: true,
-    authority: false,
-  });
-}
-
-// --------------------------------------------------------------------------------------------
-// The classifier.
-// --------------------------------------------------------------------------------------------
-
-const rejection = (result, stage, diagnostics) => freezeDeep({
-  result,
-  stage,
-  legacyPresent: diagnostics.legacyPresent,
-  exposed: false,
-  diagnostics,
-});
-
-const diagnosticsFor = (observation) => {
-  const inventory = observation.inventory;
-  return {
-    stageCode: null,
-    reasonCode: null,
-    m2LocatorCount: observation.inventory === 'M2' ? 1 : 0,
-    m2ArtifactCount: observation.inventory === 'M2' ? 1 : 0,
-    legacyPresent: observation.legacy === true,
-  };
-};
-
-const validateObservation = (observation) => {
-  if (!isPlainObject(observation)) {
-    return false;
-  }
-  const keys = Object.keys(observation);
-  if (keys.length !== OBSERVATION_KEYS.length) {
-    return false;
-  }
-  for (const key of OBSERVATION_KEYS) {
-    if (!hasOwn(observation, key)) {
-      return false;
-    }
-  }
-  if (!Array.isArray(observation.faults) || !observation.faults.every(isString)) {
-    return false;
-  }
-  if (!INVENTORY_VALUES.includes(observation.inventory)) {
-    return false;
-  }
-  if (!isBoolean(observation.legacy)) {
-    return false;
-  }
-  if (observation.vector !== null && !isString(observation.vector)) {
-    return false;
-  }
-  if (!SELECTOR_STATE_VALUES.includes(observation.selectorState)) {
-    return false;
-  }
-  return true;
-};
-
-/**
- * `classifyRestore(observation)`: the total, deterministic and fail-closed restore decision.
- *
- * The observation is a closed record with exactly the five members `faults`, `inventory`,
- * `legacy`, `vector` and `selectorState`. The classification follows C-REST exactly:
- *
- * 1. a malformed or non-closed observation is `INTERNAL_VALIDATION_FAILED` at `CLASSIFY`;
- * 2. a non-empty fault set resolves by `faultPrecedence` order - phase order first, then the
- *    unique row for the fault - so physical enumeration order is irrelevant;
- * 3. otherwise `NONE` inventory is `NO_M2_STATE` and `LEGACY_ONLY` is `LEGACY_ONLY`, both at
- *    `INVENTORY`, unauthenticated and exposing nothing;
- * 4. otherwise the authenticated selector state maps through `successBySelectorState`;
- * 5. only a success exposes selected authority, and only at `EXPOSE`.
- */
-export function classifyRestore(observation) {
-  if (!validateObservation(observation)) {
-    return rejection(FAILURE_DEFAULT, 'CLASSIFY', {
-      stageCode: 'CLASSIFY',
-      reasonCode: FAILURE_DEFAULT,
-      m2LocatorCount: 0,
-      m2ArtifactCount: 0,
-      legacyPresent: false,
-    });
-  }
-  const diagnostics = diagnosticsFor(observation);
-
-  if (observation.faults.length > 0) {
-    let chosen = null;
-    for (const fault of observation.faults) {
-      const rank = faultRank(fault);
-      if (rank < 0) {
-        return rejection(FAILURE_DEFAULT, 'CLASSIFY', {
-          ...diagnostics, stageCode: 'CLASSIFY', reasonCode: FAILURE_DEFAULT,
-        });
-      }
-      if (chosen === null || rank < chosen.rank) {
-        chosen = { rank, row: FAULT_PRECEDENCE[rank] };
-      }
-    }
-    return rejection(chosen.row.result, chosen.row.phase, {
-      ...diagnostics, stageCode: chosen.row.phase, reasonCode: chosen.row.result,
-    });
-  }
-
-  if (observation.inventory === 'NONE') {
-    if (observation.legacy === true) {
-      return rejection(FAILURE_DEFAULT, 'CLASSIFY', {
-        ...diagnostics, stageCode: 'CLASSIFY', reasonCode: FAILURE_DEFAULT,
-      });
-    }
-    return rejection('NO_M2_STATE', 'INVENTORY', {
-      ...diagnostics, stageCode: 'INVENTORY', reasonCode: 'NO_M2_STATE',
-    });
-  }
-
-  if (observation.inventory === 'LEGACY_ONLY') {
-    if (observation.legacy !== true) {
-      return rejection(FAILURE_DEFAULT, 'CLASSIFY', {
-        ...diagnostics, stageCode: 'CLASSIFY', reasonCode: FAILURE_DEFAULT,
-      });
-    }
-    return rejection('LEGACY_ONLY', 'INVENTORY', {
-      ...diagnostics, stageCode: 'INVENTORY', reasonCode: 'LEGACY_ONLY',
-    });
-  }
-
-  const result = SUCCESS_BY_SELECTOR_STATE[observation.selectorState];
-  if (result === undefined) {
-    return rejection(FAILURE_DEFAULT, 'CLASSIFY', {
-      ...diagnostics, stageCode: 'CLASSIFY', reasonCode: FAILURE_DEFAULT,
-    });
-  }
-  return freezeDeep({
-    result,
-    stage: 'EXPOSE',
-    legacyPresent: observation.legacy === true,
-    exposed: true,
-    diagnostics: { ...diagnostics, stageCode: 'EXPOSE', reasonCode: result },
-  });
-}
-
-// --------------------------------------------------------------------------------------------
-// §12 fresh-worker fixture matrix.
-// --------------------------------------------------------------------------------------------
-
-const fixture = (id, inventory, vector, legacy, selectorState, faults, result, firstPhase) => ({
-  id, inventory, vector, legacy, selectorState, faults, result, firstPhase,
-});
-
-const CLEAN = {
-  inventory: 'M2', vector: 'FMT-KAT-ACTIVE', legacy: false,
-  selectorState: 'ACTIVE', faults: [],
-};
-
-/** The 7 positive and 65 negative C-REST fixtures, as executable rows. */
-export const FRESH_WORKER_FIXTURES = Object.freeze([
-  fixture('POS-NO-M2', 'NONE', null, false, 'EMPTY', [], 'NO_M2_STATE', 'INVENTORY'),
-  fixture('POS-LEGACY-ONLY', 'LEGACY_ONLY', null, true, 'EMPTY', [], 'LEGACY_ONLY', 'INVENTORY'),
-  fixture('POS-EMPTY', 'M2', 'FMT-KAT-EMPTY', false, 'EMPTY', [], 'RESTORED_EMPTY', 'EXPOSE'),
-  fixture('POS-ACTIVE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', [], 'RESTORED_ACTIVE', 'EXPOSE'),
-  fixture('POS-HOLD', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', [], 'RESTORED_RECONCILIATION_REQUIRED', 'EXPOSE'),
-  fixture('POS-EMPTY-HOLD', 'M2', 'FMT-KAT-EMPTY-HOLD', false, 'RECONCILIATION_REQUIRED', [], 'RESTORED_RECONCILIATION_REQUIRED', 'EXPOSE'),
-  fixture('POS-M2-LEGACY-PRESENT', 'M2', 'FMT-KAT-ACTIVE', true, 'ACTIVE', [], 'RESTORED_ACTIVE', 'EXPOSE'),
-  fixture('NEG-LOCKUNAVAILABLE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['lockUnavailable'], 'LOCKED_ELSEWHERE', 'LOCK'),
-  fixture('NEG-BUILDNOTLISTED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['buildNotListed'], 'INCOMPATIBLE_BUILD', 'BUILD_ELIGIBILITY'),
-  fixture('NEG-INVENTORYAMBIGUOUS', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['inventoryAmbiguous'], 'INTERNAL_VALIDATION_FAILED', 'INVENTORY'),
-  fixture('NEG-WRAPPERWRONGORINVALID', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['wrapperWrongOrInvalid'], 'WRAPPER_AUTH_FAILED', 'WRAPPER_AUTH'),
-  fixture('NEG-SELECTORHEADERVERSIONUNKNOWN', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorHeaderVersionUnknown'], 'UNSUPPORTED_VERSION', 'SELECTOR_HEADER'),
-  fixture('NEG-SELECTORHEADERSTRUCTUREINCOMPATIBLE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorHeaderStructureIncompatible'], 'INCOMPATIBLE_FORMAT', 'SELECTOR_HEADER'),
-  fixture('NEG-SELECTORMALFORMEDORMULTIPLE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorMalformedOrMultiple'], 'SELECTOR_INVALID', 'SELECTOR_AUTH'),
-  fixture('NEG-SELECTORAUTHENTICATIONFAILED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorAuthenticationFailed'], 'AUTHENTICATION_FAILED', 'SELECTOR_AUTH'),
-  fixture('NEG-AUTHENTICATEDVERSIONUNKNOWNORMIXED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['authenticatedVersionUnknownOrMixed'], 'UNSUPPORTED_VERSION', 'AUTHENTICATED_COMPATIBILITY'),
-  fixture('NEG-AUTHENTICATEDPROFILEINCOMPATIBLE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['authenticatedProfileIncompatible'], 'INCOMPATIBLE_FORMAT', 'AUTHENTICATED_COMPATIBILITY'),
-  fixture('NEG-MANIFESTORROOTMISMATCH', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['manifestOrRootMismatch'], 'MANIFEST_INVALID', 'MANIFEST_ROOT'),
-  fixture('NEG-RECORDMISSINGEXTRADUPLICATEREORDERED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordMissingExtraDuplicateReordered'], 'RECORD_SET_INCOMPLETE', 'RECORD_SET'),
-  fixture('NEG-PARTIALSELECTEDORCANDIDATEGENERATION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['partialSelectedOrCandidateGeneration'], 'PARTIAL_GENERATION', 'RECORD_SET'),
-  fixture('NEG-RECORDAUTHENTICATIONFAILED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordAuthenticationFailed'], 'AUTHENTICATION_FAILED', 'RECORD_DECODE'),
-  fixture('NEG-RECORDCANONICALKEYKINDVERSIONGENERATIONINVALID', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordCanonicalKeyKindVersionGenerationInvalid'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-REFERENCEORLIFECYCLEINCONSISTENT', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['referenceOrLifecycleInconsistent'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-UNEXPECTEDVALIDATORCONDITION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['unexpectedValidatorCondition'], 'INTERNAL_VALIDATION_FAILED', 'CLASSIFY'),
-  fixture('NEG-UNKNOWN-MIXED-VERSIONS', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['authenticatedVersionUnknownOrMixed'], 'UNSUPPORTED_VERSION', 'AUTHENTICATED_COMPATIBILITY'),
-  fixture('NEG-INELIGIBLE-BUILD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['buildNotListed'], 'INCOMPATIBLE_BUILD', 'BUILD_ELIGIBILITY'),
-  fixture('NEG-MALFORMED-SELECTOR', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorMalformedOrMultiple'], 'SELECTOR_INVALID', 'SELECTOR_AUTH'),
-  fixture('NEG-SELECTOR-MANIFEST-ROOT-MISMATCH', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['manifestOrRootMismatch'], 'MANIFEST_INVALID', 'MANIFEST_ROOT'),
-  fixture('NEG-MISSING-RECORD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordMissingExtraDuplicateReordered'], 'RECORD_SET_INCOMPLETE', 'RECORD_SET'),
-  fixture('NEG-EXTRA-RECORD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordMissingExtraDuplicateReordered'], 'RECORD_SET_INCOMPLETE', 'RECORD_SET'),
-  fixture('NEG-DUPLICATE-RECORD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordMissingExtraDuplicateReordered'], 'RECORD_SET_INCOMPLETE', 'RECORD_SET'),
-  fixture('NEG-REORDERED-RECORD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordMissingExtraDuplicateReordered'], 'RECORD_SET_INCOMPLETE', 'RECORD_SET'),
-  fixture('NEG-RECORD-KEY-SUBSTITUTION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordCanonicalKeyKindVersionGenerationInvalid'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-RECORD-KIND-SUBSTITUTION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordCanonicalKeyKindVersionGenerationInvalid'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-SELECTED-GENERATION-SUBSTITUTION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordCanonicalKeyKindVersionGenerationInvalid'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-BAD-TOMBSTONE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordCanonicalKeyKindVersionGenerationInvalid'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-PARTIAL-CANDIDATE', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['partialSelectedOrCandidateGeneration'], 'PARTIAL_GENERATION', 'RECORD_SET'),
-  fixture('NEG-FORGED-RESULT-ESCROW-HOLD', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['referenceOrLifecycleInconsistent'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-INVALID-LIFECYCLE-PAIR', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['referenceOrLifecycleInconsistent'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-AMBIGUOUS-INVENTORY', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['inventoryAmbiguous'], 'INTERNAL_VALIDATION_FAILED', 'INVENTORY'),
-  fixture('NEG-LEGACY-SHAPED-AT-M2-LOCATOR', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorHeaderStructureIncompatible'], 'INCOMPATIBLE_FORMAT', 'SELECTOR_HEADER'),
-  fixture('NEG-LEGACY-CIPHERSUITE-AT-M2-LOCATOR', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['authenticatedProfileIncompatible'], 'INCOMPATIBLE_FORMAT', 'AUTHENTICATED_COMPATIBILITY'),
-  fixture('NEG-M2-LEGACY-PRESENT-INVALID', 'M2', 'FMT-KAT-ACTIVE', true, 'ACTIVE', ['manifestOrRootMismatch'], 'MANIFEST_INVALID', 'MANIFEST_ROOT'),
-  fixture('NEG-CONCRETE-MULTIPLE-SELECTOR-CANDIDATES', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['multipleSelectorCandidates'], 'SELECTOR_INVALID', 'INVENTORY'),
-  fixture('NEG-CONCRETE-ORPHAN-GENERATION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['orphanGeneration'], 'PARTIAL_GENERATION', 'INVENTORY'),
-  fixture('NEG-CONCRETE-KEY-DERIVATION-FAILED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['keyDerivationFailed'], 'INTERNAL_VALIDATION_FAILED', 'KEY_DERIVATION'),
-  fixture('NEG-CONCRETE-CANDIDATE-MANIFEST-KEY-SCOPE-SESSION-SUBSTITUTION', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateManifestKeyScopeSessionSubstitution'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-CONCRETE-CANDIDATE-MANIFEST-KEY-MISMATCH', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateManifestKeyMismatch'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CONCRETE-CANDIDATE-PARENT-MISMATCH', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateParentMismatch'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CONCRETE-CANDIDATE-EQUALS-SELECTED-DURING-RECONCILIATION', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateEqualsSelectedDuringReconciliation'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CONCRETE-CANDIDATE-FIELDS-DIFFER-WITHOUT-RECONCILIATION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['candidateFieldsDifferWithoutReconciliation'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CONCRETE-UNEXPECTED-EXPOSE-CONDITION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['unexpectedExposeCondition'], 'INTERNAL_VALIDATION_FAILED', 'EXPOSE'),
-  fixture('NEG-CFMT-UNKNOWN_MISSING_DUPLICATE_REORDERED_JSON_FIELD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['unexpectedValidatorCondition'], 'INTERNAL_VALIDATION_FAILED', 'CLASSIFY'),
-  fixture('NEG-CFMT-UNKNOWN_MISSING_DUPLICATE_REORDERED_PLAINTEXT_FIELD', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordCanonicalKeyKindVersionGenerationInvalid'], 'RECORD_INVALID', 'RECORD_DECODE'),
-  fixture('NEG-CFMT-UNKNOWN_KIND_VERSION_ALGORITHM_LABEL', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['authenticatedVersionUnknownOrMixed'], 'UNSUPPORTED_VERSION', 'AUTHENTICATED_COMPATIBILITY'),
-  fixture('NEG-CFMT-NONCANONICAL_LENGTH_ENDIAN', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorHeaderStructureIncompatible'], 'INCOMPATIBLE_FORMAT', 'SELECTOR_HEADER'),
-  fixture('NEG-CFMT-TRUNCATION_TRAILING_SIZE_OVERFLOW', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['selectorHeaderStructureIncompatible'], 'INCOMPATIBLE_FORMAT', 'SELECTOR_HEADER'),
-  fixture('NEG-CFMT-NONCE_REUSE', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordAuthenticationFailed'], 'AUTHENTICATION_FAILED', 'RECORD_DECODE'),
-  fixture('NEG-CFMT-AAD_CONTEXT_SESSION_PROFILE_KIND_VERSION_GENERATION_SUBSTITUTION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordAuthenticationFailed'], 'AUTHENTICATION_FAILED', 'RECORD_DECODE'),
-  fixture('NEG-CFMT-KEY_OR_LABEL_COLLISION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['authenticatedProfileIncompatible'], 'INCOMPATIBLE_FORMAT', 'AUTHENTICATED_COMPATIBILITY'),
-  fixture('NEG-CFMT-CROSS_DOMAIN_COPY', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['recordAuthenticationFailed'], 'AUTHENTICATION_FAILED', 'RECORD_DECODE'),
-  fixture('NEG-CFMT-MANIFEST_OMISSION_ADDITION_DUPLICATE_REORDER', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['manifestOrRootMismatch'], 'MANIFEST_INVALID', 'MANIFEST_ROOT'),
-  fixture('NEG-CFMT-ROOT_OR_SELECTOR_MISMATCH', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['manifestOrRootMismatch'], 'MANIFEST_INVALID', 'MANIFEST_ROOT'),
-  fixture('NEG-CFMT-HISTORICAL_SUBSET_UNDER_CURRENT_ROOT', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['manifestOrRootMismatch'], 'MANIFEST_INVALID', 'MANIFEST_ROOT'),
-  fixture('NEG-CFMT-PARTIAL_GENERATION', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['partialSelectedOrCandidateGeneration'], 'PARTIAL_GENERATION', 'RECORD_SET'),
-  fixture('NEG-CFMT-FORGED_RESULT_ESCROW_ASSOCIATION', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['referenceOrLifecycleInconsistent'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CFMT-CANDIDATE_FIELDS_DIFFER_WITHOUT_RECONCILIATION_REQUIRED', 'M2', 'FMT-KAT-ACTIVE', false, 'ACTIVE', ['candidateFieldsDifferWithoutReconciliation'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CFMT-RECONCILIATION_REQUIRED_CANDIDATE_MISSING_OR_MISMATCHED', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateManifestKeyMismatch'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CFMT-RECONCILIATION_REQUIRED_CANDIDATE_EQUALS_SELECTED', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateEqualsSelectedDuringReconciliation'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CFMT-CANDIDATE_MANIFEST_KEY_MISMATCH', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateManifestKeyMismatch'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CFMT-CANDIDATE_PARENT_MISMATCH', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateParentMismatch'], 'REFERENCE_INCONSISTENT', 'REFERENCES'),
-  fixture('NEG-CFMT-CANDIDATE_MANIFEST_KEY_SCOPE_SESSION_SUBSTITUTION', 'M2', 'FMT-KAT-HOLD', false, 'RECONCILIATION_REQUIRED', ['candidateManifestKeyScopeSessionSubstitution'], 'RECORD_INVALID', 'RECORD_DECODE'),
-]);
-
-/**
- * `runFreshWorkerFixtureMatrix()`: classify every C-REST fixture through the real classifier on
- * a fresh worker observation and return one frozen row per fixture with the typed outcome.
- */
-export function runFreshWorkerFixtureMatrix() {
-  return freezeDeep(FRESH_WORKER_FIXTURES.map((row) => {
-    const observation = {
-      faults: row.faults.slice(),
-      inventory: row.inventory,
-      legacy: row.legacy,
-      vector: row.vector,
-      selectorState: row.selectorState,
-    };
-    const outcome = classifyRestore(observation);
-    return {
-      id: row.id,
-      expectedResult: row.result,
-      expectedPhase: row.firstPhase,
-      result: outcome.result,
-      stage: outcome.stage,
-      legacyPresent: outcome.legacyPresent,
-      exposed: outcome.exposed,
-      ok: outcome.result === row.result && outcome.stage === row.firstPhase,
-    };
-  }));
-}
-
-export { CLEAN as CLEAN_OBSERVATION };
+export { VALUE_REGISTRIES };
