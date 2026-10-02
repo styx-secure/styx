@@ -572,6 +572,23 @@ describe('I-JOIN create and Welcome', () => {
     expect(Object.hasOwn(result, 'output')).toBe(false);
   });
 
+  test('CREATE that commits with no staged Welcome is FAIL_CLOSED_INTERNAL, never a success', () => {
+    const result = invokeAdapter({
+      request: request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }),
+      snapshot: empty(),
+      observation: createObservation('SUPPORTED', 'COMMITTED', null),
+    });
+    expect(result.kind).toBe('REJECTED');
+    expect(result.error.code).toBe('FAIL_CLOSED_INTERNAL');
+    expect(Object.hasOwn(result, 'output')).toBe(false);
+    const notCommitted = invokeAdapter({
+      request: request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }),
+      snapshot: empty(),
+      observation: createObservation('SUPPORTED', 'NOT_COMMITTED', null),
+    });
+    expect(notCommitted.kind).toBe('NOT_COMMITTED');
+  });
+
   test('CREATE with UNSUPPORTED_ONBOARDING rejects before mutation', () => {
     const snapshot = empty();
     const result = invokeAdapter({
@@ -659,7 +676,7 @@ describe('I-JOIN fail-closed request validation', () => {
     ['missing profile member', request('RESTORE', {}, { profile: { adapterApi: API } }), {}, 'UNSUPPORTED_PROFILE'],
     ['unknown profile member', request('RESTORE', {}, { profile: { ...PROFILE, extra: 1 } }), {}, 'UNSUPPORTED_PROFILE'],
     ['empty bindingRef', request('RESTORE', {}, { bindingRef: new Uint8Array(0) }), {}, 'BINDING_MISMATCH'],
-    ['non-byte bindingRef', request('RESTORE', {}, { bindingRef: 7 }), {}, 'BINDING_MISMATCH'],
+    ['non-byte bindingRef', request('RESTORE', {}, { bindingRef: 7 }), {}, 'INVALID_REQUEST'],
     ['unknown operation', request('ADD_MEMBER', {}), {}, 'UNSUPPORTED_OPERATION'],
     ['operation outside the integrated three', request('PROTECT_APPLICATION', { applicationBytes: new Uint8Array([0x01]) }), {}, 'UNSUPPORTED_OPERATION'],
     ['unknown request input member', request('RESTORE', { extra: 1 }), {}, 'UNKNOWN_FIELD'],
@@ -686,6 +703,28 @@ describe('I-JOIN fail-closed request validation', () => {
     expect(result.error.code).toBe(expected);
     expect(result.stateAfter).toBe(result.stateBefore);
     expect(Object.hasOwn(result, 'output')).toBe(false);
+  });
+
+  test('an over-bound or empty bindingRef is BINDING_MISMATCH at P03 on an otherwise valid request', () => {
+    const observation = restoreObservation({});
+    const over = invokeAdapter({
+      request: request('RESTORE', {}, { bindingRef: new Uint8Array(M2_ADAPTER.BOUNDS.MAX_BINDING_REF_BYTES + 1) }),
+      snapshot: empty(),
+      observation,
+    });
+    expect(code(over)).toBe('BINDING_MISMATCH');
+    const emptyRef = invokeAdapter({
+      request: request('RESTORE', {}, { bindingRef: new Uint8Array(0) }),
+      snapshot: empty(),
+      observation,
+    });
+    expect(code(emptyRef)).toBe('BINDING_MISMATCH');
+    const atLimit = invokeAdapter({
+      request: request('RESTORE', {}, { bindingRef: new Uint8Array(M2_ADAPTER.BOUNDS.MAX_BINDING_REF_BYTES) }),
+      snapshot: empty(),
+      observation,
+    });
+    expect(code(atLimit)).toBe('RESTORED');
   });
 
   test('an accessor request member is a malformed field and is never invoked', () => {

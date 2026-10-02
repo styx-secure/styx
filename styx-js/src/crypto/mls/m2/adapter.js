@@ -398,10 +398,13 @@ function requestLevelCode(value) {
     }
   }
 
-  if (typeof value.bindingRef !== 'string' && !isUint8Array(value.bindingRef)) candidates.push('BINDING_MISMATCH');
-  else if (isUint8Array(value.bindingRef)) {
-    if (value.bindingRef.byteLength === 0) candidates.push('BINDING_MISMATCH');
-  } else if (value.bindingRef.length === 0) candidates.push('BINDING_MISMATCH');
+  if (!isUint8Array(value.bindingRef)) {
+    // C-API §4: the binding reference is opaque AP bytes; anything that is not a `Uint8Array` is
+    // malformed framing at P01, while an empty or over-bound reference is `BINDING_MISMATCH` at P03.
+    candidates.push('INVALID_REQUEST');
+  } else if (value.bindingRef.byteLength === 0) {
+    candidates.push('BINDING_MISMATCH');
+  }
 
   if (typeof value.operation !== 'string' || !OPERATIONS.includes(value.operation)) {
     candidates.push('UNSUPPORTED_OPERATION');
@@ -485,7 +488,8 @@ function deriveDecision(operation, observation) {
     } catch {
       return { error: 'FAIL_CLOSED_INTERNAL' };
     }
-    if (outcome === null || typeof outcome !== 'object' || !Object.hasOwn(RESTORE_DISPOSITIONS, outcome.result)) {
+    if (outcome === null || typeof outcome !== 'object' || !Object.isFrozen(outcome)
+      || !Object.hasOwn(RESTORE_DISPOSITIONS, outcome.result)) {
       return { error: 'FAIL_CLOSED_INTERNAL' };
     }
     const code = RESTORE_DISPOSITIONS[outcome.result];
@@ -513,7 +517,7 @@ function deriveDecision(operation, observation) {
     return { error: 'INVALID_REQUEST' };
   }
   let stagedOutput = null;
-  if (operation === 'CREATE') {
+  if (operation === 'CREATE' && value.stagedOutput !== null) {
     const staged = readClosed(value.stagedOutput, ['embeddedTreeWelcome']);
     if (staged.error) return { error: staged.error };
     if (!isUint8Array(staged.values.embeddedTreeWelcome)) return { error: 'INVALID_REQUEST' };
@@ -622,14 +626,21 @@ export function invokeAdapter(input) {
       candidates.push('FAIL_CLOSED_INTERNAL');
     }
     if (decision !== null && decision.result.kind === 'REJECTED') candidates.push(decision.result.code);
+    // A `CREATE` that commits with no staged Welcome is an internal failure strictly before any output
+    // release; it can never be reported as a success.
+    if (decision !== null && decision.result.kind === 'SUCCESS' && operation === 'CREATE'
+      && (derived.stagedOutput ?? null) === null) {
+      candidates.push('FAIL_CLOSED_INTERNAL');
+    }
   }
 
-  if (candidates.length > 0 && (decision === null || levelOf(worst(candidates)) < levelOf(decision.result.code))) {
+  if (candidates.length > 0) {
     const code = worst(candidates);
-    if (decision === null || levelOf(code) < levelOf(decision.result.code)
-      || (levelOf(code) === levelOf(decision.result.code) && rankOf(code) < rankOf(decision.result.code))) {
-      return rejected(requestId, operation, stateBefore, stateBefore, code);
-    }
+    const preempts = decision === null
+      || levelOf(code) < levelOf(decision.result.code)
+      || (levelOf(code) === levelOf(decision.result.code)
+        && rankOf(code) < rankOf(decision.result.code));
+    if (preempts) return rejected(requestId, operation, stateBefore, stateBefore, code);
   }
   if (decision === null) return rejected(requestId, operation, stateBefore, stateBefore, 'FAIL_CLOSED_INTERNAL');
   if (decision.result.kind === 'REJECTED') {
