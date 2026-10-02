@@ -25,13 +25,13 @@ from scope_guard import (
     build_report,
 )
 
-# APP-core's own ratified candidate for the PR-boundary guard: the tip of the M1
-# post-merge scope-guard repair (#315). The guard's boundary is the fixed pair
-# BASE_SHA..RATIFIED_CANDIDATE_SHA, so the candidate is pinned to APP-core's own
-# commit instead of a moving "HEAD". The live integration head also carries
-# later commits outside APP-core scope (for example the scope-evidence
-# workflow), and diffing those against APP-core's own base makes this suite fail
-# for changes APP-core never made.
+# Test-side pin, not part of the guard: the guard fixes only BASE_SHA and diffs
+# BASE_SHA against whatever candidate it is given. These tests give it APP-core's
+# own ratified candidate, the tip of the M1 post-merge scope-guard repair (#315),
+# instead of a moving "HEAD". The live integration head also carries later
+# commits outside APP-core scope (for example the scope-evidence workflow), and
+# diffing those against APP-core's own base makes this suite fail for changes
+# APP-core never made.
 RATIFIED_CANDIDATE_SHA = "e1538ef9c070e463a8256872a3fd0882c424e2ef"
 
 
@@ -122,7 +122,11 @@ class GitObjectScopeGuardTests(unittest.TestCase):
         )
         self._git("read-tree", RATIFIED_CANDIDATE_SHA)
         name = "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
-        self.registry = json.loads((ROOT / "contract" / name).read_text())
+        # Read the registry from the same pinned commit as the index, not from
+        # the live working tree, so the two cannot diverge silently.
+        self.registry = json.loads(
+            self._git("show", f"{RATIFIED_CANDIDATE_SHA}:{SUBTREE}contract/{name}")
+        )
         self.registry_path = self.repo / SUBTREE / "contract" / name
         self.registry_path.parent.mkdir(parents=True)
         self._write_registry()
@@ -215,6 +219,7 @@ class GitObjectScopeGuardTests(unittest.TestCase):
             r"\.github/workflows/agent-scope-evidence\.yml",
         ):
             build_report(self.repo, BASE_SHA, candidate, "strict")
+
     def test_second_native_repin_fails(self) -> None:
         row = next(
             row for row in self.registry["dependencies"]
