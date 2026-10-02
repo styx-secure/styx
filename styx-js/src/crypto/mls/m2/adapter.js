@@ -194,7 +194,7 @@ const OUTPUT_BY_SUCCESS_CODE = Object.freeze({
   DUPLICATE_IGNORED: Object.freeze([]),
 });
 
-/** The C-REST-owning rule of the I-SM decision rows this module consumes: the `RS_TRI_STATE` rows. */
+/** The decision rows the C-MUT section 4 mutation plans drive: the `RS_TRI_STATE` rows of this slice. */
 const TRI_STATE_ROWS = Object.freeze(['CAPI-S001', 'CAPI-S006', 'CAPI-S014']);
 
 /**
@@ -293,6 +293,11 @@ const BOUNDS = Object.freeze({
   MAX_BINDING_REF_BYTES: 4096,
   MAX_OPAQUE_BYTES: 1048576,
   MAX_RECONCILIATION_REF_CHARS: 256,
+  // An RS tri-state proof's operation identity is echoed back inside the reconciliation reference the
+  // merged I-SM issues (`I-SM-HOLD:<operationIdentity>`), so an identity longer than the reference bound
+  // minus that prefix would make this module issue a reference it then refuses, locking the hold out of
+  // every reconciliation. The bound is derived from the reference bound, never independent of it.
+  MAX_OPERATION_IDENTITY_CHARS: 256 - 'I-SM-HOLD:'.length,
 });
 
 /** The closed observation member sets, one per integrated operation. */
@@ -448,7 +453,7 @@ function rejected(requestId, operation, stateBefore, code) {
 }
 
 /** The P01 to P04 error code of a closed request record, or `null`. */
-function requestLevelCode(value) {
+function requestLevelCode(value, inputShape = null) {
   const candidates = [];
   if (typeof value.api !== 'string') candidates.push('INVALID_REQUEST');
   else if (value.api !== API) candidates.push('UNSUPPORTED_API_VERSION');
@@ -474,14 +479,14 @@ function requestLevelCode(value) {
     if (!INTEGRATED_OPERATIONS.includes(value.operation)) candidates.push('UNSUPPORTED_OPERATION');
     // C-API `/request/inputByOperation` closes `input` for every operation of `operationEnum`, so a
     // malformed `input` is a P01 defect that preempts the P04 refusal of a non-integrated operation.
-    const inputShape = readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
-    if (inputShape.error) candidates.push(inputShape.error);
+    const shape = inputShape ?? readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
+    if (shape.error) candidates.push(shape.error);
     else if (INPUT_BY_OPERATION[value.operation].some((key) => INPUT_BYTES.includes(key)
-      && (!isUint8Array(inputShape.values[key]) || byteLengthOf(inputShape.values[key]) < 0))) {
+      && (!isUint8Array(shape.values[key]) || byteLengthOf(shape.values[key]) < 0))) {
       candidates.push('INVALID_REQUEST');
     } else if (value.operation === 'RECONCILE_INDETERMINATE'
-      && (typeof inputShape.values.reconciliationRef !== 'string'
-        || inputShape.values.reconciliationRef.length === 0)) {
+      && (typeof shape.values.reconciliationRef !== 'string'
+        || shape.values.reconciliationRef.length === 0)) {
       // C-API `/request/inputByOperation` closes the reconcile input to one opaque
       // `reconciliationRef`; a missing, empty or non-string value is malformed framing at P01.
       candidates.push('INVALID_REQUEST');
@@ -493,27 +498,27 @@ function requestLevelCode(value) {
 }
 
 /** The P06 bound codes of an admissible request (no P01 to P04 defect), or an empty list. */
-function requestBoundCodes(value) {
+function requestBoundCodes(value, inputShape = null) {
   const candidates = [];
   if (value.requestId.length > BOUNDS.MAX_REQUEST_ID_CHARS) candidates.push('VALUE_OUT_OF_RANGE');
-  const inputShape = readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
+  const shape = inputShape ?? readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
   for (const key of INPUT_BY_OPERATION[value.operation]) {
-    if (INPUT_BYTES.includes(key) && byteLengthOf(inputShape.values[key]) > BOUNDS.MAX_OPAQUE_BYTES) {
+    if (INPUT_BYTES.includes(key) && byteLengthOf(shape.values[key]) > BOUNDS.MAX_OPAQUE_BYTES) {
       candidates.push('VALUE_OUT_OF_RANGE');
     }
   }
-  if (inputShape.error === null && value.operation === 'RECONCILE_INDETERMINATE'
-    && typeof inputShape.values.reconciliationRef === 'string'
-    && inputShape.values.reconciliationRef.length > BOUNDS.MAX_RECONCILIATION_REF_CHARS) {
+  if (shape.error === null && value.operation === 'RECONCILE_INDETERMINATE'
+    && typeof shape.values.reconciliationRef === 'string'
+    && shape.values.reconciliationRef.length > BOUNDS.MAX_RECONCILIATION_REF_CHARS) {
     candidates.push('VALUE_OUT_OF_RANGE');
   }
   return candidates;
 }
 
-function validateRequestRecord(request) {
+function validateRequestRecord(request, inputShape = null) {
   const shape = readClosed(request, REQUEST_FIELDS);
   if (shape.error) return { code: shape.error, values: null };
-  const levelCode = requestLevelCode(shape.values);
+  const levelCode = requestLevelCode(shape.values, inputShape);
   return { code: levelCode, values: shape.values };
 }
 
@@ -525,9 +530,12 @@ function validateRequestRecord(request) {
  */
 export function validateAdapterRequest(request) {
   try {
-    const checked = validateRequestRecord(request);
+    const decoded = readClosed(request, REQUEST_FIELDS);
+    const decodedInput = decoded.error === null && Object.hasOwn(INPUT_BY_OPERATION, decoded.values.operation)
+      ? readClosed(decoded.values.input, INPUT_BY_OPERATION[decoded.values.operation]) : null;
+    const checked = validateRequestRecord(request, decodedInput);
     if (checked.code !== null) return freezeData({ ok: false, code: checked.code });
-    const bounds = requestBoundCodes(checked.values);
+    const bounds = requestBoundCodes(checked.values, decodedInput);
     const code = bounds.length === 0 ? null : worst(bounds);
     return freezeData({ ok: code === null, code });
   } catch {
@@ -647,22 +655,29 @@ function readObservation(operation, observation) {
     // the held SS original state are owning-layer facts. The merged I-SM core additionally fixes the
     // emitted-response fact of the committed reconciliation rows, so the observation closes it as
     // `null` unless the outcome is `COMMITTED`, in which case it must be one of the two values.
-    if (typeof value.commitOutcome !== 'string') return { error: 'INVALID_REQUEST' };
-    if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) return { error: 'UNKNOWN_VALUE' };
+    // Every P01 defect the observation carries is collected before one is returned: the ratified
+    // `/withinLevelErrorOrder` is total over the defects a request carries, not over the order in which
+    // this layer happens to read its members (`CAPI-EP001`-`CAPI-EP003`).
+    const defects = [];
+    if (typeof value.commitOutcome !== 'string') defects.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) defects.push('UNKNOWN_VALUE');
     const committed = value.commitOutcome === 'COMMITTED';
     if (value.responseEmission === null) {
-      if (committed) return { error: 'INVALID_REQUEST' };
-    } else {
-      if (typeof value.responseEmission !== 'string') return { error: 'INVALID_REQUEST' };
-      if (!RESPONSE_EMISSIONS.includes(value.responseEmission)) return { error: 'UNKNOWN_VALUE' };
-      if (!committed) return { error: 'INVALID_REQUEST' };
+      if (committed) defects.push('INVALID_REQUEST');
+    } else if (typeof value.responseEmission !== 'string') {
+      defects.push('INVALID_REQUEST');
+    } else if (!RESPONSE_EMISSIONS.includes(value.responseEmission)) {
+      defects.push('UNKNOWN_VALUE');
+    } else if (!committed) {
+      defects.push('INVALID_REQUEST');
     }
     let heldOutput = null;
     if (value.heldOutput !== null) {
       const held = readHeldOutput(value.heldOutput);
-      if (held.error) return { error: held.error };
-      heldOutput = held.heldOutput;
+      if (held.error) defects.push(held.error);
+      else heldOutput = held.heldOutput;
     }
+    if (defects.length > 0) return { error: worst(defects) };
     return {
       error: null,
       facts: 'RECONCILE_HELD',
@@ -675,58 +690,54 @@ function readObservation(operation, observation) {
   const selfUpdate = operation === 'SELF_UPDATE';
   const factKey = selfUpdate ? 'updateForm' : (operation === 'CREATE' ? 'onboarding' : 'keyPackage');
   const allowed = selfUpdate ? UPDATE_FORMS : (operation === 'CREATE' ? ONBOARDING_VALUES : KEY_PACKAGE_VALUES);
-  if (typeof value[factKey] !== 'string') return { error: 'INVALID_REQUEST' };
-  if (!allowed.includes(value[factKey])) return { error: 'UNKNOWN_VALUE' };
-  const facts = selfUpdate ? UPDATE_FACTS[value.updateForm]
-    : (operation === 'CREATE' ? value.onboarding : JOIN_FACTS[value.keyPackage]);
+  const defects = [];
+  const factKnown = typeof value[factKey] === 'string' && allowed.includes(value[factKey]);
+  if (typeof value[factKey] !== 'string') defects.push('INVALID_REQUEST');
+  else if (!allowed.includes(value[factKey])) defects.push('UNKNOWN_VALUE');
+  const facts = factKnown
+    ? (selfUpdate ? UPDATE_FACTS[value.updateForm]
+      : (operation === 'CREATE' ? value.onboarding : JOIN_FACTS[value.keyPackage]))
+    : null;
   const reached = facts === 'SUPPORTED';
 
-  if (!reached) {
-    if (value.commitOutcome !== null || value.operationIdentity !== null) return { error: 'INVALID_REQUEST' };
-    if (operation === 'CREATE' && value.stagedOutput !== null) return { error: 'INVALID_REQUEST' };
-    if (operation === 'SELF_UPDATE' && value.stagedOutput !== null) {
-      // A form the owning layer does not support carries no commit proof and no identity, and nothing is
-      // ever applied for it: a staged output supplied with it is read through the same closed member
-      // check and then dropped, never released (contract Issue #415: rejects `UNSUPPORTED_UPDATE_FORM`
-      // and releases nothing even when a staged output is supplied). `CREATE` keeps the merged I-JOIN
-      // closure unchanged, which is `INVALID_REQUEST` for that member.
-      const unsupportedStaged = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
-      if (unsupportedStaged.error) return { error: unsupportedStaged.error };
+  if (reached) {
+    if (typeof value.commitOutcome !== 'string') defects.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) defects.push('UNKNOWN_VALUE');
+    if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
+      defects.push('INVALID_REQUEST');
     }
-    return { error: null, facts, commitOutcome: null, operationIdentity: null, staged: null };
+    let staged = null;
+    if ((operation === 'CREATE' || operation === 'SELF_UPDATE') && value.stagedOutput !== null) {
+      const member = operation === 'CREATE' ? STAGED_OUTPUT_BY_CODE.CREATED : STAGED_OUTPUT_BY_CODE.SELF_UPDATED;
+      const stagedShape = readStagedOutput(value.stagedOutput, member);
+      if (stagedShape.error) {
+        // C-API `/rules/internalFailureBoundary`: after COMMITTED the adapter emits success or retains
+        // reconciliation evidence and never emits REJECTED. A `SELF_UPDATE` escrow the owning layer cannot
+        // hand over after a commit report is therefore held, exactly as an absent, empty or over-bound one
+        // is; before a commit proof the same defect stays the P01 rejection the closure fixes. `CREATE`
+        // keeps the merged I-JOIN behaviour unchanged.
+        if (!(selfUpdate && value.commitOutcome === 'COMMITTED')) defects.push(stagedShape.error);
+      } else {
+        staged = stagedShape.staged;
+      }
+    }
+    if (defects.length > 0) return { error: worst(defects) };
+    return { error: null, facts, commitOutcome: value.commitOutcome, operationIdentity: value.operationIdentity, staged };
   }
 
-  if (typeof value.commitOutcome !== 'string') return { error: 'INVALID_REQUEST' };
-  if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) return { error: 'UNKNOWN_VALUE' };
-  if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
-    return { error: 'INVALID_REQUEST' };
-  }
-  let staged = null;
-  if (!selfUpdate && operation === 'CREATE' && value.stagedOutput !== null) {
-    const stagedShape = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.CREATED);
-    if (stagedShape.error) return { error: stagedShape.error };
-    staged = stagedShape.staged;
-  }
+  // A form the owning layer does not support (or a form outside the closed set) carries no commit proof
+  // and no identity, and nothing is ever applied for it: a staged output supplied with it is read through
+  // the same closed member check and then dropped, never released (contract Issue #415: rejects
+  // `UNSUPPORTED_UPDATE_FORM` and releases nothing even when a staged output is supplied). `CREATE` keeps
+  // the merged I-JOIN closure unchanged, which is `INVALID_REQUEST` for that member.
+  if (value.commitOutcome !== null || value.operationIdentity !== null) defects.push('INVALID_REQUEST');
+  if (operation === 'CREATE' && value.stagedOutput !== null) defects.push('INVALID_REQUEST');
   if (selfUpdate && value.stagedOutput !== null) {
-    const stagedShape = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
-    if (stagedShape.error) {
-      // C-API `/rules/internalFailureBoundary`: after COMMITTED the adapter emits success or retains
-      // reconciliation evidence and never emits REJECTED. An escrow the owning layer cannot hand over
-      // after a commit report is therefore held, exactly as an absent, empty or over-bound one is;
-      // before a commit proof the same defect stays the P01 rejection the closure fixes. `CREATE` keeps
-      // the merged I-JOIN behaviour unchanged.
-      if (value.commitOutcome !== 'COMMITTED') return { error: stagedShape.error };
-      return {
-        error: null,
-        facts,
-        commitOutcome: value.commitOutcome,
-        operationIdentity: value.operationIdentity,
-        staged: null,
-      };
-    }
-    staged = stagedShape.staged;
+    const unsupportedStaged = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
+    if (unsupportedStaged.error) defects.push(unsupportedStaged.error);
   }
-  return { error: null, facts, commitOutcome: value.commitOutcome, operationIdentity: value.operationIdentity, staged };
+  if (defects.length > 0) return { error: worst(defects) };
+  return { error: null, facts, commitOutcome: null, operationIdentity: null, staged: null };
 }
 
 /** Run the merged I-SM core; an exception or a malformed return is `null` (an internal failure). */
@@ -787,7 +798,23 @@ function heldOutputMemberOf(snapshot) {
 function heldOutputShapeCode(snapshot, heldOutput) {
   const expected = heldOutputMemberOf(snapshot);
   if (expected === null) return heldOutput === null ? null : 'INVALID_REQUEST';
-  return heldOutput !== null && heldOutput.member === expected ? null : 'INVALID_REQUEST';
+  if (heldOutput === null || heldOutput.member !== expected) return 'INVALID_REQUEST';
+  // Cross-check the two ratified transcriptions: wherever `/response/outputBySuccessCode` fixes a single
+  // released member for the held row, it must be the member the hold's C-MUT escrow kind names. They
+  // disagree only for escrow kinds the success table leaves empty (`JOINED` releases the welcome, not a
+  // success output), so the guard fires exactly where both speak and stays silent where only one does.
+  const byCode = snapshot === null || snapshot.held === null
+    ? undefined : OUTPUT_BY_SUCCESS_CODE[snapshot.held.expectedSuccessCode];
+  if (Array.isArray(byCode) && byCode.length === 1 && byCode[0] !== expected) return 'INVALID_REQUEST';
+  if (REFERENCE_OUTPUT_MEMBERS.includes(expected)) {
+    // The hold fixes the winner: releasing whatever reference the observation hands over would report an
+    // escrow the held mutation does not own.
+    const fixed = snapshot !== null && snapshot.held !== null ? snapshot.held.selectedCandidateRef : null;
+    return typeof fixed === 'string' && heldOutput.ref === fixed ? null : 'INVALID_REQUEST';
+  }
+  // The released escrow is bounded exactly like the staged one, or a hold created for an escrow the direct
+  // path refused could be cleared in two calls by presenting an empty or over-bound one.
+  return heldOutput.length > 0 && heldOutput.length <= BOUNDS.MAX_OPAQUE_BYTES ? null : 'INVALID_REQUEST';
 }
 
 /** The closed C-API `output` record of one released staged or held escrow. */
@@ -866,7 +893,11 @@ function run(input) {
 
   // P01 to P04: the request, the snapshot and the observation are all checked before any level is
   // chosen, so a P01 defect of any of the three preempts every P02 to P04 defect.
-  const checked = validateRequestRecord(request);
+  // The `input` record is decoded exactly once per call and the decoded members are reused below: a proxy
+  // or accessor-bearing `input` cannot present one value to validation and another to the event (F14).
+  const decodedInput = Object.hasOwn(INPUT_BY_OPERATION, operation)
+    ? readClosed(request.input, INPUT_BY_OPERATION[operation]) : { error: null, values: {} };
+  const checked = validateRequestRecord(request, decodedInput);
   const framing = [];
   if (checked.code !== null) framing.push(checked.code);
   const snapshotCode = snapshotShapeCode(snapshot);
@@ -875,8 +906,16 @@ function run(input) {
   if (observed.error) framing.push(observed.error);
   if (framing.length > 0) return rejectedTransition(requestId, operation, stateBefore, worst(framing));
 
-  // P06: the request bounds, decidable before any commit request (see `validateAdapterRequest`).
-  const bounds = requestBoundCodes(checked.values);
+  // P06: the request bounds, decidable before any commit request (see `validateAdapterRequest`), plus the
+  // one bound that only the injected observation can carry: the operation identity the merged core echoes
+  // inside the reconciliation reference it issues. An identity past the reference bound would make this
+  // module issue a reference it then refuses, locking the hold out of every reconciliation, so it is
+  // bounded here — at P06, ahead of the P09 and P10 decision rows and behind the P05 state gates.
+  const bounds = requestBoundCodes(checked.values, decodedInput);
+  if (typeof observed.operationIdentity === 'string'
+    && observed.operationIdentity.length > BOUNDS.MAX_OPERATION_IDENTITY_CHARS) {
+    bounds.push('VALUE_OUT_OF_RANGE');
+  }
 
   if (operation === 'RESTORE') {
     const restore = decideRestore(snapshot, observed.restoreObservation);
@@ -900,7 +939,7 @@ function run(input) {
       operation,
       applicableErrors: [],
       facts: observed.facts,
-      reconciliationRef: readMemberString(request.input, 'reconciliationRef'),
+      reconciliationRef: decodedInput.error === null ? decodedInput.values.reconciliationRef ?? null : null,
     };
     // The RS proof belongs to the held mutation. With none held it is forwarded to no one: the ratified
     // answer is then the state gate (`CAPI-G008`/`CAPI-G016` `NO_RECONCILIATION_PENDING`, C-MUT
@@ -911,6 +950,11 @@ function run(input) {
     if (snapshot !== null && snapshot.state === 'RECONCILIATION_REQUIRED') {
       event.commitOutcome = observed.commitOutcome;
       if (observed.responseEmission !== null) event.responseEmission = observed.responseEmission;
+    } else {
+      // With no hold the RS proof is forwarded to no one — the emission stays out of the injected outcome,
+      // which is what makes the merged core select its no-emission row — while the outcome member itself is
+      // still carried, because the tri-state has no absent value and a null member is refused as unknown.
+      event.commitOutcome = observed.commitOutcome;
     }
     const decision = decide(snapshot, event);
     if (decision === null) {

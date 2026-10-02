@@ -32,40 +32,40 @@ const OSCEN_SCENARIOS = {
     'OSC-4f3aee29ce90e515', 'OSC-4fdb61c9157940c6', 'OSC-fe345e8b2cbf86a0',
   ],
   '/operationEnum': [
-    'OSC-0500d80b6edd43d3', 'OSC-3ebdc9b549cb083b', 'OSC-3ec84ecc3d97a9bb', 'OSC-c0044deacda4755c', 
+    'OSC-0500d80b6edd43d3', 'OSC-3ebdc9b549cb083b', 'OSC-3ec84ecc3d97a9bb', 'OSC-c0044deacda4755c',
     'OSC-d091e02e83d3440f', 'OSC-e5eafaf7080ebadb', 'OSC-f25e07c2cfe9ef54', 'OSC-fd1692d4b0742c06',
   ],
   '/commitOutcomeEnum': [
     'OSC-06351931f9565a4f', 'OSC-b838434c7a3aca50', 'OSC-cb6c0a14b126b79d',
   ],
   '/resultKindEnum': [
-    'OSC-075f5520e0590d5c', 'OSC-3d9b7da2d4b40760', 'OSC-5a12253a1b94ba5c', 'OSC-9328985a79604cd9', 
+    'OSC-075f5520e0590d5c', 'OSC-3d9b7da2d4b40760', 'OSC-5a12253a1b94ba5c', 'OSC-9328985a79604cd9',
     'OSC-ed39d6a987385472',
   ],
   '/successCodeEnum': [
-    'OSC-07f623df120e3185', 'OSC-11e5567a07066948', 'OSC-2c16d4de187cc4c7', 'OSC-35bc709df10f1678', 
-    'OSC-468ba4c368267b67', 'OSC-66ad56eda1ee122d', 'OSC-96f48e740ab1a1fb', 'OSC-eacfdc77b80c8a9f', 
+    'OSC-07f623df120e3185', 'OSC-11e5567a07066948', 'OSC-2c16d4de187cc4c7', 'OSC-35bc709df10f1678',
+    'OSC-468ba4c368267b67', 'OSC-66ad56eda1ee122d', 'OSC-96f48e740ab1a1fb', 'OSC-eacfdc77b80c8a9f',
     'OSC-ef7ecc2413367875', 'OSC-f5228b30a34575bd',
   ],
   '/errorCodeEnum': [
-    'OSC-063fc148c5c04141', 'OSC-0a2b86a4d9a82631', 'OSC-0b9e292740aa5a4f', 'OSC-0f07564a4d760568', 
-    'OSC-12279c4c75df3edf', 'OSC-1645969ce33304bc', 'OSC-3b06ac58d84b16eb', 'OSC-3c4f12b401aad67a', 
-    'OSC-43a45fcd05c5ec34', 'OSC-474416f91a5f4536', 'OSC-4b12bcf17ffa24f6', 'OSC-586c1d231b5c8008', 
-    'OSC-5b90530783018a77', 'OSC-6844abf9cf66be2b', 'OSC-69d537456a74ad7f', 'OSC-6b74356080755ec3', 
-    'OSC-771a222317da5140', 'OSC-8659e372e5836c35', 'OSC-9069cadd07ca854e', 'OSC-a085ba7e6260d7f1', 
-    'OSC-a99ab800bf228ea1', 'OSC-c70e41ad3bc5c2a3', 'OSC-cac04f870e530272', 'OSC-cd489d835b771f15', 
+    'OSC-063fc148c5c04141', 'OSC-0a2b86a4d9a82631', 'OSC-0b9e292740aa5a4f', 'OSC-0f07564a4d760568',
+    'OSC-12279c4c75df3edf', 'OSC-1645969ce33304bc', 'OSC-3b06ac58d84b16eb', 'OSC-3c4f12b401aad67a',
+    'OSC-43a45fcd05c5ec34', 'OSC-474416f91a5f4536', 'OSC-4b12bcf17ffa24f6', 'OSC-586c1d231b5c8008',
+    'OSC-5b90530783018a77', 'OSC-6844abf9cf66be2b', 'OSC-69d537456a74ad7f', 'OSC-6b74356080755ec3',
+    'OSC-771a222317da5140', 'OSC-8659e372e5836c35', 'OSC-9069cadd07ca854e', 'OSC-a085ba7e6260d7f1',
+    'OSC-a99ab800bf228ea1', 'OSC-c70e41ad3bc5c2a3', 'OSC-cac04f870e530272', 'OSC-cd489d835b771f15',
     'OSC-f1c5d4ce4ea381e8',
   ],
   '/codeToResultKind': [
-    'OSC-10e48bd21871e3ea', 'OSC-1657f97e7188028a', 'OSC-1b52765282159986', 'OSC-1f2bb6258d7ce675', 
-    'OSC-25242934bdd6ada6', 'OSC-2e491dff10c7033c', 'OSC-354dcdaff1f70a2e', 'OSC-390aa486bbfbab3b', 
-    'OSC-3f680f8750f81cf1', 'OSC-40889223667af929', 'OSC-4621a77987b57dfe', 'OSC-4a35f605fe18b4a1', 
-    'OSC-4addb8b8ac2df912', 'OSC-5ebf1c313821391a', 'OSC-6b26bea3a03cebc8', 'OSC-6dce17d6d6be15e5', 
-    'OSC-7eae050b0a74a6f8', 'OSC-84f20ffa1e94f592', 'OSC-8ae8b1a3906a9f71', 'OSC-8b30af2af9cfb39d', 
-    'OSC-952677fd636b2000', 'OSC-9b2d58abd5977e0d', 'OSC-9cda0c51a2eed7ca', 'OSC-ab6cf35c9b941722', 
-    'OSC-af6b40d35ad49c9d', 'OSC-b921ef10edae9564', 'OSC-bac934099642a48d', 'OSC-bb83d3f5d456d1dd', 
-    'OSC-beacf30e9803e7b5', 'OSC-c674b07f80aee1e4', 'OSC-cc89198a396c9326', 'OSC-cdfca40fd472b435', 
-    'OSC-d7dc6a8f3979ed1d', 'OSC-dac7a67b04490d26', 'OSC-ec27a4cc334ae142', 'OSC-f159789353f61495', 
+    'OSC-10e48bd21871e3ea', 'OSC-1657f97e7188028a', 'OSC-1b52765282159986', 'OSC-1f2bb6258d7ce675',
+    'OSC-25242934bdd6ada6', 'OSC-2e491dff10c7033c', 'OSC-354dcdaff1f70a2e', 'OSC-390aa486bbfbab3b',
+    'OSC-3f680f8750f81cf1', 'OSC-40889223667af929', 'OSC-4621a77987b57dfe', 'OSC-4a35f605fe18b4a1',
+    'OSC-4addb8b8ac2df912', 'OSC-5ebf1c313821391a', 'OSC-6b26bea3a03cebc8', 'OSC-6dce17d6d6be15e5',
+    'OSC-7eae050b0a74a6f8', 'OSC-84f20ffa1e94f592', 'OSC-8ae8b1a3906a9f71', 'OSC-8b30af2af9cfb39d',
+    'OSC-952677fd636b2000', 'OSC-9b2d58abd5977e0d', 'OSC-9cda0c51a2eed7ca', 'OSC-ab6cf35c9b941722',
+    'OSC-af6b40d35ad49c9d', 'OSC-b921ef10edae9564', 'OSC-bac934099642a48d', 'OSC-bb83d3f5d456d1dd',
+    'OSC-beacf30e9803e7b5', 'OSC-c674b07f80aee1e4', 'OSC-cc89198a396c9326', 'OSC-cdfca40fd472b435',
+    'OSC-d7dc6a8f3979ed1d', 'OSC-dac7a67b04490d26', 'OSC-ec27a4cc334ae142', 'OSC-f159789353f61495',
     'OSC-f8ff5f7899704255',
   ],
   '/request/closedObjects': [
@@ -126,94 +126,94 @@ const OSCEN_SCENARIOS = {
     'OSC-3ba76ad1910efd14',
   ],
   '/stateMatrix': [
-    'OSC-03d9a9914b0aa6c4', 'OSC-04cc18f5934cb614', 'OSC-1a5ac71a14b6b3ea', 'OSC-2559bdde274878e9', 
-    'OSC-39f5831aba2cb933', 'OSC-3d08d077a759b43c', 'OSC-490c11eabc04d0b6', 'OSC-4b2bc74448d755d4', 
-    'OSC-5879284d84662a5b', 'OSC-5e4b4f69bf36b2e2', 'OSC-6a89d2539e9323e8', 'OSC-7aeb35e0703ace8d', 
-    'OSC-7e0a44009fea4c91', 'OSC-813ba28ed4fa1072', 'OSC-88ab7ef8dfc4998e', 'OSC-999ca4ee68894598', 
-    'OSC-a0c0ba1c1bb9dbed', 'OSC-b31a7602b8ed7c0d', 'OSC-b5dbbc218723ba6e', 'OSC-b938a01aeeeb69f8', 
+    'OSC-03d9a9914b0aa6c4', 'OSC-04cc18f5934cb614', 'OSC-1a5ac71a14b6b3ea', 'OSC-2559bdde274878e9',
+    'OSC-39f5831aba2cb933', 'OSC-3d08d077a759b43c', 'OSC-490c11eabc04d0b6', 'OSC-4b2bc74448d755d4',
+    'OSC-5879284d84662a5b', 'OSC-5e4b4f69bf36b2e2', 'OSC-6a89d2539e9323e8', 'OSC-7aeb35e0703ace8d',
+    'OSC-7e0a44009fea4c91', 'OSC-813ba28ed4fa1072', 'OSC-88ab7ef8dfc4998e', 'OSC-999ca4ee68894598',
+    'OSC-a0c0ba1c1bb9dbed', 'OSC-b31a7602b8ed7c0d', 'OSC-b5dbbc218723ba6e', 'OSC-b938a01aeeeb69f8',
     'OSC-cc40e3d2750829be', 'OSC-d01172590b30f22d', 'OSC-e1602f637d6bd551', 'OSC-f89aee5d6c2a5235',
   ],
   '/errorDefinitions': [
-    'OSC-075218d7cf4958d0', 'OSC-0a6573f71323f697', 'OSC-0c2d21f78631ec52', 'OSC-12188dbbddee170f', 
-    'OSC-1304b0262b1c5f08', 'OSC-143d5356e170e76c', 'OSC-160c3b0b1bbb8309', 'OSC-20663d6756e478a4', 
-    'OSC-23f4224e49ce99b3', 'OSC-2952347fd5206190', 'OSC-2a4cf6991a457a27', 'OSC-2b7cba3d479f2318', 
-    'OSC-2c7066d394ceec80', 'OSC-2d1e6b9cd9f1ecd4', 'OSC-2defa736cbf8c637', 'OSC-38aacc4880942f46', 
-    'OSC-3d62b1fb54b069e9', 'OSC-3f1d822dd29c393e', 'OSC-3f36374b8bae239d', 'OSC-41e4cc342bd76c87', 
-    'OSC-497c363912fc16c2', 'OSC-4cfcefe728175e37', 'OSC-576a83b2905271ce', 'OSC-5a23d7268d61c6c1', 
-    'OSC-5a69e9106a316e88', 'OSC-5efc889dd9d7b6a0', 'OSC-5efcc44127a81d97', 'OSC-6d899c0dd8c8c5cb', 
-    'OSC-6df1f2080ee597fc', 'OSC-70b7fae75b80fac5', 'OSC-73dd6c675f25d4c2', 'OSC-7fe68b37a64e9461', 
-    'OSC-84848d3cff7d2461', 'OSC-8c742173c8ab9e35', 'OSC-8f64d7f15a9502c0', 'OSC-90be0d82d765c004', 
-    'OSC-94e54b0219758a75', 'OSC-9aecbdd630e37ebd', 'OSC-9cc6537bff47ca11', 'OSC-9d3265b0d0399ef3', 
-    'OSC-a303d0a9a24ac5f2', 'OSC-a4ffb8eca560a9c8', 'OSC-a80635925054fad2', 'OSC-ac1baeb760fb0b1a', 
-    'OSC-b02cff0c70ba6515', 'OSC-b1a72075ac9b9c7a', 'OSC-b9f6a13d5b3c2234', 'OSC-c74132fb4566fea6', 
-    'OSC-cbfc35050b8602c5', 'OSC-d05cb2c4e3aac4e8', 'OSC-d645f4333e04879a', 'OSC-d9b31298a88d6576', 
-    'OSC-ddb258d94bae8c2a', 'OSC-e1287f7d943968a6', 'OSC-eb0ed4b75a40c4b3', 'OSC-ef59d18a4ce3cdb1', 
-    'OSC-f07a5e2af1a93cd8', 'OSC-f549863071797926', 'OSC-f71e534b1a2b9010', 'OSC-fb2d97624aa42de6', 
+    'OSC-075218d7cf4958d0', 'OSC-0a6573f71323f697', 'OSC-0c2d21f78631ec52', 'OSC-12188dbbddee170f',
+    'OSC-1304b0262b1c5f08', 'OSC-143d5356e170e76c', 'OSC-160c3b0b1bbb8309', 'OSC-20663d6756e478a4',
+    'OSC-23f4224e49ce99b3', 'OSC-2952347fd5206190', 'OSC-2a4cf6991a457a27', 'OSC-2b7cba3d479f2318',
+    'OSC-2c7066d394ceec80', 'OSC-2d1e6b9cd9f1ecd4', 'OSC-2defa736cbf8c637', 'OSC-38aacc4880942f46',
+    'OSC-3d62b1fb54b069e9', 'OSC-3f1d822dd29c393e', 'OSC-3f36374b8bae239d', 'OSC-41e4cc342bd76c87',
+    'OSC-497c363912fc16c2', 'OSC-4cfcefe728175e37', 'OSC-576a83b2905271ce', 'OSC-5a23d7268d61c6c1',
+    'OSC-5a69e9106a316e88', 'OSC-5efc889dd9d7b6a0', 'OSC-5efcc44127a81d97', 'OSC-6d899c0dd8c8c5cb',
+    'OSC-6df1f2080ee597fc', 'OSC-70b7fae75b80fac5', 'OSC-73dd6c675f25d4c2', 'OSC-7fe68b37a64e9461',
+    'OSC-84848d3cff7d2461', 'OSC-8c742173c8ab9e35', 'OSC-8f64d7f15a9502c0', 'OSC-90be0d82d765c004',
+    'OSC-94e54b0219758a75', 'OSC-9aecbdd630e37ebd', 'OSC-9cc6537bff47ca11', 'OSC-9d3265b0d0399ef3',
+    'OSC-a303d0a9a24ac5f2', 'OSC-a4ffb8eca560a9c8', 'OSC-a80635925054fad2', 'OSC-ac1baeb760fb0b1a',
+    'OSC-b02cff0c70ba6515', 'OSC-b1a72075ac9b9c7a', 'OSC-b9f6a13d5b3c2234', 'OSC-c74132fb4566fea6',
+    'OSC-cbfc35050b8602c5', 'OSC-d05cb2c4e3aac4e8', 'OSC-d645f4333e04879a', 'OSC-d9b31298a88d6576',
+    'OSC-ddb258d94bae8c2a', 'OSC-e1287f7d943968a6', 'OSC-eb0ed4b75a40c4b3', 'OSC-ef59d18a4ce3cdb1',
+    'OSC-f07a5e2af1a93cd8', 'OSC-f549863071797926', 'OSC-f71e534b1a2b9010', 'OSC-fb2d97624aa42de6',
     'OSC-fc317294a228e607',
   ],
   '/decisionRows': [
-    'OSC-039d2541ca381eb6', 'OSC-040428778da7f360', 'OSC-0518d6785e092556', 'OSC-058cecc46b3d0977', 
-    'OSC-0d238b5685352693', 'OSC-0df5460505e0acc8', 'OSC-14d92ef35229b3d6', 'OSC-272164b3f6ced9b4', 
-    'OSC-275ff10dd95b8749', 'OSC-3dbc018c5e9fa76d', 'OSC-43bc2f410abce99b', 'OSC-4e6a91e8fd134c5c', 
-    'OSC-7298412dac6a8db3', 'OSC-826a906dac4be842', 'OSC-850b3351c75edb32', 'OSC-8c6cb835dd99eeb9', 
-    'OSC-9b8a5675ff85958e', 'OSC-a2300e08707a1c8e', 'OSC-af5c083231282006', 'OSC-b47a46933e3605fb', 
-    'OSC-b92a2b9a90af255f', 'OSC-ba40377fe5ae100a', 'OSC-bd2e673b58578db7', 'OSC-c7441026f4b0594f', 
-    'OSC-c90d3d132707cad8', 'OSC-cc9a837e6088df51', 'OSC-f2d864ee58cc0784', 'OSC-fad188643ebbc91a', 
+    'OSC-039d2541ca381eb6', 'OSC-040428778da7f360', 'OSC-0518d6785e092556', 'OSC-058cecc46b3d0977',
+    'OSC-0d238b5685352693', 'OSC-0df5460505e0acc8', 'OSC-14d92ef35229b3d6', 'OSC-272164b3f6ced9b4',
+    'OSC-275ff10dd95b8749', 'OSC-3dbc018c5e9fa76d', 'OSC-43bc2f410abce99b', 'OSC-4e6a91e8fd134c5c',
+    'OSC-7298412dac6a8db3', 'OSC-826a906dac4be842', 'OSC-850b3351c75edb32', 'OSC-8c6cb835dd99eeb9',
+    'OSC-9b8a5675ff85958e', 'OSC-a2300e08707a1c8e', 'OSC-af5c083231282006', 'OSC-b47a46933e3605fb',
+    'OSC-b92a2b9a90af255f', 'OSC-ba40377fe5ae100a', 'OSC-bd2e673b58578db7', 'OSC-c7441026f4b0594f',
+    'OSC-c90d3d132707cad8', 'OSC-cc9a837e6088df51', 'OSC-f2d864ee58cc0784', 'OSC-fad188643ebbc91a',
     'OSC-ff63831313f3870f',
   ],
   '/precedenceLevels': [
-    'OSC-083a62592fa04606', 'OSC-0aab84c36275f501', 'OSC-15755d061cb96701', 'OSC-15d96acfe2d80d43', 
-    'OSC-164989757382dd57', 'OSC-1901a15c562e5c59', 'OSC-19e2400fbc9e2f7f', 'OSC-1cde371be9245ff8', 
-    'OSC-2163ae083f60c441', 'OSC-250fdf9db244f6e1', 'OSC-27678dd5154b0a6f', 'OSC-29f6b1c388b7ea01', 
-    'OSC-2a86c1aa16784117', 'OSC-3ae47a4851dc2e3e', 'OSC-3b9d3951675612c3', 'OSC-42b26f28b5b8c11f', 
-    'OSC-47b69b23744eb610', 'OSC-53d9659868b96955', 'OSC-5636bcaaf498a6bb', 'OSC-58f848756d799582', 
-    'OSC-597eb7a08f3f5ae8', 'OSC-5c9f6f58dfb91b9a', 'OSC-5f4a158a65910625', 'OSC-62e85471317a3643', 
-    'OSC-68dfd12221f1dceb', 'OSC-6b6448cdca9f01e1', 'OSC-6eed768248fb4140', 'OSC-70b4b8d534f06f06', 
-    'OSC-70bda9c66d781c0a', 'OSC-728237b7ef35a19f', 'OSC-7685c33ee5c32fbe', 'OSC-787d65fd1fceaab1', 
-    'OSC-8052bfbff121307a', 'OSC-8c9800c0135d2c39', 'OSC-966d74434e2e31da', 'OSC-9bade26fa51b61df', 
-    'OSC-9d5176567b59994c', 'OSC-9edd8c5c05aeaada', 'OSC-a418788aa5cd621b', 'OSC-a785e564d9ed93aa', 
-    'OSC-b0911ed4ac462113', 'OSC-ba0c9d77b57b06e4', 'OSC-bef062dd8bf31923', 'OSC-c4dc19f2ce3cecbb', 
-    'OSC-cc63c689753a78be', 'OSC-d332f411ec3df901', 'OSC-d7e9e7c61a7d4d7c', 'OSC-dbaa212f731ca3d1', 
-    'OSC-decf78a54b7b1e02', 'OSC-e073c1b7646d82c3', 'OSC-e63e61cc3feef036', 'OSC-e9df1e05c89ad52b', 
+    'OSC-083a62592fa04606', 'OSC-0aab84c36275f501', 'OSC-15755d061cb96701', 'OSC-15d96acfe2d80d43',
+    'OSC-164989757382dd57', 'OSC-1901a15c562e5c59', 'OSC-19e2400fbc9e2f7f', 'OSC-1cde371be9245ff8',
+    'OSC-2163ae083f60c441', 'OSC-250fdf9db244f6e1', 'OSC-27678dd5154b0a6f', 'OSC-29f6b1c388b7ea01',
+    'OSC-2a86c1aa16784117', 'OSC-3ae47a4851dc2e3e', 'OSC-3b9d3951675612c3', 'OSC-42b26f28b5b8c11f',
+    'OSC-47b69b23744eb610', 'OSC-53d9659868b96955', 'OSC-5636bcaaf498a6bb', 'OSC-58f848756d799582',
+    'OSC-597eb7a08f3f5ae8', 'OSC-5c9f6f58dfb91b9a', 'OSC-5f4a158a65910625', 'OSC-62e85471317a3643',
+    'OSC-68dfd12221f1dceb', 'OSC-6b6448cdca9f01e1', 'OSC-6eed768248fb4140', 'OSC-70b4b8d534f06f06',
+    'OSC-70bda9c66d781c0a', 'OSC-728237b7ef35a19f', 'OSC-7685c33ee5c32fbe', 'OSC-787d65fd1fceaab1',
+    'OSC-8052bfbff121307a', 'OSC-8c9800c0135d2c39', 'OSC-966d74434e2e31da', 'OSC-9bade26fa51b61df',
+    'OSC-9d5176567b59994c', 'OSC-9edd8c5c05aeaada', 'OSC-a418788aa5cd621b', 'OSC-a785e564d9ed93aa',
+    'OSC-b0911ed4ac462113', 'OSC-ba0c9d77b57b06e4', 'OSC-bef062dd8bf31923', 'OSC-c4dc19f2ce3cecbb',
+    'OSC-cc63c689753a78be', 'OSC-d332f411ec3df901', 'OSC-d7e9e7c61a7d4d7c', 'OSC-dbaa212f731ca3d1',
+    'OSC-decf78a54b7b1e02', 'OSC-e073c1b7646d82c3', 'OSC-e63e61cc3feef036', 'OSC-e9df1e05c89ad52b',
     'OSC-e9fa5890f68962d5', 'OSC-ec51ce85abe4d613', 'OSC-ef141954680bdff6',
   ],
   '/precedencePairs': [
-    'OSC-083a62592fa04606', 'OSC-0aab84c36275f501', 'OSC-15755d061cb96701', 'OSC-15d96acfe2d80d43', 
-    'OSC-1901a15c562e5c59', 'OSC-1cde371be9245ff8', 'OSC-2163ae083f60c441', 'OSC-250fdf9db244f6e1', 
-    'OSC-29f6b1c388b7ea01', 'OSC-2a86c1aa16784117', 'OSC-3ae47a4851dc2e3e', 'OSC-3b9d3951675612c3', 
-    'OSC-42b26f28b5b8c11f', 'OSC-47b69b23744eb610', 'OSC-597eb7a08f3f5ae8', 'OSC-5c9f6f58dfb91b9a', 
-    'OSC-5f4a158a65910625', 'OSC-62e85471317a3643', 'OSC-68dfd12221f1dceb', 'OSC-6b6448cdca9f01e1', 
-    'OSC-6eed768248fb4140', 'OSC-70b4b8d534f06f06', 'OSC-70bda9c66d781c0a', 'OSC-7685c33ee5c32fbe', 
-    'OSC-787d65fd1fceaab1', 'OSC-8052bfbff121307a', 'OSC-966d74434e2e31da', 'OSC-9bade26fa51b61df', 
-    'OSC-9d5176567b59994c', 'OSC-9edd8c5c05aeaada', 'OSC-a418788aa5cd621b', 'OSC-a785e564d9ed93aa', 
-    'OSC-b0911ed4ac462113', 'OSC-ba0c9d77b57b06e4', 'OSC-bef062dd8bf31923', 'OSC-c4dc19f2ce3cecbb', 
-    'OSC-cc63c689753a78be', 'OSC-d332f411ec3df901', 'OSC-dbaa212f731ca3d1', 'OSC-e073c1b7646d82c3', 
-    'OSC-e63e61cc3feef036', 'OSC-e9df1e05c89ad52b', 'OSC-e9fa5890f68962d5', 'OSC-ec51ce85abe4d613', 
+    'OSC-083a62592fa04606', 'OSC-0aab84c36275f501', 'OSC-15755d061cb96701', 'OSC-15d96acfe2d80d43',
+    'OSC-1901a15c562e5c59', 'OSC-1cde371be9245ff8', 'OSC-2163ae083f60c441', 'OSC-250fdf9db244f6e1',
+    'OSC-29f6b1c388b7ea01', 'OSC-2a86c1aa16784117', 'OSC-3ae47a4851dc2e3e', 'OSC-3b9d3951675612c3',
+    'OSC-42b26f28b5b8c11f', 'OSC-47b69b23744eb610', 'OSC-597eb7a08f3f5ae8', 'OSC-5c9f6f58dfb91b9a',
+    'OSC-5f4a158a65910625', 'OSC-62e85471317a3643', 'OSC-68dfd12221f1dceb', 'OSC-6b6448cdca9f01e1',
+    'OSC-6eed768248fb4140', 'OSC-70b4b8d534f06f06', 'OSC-70bda9c66d781c0a', 'OSC-7685c33ee5c32fbe',
+    'OSC-787d65fd1fceaab1', 'OSC-8052bfbff121307a', 'OSC-966d74434e2e31da', 'OSC-9bade26fa51b61df',
+    'OSC-9d5176567b59994c', 'OSC-9edd8c5c05aeaada', 'OSC-a418788aa5cd621b', 'OSC-a785e564d9ed93aa',
+    'OSC-b0911ed4ac462113', 'OSC-ba0c9d77b57b06e4', 'OSC-bef062dd8bf31923', 'OSC-c4dc19f2ce3cecbb',
+    'OSC-cc63c689753a78be', 'OSC-d332f411ec3df901', 'OSC-dbaa212f731ca3d1', 'OSC-e073c1b7646d82c3',
+    'OSC-e63e61cc3feef036', 'OSC-e9df1e05c89ad52b', 'OSC-e9fa5890f68962d5', 'OSC-ec51ce85abe4d613',
     'OSC-ef141954680bdff6',
   ],
   '/withinLevelPrecedencePairs': [
-    'OSC-0c2d21f78631ec52', 'OSC-1304b0262b1c5f08', 'OSC-23f4224e49ce99b3', 'OSC-2a4cf6991a457a27', 
-    'OSC-2d1e6b9cd9f1ecd4', 'OSC-3d62b1fb54b069e9', 'OSC-3f1d822dd29c393e', 'OSC-497c363912fc16c2', 
-    'OSC-4cfcefe728175e37', 'OSC-576a83b2905271ce', 'OSC-5efcc44127a81d97', 'OSC-6df1f2080ee597fc', 
-    'OSC-7fe68b37a64e9461', 'OSC-8f64d7f15a9502c0', 'OSC-90be0d82d765c004', 'OSC-94e54b0219758a75', 
-    'OSC-9aecbdd630e37ebd', 'OSC-9cc6537bff47ca11', 'OSC-9d3265b0d0399ef3', 'OSC-a303d0a9a24ac5f2', 
-    'OSC-a4ffb8eca560a9c8', 'OSC-a80635925054fad2', 'OSC-ac1baeb760fb0b1a', 'OSC-b1a72075ac9b9c7a', 
-    'OSC-c74132fb4566fea6', 'OSC-cbfc35050b8602c5', 'OSC-d05cb2c4e3aac4e8', 'OSC-ddb258d94bae8c2a', 
-    'OSC-e1287f7d943968a6', 'OSC-eb0ed4b75a40c4b3', 'OSC-ef59d18a4ce3cdb1', 'OSC-f07a5e2af1a93cd8', 
+    'OSC-0c2d21f78631ec52', 'OSC-1304b0262b1c5f08', 'OSC-23f4224e49ce99b3', 'OSC-2a4cf6991a457a27',
+    'OSC-2d1e6b9cd9f1ecd4', 'OSC-3d62b1fb54b069e9', 'OSC-3f1d822dd29c393e', 'OSC-497c363912fc16c2',
+    'OSC-4cfcefe728175e37', 'OSC-576a83b2905271ce', 'OSC-5efcc44127a81d97', 'OSC-6df1f2080ee597fc',
+    'OSC-7fe68b37a64e9461', 'OSC-8f64d7f15a9502c0', 'OSC-90be0d82d765c004', 'OSC-94e54b0219758a75',
+    'OSC-9aecbdd630e37ebd', 'OSC-9cc6537bff47ca11', 'OSC-9d3265b0d0399ef3', 'OSC-a303d0a9a24ac5f2',
+    'OSC-a4ffb8eca560a9c8', 'OSC-a80635925054fad2', 'OSC-ac1baeb760fb0b1a', 'OSC-b1a72075ac9b9c7a',
+    'OSC-c74132fb4566fea6', 'OSC-cbfc35050b8602c5', 'OSC-d05cb2c4e3aac4e8', 'OSC-ddb258d94bae8c2a',
+    'OSC-e1287f7d943968a6', 'OSC-eb0ed4b75a40c4b3', 'OSC-ef59d18a4ce3cdb1', 'OSC-f07a5e2af1a93cd8',
     'OSC-f549863071797926', 'OSC-f71e534b1a2b9010', 'OSC-fb2d97624aa42de6', 'OSC-fc317294a228e607',
   ],
   '/errorPrecedenceLevel': [
-    'OSC-13ae3223856963a2', 'OSC-26959eb6cda340cc', 'OSC-3ffa570ffdbb3444', 'OSC-455ed401ea365633', 
-    'OSC-4810f39c5bc07249', 'OSC-48e236bea6b680e0', 'OSC-4da2461c2275fad7', 'OSC-52d4e213143725f1', 
-    'OSC-5e50eb0e8aaa3039', 'OSC-610eb473f38bb1eb', 'OSC-622fbc48a5af3c2c', 'OSC-62e6226df39afc45', 
-    'OSC-6be20f56334c2fdf', 'OSC-70cd0908f5a1c7c8', 'OSC-83fd0d157ad9e18b', 'OSC-84e509190eef7a3c', 
-    'OSC-9b4075b5f16056b9', 'OSC-9fa6fb524e13bff7', 'OSC-aa9b9cade9f142a5', 'OSC-cfc17f937b832911', 
-    'OSC-d89de75bd627a16d', 'OSC-e0a32a6a313b1d3e', 'OSC-e393e023695fcd07', 'OSC-e791cc282b67bb9d', 
+    'OSC-13ae3223856963a2', 'OSC-26959eb6cda340cc', 'OSC-3ffa570ffdbb3444', 'OSC-455ed401ea365633',
+    'OSC-4810f39c5bc07249', 'OSC-48e236bea6b680e0', 'OSC-4da2461c2275fad7', 'OSC-52d4e213143725f1',
+    'OSC-5e50eb0e8aaa3039', 'OSC-610eb473f38bb1eb', 'OSC-622fbc48a5af3c2c', 'OSC-62e6226df39afc45',
+    'OSC-6be20f56334c2fdf', 'OSC-70cd0908f5a1c7c8', 'OSC-83fd0d157ad9e18b', 'OSC-84e509190eef7a3c',
+    'OSC-9b4075b5f16056b9', 'OSC-9fa6fb524e13bff7', 'OSC-aa9b9cade9f142a5', 'OSC-cfc17f937b832911',
+    'OSC-d89de75bd627a16d', 'OSC-e0a32a6a313b1d3e', 'OSC-e393e023695fcd07', 'OSC-e791cc282b67bb9d',
     'OSC-f3f7f0b398e81583',
   ],
   '/withinLevelErrorOrder': [
-    'OSC-0522d7b7d3502cc4', 'OSC-05c0ea7a6d9c41d5', 'OSC-09a3cf2d025a6dd9', 'OSC-1859c445e4e6d986', 
-    'OSC-21212862d2094879', 'OSC-27ea6f777167d13f', 'OSC-785a8087bc9405af', 'OSC-a0a106063488b787', 
+    'OSC-0522d7b7d3502cc4', 'OSC-05c0ea7a6d9c41d5', 'OSC-09a3cf2d025a6dd9', 'OSC-1859c445e4e6d986',
+    'OSC-21212862d2094879', 'OSC-27ea6f777167d13f', 'OSC-785a8087bc9405af', 'OSC-a0a106063488b787',
     'OSC-c1ec8b0dfa28a1c4', 'OSC-d3ac6113a223451c',
   ],
   // per-row clauses addressed the way the ratified registry addresses them
@@ -282,10 +282,12 @@ const heldUpdate = (id = 'held-upd-1') => holdOf('SELF_UPDATE', active(), id);
 const heldCreate = (id = 'held-create-1') => holdOf('CREATE', empty(), id);
 const heldJoin = (id = 'held-join-1') => holdOf('JOIN_WELCOME', empty(), id);
 
-const updateObservation = ({ updateForm = 'SUPPORTED', commitOutcome = 'COMMITTED', stagedOutput = undefined } = {}) => ({
+const updateObservation = ({
+  updateForm = 'SUPPORTED', commitOutcome = 'COMMITTED', stagedOutput = undefined, operationIdentity = undefined,
+} = {}) => ({
   updateForm,
   commitOutcome,
-  operationIdentity: commitOutcome === null ? null : 'op-upd-1',
+  operationIdentity: operationIdentity === undefined ? (commitOutcome === null ? null : 'op-upd-1') : operationIdentity,
   stagedOutput: stagedOutput === undefined
     ? (commitOutcome === null ? null : { protectedCommitBytes: STAGED })
     : stagedOutput,
@@ -687,6 +689,23 @@ describe('I-UPD ambiguity reconciles through RECONCILE_INDETERMINATE', () => {
     expect(emp.stateAfter).toBe('EMPTY');
   });
 
+  test('the released held escrow is bounded exactly like the staged one', () => {
+    const protectHold = holdOf('PROTECT_APPLICATION', active(), 'op-protect-1');
+    expect(protectHold.held.outputKind).toBe('PROTECTED_APPLICATION_BYTES');
+    const empty = reconcile(protectHold,
+      reconcileObservation({ heldOutput: { protectedApplicationBytes: new Uint8Array(0) } }), heldRef('op-protect-1'));
+    expect(code(empty)).toBe('INVALID_REQUEST');
+    const overBound = reconcile(protectHold,
+      reconcileObservation({ heldOutput: { protectedApplicationBytes: new Uint8Array(M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES + 1) } }),
+      heldRef('op-protect-1'));
+    expect(code(overBound)).toBe('INVALID_REQUEST');
+    const inBound = reconcile(protectHold,
+      reconcileObservation({ heldOutput: { protectedApplicationBytes: bytes(0x01) } }), heldRef('op-protect-1'));
+    expect(inBound.kind).toBe('SUCCESS');
+    expect(inBound.output.originalSuccessCode).toBe('APPLICATION_PROTECTED');
+    expect(inBound.output.originalOutput.protectedApplicationBytes).toEqual(bytes(0x01));
+  });
+
   test('a repeat after the hold was cleared answers the ratified code even with durable RS evidence', () => {
     const durable = { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null };
     const clearedPending = reconcile(active(), durable, heldRef('cleared-hold'));
@@ -717,7 +736,10 @@ const withAccessor = (record, key, reads) => {
 
 describe('I-UPD fail-closed request validation', () => {
   const okUpdate = updateObservation({});
-  const noProofReconcile = reconcileObservation({ commitOutcome: null, responseEmission: null, heldOutput: null });
+  const noProofReconcile = reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null });
+  // A well-formed, proof-bearing reconciliation observation: the reference check is then the defect the
+  // case decides on, not the proof the no-proof observation is missing.
+  const proofReconcile = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } });
 
   const cases = [
     ['unknown request member', request('SELF_UPDATE', {}, { extra: 1 }), active(), okUpdate, 'UNKNOWN_FIELD'],
@@ -732,12 +754,14 @@ describe('I-UPD fail-closed request validation', () => {
     ['operation outside the slice', request('APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) }), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
     ['malformed input of an outside operation', request('PROTECT_APPLICATION', {}), active(), okUpdate, 'INVALID_REQUEST'],
     ['unknown input member', request('SELF_UPDATE', { extra: 1 }), active(), okUpdate, 'UNKNOWN_FIELD'],
-    ['missing reconcile reference', request('RECONCILE_INDETERMINATE', {}), active(), noProofReconcile, 'INVALID_REQUEST'],
-    ['empty reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: '' }), active(), noProofReconcile, 'INVALID_REQUEST'],
-    ['non-string reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: 7 }), active(), noProofReconcile, 'INVALID_REQUEST'],
+    ['missing reconcile reference', request('RECONCILE_INDETERMINATE', {}), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
+    ['empty reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: '' }), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
+    ['non-string reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: 7 }), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
     ['non-closed observation', request('SELF_UPDATE', {}), active(), { ...okUpdate, extra: 1 }, 'UNKNOWN_FIELD'],
+    ['reconciliation with no hold and no proof at all', request('RECONCILE_INDETERMINATE', { reconciliationRef: 'I-SM-HOLD:none' }), active(), noProofReconcile, 'NO_RECONCILIATION_PENDING'],
     ['missing observation member', request('SELF_UPDATE', {}), active(), withoutMember(okUpdate, 'stagedOutput'), 'INVALID_REQUEST'],
-    ['out-of-set update form', request('SELF_UPDATE', {}), active(), { ...okUpdate, updateForm: 'PROPOSAL_FREE' }, 'UNKNOWN_VALUE'],
+    ['out-of-set update form', request('SELF_UPDATE', {}), active(), { updateForm: 'PROPOSAL_FREE', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'UNKNOWN_VALUE'],
+    ['out-of-set update form with a commit proof supplied', request('SELF_UPDATE', {}), active(), { ...okUpdate, updateForm: 'PROPOSAL_FREE' }, 'INVALID_REQUEST'],
     ['malformed staged output with an unsupported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: 'x' } }, 'INVALID_REQUEST'],
     ['non-closed reconciliation observation', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), { ...reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), extra: 1 }, 'UNKNOWN_FIELD'],
     ['missing reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withoutMember(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'responseEmission'), 'INVALID_REQUEST'],
@@ -746,7 +770,7 @@ describe('I-UPD fail-closed request validation', () => {
     ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
     ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
-    ['staged output of the wrong member without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'INVALID_REQUEST'],
+    ['staged output of the wrong member without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
     ['staged output of the wrong type without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
     ['out-of-set commit outcome', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE' }, 'UNKNOWN_VALUE'],
     ['missing operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: null }, 'INVALID_REQUEST'],
@@ -781,7 +805,38 @@ describe('I-UPD fail-closed request validation', () => {
       reconciliationRef: 'r'.repeat(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS),
     }))).toEqual({ ok: true, code: null });
     expect(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS).toBe(256);
+    expect(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS).toBe(246);
     expect(Object.isFrozen(validateAdapterRequest(request('SELF_UPDATE', {})))).toBe(true);
+  });
+
+  test('the tri-state proof identity is bounded so the reference this module issues fits its own bound', () => {
+    const identity = 'i'.repeat(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS);
+    const accepted = invokeAdapter({
+      request: request('SELF_UPDATE', {}), snapshot: active(), observation: updateObservation({ operationIdentity: identity }),
+    });
+    expect(accepted.kind).toBe('SUCCESS');
+    expect(accepted.successCode).toBe('SELF_UPDATED');
+    const bounded = invokeAdapter({
+      request: request('SELF_UPDATE', {}), snapshot: active(),
+      observation: updateObservation({ commitOutcome: 'NOT_COMMITTED', operationIdentity: `${identity}i` }),
+    });
+    // RS proved absence, so nothing was applied and nothing is rejected either: the proof rules.
+    expect(bounded.kind).toBe('NOT_COMMITTED');
+    expect(bounded.stateAfter).toBe('ACTIVE');
+    const applied = invokeAdapter({
+      request: request('SELF_UPDATE', {}), snapshot: active(),
+      observation: updateObservation({ operationIdentity: `${identity}i` }),
+    });
+    // The over-long identity can never be applied: the mutation is held instead of committed under a
+    // reference this module would refuse, so the bound is fail-closed on the applying path.
+    expect(applied.kind).not.toBe('SUCCESS');
+    const held = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}), snapshot: active(),
+      observation: updateObservation({ operationIdentity: `${identity}i` }),
+    });
+    // After a commit report the bound cannot reject: the mutation is held instead, never applied.
+    expect(held.result.kind).toBe('INDETERMINATE');
+    expect(held.snapshot.state).toBe('RECONCILIATION_REQUIRED');
   });
 
   test('no accessor of any injected record is ever invoked', () => {
@@ -886,6 +941,7 @@ describe('I-UPD total precedence and the internal failure boundary', () => {
     });
     expect(absent.result.kind).toBe('INDETERMINATE');
     expect(absent.snapshot.held.scenario).toBe('CAPI-S014');
+    expect(absent.snapshot.held.outputKind).toBe('PROTECTED_COMMIT_BYTES');
     const notCommitted = invokeAdapter({
       request: request('SELF_UPDATE', {}),
       snapshot: active(),
@@ -927,12 +983,17 @@ describe('I-UPD purity, immutability and the closed envelope', () => {
       const reference = operation === 'RECONCILE_INDETERMINATE' ? { reconciliationRef: heldRef('held-upd-1') } : {};
       const input = { request: request(operation, reference), snapshot, observation: structuredClone(observation) };
       const before = structuredClone(observation);
+      const snapshotBefore = structuredClone(snapshot);
       const first = invokeAdapter(input);
       const second = invokeAdapter(input);
       expect(first).toEqual(second);
-      expect(Object.isFrozen(first.result)).toBe(true);
+      expect(Object.isFrozen(first)).toBe(true);
       expect(observation).toEqual(before);
       expect(input.observation).toEqual(before);
+      // The injected snapshot is read, never written: reconciliation moves state by returning a new
+      // snapshot, so the caller's own record must come back byte-for-byte unchanged.
+      expect(snapshot).toEqual(snapshotBefore);
+      expect(input.request.bindingRef).toEqual(new Uint8Array([1, 2, 3]));
     }
   });
 
@@ -983,9 +1044,17 @@ describe('I-UPD seeded property sweep', () => {
         fc.constant(null),
         fc.record({ protectedCommitBytes: memberArbitrary }),
         fc.record({ embeddedTreeWelcome: memberArbitrary }),
+        // A well-formed, bounded escrow with a commit report: without it every generated observation
+        // would be refused before the success path and the assertions below could not fail.
+        fc.constant({ protectedCommitBytes: new Uint8Array([1, 2, 3]) }),
       ),
     });
-    fc.assert(fc.property(snapshotArbitrary, observationArbitrary, (snapshot, observation) => {
+    const seen = { success: 0, released: 0, rejected: 0, held: 0 };
+    fc.assert(fc.property(snapshotArbitrary, fc.oneof(
+      observationArbitrary,
+      fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([7]) } }),
+      fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'INDETERMINATE', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([8]) } }),
+    ), (snapshot, observation) => {
       let result;
       try {
         result = invokeAdapter({ request: request('SELF_UPDATE', {}), snapshot, observation });
@@ -1009,22 +1078,49 @@ describe('I-UPD seeded property sweep', () => {
       if (result.kind === 'REJECTED') {
         expect(M2_ADAPTER.ERROR_CODES).toContain(result.error.code);
         expect(result.stateAfter).toBe(snapshot.state);
+        seen.rejected += 1;
+      }
+      if (result.kind === 'INDETERMINATE') seen.held += 1;
+      if (result.kind === 'SUCCESS') {
+        seen.success += 1;
+        // A success always carries its released member and only ever reports the commit it required.
+        expect(Object.keys(result.output)).toEqual(['protectedCommitBytes']);
+        seen.released += 1;
       }
     }), { seed: SEED, numRuns: RUNS });
+    // The sweep is only evidence if it actually reaches every outcome it asserts on.
+    expect(seen.success).toBeGreaterThan(0);
+    expect(seen.rejected).toBeGreaterThan(0);
+    expect(seen.held).toBeGreaterThan(0);
   });
 
   test('no randomised reconciliation ever releases a member the hold does not fix', () => {
-    fc.assert(fc.property(
-      snapshotArbitrary,
-      fc.oneof(
+    const seen = { success: 0, held: 0, refused: 0 };
+    const reconcileObservationArbitrary = fc.record({
+      commitOutcome: memberArbitrary,
+      responseEmission: memberArbitrary,
+      heldOutput: fc.oneof(
         fc.constant(null),
         fc.record({ protectedCommitBytes: memberArbitrary }),
         fc.record({ embeddedTreeWelcome: memberArbitrary }),
         fc.record({ protectedCommitBytes: memberArbitrary, embeddedTreeWelcome: memberArbitrary }),
+        fc.constant({ protectedCommitBytes: new Uint8Array([1, 2, 3]) }),
+        fc.constant({ embeddedTreeWelcome: new Uint8Array([4, 5, 6]) }),
       ),
-      memberArbitrary,
-      memberArbitrary,
-      (snapshot, heldOutput, commitOutcome, responseEmission) => {
+    });
+    fc.assert(fc.property(
+      fc.oneof(
+        // Correlated pairs: each hold with the exact escrow and proof that resolves it, so the release path
+        // is genuinely reachable, plus the free product of every other shape.
+        fc.constant([heldUpdate(), { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { protectedCommitBytes: STAGED } }]),
+        fc.constant([heldCreate(), { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { embeddedTreeWelcome: WELCOME } }]),
+        fc.constant([heldJoin(), { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null }]),
+        fc.constant([heldUpdate(), { commitOutcome: 'COMMITTED', responseEmission: 'INTERRUPTED', heldOutput: { protectedCommitBytes: STAGED } }]),
+        fc.tuple(snapshotArbitrary, reconcileObservationArbitrary),
+      ),
+      (pair) => {
+        const [snapshot, observation] = pair;
+        const { heldOutput, commitOutcome, responseEmission } = observation;
         const held = snapshot.held;
         const reference = held === null ? 'I-SM-HOLD:none' : held.reconciliationRef;
         let result;
@@ -1041,7 +1137,8 @@ describe('I-UPD seeded property sweep', () => {
         expect(M2_ADAPTER.RESULT_KINDS).toContain(result.kind);
         expect(result.stateBefore).toBe(snapshot.state);
         if (result.kind === 'SUCCESS') {
-          expect(observation.commitOutcome).toBe('COMMITTED');
+          seen.success += 1;
+          expect(commitOutcome).toBe('COMMITTED');
           expect(result.successCode).toBe('RECONCILED_COMMITTED');
           expect(held).not.toBe(null);
           expect(result.output.originalSuccessCode).toBe(held.expectedSuccessCode);
@@ -1052,9 +1149,33 @@ describe('I-UPD seeded property sweep', () => {
           }
         }
         if (result.kind === 'INDETERMINATE') {
+          seen.held += 1;
           expect(result.stateAfter).toBe('RECONCILIATION_REQUIRED');
           if (held !== null) expect(result.reconciliationRef).toBe(held.reconciliationRef);
         }
+        if (result.kind === 'REJECTED') seen.refused += 1;
       }), { seed: SEED + 1, numRuns: RUNS });
+    // Both the release and the refusal paths must actually be reached by the generated corpus.
+    expect(seen.success).toBeGreaterThan(0);
+    expect(seen.refused).toBeGreaterThan(0);
+  });
+
+  test('a replayed corpus is bit-identical, so the sweep is evidence and not a coin toss', () => {
+    const sampler = (seed) => {
+      const trace = [];
+      fc.assert(fc.property(snapshotArbitrary, fc.oneof(
+        fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([1]) } }),
+        fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }),
+        fc.constant({ updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null }),
+      ), (snapshot, observation) => {
+        const result = invokeAdapter({ request: request('SELF_UPDATE', {}), snapshot, observation });
+        trace.push(`${snapshot.state}|${observation.commitOutcome}|${result.kind}|${result.stateAfter}|${result.error === undefined ? result.successCode ?? '' : result.error.code}`);
+      }), { seed, numRuns: 40 });
+      return trace;
+    };
+    const first = sampler(SEED + 7);
+    const second = sampler(SEED + 7);
+    expect(first).toEqual(second);
+    expect(first.length).toBe(40);
   });
 });
