@@ -360,7 +360,7 @@ describe('legacy-session-inventory: hostile-source totality (regression)', () =>
     ]) {
       const error = errorOf(call);
       expect(error).toBeInstanceOf(M2LegacyInventoryError);
-      expect(M2_LEGACY_INVENTORY.FAILURE_CODES).toContain(error.code);
+      expect(error.code).toBe('INCOMPATIBLE_FORMAT');
     }
   });
 
@@ -402,6 +402,57 @@ describe('legacy-session-inventory: hostile-source totality (regression)', () =>
     expect(gets).toBe(0);
   });
 
+  test('length and each element are read exactly once, through their descriptors', () => {
+    const base = [ascii('legacy-legacy'), selectorKey(), recordKey()];
+    const reads = [];
+    let indexGets = 0;
+    const keys = new Proxy(base, {
+      get(target, key) {
+        if (/^(0|[1-9][0-9]*)$/.test(String(key))) indexGets += 1;
+        return Reflect.get(target, key);
+      },
+      getOwnPropertyDescriptor(target, key) {
+        reads.push(String(key));
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const record = inventoryLegacySessions({ keys });
+    expect(record).toMatchObject({ keyCount: 3, selectorCount: 1, recordCount: 1, legacyCount: 1 });
+    // One descriptor read for the length, one per element, and no indexed get at all.
+    expect(reads).toEqual(['length', '0', '1', '2']);
+    expect(indexGets).toBe(0);
+  });
+
+  test('an element that changes between reads is classified from one snapshot', () => {
+    const target = [ascii('legacy-legacy'), ascii('legacy-legacy')];
+    let reads = 0;
+    const keys = new Proxy(target, {
+      getOwnPropertyDescriptor(t, key) {
+        if (key === '1') reads += 1;
+        return Reflect.getOwnPropertyDescriptor(t, key);
+      },
+    });
+    const record = inventoryLegacySessions({ keys });
+    expect(record.legacyCount).toBe(2);
+    expect(reads).toBe(1);
+  });
+
+  test('a forged module error thrown by a trap cannot choose the failure code', () => {
+    for (const thrown of [
+      new M2LegacyInventoryError('NOT_A_CLOSED_CODE', 'forged'),
+      'a primitive',
+      new Proxy({}, { getPrototypeOf() { throw new RangeError('hostile'); } }),
+    ]) {
+      const keys = new Proxy([ascii('legacy')], {
+        getOwnPropertyDescriptor() { throw thrown; },
+      });
+      const error = errorOf(() => inventoryLegacySessions({ keys }));
+      expect(error).toBeInstanceOf(M2LegacyInventoryError);
+      expect(M2_LEGACY_INVENTORY.FAILURE_CODES).toContain(error.code);
+      expect(error.code).toBe('INCOMPATIBLE_FORMAT');
+    }
+  });
+
   test('a hostile Proxy source object rejects INCOMPATIBLE_FORMAT, never a raw engine error', () => {
     const source = new Proxy({ keys: [] }, {
       ownKeys() { throw new TypeError('ownKeys boom'); },
@@ -440,19 +491,79 @@ describe('legacy-session-inventory: hostile-source totality (regression)', () =>
 });
 
 describe('legacy-session-inventory: correction round 1 (species, forgery, context)', () => {
-  test('a species-redirecting subclass key is refused, never misclassified', () => {
+  test('a species-redirecting subclass key classifies its true bytes, never the redirect', () => {
     class Redirecting extends Uint8Array {
       static get [Symbol.species]() {
         return function Redirect() { return selectorKey(); };
       }
     }
-    const key = new Redirecting(1);
-    key[0] = 0x53;
-    const error = errorOf(() => classifyLegacyLocator(key));
-    expect(error).toBeInstanceOf(M2LegacyInventoryError);
-    expect(error.code).toBe('INCOMPATIBLE_FORMAT');
-    expect(errorOf(() => inventoryLegacySessions({ keys: [key] })).code)
-      .toBe('INCOMPATIBLE_FORMAT');
+    const canonical = selectorKey();
+    const subclassSelector = new Redirecting(canonical);
+    expect(classifyLegacyLocator(subclassSelector)).toBe('SELECTOR');
+    expect(decodeSelectorKey(subclassSelector).localContextId).toEqual(CONTEXT);
+    expect(classifyLegacyLocator(new Redirecting(1))).toBe('LEGACY');
+    const record = recordKey();
+    const subclassRecord = new Redirecting(record);
+    expect(classifyLegacyLocator(subclassRecord)).toBe('RECORD');
+    expect(hex(subclassSelector)).toBe(hex(canonical));
+    expect(hex(subclassRecord)).toBe(hex(record));
+  });
+
+  test('a Node Buffer key carrying canonical bytes is accepted like the merged codec', () => {
+    const bufferSelector = Buffer.from(selectorKey());
+    const bufferRecord = Buffer.from(recordKey());
+    expect(classifyLegacyLocator(bufferSelector)).toBe('SELECTOR');
+    expect(classifyLegacyLocator(bufferRecord)).toBe('RECORD');
+    expect(decodeRecordKey(bufferRecord).recordKind).toBe(M2_KIND.SLOT_REGISTRATION);
+    const record = inventoryLegacySessions({ keys: [bufferSelector, bufferRecord] });
+    expect(record).toMatchObject({ selectorCount: 1, recordCount: 1, m2Present: true });
+  });
+
+  test('an own length or buffer override cannot shorten, extend or substitute the copy', () => {
+    class LyingLength extends Uint8Array {
+      get length() { return 1; }
+    }
+    const canonical = recordKey();
+    const lying = new LyingLength(canonical);
+    expect(lying.length).toBe(1);
+    // The internal slot decides, not the own getter.
+    expect(classifyLegacyLocator(lying)).toBe('RECORD');
+    expect(hex(lying)).toBe(hex(canonical));
+    expect(classifyLegacyLocator(new LyingLength(Uint8Array.of(0x53)))).toBe('LEGACY');
+    const substituted = Uint8Array.of(0x53);
+    Object.defineProperty(substituted, 'buffer', {
+      value: selectorKey().buffer,
+      configurable: true,
+    });
+    expect(classifyLegacyLocator(substituted)).toBe('LEGACY');
+  });
+
+  test('an own length carrying typed bytes or another buffer cannot redirect the copy', () => {
+    // Own `length` holding the canonical selector bytes: the true key bytes still decide.
+    const lying = Uint8Array.of(0x53);
+    Object.defineProperty(lying, 'length', { value: selectorKey(), configurable: true });
+    expect(classifyLegacyLocator(lying)).toBe('LEGACY');
+
+    // Own `length` holding another source element's buffer: the module must neither write
+    // into that buffer nor adopt its bytes.
+    const victim = selectorKey();
+    const victimBefore = hex(victim);
+    const attacker = Uint8Array.of(0xaa, 0xbb, 0xcc);
+    Object.defineProperty(attacker, 'length', { value: victim.buffer, configurable: true });
+    const inventory = inventoryLegacySessions({ keys: [attacker, victim] });
+    expect(inventory).toMatchObject({ selectorCount: 1, recordCount: 0, legacyCount: 1 });
+    expect(hex(victim)).toBe(victimBefore);
+    expect(hex(attacker)).toBe('aabbcc');
+
+    // An own `length` accessor must never be invoked.
+    let calls = 0;
+    const accessed = Uint8Array.of(0x53);
+    Object.defineProperty(accessed, 'length', {
+      configurable: true,
+      get() { calls += 1; return 42; },
+    });
+    expect(classifyLegacyLocator(accessed)).toBe('LEGACY');
+    expect(calls).toBe(0);
   });
 
   test('an own constructor with a species getter cannot redirect the copy', () => {
@@ -468,21 +579,40 @@ describe('legacy-session-inventory: correction round 1 (species, forgery, contex
     expect(hex(key)).toBe(before);
   });
 
-  test('a detached, empty or forged view is refused, never silently legacy', () => {
+  test('a detached or forged view is refused; an empty byte sequence stays legacy', () => {
     const buffer = new ArrayBuffer(4);
     const view = new Uint8Array(buffer);
-    buffer.transfer();
+    // `ArrayBuffer.prototype.transfer` does not exist on the CI runtime (Node 20), so the
+    // detach is done with `structuredClone`, which is what the review asked for.
+    structuredClone(buffer, { transfer: [buffer] });
     expect(view.length).toBe(0);
-    const cases = {
+    expect(view.byteLength).toBe(0);
+    const refused = {
       detached: view,
-      empty: new Uint8Array(0),
       forged: Object.create(Uint8Array.prototype),
     };
-    for (const [name, key] of Object.entries(cases)) {
+    for (const [name, key] of Object.entries(refused)) {
       const error = errorOf(() => classifyLegacyLocator(key));
       expect(error).toBeInstanceOf(M2LegacyInventoryError);
       expect(error.code).toBe('INCOMPATIBLE_FORMAT');
     }
+    // An empty Uint8Array carries no M2 magic, so it is a legacy locator, counted.
+    expect(classifyLegacyLocator(new Uint8Array(0))).toBe('LEGACY');
+    expect(inventoryLegacySessions({ keys: [new Uint8Array(0)] }))
+      .toMatchObject({ legacyCount: 1, legacyPresent: true, m2Present: false });
+  });
+
+  test('a shared-buffer-backed key is a byte sequence, not a detached view', () => {
+    const selector = selectorKey();
+    const shared = new Uint8Array(new SharedArrayBuffer(selector.length));
+    shared.set(selector);
+    expect(classifyLegacyLocator(shared)).toBe('SELECTOR');
+    const record = recordKey();
+    const sharedRecord = new Uint8Array(new SharedArrayBuffer(record.length));
+    sharedRecord.set(record);
+    expect(classifyLegacyLocator(sharedRecord)).toBe('RECORD');
+    const inventory = inventoryLegacySessions({ keys: [shared, sharedRecord] });
+    expect(inventory).toMatchObject({ selectorCount: 1, recordCount: 1, m2Present: true });
   });
 
   test('a revoked proxy keys array rejects INCOMPATIBLE_FORMAT', () => {
@@ -503,6 +633,17 @@ describe('legacy-session-inventory: correction round 1 (species, forgery, contex
       selectorCount: 1, recordCount: 1, m2Present: true, orphanGeneration: true,
     });
     expect(JSON.stringify(crossContext)).not.toContain(hex(ALT_CONTEXT));
+    // A matched pair cannot hide a foreign-context generation behind it.
+    const mixed = inventoryLegacySessions({
+      keys: [
+        selectorKey(CONTEXT), recordKey(), recordKey({ localContextId: ALT_CONTEXT }),
+      ],
+    });
+    expect(mixed).toMatchObject({
+      selectorCount: 1, recordCount: 2, m2Present: true, orphanGeneration: true,
+    });
+    expect(JSON.stringify(mixed)).not.toContain(hex(ALT_CONTEXT));
+    expect(JSON.stringify(mixed)).not.toContain(hex(CONTEXT));
   });
 
   test('mutated canonical locators reach SELECTOR, RECORD and all four failure codes', () => {
@@ -521,7 +662,7 @@ describe('legacy-session-inventory: correction round 1 (species, forgery, contex
     observe(selector);
     observe(record);
     observe(ascii('plain-legacy-locator'));
-    observe(new Uint8Array(0));
+    observe(Object.create(Uint8Array.prototype));
     for (const base of [selector, record]) {
       for (let i = 0; i < base.length; i += 1) {
         const flip = Uint8Array.prototype.slice.call(base);
@@ -580,6 +721,53 @@ describe('legacy-session-inventory: seeded property tests', () => {
       }
       expect(M2_LEGACY_INVENTORY.CLASSES).toContain(outcome);
     }), { seed: SEED, numRuns: 1000 });
+  });
+
+  test('the seeded properties themselves observe both M2 classes and all four codes', () => {
+    const classes = new Set();
+    const codes = new Set();
+    const observe = (key) => {
+      try {
+        classes.add(classifyLegacyLocator(key));
+      } catch (error) {
+        expect(error).toBeInstanceOf(M2LegacyInventoryError);
+        codes.add(error.code);
+      }
+    };
+    const mutate = (base, raw) => {
+      const mutated = Uint8Array.prototype.slice.call(base);
+      mutated[raw % mutated.length] ^= 0xff;
+      return mutated;
+    };
+    fc.assert(fc.property(
+      fc.uint8Array({ maxLength: 96 }),
+      fc.integer({ min: 0, max: 1 }),
+      fc.integer({ min: 0, max: 4095 }),
+      (key, kind, raw) => {
+        observe(key);
+        const base = kind === 0
+          ? encodeSelectorKey({ localContextId: CONTEXT })
+          : encodeRecordKey({
+            scope: M2_SCOPE.SESSION,
+            localContextId: CONTEXT,
+            secureSessionIdentity: SESSION,
+            writeGeneration: 1n,
+            recordKind: M2_KIND.SLOT_REGISTRATION,
+          });
+        observe(base);
+        observe(mutate(base, raw));
+        observe(base.slice(0, base.length - 1));
+        observe(concat(base, Uint8Array.of(0x00)));
+        const bumped = Uint8Array.prototype.slice.call(base);
+        bumped[9] = 2;
+        observe(bumped);
+        observe(Object.create(Uint8Array.prototype));
+      },
+    ), { seed: SEED, numRuns: 300 });
+    expect([...classes].sort()).toEqual(['LEGACY', 'RECORD', 'SELECTOR']);
+    expect([...codes].sort()).toEqual([
+      'INCOMPATIBLE_FORMAT', 'RECORD_INVALID', 'SELECTOR_INVALID', 'UNSUPPORTED_VERSION',
+    ]);
   });
 
   test('a mutated source always rejects or returns a frozen value-free record', () => {

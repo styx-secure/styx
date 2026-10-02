@@ -19,7 +19,7 @@
 // forged view, foreign decoder error — leaves through `M2LegacyInventoryError` with one
 // of the four closed C-REST codes.
 
-import { decodeRecordKey, decodeSelectorKey } from './session-codec.js';
+import { decodeRecordKey, decodeSelectorKey, M2StorageCodecError } from './session-codec.js';
 
 const TE = new TextEncoder();
 const ASCII = (s) => TE.encode(s);
@@ -43,6 +43,9 @@ const FAILURE_CODES = Object.freeze([
 // The `%TypedArray%.prototype[Symbol.toStringTag]` getter is the brand check used by
 // the merged M2 adapter (`crypto/mls/m2/state-machine.js`): it reads the internal slot,
 // so a proxy, a forged `Uint8Array.prototype` object or another view type is refused.
+// A `Buffer` or a benign subclass is a genuine `Uint8Array` view and is accepted, like
+// the merged `session-codec.js` accepts it through `instanceof`; what is refused is only
+// a view whose bytes cannot be read.
 const TYPED_ARRAY_TAG = Object.getOwnPropertyDescriptor(
   Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag,
 ).get;
@@ -57,11 +60,21 @@ export class M2LegacyInventoryError extends Error {
 
 const fail = (code, message) => { throw new M2LegacyInventoryError(code, message); };
 
-// A foreign exception must never escape: the module owns one error type.
-const mapped = (error, code, message) => {
-  if (error instanceof M2LegacyInventoryError) throw error;
-  return fail(code, message);
-};
+// A foreign exception must never escape, and it must never be able to choose the code:
+// no guarded block can raise a module error itself (every `fail(...)` sits outside a
+// `try`), so whatever a caller's trap or getter threw is discarded here and the block's
+// own closed code is raised instead.
+const mapFailure = (code, message) => fail(code, message);
+
+// `instanceof` is itself a caller-controllable operation on a hostile value, so it is
+// guarded too: only a real typed codec refusal may be reported as noncanonicity.
+function isCodecRefusal(error) {
+  try {
+    return error instanceof M2StorageCodecError;
+  } catch {
+    return false;
+  }
+}
 
 export const M2_LEGACY_INVENTORY = Object.freeze({
   SCHEMA: 'styx-m2-legacy-inventory/v1',
@@ -97,8 +110,8 @@ function strictObject(value, keys, name = 'value') {
     plain = value !== null && typeof value === 'object' && !Array.isArray(value)
       && Object.getPrototypeOf(value) === Object.prototype;
     if (plain) own = Reflect.ownKeys(value);
-  } catch (error) {
-    mapped(error, 'INCOMPATIBLE_FORMAT', `${name} could not be inspected`);
+  } catch {
+    mapFailure('INCOMPATIBLE_FORMAT', `${name} could not be inspected`);
   }
   if (!plain) fail('INCOMPATIBLE_FORMAT', `${name} must be a plain object`);
   if (own.length !== keys.length || own.some((k) => typeof k !== 'string' || !keys.includes(k))) {
@@ -109,8 +122,8 @@ function strictObject(value, keys, name = 'value') {
     let d = null;
     try {
       d = Object.getOwnPropertyDescriptor(value, key);
-    } catch (error) {
-      mapped(error, 'INCOMPATIBLE_FORMAT', `${name}.${key} could not be inspected`);
+    } catch {
+      mapFailure('INCOMPATIBLE_FORMAT', `${name}.${key} could not be inspected`);
     }
     if (!d || !d.enumerable || !Object.hasOwn(d, 'value')) {
       fail('INCOMPATIBLE_FORMAT', `${name}.${key} must be enumerable data`);
@@ -122,28 +135,53 @@ function strictObject(value, keys, name = 'value') {
 
 function isByteSequence(value) {
   try {
-    return ArrayBuffer.isView(value)
-      && TYPED_ARRAY_TAG.call(value) === 'Uint8Array'
-      && Object.getPrototypeOf(value) === Uint8Array.prototype;
+    return ArrayBuffer.isView(value) && TYPED_ARRAY_TAG.call(value) === 'Uint8Array';
   } catch (error) {
     return false;
   }
 }
 
+// The length and the backing buffer are read from the `%TypedArray%` internal slots, so
+// an own `length`/`buffer` property on a subclass or an instance cannot shorten, extend
+// or substitute what is copied.
+function slotGetter(name) {
+  return Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(Uint8Array.prototype), name,
+  ).get;
+}
+const TYPED_ARRAY_LENGTH = slotGetter('length');
+const TYPED_ARRAY_BUFFER = slotGetter('buffer');
+
+// Portable across the runtimes this repo supports (`engines: node >=18`, CI runs Node 20):
+// constructing a view over a detached buffer throws, while `ArrayBuffer.prototype.detached`
+// only exists from later versions. A shared buffer is never detached.
+function detached(buffer) {
+  if (typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer) return false;
+  try {
+    new Uint8Array(buffer);
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
 // One snapshot per locator, and it is the only bytes any later step reads.
 // `new Uint8Array(length)` plus `set` consult neither `Symbol.species` nor an own
-// `constructor` property, so a caller cannot redirect or alias the copy; a detached or
-// zero-length locator is refused instead of being silently treated as legacy.
+// `constructor` or `length`, so a caller cannot redirect, shorten or alias the copy.
 function snapshotGuarded(value, name) {
-  if (!isByteSequence(value)) fail('INCOMPATIBLE_FORMAT', `${name} must be a plain Uint8Array`);
+  if (!isByteSequence(value)) fail('INCOMPATIBLE_FORMAT', `${name} must be a Uint8Array`);
+  // A detached view cannot be read at all; an empty one is a byte sequence and stays
+  // legacy, exactly like any other locator that carries no M2 magic.
+  if (detached(TYPED_ARRAY_BUFFER.call(value))) {
+    fail('INCOMPATIBLE_FORMAT', `${name} must not be a detached view`);
+  }
   let copy = null;
   try {
-    copy = new Uint8Array(value.length);
+    copy = new Uint8Array(TYPED_ARRAY_LENGTH.call(value));
     Uint8Array.prototype.set.call(copy, value);
-  } catch (error) {
-    mapped(error, 'INCOMPATIBLE_FORMAT', `${name} could not be read as a byte sequence`);
+  } catch {
+    mapFailure('INCOMPATIBLE_FORMAT', `${name} could not be read as a byte sequence`);
   }
-  if (copy.length === 0) fail('INCOMPATIBLE_FORMAT', `${name} must not be empty`);
   return copy;
 }
 
@@ -153,8 +191,8 @@ function readKeyElement(keys, index) {
   let d = null;
   try {
     d = Object.getOwnPropertyDescriptor(keys, String(index));
-  } catch (error) {
-    mapped(error, 'INCOMPATIBLE_FORMAT', 'inventory source key could not be inspected');
+  } catch {
+    mapFailure('INCOMPATIBLE_FORMAT', 'inventory source key could not be inspected');
   }
   if (!d || !d.enumerable || !Object.hasOwn(d, 'value')) {
     fail('INCOMPATIBLE_FORMAT', 'inventory source key must be an enumerable data element');
@@ -168,8 +206,8 @@ function readArrayLength(keys) {
   let d = null;
   try {
     d = Object.getOwnPropertyDescriptor(keys, 'length');
-  } catch (error) {
-    mapped(error, 'INCOMPATIBLE_FORMAT', 'inventory source length could not be inspected');
+  } catch {
+    mapFailure('INCOMPATIBLE_FORMAT', 'inventory source length could not be inspected');
   }
   if (!d || !Object.hasOwn(d, 'value') || typeof d.value !== 'number'
       || !Number.isSafeInteger(d.value) || d.value < 0) {
@@ -207,7 +245,8 @@ function recognize(b) {
     try {
       decoded = decodeSelectorKey(b);
     } catch (error) {
-      mapped(error, 'SELECTOR_INVALID', 'selector locator is not canonical');
+      if (isCodecRefusal(error)) fail('SELECTOR_INVALID', 'selector locator is not canonical');
+      mapFailure('INCOMPATIBLE_FORMAT', 'selector locator could not be decoded');
     }
     return { locatorClass: CLASS_SELECTOR, context: hex(decoded.localContextId) };
   }
@@ -217,7 +256,8 @@ function recognize(b) {
     try {
       decoded = decodeRecordKey(b);
     } catch (error) {
-      mapped(error, 'RECORD_INVALID', 'record key is not canonical');
+      if (isCodecRefusal(error)) fail('RECORD_INVALID', 'record key is not canonical');
+      mapFailure('INCOMPATIBLE_FORMAT', 'record key could not be decoded');
     }
     return { locatorClass: CLASS_RECORD, context: hex(decoded.localContextId) };
   }
@@ -234,8 +274,8 @@ export function inventoryLegacySessions(source) {
   let plainArray = false;
   try {
     plainArray = Array.isArray(keys) && Object.getPrototypeOf(keys) === Array.prototype;
-  } catch (error) {
-    mapped(error, 'INCOMPATIBLE_FORMAT', 'inventory source keys could not be inspected');
+  } catch {
+    mapFailure('INCOMPATIBLE_FORMAT', 'inventory source keys could not be inspected');
   }
   if (!plainArray) fail('INCOMPATIBLE_FORMAT', 'inventory source keys must be a plain array');
   const keyCount = readArrayLength(keys);
@@ -282,10 +322,10 @@ export function inventoryLegacySessions(source) {
   const legacyPresent = legacyCount > 0;
   const noM2State = !m2Present;
   // C-REST `inventoryRules.orphanGeneration`: a generation artifact that belongs to no
-  // fixed locator — because there is no selector at all, or because no record key
-  // shares the single selector's local context — is an orphan generation.
+  // fixed locator — because there is no selector at all, or because a record key does
+  // not share the single selector's local context — is an orphan generation.
   const orphanGeneration = recordCount > 0
-    && (selectorCount === 0 || !recordContexts.has(selectorContext));
+    && (selectorCount === 0 || [...recordContexts].some((c) => c !== selectorContext));
   const inventoryOutcome = m2Present ? null : (legacyPresent ? 'LEGACY_ONLY' : 'NO_M2_STATE');
 
   return Object.freeze({
