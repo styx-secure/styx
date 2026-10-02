@@ -141,40 +141,25 @@ function isByteSequence(value) {
   }
 }
 
-// The length and the backing buffer are read from the `%TypedArray%` internal slots, so
-// an own `length`/`buffer` property on a subclass or an instance cannot shorten, extend
-// or substitute what is copied.
+// The length is read from the `%TypedArray%` internal slot, so an own `length`/`buffer`
+// property on a subclass or an instance cannot shorten, extend or substitute what is
+// copied.
 function slotGetter(name) {
   return Object.getOwnPropertyDescriptor(
     Object.getPrototypeOf(Uint8Array.prototype), name,
   ).get;
 }
 const TYPED_ARRAY_LENGTH = slotGetter('length');
-const TYPED_ARRAY_BUFFER = slotGetter('buffer');
-
-// Portable across the runtimes this repo supports (`engines: node >=18`, CI runs Node 20):
-// constructing a view over a detached buffer throws, while `ArrayBuffer.prototype.detached`
-// only exists from later versions. A shared buffer is never detached.
-function detached(buffer) {
-  if (typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer) return false;
-  try {
-    new Uint8Array(buffer);
-    return false;
-  } catch (error) {
-    return true;
-  }
-}
 
 // One snapshot per locator, and it is the only bytes any later step reads.
 // `new Uint8Array(length)` plus `set` consult neither `Symbol.species` nor an own
 // `constructor` or `length`, so a caller cannot redirect, shorten or alias the copy.
+// A detached view needs no separate test: `%TypedArray%.prototype.set` throws on a
+// detached source buffer on every supported runtime, and that lands in the `catch`
+// below. Testing "is it detached?" instead would mean calling into the caller's own
+// buffer, whose prototype chain is caller-controlled.
 function snapshotGuarded(value, name) {
   if (!isByteSequence(value)) fail('INCOMPATIBLE_FORMAT', `${name} must be a Uint8Array`);
-  // A detached view cannot be read at all; an empty one is a byte sequence and stays
-  // legacy, exactly like any other locator that carries no M2 magic.
-  if (detached(TYPED_ARRAY_BUFFER.call(value))) {
-    fail('INCOMPATIBLE_FORMAT', `${name} must not be a detached view`);
-  }
   let copy = null;
   try {
     copy = new Uint8Array(TYPED_ARRAY_LENGTH.call(value));

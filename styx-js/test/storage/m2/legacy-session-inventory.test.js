@@ -567,16 +567,84 @@ describe('legacy-session-inventory: correction round 1 (species, forgery, contex
   });
 
   test('an own constructor with a species getter cannot redirect the copy', () => {
-    const key = Uint8Array.of(0x01, 0x02, 0x03);
+    // One byte, so the decoy's magic cannot be overwritten by the real key bytes: only a
+    // module that actually consults the species can report SELECTOR here.
+    const key = Uint8Array.of(0x53);
     const before = hex(key);
+    const decoy = selectorKey();
+    const decoyBefore = hex(decoy);
     key.constructor = {
       get [Symbol.species]() {
-        return function Redirect() { return selectorKey(); };
+        return function Redirect() { return decoy; };
       },
     };
     // The true bytes decide: no species consult, no redirect, no aliasing.
     expect(classifyLegacyLocator(key)).toBe('LEGACY');
+    expect(inventoryLegacySessions({ keys: [key, decoy] }))
+      .toMatchObject({ selectorCount: 1, legacyCount: 1 });
     expect(hex(key)).toBe(before);
+    expect(hex(decoy)).toBe(decoyBefore);
+  });
+
+  test('a forged error thrown through every guarded read cannot choose the code', () => {
+    const forged = () => new M2LegacyInventoryError('NOT_A_CLOSED_CODE', 'forged');
+    const source = { keys: [ascii('legacy')] };
+    const cases = {
+      'source prototype': {
+        source: new Proxy(source, { getPrototypeOf() { throw forged(); } }),
+      },
+      'source own-key list': {
+        source: new Proxy(source, { ownKeys() { throw forged(); } }),
+      },
+      'source descriptor': {
+        source: new Proxy(source, {
+          getOwnPropertyDescriptor(t, k) {
+            if (k === 'keys') throw forged();
+            return Reflect.getOwnPropertyDescriptor(t, k);
+          },
+        }),
+      },
+      'keys prototype': {
+        source: {
+          keys: new Proxy([ascii('legacy')], { getPrototypeOf() { throw forged(); } }),
+        },
+      },
+      'keys length descriptor': {
+        source: {
+          keys: new Proxy([ascii('legacy')], {
+            getOwnPropertyDescriptor(t, k) {
+              if (k === 'length') throw forged();
+              return Reflect.getOwnPropertyDescriptor(t, k);
+            },
+          }),
+        },
+      },
+      'element descriptor': {
+        source: {
+          keys: new Proxy([ascii('legacy')], {
+            getOwnPropertyDescriptor(t, k) {
+              if (k === '0') throw forged();
+              return Reflect.getOwnPropertyDescriptor(t, k);
+            },
+          }),
+        },
+      },
+    };
+    for (const [name, { source: input }] of Object.entries(cases)) {
+      const error = errorOf(() => inventoryLegacySessions(input));
+      expect([name, error instanceof M2LegacyInventoryError]).toEqual([name, true]);
+      expect(M2_LEGACY_INVENTORY.FAILURE_CODES).toContain(error.code);
+      expect([name, error.code]).toEqual([name, 'INCOMPATIBLE_FORMAT']);
+    }
+  });
+
+  test('a detached buffer behind an own buffer property cannot change the result', () => {
+    const detachedBuffer = new ArrayBuffer(8);
+    structuredClone(detachedBuffer, { transfer: [detachedBuffer] });
+    const key = Uint8Array.of(0x53);
+    Object.defineProperty(key, 'buffer', { value: detachedBuffer, configurable: true });
+    expect(classifyLegacyLocator(key)).toBe('LEGACY');
+    expect(hex(key)).toBe('53');
   });
 
   test('a detached or forged view is refused; an empty byte sequence stays legacy', () => {
@@ -633,17 +701,25 @@ describe('legacy-session-inventory: correction round 1 (species, forgery, contex
       selectorCount: 1, recordCount: 1, m2Present: true, orphanGeneration: true,
     });
     expect(JSON.stringify(crossContext)).not.toContain(hex(ALT_CONTEXT));
-    // A matched pair cannot hide a foreign-context generation behind it.
-    const mixed = inventoryLegacySessions({
-      keys: [
-        selectorKey(CONTEXT), recordKey(), recordKey({ localContextId: ALT_CONTEXT }),
-      ],
-    });
-    expect(mixed).toMatchObject({
-      selectorCount: 1, recordCount: 2, m2Present: true, orphanGeneration: true,
-    });
-    expect(JSON.stringify(mixed)).not.toContain(hex(ALT_CONTEXT));
-    expect(JSON.stringify(mixed)).not.toContain(hex(CONTEXT));
+    // A matched pair cannot hide a foreign-context generation behind it, in any order.
+    const parts = [
+      selectorKey(CONTEXT),
+      recordKey(),
+      recordKey({ localContextId: ALT_CONTEXT }),
+    ];
+    const permutations = parts.flatMap((first, a) => parts.flatMap((second, b) => (
+      parts.map((third, c) => (a === b || b === c || a === c ? null : [first, second, third]))
+    ))).filter(Boolean);
+    expect(permutations).toHaveLength(6);
+    for (const keys of permutations) {
+      const mixed = inventoryLegacySessions({ keys });
+      expect(mixed).toMatchObject({
+        selectorCount: 1, recordCount: 2, m2Present: true, orphanGeneration: true,
+      });
+      const serialized = JSON.stringify(mixed);
+      expect(serialized).not.toContain(hex(ALT_CONTEXT));
+      expect(serialized).not.toContain(hex(CONTEXT));
+    }
   });
 
   test('mutated canonical locators reach SELECTOR, RECORD and all four failure codes', () => {
@@ -771,16 +847,28 @@ describe('legacy-session-inventory: seeded property tests', () => {
   });
 
   test('a mutated source always rejects or returns a frozen value-free record', () => {
+    const observed = { m2: 0, orphan: 0, rejected: 0 };
     fc.assert(fc.property(
       fc.array(fc.uint8Array({ maxLength: 96 }), { maxLength: 24 }),
-      (rawKeys) => {
+      fc.integer({ min: 0, max: 3 }),
+      (rawKeys, shape) => {
         const keys = rawKeys.map((k) => Uint8Array.prototype.slice.call(k));
+        // Feed M2-shaped material too, so the property itself reaches the M2 and
+        // rejection branches instead of only the legacy one.
+        if (shape === 1) keys.push(selectorKey(CONTEXT));
+        if (shape === 2) keys.push(recordKey(), recordKey({ localContextId: ALT_CONTEXT }));
+        if (shape === 3) {
+          const bumped = Uint8Array.prototype.slice.call(selectorKey(CONTEXT));
+          bumped[9] = 2;
+          keys.push(bumped);
+        }
         const before = keys.map(hex);
         let record;
         try {
           record = inventoryLegacySessions({ keys });
         } catch (error) {
           expect(error).toBeInstanceOf(M2LegacyInventoryError);
+          observed.rejected += 1;
           expect(keys.map(hex)).toEqual(before);
           return;
         }
@@ -788,8 +876,13 @@ describe('legacy-session-inventory: seeded property tests', () => {
         expect(record.legacyCount + record.recordCount + record.selectorCount).toBe(keys.length);
         expect(keys.map(hex)).toEqual(before);
         for (const value of Object.values(record)) expect(value instanceof Uint8Array).toBe(false);
+        if (record.m2Present) observed.m2 += 1;
+        if (record.orphanGeneration) observed.orphan += 1;
       },
     ), { seed: SEED, numRuns: 300 });
+    expect(observed.rejected).toBeGreaterThan(0);
+    expect(observed.m2).toBeGreaterThan(0);
+    expect(observed.orphan).toBeGreaterThan(0);
   });
 
   test('the same seed replays to identical outcomes', () => {
