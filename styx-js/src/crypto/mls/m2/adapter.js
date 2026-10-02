@@ -1,5 +1,6 @@
 // adapter.js — M2 session adapter integration boundary
-// (cards I-JOIN and I-UPD of #317 G-SCOPE; contract Issues #402/#407 and #412).
+// (cards I-JOIN and I-UPD of #317 G-SCOPE; contract Issues #402/#407 and #415, the I-UPD contract of
+// record, revision R1, which supersedes #412 in exactly the clauses recorded in #415).
 //
 // This is the semantic integration boundary of the M2 session adapter API: it accepts exactly the
 // closed C-API request record for the five operations this module integrates (`CREATE`, `RESTORE`,
@@ -19,7 +20,8 @@
 // It performs no I/O, no cryptography, no storage call, no lock acquisition, no worker call and no
 // transport action: the request, the current snapshot and the owning-layer observation are injected.
 //
-// Ratified inputs copied verbatim (see contract Issue #412 "Frozen shared interfaces"):
+// Ratified inputs copied verbatim (see contract Issue #415 "Frozen shared interfaces", unchanged from
+// #412 beyond the two clauses recorded in #415):
 //   C-API  docs/architecture/m2/adapter-contract.md  sha256 b77d39fb…05ad9  (#319 5886838783)
 //   C-REST docs/architecture/m2/restore-compatibility.md sha256 853dbc41…766b6 (#332 5900545454)
 //   C-BIND docs/architecture/m2/binding-v0.md        sha256 2ee9b022…1d4a42 (#323 5890060894)
@@ -42,7 +44,7 @@ const OPERATIONS = Object.freeze([
 
 /**
  * The five operations this module integrates. The other three remain valid C-API operations; this
- * module's closed dispatch refuses them with `UNSUPPORTED_OPERATION` (contract Issue #412,
+ * module's closed dispatch refuses them with `UNSUPPORTED_OPERATION` (contract Issue #415,
  * "Open owner questions" item 1). `PROTECT_APPLICATION` and `OPEN_APPLICATION` are owned by I-MSG and
  * `APPLY_PEER_UPDATE` by I-FORK.
  */
@@ -681,7 +683,16 @@ function readObservation(operation, observation) {
 
   if (!reached) {
     if (value.commitOutcome !== null || value.operationIdentity !== null) return { error: 'INVALID_REQUEST' };
-    if (operation !== 'JOIN_WELCOME' && value.stagedOutput !== null) return { error: 'INVALID_REQUEST' };
+    if (operation === 'CREATE' && value.stagedOutput !== null) return { error: 'INVALID_REQUEST' };
+    if (operation === 'SELF_UPDATE' && value.stagedOutput !== null) {
+      // A form the owning layer does not support carries no commit proof and no identity, and nothing is
+      // ever applied for it: a staged output supplied with it is read through the same closed member
+      // check and then dropped, never released (contract Issue #415: rejects `UNSUPPORTED_UPDATE_FORM`
+      // and releases nothing even when a staged output is supplied). `CREATE` keeps the merged I-JOIN
+      // closure unchanged, which is `INVALID_REQUEST` for that member.
+      const unsupportedStaged = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
+      if (unsupportedStaged.error) return { error: unsupportedStaged.error };
+    }
     return { error: null, facts, commitOutcome: null, operationIdentity: null, staged: null };
   }
 

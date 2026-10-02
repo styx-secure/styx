@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from '@jest/globals';
 import fc from 'fast-check';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -239,6 +240,9 @@ const OSCEN_SCENARIOS = {
 
 const MAPPING_SCHEMA = 'styx-m2-i-upd-scenario-mapping/v1';
 const MAPPING_SHA256 = '441468618375144c479c8c7af4de60187eb28eba83620fee36e9896763cfd935';
+// The pinned digest of the union of every O-SCEN id this slice cites, newline-joined and sorted.
+const OSCEN_DIGEST = 'ebbb8002ac2f8ee12c96434988c2c410ca8715c7e950fad6b81785f6ccef77ac';
+const sha256Of = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 const MODULE_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../../src/crypto/mls/m2/adapter.js');
 
 const PROFILE = M2_ADAPTER.PROFILE;
@@ -354,11 +358,16 @@ describe('I-UPD module surface and the widened closed sets', () => {
       './state-machine.js',
     ]);
     expect(/require\s*\(/.test(source)).toBe(false);
+    // A static-import scan alone would miss a sneaky dynamic import, re-export or runtime require
+    // factory, which is the escape hatch the closure claim actually cares about (review finding F4).
+    expect(/[^\w.$]import\s*\(/.test(source)).toBe(false);
+    expect(/export\s[^;]*?from\s+'/.test(source)).toBe(false);
+    expect(/module\.createRequire|process\.binding|require\.resolve/.test(source)).toBe(false);
   });
 
   test('the ratified scenario mapping this slice cites is pinned and non-empty', () => {
     expect(MAPPING_SCHEMA).toBe('styx-m2-i-upd-scenario-mapping/v1');
-    expect(MAPPING_SHA256).toHaveLength(64);
+    expect(MAPPING_SHA256).toBe('441468618375144c479c8c7af4de60187eb28eba83620fee36e9896763cfd935');
     const pointers = Object.keys(OSCEN_SCENARIOS);
     expect(pointers.length).toBeGreaterThan(40);
     for (const pointer of pointers) {
@@ -366,7 +375,15 @@ describe('I-UPD module surface and the widened closed sets', () => {
       for (const id of OSCEN_SCENARIOS[pointer]) expect(id).toMatch(/^OSC-[0-9a-f]{16}$/);
     }
     const distinct = new Set(Object.values(OSCEN_SCENARIOS).flat());
-    expect(distinct.size).toBeGreaterThan(300);
+    expect(distinct.size).toBe(314);
+    // The union of the cited ids is pinned by digest, so the table cannot be replaced by a fabricated
+    // set that merely matches the shape: the digest is the SHA-256 of the newline-joined, sorted ids of
+    // every ratified O-SCEN row that cites a clause key addressed by this card's slice, derived from
+    // `M2-I-UPD-SCENARIO-MAPPING.json` (sha256 above) by the generator in the card's workspace. The
+    // ratified `docs/architecture/m2/scenarios/clause-scenarios.md` is not present in this tree, so the
+    // mapping cannot be re-derived from the checkout alone; the generator and its inputs are named in
+    // the PR that carries this file.
+    expect(sha256Of([...distinct].sort().join('\n'))).toBe(OSCEN_DIGEST);
   });
 
   test('the exact ratified rows this slice decides are the ones the mapping cites', () => {
@@ -462,6 +479,31 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
     expect(active1.stateAfter).toBe('ACTIVE');
     expect(code(invoke('SELF_UPDATE', empty(), refused))).toBe('NO_ACTIVE_SESSION');
     expect(code(invoke('SELF_UPDATE', heldUpdate(), refused))).toBe('RECONCILIATION_REQUIRED');
+  });
+
+  test('an unsupported update form with a staged output supplied still releases nothing', () => {
+    const result = invoke('SELF_UPDATE', active(), {
+      updateForm: 'UNSUPPORTED_UPDATE_FORM',
+      commitOutcome: null,
+      operationIdentity: null,
+      stagedOutput: { protectedCommitBytes: STAGED },
+    });
+    assertEnvelope(result, 'REJECTED', ['error']);
+    expect(code(result)).toBe('UNSUPPORTED_UPDATE_FORM');
+    expect(result.stateBefore).toBe('ACTIVE');
+    expect(result.stateAfter).toBe('ACTIVE');
+    expect(result.output).toBe(undefined);
+  });
+
+  test('an unsupported update form with a malformed staged output is a P01 defect, not a typed outcome', () => {
+    const result = invoke('SELF_UPDATE', active(), {
+      updateForm: 'UNSUPPORTED_UPDATE_FORM',
+      commitOutcome: null,
+      operationIdentity: null,
+      stagedOutput: { protectedCommitBytes: 7 },
+    });
+    assertEnvelope(result, 'REJECTED', ['error']);
+    expect(code(result)).toBe('INVALID_REQUEST');
   });
 
   test('a staged update with no active session is refused', () => {
@@ -635,6 +677,7 @@ describe('I-UPD fail-closed request validation', () => {
     ['non-closed observation', request('SELF_UPDATE', {}), active(), { ...okUpdate, extra: 1 }, 'UNKNOWN_FIELD'],
     ['missing observation member', request('SELF_UPDATE', {}), active(), withoutMember(okUpdate, 'stagedOutput'), 'INVALID_REQUEST'],
     ['out-of-set update form', request('SELF_UPDATE', {}), active(), { ...okUpdate, updateForm: 'PROPOSAL_FREE' }, 'UNKNOWN_VALUE'],
+    ['malformed staged output with an unsupported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: 'x' } }, 'INVALID_REQUEST'],
     ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
     ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
