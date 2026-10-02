@@ -290,15 +290,35 @@ const OBSERVATION_KEYS = Object.freeze({
   CREATE: Object.freeze(['onboarding', 'commitOutcome', 'operationIdentity', 'stagedOutput']),
   JOIN_WELCOME: Object.freeze(['keyPackage', 'commitOutcome', 'operationIdentity']),
   RESTORE: Object.freeze(['restoreObservation']),
-  PROTECT_APPLICATION: Object.freeze(['commitOutcome', 'operationIdentity', 'stagedOutput']),
+  PROTECT_APPLICATION: Object.freeze(['commitOutcome', 'operationIdentity', 'stagedOutput', 'internalFailure']),
   OPEN_APPLICATION: Object.freeze([
     'currentEpoch', 'framingEpoch', 'authentication', 'replayIdentity', 'commitOutcome',
-    'operationIdentity', 'stagedOutput',
+    'operationIdentity', 'stagedOutput', 'internalFailure',
   ]),
 });
 
-/** The closed key-dependent authentication verdicts of an in-window `OPEN_APPLICATION` framing. */
-const AUTHENTICATION_VALUES = Object.freeze(['AUTHENTICATED', 'AUTHENTICATION_FAILED']);
+/**
+ * The closed key-dependent authentication verdicts of an in-window `OPEN_APPLICATION` framing. The two
+ * verdicts are the two `P08` rows of the C-API error set: `CAPI-E017` `AUTHENTICATION_FAILED` and
+ * `CAPI-E018` `AUTHENTICATED_STATE_INCONSISTENT`.
+ */
+const AUTHENTICATION_VALUES = Object.freeze(['AUTHENTICATED', 'AUTHENTICATION_FAILED', 'AUTHENTICATED_STATE_INCONSISTENT']);
+
+/** The closed verdict of an unclassified internal failure strictly before any RS commit request. */
+const INTERNAL_FAILURE_VALUES = Object.freeze(['FAIL_CLOSED_INTERNAL']);
+
+/**
+ * The one observation member whose absence is equivalent to `null`, per operation: `internalFailure`
+ * reports a failure of the owning layer that produced no verdict at all, so a caller that observed none
+ * simply omits it. Every other member of a closed observation set is mandatory.
+ */
+const OPTIONAL_OBSERVATION_MEMBERS = Object.freeze({
+  CREATE: Object.freeze([]),
+  JOIN_WELCOME: Object.freeze([]),
+  RESTORE: Object.freeze([]),
+  PROTECT_APPLICATION: Object.freeze(['internalFailure']),
+  OPEN_APPLICATION: Object.freeze(['internalFailure']),
+});
 
 /** The closed replay verdicts of an authenticated in-window `OPEN_APPLICATION` identity. */
 const REPLAY_IDENTITY_VALUES = Object.freeze(['UNSEEN', 'DUPLICATE']);
@@ -381,7 +401,7 @@ function byteLengthOf(bytes) {
  * every member must be a plain own data property. No accessor is ever invoked: members are read from
  * their property descriptors. Returns `{ error, values }` with a C-API error code.
  */
-function readClosed(value, allowed) {
+function readClosed(value, allowed, optional = []) {
   if (!isPlainObject(value)) return { error: 'INVALID_REQUEST', values: null };
   let keys;
   let descriptors;
@@ -400,10 +420,10 @@ function readClosed(value, allowed) {
     }
   }
   for (const key of allowed) {
-    if (!Object.hasOwn(descriptors, key)) return { error: 'INVALID_REQUEST', values: null };
+    if (!Object.hasOwn(descriptors, key) && !optional.includes(key)) return { error: 'INVALID_REQUEST', values: null };
   }
   const values = {};
-  for (const key of allowed) values[key] = descriptors[key].value;
+  for (const key of allowed) values[key] = Object.hasOwn(descriptors, key) ? descriptors[key].value : null;
   return { error: null, values };
 }
 
@@ -575,14 +595,29 @@ function readStagedBytes(stagedOutput, member) {
   return { error: null, staged: { bytes, length } };
 }
 
-/** Read the closed RS tri-state and the identity of the staged mutation, or an error code. */
+/**
+ * Read the closed RS tri-state and the identity of the staged mutation.
+ *
+ * Two forms are admissible at `P01`. Either an RS commit request was made, and `commitOutcome` and
+ * `operationIdentity` carry the closed tri-state and the mutation identity; or no RS commit request was
+ * made, and both are exactly `null`, which is the honest report of a call the `P05` state gate rejects
+ * before any commit request exists (`CAPI-G004`, `CAPI-G020`). Defects are collected, not
+ * short-circuited, so the ratified `/withinLevelErrorOrder` decides between them.
+ */
 function readCommitTrio(value) {
-  if (typeof value.commitOutcome !== 'string') return { error: 'INVALID_REQUEST' };
-  if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) return { error: 'UNKNOWN_VALUE' };
-  if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
-    return { error: 'INVALID_REQUEST' };
+  const absent = value.commitOutcome === null && value.operationIdentity === null;
+  const candidates = [];
+  if (!absent && value.commitOutcome === null) candidates.push('INVALID_REQUEST');
+  if (value.commitOutcome !== null) {
+    if (typeof value.commitOutcome !== 'string') candidates.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) candidates.push('UNKNOWN_VALUE');
   }
-  return { error: null };
+  if (value.operationIdentity !== null
+    && (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0)) {
+    candidates.push('INVALID_REQUEST');
+  }
+  if (candidates.length > 0) return { error: worst(candidates), absent };
+  return { error: null, absent };
 }
 
 /** Whether an observation member the closed table requires to be absent is exactly `null`. */
@@ -591,19 +626,66 @@ function mustBeNull(value) {
 }
 
 /**
- * Read the closed `PROTECT_APPLICATION` observation: the RS tri-state, the identity of the staged
- * mutation and the staged protected bytes. Every member is always present; `commitOutcome` is never
- * `null`, because an admissible `PROTECT_APPLICATION` in `ACTIVE` always requests one RS outcome.
+ * Read the closed `PROTECT_APPLICATION` observation.
+ *
+ * Two forms are admissible at `P01`: an RS commit request was made (`commitOutcome` and
+ * `operationIdentity` present, `stagedOutput` carrying the staged protected bytes or `null` when RS
+ * reports no staged mutation), or no RS commit request was made (all three exactly `null`), which is the
+ * only honest report of a call the `P05` state gate rejects before any commit request (`CAPI-G004`,
+ * `CAPI-G020`) and is answered by the gate. Every defect of every member is collected and ranked by the
+ * ratified `/withinLevelErrorOrder`, so an unknown member preempts a wrong type, which preempts an
+ * out-of-set value, whatever the member order of the record.
  */
 function readProtectObservation(value) {
   const trio = readCommitTrio(value);
-  if (trio.error) return { error: trio.error };
   const staged = readStagedBytes(value.stagedOutput, 'protectedApplicationBytes');
-  if (staged.error) return { error: staged.error };
+  if (trio.error || staged.error) {
+    const codes = [trio.error, staged.error].filter((code) => code !== null && code !== undefined);
+    return { error: worst(codes) };
+  }
+  if (trio.absent && staged.staged === null) {
+    if (value.internalFailure !== null && !INTERNAL_FAILURE_VALUES.includes(value.internalFailure)) {
+      return { error: 'UNKNOWN_VALUE' };
+    }
+    if (value.internalFailure !== null) {
+      return {
+        error: null,
+        facts: 'SUPPORTED',
+        applicableErrors: [],
+        extraCodes: ['FAIL_CLOSED_INTERNAL'],
+        noCommitRequest: true,
+        commitOutcome: null,
+        operationIdentity: null,
+        staged: null,
+      };
+    }
+    return {
+      error: null,
+      facts: 'SUPPORTED',
+      applicableErrors: [],
+      extraCodes: [],
+      noCommitRequest: true,
+      commitOutcome: null,
+      operationIdentity: null,
+      staged: null,
+    };
+  }
+  const candidates = [];
+  if (trio.absent && staged.staged !== null) {
+    // A staged record with no commit outcome is inconsistent: the RS tri-state is what produced it.
+    candidates.push('INVALID_REQUEST');
+  }
+  if (value.internalFailure !== null && !trio.absent) {
+    // `FAIL_CLOSED_INTERNAL` is decided strictly before any RS commit request (`CAPI-E025`).
+    candidates.push('INVALID_REQUEST');
+  }
+  if (candidates.length > 0) return { error: worst(candidates) };
   return {
     error: null,
     facts: 'SUPPORTED',
     applicableErrors: [],
+    extraCodes: [],
+    noCommitRequest: false,
     commitOutcome: value.commitOutcome,
     operationIdentity: value.operationIdentity,
     staged: staged.staged,
@@ -618,11 +700,65 @@ function readProtectObservation(value) {
  * reachable, the RS tri-state and the staged plaintext.
  */
 function readOpenObservation(value) {
+  // The honest form of a call the `P05` state gate rejects (`CAPI-G005`, `CAPI-G021`): there is no
+  // active session, so there is no authoritative epoch, no authentication verdict, no replay lookup and
+  // no RS commit request to report, and every one of those members is exactly `null`. The gate, not
+  // this reader, produces the ratified code.
+  if (value.currentEpoch === null && value.framingEpoch === null) {
+    const others = [value.authentication, value.replayIdentity, value.commitOutcome,
+      value.operationIdentity, value.stagedOutput];
+    if (!others.every(mustBeNull)) return { error: 'INVALID_REQUEST' };
+    return {
+      error: null,
+      facts: 'SUPPORTED',
+      applicableErrors: [],
+      extraCodes: value.internalFailure === null ? [] : ['FAIL_CLOSED_INTERNAL'],
+      noCommitRequest: true,
+      commitOutcome: null,
+      operationIdentity: null,
+      staged: null,
+    };
+  }
+  // `P01`: every member is checked structurally and by value, and every defect is collected rather than
+  // short-circuited, so the ratified `/withinLevelErrorOrder` (`UNKNOWN_FIELD`, then `INVALID_REQUEST`,
+  // then `UNKNOWN_VALUE`) decides between them wherever they occur in the record. A member that is
+  // exactly `null` claims that the owning layer never reached it, which is admissible: the region that
+  // decides reachability (the `P06` bound, the `P07` window) either confirms the claim or rejects the
+  // record. The epoch bound of `P06` and the window of `P07` are chosen only after no `P01` defect
+  // remains, and a `P01` defect of any member preempts them.
+  const candidates = [];
   for (const epoch of [value.currentEpoch, value.framingEpoch]) {
     if (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0) {
-      return { error: 'INVALID_REQUEST' };
+      candidates.push('INVALID_REQUEST');
     }
   }
+  if (value.authentication !== null) {
+    if (typeof value.authentication !== 'string') candidates.push('INVALID_REQUEST');
+    else if (!AUTHENTICATION_VALUES.includes(value.authentication)) candidates.push('UNKNOWN_VALUE');
+  }
+  if (value.replayIdentity !== null) {
+    if (typeof value.replayIdentity !== 'string') candidates.push('INVALID_REQUEST');
+    else if (!REPLAY_IDENTITY_VALUES.includes(value.replayIdentity)) candidates.push('UNKNOWN_VALUE');
+  }
+  if (value.commitOutcome !== null) {
+    if (typeof value.commitOutcome !== 'string') candidates.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) candidates.push('UNKNOWN_VALUE');
+  }
+  if (value.operationIdentity !== null
+    && (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0)) {
+    candidates.push('INVALID_REQUEST');
+  }
+  if (value.internalFailure !== null && !INTERNAL_FAILURE_VALUES.includes(value.internalFailure)) {
+    candidates.push('UNKNOWN_VALUE');
+  }
+  if (value.internalFailure !== null
+    && ![value.commitOutcome, value.operationIdentity, value.stagedOutput].every(mustBeNull)) {
+    // `FAIL_CLOSED_INTERNAL` is decided strictly before any RS commit request (`CAPI-E025`).
+    candidates.push('INVALID_REQUEST');
+  }
+  const staged = readStagedBytes(value.stagedOutput, 'applicationBytes');
+  if (staged.error) candidates.push(staged.error);
+  if (candidates.length > 0) return { error: worst(candidates) };
   // `P06` is a structural bound on the epoch count; it is decided before the `P07` window rejection.
   // The bound is reported with the strength of a `P07` window rejection (`FUTURE`), so that only
   // `P01` to `P05` can preempt it and the core still yields the `P05` state gate in a state that
@@ -641,7 +777,9 @@ function readOpenObservation(value) {
   const distance = value.currentEpoch - value.framingEpoch;
   if (distance < 0 || distance > RETENTION.PAST_EPOCHS_ONCE_AVAILABLE) {
     // The window decides before any key-dependent work: authentication, replay lookup and the RS
-    // tri-state are unreachable and must be exactly `null`.
+    // tri-state are unreachable and must be exactly `null`. An unclassified internal failure strictly
+    // before any commit request is not key-dependent, so it stays reportable at `P10`, where the
+    // window rejection of `P07` preempts it.
     const nulls = [value.authentication, value.replayIdentity, value.commitOutcome,
       value.operationIdentity, value.stagedOutput];
     if (!nulls.every(mustBeNull)) return { error: 'INVALID_REQUEST' };
@@ -649,28 +787,31 @@ function readOpenObservation(value) {
       error: null,
       facts: distance < 0 ? 'FUTURE' : 'PAST_OUTSIDE_WINDOW',
       applicableErrors: [],
+      extraCodes: value.internalFailure === null ? [] : ['FAIL_CLOSED_INTERNAL'],
       commitOutcome: null,
       operationIdentity: null,
       staged: null,
     };
   }
-  if (typeof value.authentication !== 'string') return { error: 'INVALID_REQUEST' };
-  if (!AUTHENTICATION_VALUES.includes(value.authentication)) return { error: 'UNKNOWN_VALUE' };
-  if (value.authentication === 'AUTHENTICATION_FAILED') {
-    if (![value.replayIdentity, value.commitOutcome, value.operationIdentity, value.stagedOutput].every(mustBeNull)) {
-      return { error: 'INVALID_REQUEST' };
+  if (value.authentication !== 'AUTHENTICATED') {
+    if (value.authentication === 'AUTHENTICATION_FAILED' || value.authentication === 'AUTHENTICATED_STATE_INCONSISTENT') {
+      if (![value.replayIdentity, value.commitOutcome, value.operationIdentity, value.stagedOutput].every(mustBeNull)) {
+        return { error: 'INVALID_REQUEST' };
+      }
+      return {
+        error: null,
+        facts: 'UNSEEN_IN_WINDOW',
+        applicableErrors: [value.authentication],
+        extraCodes: value.internalFailure === null ? [] : ['FAIL_CLOSED_INTERNAL'],
+        commitOutcome: null,
+        operationIdentity: null,
+        staged: null,
+      };
     }
-    return {
-      error: null,
-      facts: 'UNSEEN_IN_WINDOW',
-      applicableErrors: ['AUTHENTICATION_FAILED'],
-      commitOutcome: null,
-      operationIdentity: null,
-      staged: null,
-    };
+    // In the window an `OPEN_APPLICATION` carries an authentication verdict: an absent one claims a
+    // classification the owning layer must have made, so it fail-closes at `P01`.
+    return { error: 'INVALID_REQUEST' };
   }
-  if (typeof value.replayIdentity !== 'string') return { error: 'INVALID_REQUEST' };
-  if (!REPLAY_IDENTITY_VALUES.includes(value.replayIdentity)) return { error: 'UNKNOWN_VALUE' };
   if (value.replayIdentity === 'DUPLICATE') {
     if (![value.commitOutcome, value.operationIdentity, value.stagedOutput].every(mustBeNull)) {
       return { error: 'INVALID_REQUEST' };
@@ -679,19 +820,25 @@ function readOpenObservation(value) {
       error: null,
       facts: 'DUPLICATE_IN_WINDOW',
       applicableErrors: [],
+      extraCodes: [],
       commitOutcome: null,
       operationIdentity: null,
       staged: null,
     };
   }
-  const trio = readCommitTrio(value);
-  if (trio.error) return { error: trio.error };
-  const staged = readStagedBytes(value.stagedOutput, 'applicationBytes');
-  if (staged.error) return { error: staged.error };
+  if (value.replayIdentity !== 'UNSEEN') {
+    // An authenticated, in-window identity is either already accepted or not: nothing else routes.
+    return { error: 'INVALID_REQUEST' };
+  }
+  if (value.commitOutcome === null || value.operationIdentity === null) {
+    // An authenticated, in-window, unseen identity always requests exactly one RS outcome.
+    return { error: 'INVALID_REQUEST' };
+  }
   return {
     error: null,
     facts: 'UNSEEN_IN_WINDOW',
     applicableErrors: [],
+    extraCodes: [],
     commitOutcome: value.commitOutcome,
     operationIdentity: value.operationIdentity,
     staged: staged.staged,
@@ -705,7 +852,7 @@ function readOpenObservation(value) {
  * `P06` structural bound codes the observation establishes.
  */
 function readObservation(operation, observation) {
-  const shape = readClosed(observation, OBSERVATION_KEYS[operation]);
+  const shape = readClosed(observation, OBSERVATION_KEYS[operation], OPTIONAL_OBSERVATION_MEMBERS[operation]);
   if (shape.error) return { error: shape.error };
   const value = shape.values;
 
@@ -851,9 +998,31 @@ function run(input) {
   if (observed.error) framing.push(observed.error);
   if (framing.length > 0) return rejectedTransition(requestId, operation, stateBefore, worst(framing));
 
+  // An honest caller that made no RS commit request because the state gate rejects the operation before
+  // any commit request exists (`CAPI-G004`, `CAPI-G005`, `CAPI-G020`, `CAPI-G021`): the merged I-SM state
+  // gate supplies the ratified code, which is `P05` and therefore preempts every bound. In a state that
+  // does not gate the operation, no `ACTIVE`-session operation can have been called without issuing its
+  // commit request, so the observation is impossible and the call fails closed at `P01` instead of
+  // succeeding without proof of the commit.
+  if (observed.noCommitRequest === true) {
+    const codes = [...(observed.extraCodes ?? [])];
+    // The `P05` state gate of the C-API state matrix, for the two states that refuse an active-session
+    // operation before any commit request exists: `EMPTY` (`CAPI-G004`, `CAPI-G005`, error `CAPI-E009`)
+    // and `RECONCILIATION_REQUIRED` (`CAPI-G020`, `CAPI-G021`, error `CAPI-E011`). The merged I-SM core
+    // returns exactly these codes for both states, and reading them from the state here is what makes the
+    // rows reachable for a caller that honestly reports that no commit request was made. In a state that
+    // does not gate the operation, no active-session operation can have been called without issuing its
+    // commit request, so the call fails closed: `FAIL_CLOSED_INTERNAL` (`CAPI-E025`) when the owning layer
+    // reported an unclassified failure strictly before the commit request, `INVALID_REQUEST` otherwise.
+    if (stateBefore === 'EMPTY') codes.push('NO_ACTIVE_SESSION');
+    if (stateBefore === 'RECONCILIATION_REQUIRED') codes.push('RECONCILIATION_REQUIRED');
+    return rejectedTransition(requestId, operation, stateBefore,
+      codes.length > 0 ? worst(codes) : 'INVALID_REQUEST');
+  }
+
   // P06: the request bounds and the structural epoch bound, decidable before any commit request
   // (see `validateAdapterRequest` and `readOpenObservation`).
-  const bounds = [...requestBoundCodes(checked.values), ...(observed.bounds ?? [])];
+  const bounds = [...requestBoundCodes(checked.values), ...(observed.bounds ?? []), ...(observed.extraCodes ?? [])];
 
   if (operation === 'RESTORE') {
     const restore = decideRestore(snapshot, observed.restoreObservation);

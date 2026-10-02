@@ -263,11 +263,17 @@ describe('I-MSG module surface (#411)', () => {
 
   test('the observation member sets are exactly the closed per-operation sets', () => {
     expect([...M2_ADAPTER.OBSERVATION_KEYS.PROTECT_APPLICATION])
-      .toEqual(['commitOutcome', 'operationIdentity', 'stagedOutput']);
+      .toEqual(['commitOutcome', 'operationIdentity', 'stagedOutput', 'internalFailure']);
     expect([...M2_ADAPTER.OBSERVATION_KEYS.OPEN_APPLICATION]).toEqual([
       'currentEpoch', 'framingEpoch', 'authentication', 'replayIdentity', 'commitOutcome',
-      'operationIdentity', 'stagedOutput',
+      'operationIdentity', 'stagedOutput', 'internalFailure',
     ]);
+    // The two earlier operations this card does not extend keep their exact sets.
+    expect([...M2_ADAPTER.OBSERVATION_KEYS.CREATE])
+      .toEqual(['onboarding', 'commitOutcome', 'operationIdentity', 'stagedOutput']);
+    expect([...M2_ADAPTER.OBSERVATION_KEYS.JOIN_WELCOME])
+      .toEqual(['keyPackage', 'commitOutcome', 'operationIdentity']);
+    expect([...M2_ADAPTER.OBSERVATION_KEYS.RESTORE]).toEqual(['restoreObservation']);
   });
 
   test('the selected bounds cover the epoch count of the framing window', () => {
@@ -892,5 +898,116 @@ describe('I-MSG O-SCEN mapping', () => {
     for (const [name, id] of Object.entries(named)) {
       expect([name, MAPPED_SCENARIO_IDS.includes(id)]).toEqual([name, true]);
     }
+  });
+});
+
+// A caller that made no RS commit request is the honest caller of the `P05` state gate: these tests
+// drive the gate rows the card integrates with exactly that observation, so the ratified code is
+// reachable without asserting a commit outcome that does not exist. The gate is `CAPI-G004`/`CAPI-G005`
+// in `EMPTY` and `CAPI-G020`/`CAPI-G021` on a held snapshot, with errors `CAPI-E009` and `CAPI-E011`.
+describe('I-MSG state gates without an RS outcome (CAPI-G004, CAPI-G005, CAPI-G020, CAPI-G021)', () => {
+  const noCommitProtect = { commitOutcome: null, operationIdentity: null, stagedOutput: null };
+  const noCommitOpen = {
+    currentEpoch: null, framingEpoch: null, authentication: null, replayIdentity: null,
+    commitOutcome: null, operationIdentity: null, stagedOutput: null,
+  };
+
+  test('both operations are answered by the EMPTY gate with no commit outcome asserted', () => {
+    const protect = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), empty(), noCommitProtect);
+    expect([protect.kind, protect.error.code, protect.stateAfter]).toEqual(['REJECTED', 'NO_ACTIVE_SESSION', 'EMPTY']);
+    const open = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), empty(), noCommitOpen);
+    expect([open.kind, open.error.code, open.stateAfter]).toEqual(['REJECTED', 'NO_ACTIVE_SESSION', 'EMPTY']);
+    expect(Object.hasOwn(open, 'output')).toBe(false);
+  });
+
+  test('both operations are answered by the reconciliation gate on a held snapshot', () => {
+    const snapshot = held();
+    expect(snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    const protect = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), snapshot, noCommitProtect);
+    expect([protect.kind, protect.error.code, protect.stateAfter]).toEqual(['REJECTED', 'RECONCILIATION_REQUIRED', 'RECONCILIATION_REQUIRED']);
+    const open = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), snapshot, noCommitOpen);
+    expect([open.kind, open.error.code, open.stateAfter]).toEqual(['REJECTED', 'RECONCILIATION_REQUIRED', 'RECONCILIATION_REQUIRED']);
+  });
+
+  test('in ACTIVE no commit outcome can be absent, so the call fails closed and never succeeds', () => {
+    const protect = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(), noCommitProtect);
+    expect([protect.kind, protect.error.code]).toEqual(['REJECTED', 'INVALID_REQUEST']);
+    const open = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(), noCommitOpen);
+    expect([open.kind, open.error.code]).toEqual(['REJECTED', 'INVALID_REQUEST']);
+    expect(Object.hasOwn(protect, 'output')).toBe(false);
+    expect(Object.hasOwn(open, 'output')).toBe(false);
+  });
+
+  test('a mixed form, one member of the tri-state absent and one present, is fail-closed', () => {
+    const mixed = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), empty(),
+      { commitOutcome: null, operationIdentity: 'op-1', stagedOutput: null });
+    expect(mixed.error.code).toBe('INVALID_REQUEST');
+  });
+});
+
+// `CAPI-E025`: an unclassified internal failure of the owning layer strictly before any RS commit
+// request. It is reportable at `P10`, preempted by every lower-numbered level, and it cannot be asserted
+// once a commit request was made.
+describe('I-MSG unclassified internal failure before the commit request (CAPI-E025)', () => {
+  test('it is CAPI-E025 in ACTIVE and never a success', () => {
+    const result = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(),
+      { commitOutcome: null, operationIdentity: null, stagedOutput: null, internalFailure: 'FAIL_CLOSED_INTERNAL' });
+    expect([result.kind, result.error.code, result.stateAfter]).toEqual(['REJECTED', 'FAIL_CLOSED_INTERNAL', 'ACTIVE']);
+  });
+
+  test('it is preempted by the state gate and by the window', () => {
+    const gated = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), empty(),
+      { commitOutcome: null, operationIdentity: null, stagedOutput: null, internalFailure: 'FAIL_CLOSED_INTERNAL' });
+    expect(gated.error.code).toBe('NO_ACTIVE_SESSION');
+    const windowed = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(),
+      { ...unreachable(9, 3), internalFailure: 'FAIL_CLOSED_INTERNAL' });
+    expect(windowed.error.code).toBe('EPOCH_OUTSIDE_RETAINED_WINDOW');
+  });
+
+  test('it cannot be asserted after a commit request, nor with an out-of-set verdict', () => {
+    const afterCommit = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(),
+      { ...protectObservation(), internalFailure: 'FAIL_CLOSED_INTERNAL' });
+    expect(afterCommit.error.code).toBe('INVALID_REQUEST');
+    const outOfSet = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(),
+      { commitOutcome: null, operationIdentity: null, stagedOutput: null, internalFailure: 'SOMETHING_ELSE' });
+    expect(outOfSet.error.code).toBe('UNKNOWN_VALUE');
+  });
+});
+
+// `CAPI-E001`, `CAPI-E002`, `CAPI-E003` are one level: `/withinLevelErrorOrder` ranks `UNKNOWN_FIELD`
+// over `INVALID_REQUEST` over `UNKNOWN_VALUE`, so the rank decides between two defects of the same level
+// wherever they occur in the record, and a `P01` defect of any member preempts the `P06` epoch bound.
+describe('I-MSG within-level rank and the epoch bound (CAPI-E001 to CAPI-E003, CAPI-E014)', () => {
+  test('an unknown member outranks an out-of-set verdict', () => {
+    const result = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(),
+      { commitOutcome: 'MAYBE', operationIdentity: 'op-1', stagedOutput: { other: bytes(1) } });
+    expect(result.error.code).toBe('UNKNOWN_FIELD');
+  });
+
+  test('a wrong type outranks an out-of-set verdict', () => {
+    const protect = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(),
+      { commitOutcome: 'MAYBE', operationIdentity: '', stagedOutput: null });
+    expect(protect.error.code).toBe('INVALID_REQUEST');
+    const open = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(),
+      openObservation(1, { authentication: 'MAYBE', replayIdentity: 5 }));
+    expect(open.error.code).toBe('INVALID_REQUEST');
+  });
+
+  test('a P01 defect of any member preempts the epoch bound, a clean over-bound epoch does not', () => {
+    const defective = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(),
+      { currentEpoch: BOUNDS.MAX_FRAMING_EPOCH + 1, framingEpoch: 0, authentication: 42, replayIdentity: {},
+        commitOutcome: 'MAYBE', operationIdentity: '', stagedOutput: 'x' });
+    expect(defective.error.code).toBe('INVALID_REQUEST');
+    const clean = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(),
+      unreachable(BOUNDS.MAX_FRAMING_EPOCH + 1, 0));
+    expect([clean.kind, clean.error.code]).toEqual(['REJECTED', 'VALUE_OUT_OF_RANGE']);
+  });
+
+  test('the inconsistent authenticated state is CAPI-E018', () => {
+    const result = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(),
+      openObservation(1, {
+        authentication: 'AUTHENTICATED_STATE_INCONSISTENT', replayIdentity: null, commitOutcome: null,
+      }));
+    expect([result.kind, result.error.code]).toEqual(['REJECTED', 'AUTHENTICATED_STATE_INCONSISTENT']);
   });
 });
