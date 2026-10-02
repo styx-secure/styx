@@ -112,6 +112,15 @@ jobs:
         working-directory: styx-js
         run: |
           set -euo pipefail
+          # The pinned strfry image refuses to start when its NOFILES hard limit
+          # is below 524288 ("Unable to set NOFILES limit to 524288, exceeds max
+          # of 65536"), which is the runner's default container limit. Raise the
+          # daemon's own limit first: containers created afterwards inherit it.
+          DOCKERD_PID=$(pgrep -x dockerd || true)
+          if [ -n "$DOCKERD_PID" ]; then
+            sudo prlimit --nofile=1048576:1048576 --pid "$DOCKERD_PID" || true
+            sudo prlimit --pid "$DOCKERD_PID" --nofile || true
+          fi
           docker compose -f docker-compose.test.yml up -d
           # A TCP accept is not readiness: with docker's userland proxy the port
           # answers as soon as the container is created, before strfry itself is
