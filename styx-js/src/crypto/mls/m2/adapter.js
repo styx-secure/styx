@@ -1,18 +1,22 @@
-// adapter.js — M2 new-profile create / restore / Welcome integration adapter
-// (card I-JOIN of #317 G-SCOPE; contract Issue #402).
+// adapter.js — M2 session adapter integration: onboarding/re-establishment, opaque application
+// messages and the C-RET replay/retention window.
+// (card I-JOIN of #317 G-SCOPE, contract Issue #407; extended by card I-MSG, contract Issue #411.)
 //
-// This is the semantic integration boundary of the M2 session adapter API: it accepts exactly the
-// closed C-API request record for the three onboarding and re-establishment operations this card
-// integrates (`CREATE`, `RESTORE`, `JOIN_WELCOME`), reads the owning-layer facts from an INJECTED
-// closed observation, takes the decision with the merged I-SM decision core and, for `RESTORE`, with
-// the merged I-REST classifier, releases output only on a `COMMITTED` tri-state, and emits exactly one
-// closed C-API result record of the five ratified kinds.
+// This is the semantic integration boundary of the M2 session adapter API. It accepts exactly the
+// closed C-API request record for the five operations it integrates (`CREATE`, `RESTORE`,
+// `JOIN_WELCOME`, `PROTECT_APPLICATION`, `OPEN_APPLICATION`), reads the owning-layer facts from an
+// INJECTED closed observation, applies the C-RET current-plus-five-past-epoch replay/retention window
+// to the declared framing epoch of `OPEN_APPLICATION` before any key-dependent work, takes the
+// decision with the merged I-SM decision core and, for `RESTORE`, with the merged I-REST classifier,
+// releases output only on a `COMMITTED` tri-state, and emits exactly one closed C-API result record of
+// the five ratified kinds.
 //
 // It performs no I/O, no cryptography, no storage call, no lock acquisition, no worker call and no
 // transport action: the request, the current snapshot and the owning-layer observation are injected.
 //
-// Ratified inputs copied verbatim (see contract Issue #402 "Frozen shared interfaces"):
+// Ratified inputs copied verbatim (see contract Issues #402 and #411 "Frozen shared interfaces"):
 //   C-API  docs/architecture/m2/adapter-contract.md  sha256 b77d39fb…05ad9  (#319 5886838783)
+//   C-RET  docs/security/m2-retention-and-disposal-limits.md sha256 eb051194…b31a2 (#328 5893776065)
 //   C-REST docs/architecture/m2/restore-compatibility.md sha256 853dbc41…766b6 (#332 5900545454)
 //   C-BIND docs/architecture/m2/binding-v0.md        sha256 2ee9b022…1d4a42 (#323 5890060894)
 //   C-MUT  docs/architecture/m2/mutation-table.md    sha256 6c2c045c…eb3060 (#324 5890545934)
@@ -33,11 +37,13 @@ const OPERATIONS = Object.freeze([
 ]);
 
 /**
- * The three operations this card integrates. The other five remain valid C-API operations; this
- * module's closed dispatch refuses them with `UNSUPPORTED_OPERATION` (contract Issue #402,
- * "Open owner questions" item 1).
+ * The five operations this module integrates. The other three remain valid C-API operations; this
+ * module's closed dispatch refuses them with `UNSUPPORTED_OPERATION` (contract Issues #402 and #411,
+ * "Open owner questions").
  */
-const INTEGRATED_OPERATIONS = Object.freeze(['CREATE', 'RESTORE', 'JOIN_WELCOME']);
+const INTEGRATED_OPERATIONS = Object.freeze([
+  'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
+]);
 
 /** The three C-API `/stateEnum` members. */
 const STATES = Object.freeze(['EMPTY', 'ACTIVE', 'RECONCILIATION_REQUIRED']);
@@ -181,8 +187,26 @@ const OUTPUT_BY_SUCCESS_CODE = Object.freeze({
   DUPLICATE_IGNORED: Object.freeze([]),
 });
 
-/** The C-REST-owning rule of the I-SM decision rows this card consumes: the `RS_TRI_STATE` rows. */
-const TRI_STATE_ROWS = Object.freeze(['CAPI-S001', 'CAPI-S006']);
+/**
+ * The single opaque-bytes output member each success code that carries one releases, so the plan
+ * component held in the mutation and the released output member cannot drift apart. A success code
+ * absent here (or with an empty member list) releases no opaque-bytes output.
+ */
+const OUTPUT_MEMBER_BY_SUCCESS_CODE = Object.freeze({
+  CREATED: 'embeddedTreeWelcome',
+  APPLICATION_PROTECTED: 'protectedApplicationBytes',
+  APPLICATION_OPENED: 'applicationBytes',
+});
+
+/** The C-API-owning rule of the I-SM decision rows this module consumes: the `RS_TRI_STATE` rows. */
+const TRI_STATE_ROWS = Object.freeze(['CAPI-S001', 'CAPI-S006', 'CAPI-S009', 'CAPI-S010']);
+
+/**
+ * The C-MUT-owning rule of the I-SM decision rows this module consumes whose complete logical mutation
+ * holds an `OUTPUT_ESCROW` component (`HELD`): the rows that must carry staged output to succeed.
+ * `CAPI-S006` holds no output (its output kind is `NONE`), so it is deliberately absent here.
+ */
+const STAGED_OUTPUT_ROWS = Object.freeze(['CAPI-S001', 'CAPI-S009', 'CAPI-S010']);
 
 /**
  * The closed C-REST outcome to C-API disposition mapping of the contract. The first column is the
@@ -236,14 +260,29 @@ const RESTORE_FACTS = Object.freeze({
 });
 
 /**
- * The bounds this card selects for the adapter boundary. C-API §4 leaves the bounded-byte limits to a
- * later selection; this is that selection for this boundary only. Over-limit values reject, never
- * truncate.
+ * The bounds this module selects for the adapter boundary. C-API §4 leaves the bounded-byte limits to
+ * a later selection; this is that selection for this boundary only. Over-limit values reject, never
+ * truncate. `MAX_FRAMING_EPOCH` bounds the structural epoch count of a declared framing epoch and of
+ * the authoritative current epoch (`CAPI-E014`, `VALUE_OUT_OF_RANGE` at `P06`).
  */
 const BOUNDS = Object.freeze({
   MAX_REQUEST_ID_CHARS: 128,
   MAX_BINDING_REF_BYTES: 4096,
   MAX_OPAQUE_BYTES: 1048576,
+  MAX_FRAMING_EPOCH: 2147483647,
+});
+
+/**
+ * The ratified C-RET replay/retention window this module applies, transcribed from the C-RET §12
+ * normative `epochRule` of `docs/security/m2-retention-and-disposal-limits.md`
+ * (sha256 `eb051194620d795fc047cae367e4cd8e6c26c568fddae5a2986cdbc7549b31a2`, #328 comment
+ * `5893776065`). `PAST_EPOCHS_ONCE_AVAILABLE` is byte-equal to the C-API `profile.pastEpochWindow`.
+ * The window is never reduced and never extended here, and this module disposes no material.
+ */
+const RETENTION = Object.freeze({
+  CURRENT_EPOCHS: 1,
+  MAXIMUM_PAST_EPOCHS: 5,
+  PAST_EPOCHS_ONCE_AVAILABLE: 5,
 });
 
 /** The closed observation member sets, one per integrated operation. */
@@ -251,7 +290,18 @@ const OBSERVATION_KEYS = Object.freeze({
   CREATE: Object.freeze(['onboarding', 'commitOutcome', 'operationIdentity', 'stagedOutput']),
   JOIN_WELCOME: Object.freeze(['keyPackage', 'commitOutcome', 'operationIdentity']),
   RESTORE: Object.freeze(['restoreObservation']),
+  PROTECT_APPLICATION: Object.freeze(['commitOutcome', 'operationIdentity', 'stagedOutput']),
+  OPEN_APPLICATION: Object.freeze([
+    'currentEpoch', 'framingEpoch', 'authentication', 'replayIdentity', 'commitOutcome',
+    'operationIdentity', 'stagedOutput',
+  ]),
 });
+
+/** The closed key-dependent authentication verdicts of an in-window `OPEN_APPLICATION` framing. */
+const AUTHENTICATION_VALUES = Object.freeze(['AUTHENTICATED', 'AUTHENTICATION_FAILED']);
+
+/** The closed replay verdicts of an authenticated in-window `OPEN_APPLICATION` identity. */
+const REPLAY_IDENTITY_VALUES = Object.freeze(['UNSEEN', 'DUPLICATE']);
 
 const ONBOARDING_VALUES = Object.freeze(['SUPPORTED', 'UNSUPPORTED_ONBOARDING']);
 const KEY_PACKAGE_VALUES = Object.freeze([
@@ -513,10 +563,146 @@ function snapshotShapeCode(snapshot) {
   return decision.snapshot === null ? decision.result.code : null;
 }
 
+/** Read an opaque byte member of a closed staged-output record, or `null` when the record is `null`. */
+function readStagedBytes(stagedOutput, member) {
+  if (stagedOutput === null) return { error: null, staged: null };
+  const stagedShape = readClosed(stagedOutput, [member]);
+  if (stagedShape.error) return { error: stagedShape.error, staged: null };
+  const bytes = stagedShape.values[member];
+  if (!isUint8Array(bytes)) return { error: 'INVALID_REQUEST', staged: null };
+  const length = byteLengthOf(bytes);
+  if (length < 0) return { error: 'INVALID_REQUEST', staged: null };
+  return { error: null, staged: { bytes, length } };
+}
+
+/** Read the closed RS tri-state and the identity of the staged mutation, or an error code. */
+function readCommitTrio(value) {
+  if (typeof value.commitOutcome !== 'string') return { error: 'INVALID_REQUEST' };
+  if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) return { error: 'UNKNOWN_VALUE' };
+  if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
+    return { error: 'INVALID_REQUEST' };
+  }
+  return { error: null };
+}
+
+/** Whether an observation member the closed table requires to be absent is exactly `null`. */
+function mustBeNull(value) {
+  return value === null;
+}
+
+/**
+ * Read the closed `PROTECT_APPLICATION` observation: the RS tri-state, the identity of the staged
+ * mutation and the staged protected bytes. Every member is always present; `commitOutcome` is never
+ * `null`, because an admissible `PROTECT_APPLICATION` in `ACTIVE` always requests one RS outcome.
+ */
+function readProtectObservation(value) {
+  const trio = readCommitTrio(value);
+  if (trio.error) return { error: trio.error };
+  const staged = readStagedBytes(value.stagedOutput, 'protectedApplicationBytes');
+  if (staged.error) return { error: staged.error };
+  return {
+    error: null,
+    facts: 'SUPPORTED',
+    applicableErrors: [],
+    commitOutcome: value.commitOutcome,
+    operationIdentity: value.operationIdentity,
+    staged: staged.staged,
+  };
+}
+
+/**
+ * Read the closed `OPEN_APPLICATION` observation and classify the declared framing epoch against the
+ * authoritative current epoch, structurally and without trusting content, at `P07`. Only distance `0`
+ * through `RETENTION.PAST_EPOCHS_ONCE_AVAILABLE` continues to authentication and replay. The return
+ * carries the derived I-SM fact, the applicable authenticated errors and, when a commit request is
+ * reachable, the RS tri-state and the staged plaintext.
+ */
+function readOpenObservation(value) {
+  for (const epoch of [value.currentEpoch, value.framingEpoch]) {
+    if (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0) {
+      return { error: 'INVALID_REQUEST' };
+    }
+  }
+  // `P06` is a structural bound on the epoch count; it is decided before the `P07` window rejection.
+  // The bound is reported with the strength of a `P07` window rejection (`FUTURE`), so that only
+  // `P01` to `P05` can preempt it and the core still yields the `P05` state gate in a state that
+  // refuses the operation.
+  if (value.currentEpoch > BOUNDS.MAX_FRAMING_EPOCH || value.framingEpoch > BOUNDS.MAX_FRAMING_EPOCH) {
+    return {
+      error: null,
+      bounds: ['VALUE_OUT_OF_RANGE'],
+      facts: 'FUTURE',
+      applicableErrors: [],
+      commitOutcome: null,
+      operationIdentity: null,
+      staged: null,
+    };
+  }
+  const distance = value.currentEpoch - value.framingEpoch;
+  if (distance < 0 || distance > RETENTION.PAST_EPOCHS_ONCE_AVAILABLE) {
+    // The window decides before any key-dependent work: authentication, replay lookup and the RS
+    // tri-state are unreachable and must be exactly `null`.
+    const nulls = [value.authentication, value.replayIdentity, value.commitOutcome,
+      value.operationIdentity, value.stagedOutput];
+    if (!nulls.every(mustBeNull)) return { error: 'INVALID_REQUEST' };
+    return {
+      error: null,
+      facts: distance < 0 ? 'FUTURE' : 'PAST_OUTSIDE_WINDOW',
+      applicableErrors: [],
+      commitOutcome: null,
+      operationIdentity: null,
+      staged: null,
+    };
+  }
+  if (typeof value.authentication !== 'string') return { error: 'INVALID_REQUEST' };
+  if (!AUTHENTICATION_VALUES.includes(value.authentication)) return { error: 'UNKNOWN_VALUE' };
+  if (value.authentication === 'AUTHENTICATION_FAILED') {
+    if (![value.replayIdentity, value.commitOutcome, value.operationIdentity, value.stagedOutput].every(mustBeNull)) {
+      return { error: 'INVALID_REQUEST' };
+    }
+    return {
+      error: null,
+      facts: 'UNSEEN_IN_WINDOW',
+      applicableErrors: ['AUTHENTICATION_FAILED'],
+      commitOutcome: null,
+      operationIdentity: null,
+      staged: null,
+    };
+  }
+  if (typeof value.replayIdentity !== 'string') return { error: 'INVALID_REQUEST' };
+  if (!REPLAY_IDENTITY_VALUES.includes(value.replayIdentity)) return { error: 'UNKNOWN_VALUE' };
+  if (value.replayIdentity === 'DUPLICATE') {
+    if (![value.commitOutcome, value.operationIdentity, value.stagedOutput].every(mustBeNull)) {
+      return { error: 'INVALID_REQUEST' };
+    }
+    return {
+      error: null,
+      facts: 'DUPLICATE_IN_WINDOW',
+      applicableErrors: [],
+      commitOutcome: null,
+      operationIdentity: null,
+      staged: null,
+    };
+  }
+  const trio = readCommitTrio(value);
+  if (trio.error) return { error: trio.error };
+  const staged = readStagedBytes(value.stagedOutput, 'applicationBytes');
+  if (staged.error) return { error: staged.error };
+  return {
+    error: null,
+    facts: 'UNSEEN_IN_WINDOW',
+    applicableErrors: [],
+    commitOutcome: value.commitOutcome,
+    operationIdentity: value.operationIdentity,
+    staged: staged.staged,
+  };
+}
+
 /**
  * Read the closed observation of one integrated operation, at P01: an unknown member is
  * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
- * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }` or the decoded observation.
+ * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }`, or the decoded observation, or the
+ * `P06` structural bound codes the observation establishes.
  */
 function readObservation(operation, observation) {
   const shape = readClosed(observation, OBSERVATION_KEYS[operation]);
@@ -528,6 +714,9 @@ function readObservation(operation, observation) {
     if (inner.error) return { error: inner.error };
     return { error: null, restoreObservation: inner.values };
   }
+
+  if (operation === 'PROTECT_APPLICATION') return readProtectObservation(value);
+  if (operation === 'OPEN_APPLICATION') return readOpenObservation(value);
 
   const factKey = operation === 'CREATE' ? 'onboarding' : 'keyPackage';
   const allowed = operation === 'CREATE' ? ONBOARDING_VALUES : KEY_PACKAGE_VALUES;
@@ -615,8 +804,11 @@ function shapeDecision(decision, requestId, operation, staged) {
   }
   const extra = { successCode: result.code };
   if (TRI_STATE_ROWS.includes(result.scenario)) extra.commitOutcome = 'COMMITTED';
-  if (kind === 'SUCCESS' && result.code === 'CREATED' && staged !== null) {
-    extra.output = { embeddedTreeWelcome: new Uint8Array(staged.bytes) };
+  // C-API `/rules/payloadRelease` and `/response/outputBySuccessCode`: the plaintext is released only
+  // on `SUCCESS`, only after `COMMITTED`, and only through the output member of the success code.
+  if (kind === 'SUCCESS' && staged !== null) {
+    const member = OUTPUT_MEMBER_BY_SUCCESS_CODE[result.code];
+    if (member !== undefined) extra.output = { [member]: new Uint8Array(staged.bytes) };
   }
   return resultRecord(...base, extra);
 }
@@ -659,8 +851,9 @@ function run(input) {
   if (observed.error) framing.push(observed.error);
   if (framing.length > 0) return rejectedTransition(requestId, operation, stateBefore, worst(framing));
 
-  // P06: the request bounds, decidable before any commit request (see `validateAdapterRequest`).
-  const bounds = requestBoundCodes(checked.values);
+  // P06: the request bounds and the structural epoch bound, decidable before any commit request
+  // (see `validateAdapterRequest` and `readOpenObservation`).
+  const bounds = [...requestBoundCodes(checked.values), ...(observed.bounds ?? [])];
 
   if (operation === 'RESTORE') {
     const restore = decideRestore(snapshot, observed.restoreObservation);
@@ -675,8 +868,9 @@ function run(input) {
     return decisionTransition(restore.decision, requestId, operation, null);
   }
 
-  // CREATE and JOIN_WELCOME.
-  const event = { operation, applicableErrors: [], facts: observed.facts };
+  // CREATE, JOIN_WELCOME, PROTECT_APPLICATION and OPEN_APPLICATION: one I-SM decision over the
+  // operation, the authenticated facts and the applicable errors derived from the observation.
+  const event = { operation, applicableErrors: [...(observed.applicableErrors ?? [])], facts: observed.facts };
   if (observed.commitOutcome !== null) {
     event.commitOutcome = observed.commitOutcome;
     event.operationIdentity = observed.operationIdentity;
@@ -699,11 +893,15 @@ function run(input) {
   // A commit request reached RS and RS answered with `observed.commitOutcome`. C-API
   // `/rules/internalFailureBoundary`: FAIL_CLOSED_INTERNAL applies only before any RS commit request;
   // after it the adapter never emits REJECTED. A defect this layer detects only now (a request bound,
-  // or a `CREATE` staged Welcome that is absent, empty or over the bound) is therefore an internal
-  // failure after the request: `NOT_COMMITTED` stays `NOT_COMMITTED` (RS proves absence), while
-  // `COMMITTED` and `INDETERMINATE` retain the held mutation and enter `RECONCILIATION_REQUIRED`
-  // through the merged I-SM `INDETERMINATE` row, with no output and no blind retry.
-  const stagedDefect = operation === 'CREATE'
+  // a `CREATE` staged Welcome that is absent, empty or over the bound, or a staged opaque message of a
+  // `PROTECT_APPLICATION` or of an in-window unseen `OPEN_APPLICATION` that is absent, empty or over
+  // the bound) is therefore an internal failure after the request: `NOT_COMMITTED` stays
+  // `NOT_COMMITTED` (RS proves absence), while `COMMITTED` and `INDETERMINATE` retain the held mutation
+  // and enter `RECONCILIATION_REQUIRED` through the merged I-SM `INDETERMINATE` row, with no output and
+  // no blind retry. The held mutation is the complete C-MUT logical mutation, which includes the
+  // `REPLAY_RETENTION_STATE` component of the C-RET window.
+  const commitTriStateRow = STAGED_OUTPUT_ROWS.includes(decision.result.scenario);
+  const stagedDefect = commitTriStateRow
     && (observed.staged === null || observed.staged.length === 0 || observed.staged.length > BOUNDS.MAX_OPAQUE_BYTES);
   const defect = bounds.length > 0 || stagedDefect;
   if (!defect || observed.commitOutcome === 'NOT_COMMITTED') {
@@ -759,4 +957,6 @@ export const M2_ADAPTER = Object.freeze({
   INPUT_BY_OPERATION,
   RESTORE_DISPOSITIONS,
   BOUNDS,
+  RETENTION,
+  OBSERVATION_KEYS,
 });
