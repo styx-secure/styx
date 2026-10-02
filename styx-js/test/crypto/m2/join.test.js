@@ -16,6 +16,7 @@ import {
   M2_ADAPTER,
   M2AdapterError,
   invokeAdapter,
+  invokeAdapterTransition,
   validateAdapterRequest,
 } from '../../../src/crypto/mls/m2/adapter.js';
 import { createAdapterSnapshot, transitionAdapter } from '../../../src/crypto/mls/m2/state-machine.js';
@@ -354,6 +355,46 @@ const invokeRestore = (observation, snapshot = empty()) => invokeAdapter({
 
 const FAIL_CLOSED_POSITIVES = ['POS-EMPTY', 'POS-HOLD', 'POS-EMPTY-HOLD'];
 
+/**
+ * The contract's closed C-REST outcome to C-API disposition table, typed here independently of the
+ * module so that a drifted `RESTORE_DISPOSITIONS` row cannot pass. `MANIFEST_INVALID` (the C-REST
+ * `MANIFEST_ROOT` manifest or keyed-root failure) is C-API CAPI-S005 `AUTHENTICATION_FAILED`.
+ */
+const EXPECTED_RESTORE_DISPOSITIONS = {
+  NO_M2_STATE: 'NO_STORED_SESSION',
+  LEGACY_ONLY: 'STORED_SESSION_INCOMPATIBLE',
+  RESTORED_ACTIVE: 'RESTORED',
+  RESTORED_EMPTY: 'AUTHENTICATED_STATE_INCONSISTENT',
+  RESTORED_RECONCILIATION_REQUIRED: 'AUTHENTICATED_STATE_INCONSISTENT',
+  LOCKED_ELSEWHERE: 'FAIL_CLOSED_INTERNAL',
+  INCOMPATIBLE_BUILD: 'STORED_SESSION_INCOMPATIBLE',
+  INCOMPATIBLE_FORMAT: 'STORED_SESSION_INCOMPATIBLE',
+  UNSUPPORTED_VERSION: 'STORED_SESSION_INCOMPATIBLE',
+  WRAPPER_AUTH_FAILED: 'AUTHENTICATION_FAILED',
+  AUTHENTICATION_FAILED: 'AUTHENTICATION_FAILED',
+  SELECTOR_INVALID: 'AUTHENTICATED_STATE_INCONSISTENT',
+  MANIFEST_INVALID: 'AUTHENTICATION_FAILED',
+  RECORD_SET_INCOMPLETE: 'AUTHENTICATED_STATE_INCONSISTENT',
+  RECORD_INVALID: 'AUTHENTICATED_STATE_INCONSISTENT',
+  REFERENCE_INCONSISTENT: 'AUTHENTICATED_STATE_INCONSISTENT',
+  PARTIAL_GENERATION: 'AUTHENTICATED_STATE_INCONSISTENT',
+  INTERNAL_VALIDATION_FAILED: 'FAIL_CLOSED_INTERNAL',
+};
+
+const CREATE_REQUEST = (overrides = {}) => request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }, overrides);
+const JOIN_REQUEST = (overrides = {}) => request('JOIN_WELCOME', { embeddedTreeWelcome: new Uint8Array([0x02]) }, overrides);
+const GOOD_RESTORE = () => ({ faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE' });
+
+/** Run `fn` and report how it ended: `ok`, `M2AdapterError:<code>` or `foreign:<name>`. */
+function ending(fn) {
+  try {
+    fn();
+    return 'ok';
+  } catch (error) {
+    return error instanceof M2AdapterError ? `M2AdapterError:${error.code}` : `foreign:${error?.constructor?.name}`;
+  }
+}
+
 describe('I-JOIN module surface and closure', () => {
   test('the closed metadata is frozen and carries the ratified vocabularies', () => {
     expect(Object.isFrozen(M2_ADAPTER)).toBe(true);
@@ -376,18 +417,11 @@ describe('I-JOIN module surface and closure', () => {
     expect(Object.isFrozen(M2_ADAPTER.RESTORE_DISPOSITIONS)).toBe(true);
   });
 
-  test('the C-REST outcome mapping is total over the ratified result sets', () => {
-    const outcomes = [
-      'NO_M2_STATE', 'LEGACY_ONLY', 'RESTORED_EMPTY', 'RESTORED_ACTIVE',
-      'RESTORED_RECONCILIATION_REQUIRED', 'LOCKED_ELSEWHERE', 'WRAPPER_AUTH_FAILED',
-      'INCOMPATIBLE_BUILD', 'INCOMPATIBLE_FORMAT', 'UNSUPPORTED_VERSION', 'SELECTOR_INVALID',
-      'AUTHENTICATION_FAILED', 'MANIFEST_INVALID', 'RECORD_SET_INCOMPLETE', 'RECORD_INVALID',
-      'REFERENCE_INCONSISTENT', 'PARTIAL_GENERATION', 'INTERNAL_VALIDATION_FAILED',
-    ];
-    expect(Object.keys(M2_ADAPTER.RESTORE_DISPOSITIONS).sort()).toEqual([...outcomes].sort());
-    for (const [outcome, disposition] of Object.entries(M2_ADAPTER.RESTORE_DISPOSITIONS)) {
+  test('the C-REST outcome mapping is total and equals the contract table typed independently', () => {
+    expect(Object.keys(M2_ADAPTER.RESTORE_DISPOSITIONS).sort()).toEqual(Object.keys(EXPECTED_RESTORE_DISPOSITIONS).sort());
+    for (const [outcome, disposition] of Object.entries(EXPECTED_RESTORE_DISPOSITIONS)) {
+      expect(`${outcome}:${M2_ADAPTER.RESTORE_DISPOSITIONS[outcome]}`).toBe(`${outcome}:${disposition}`);
       expect(M2_ADAPTER.CODE_TO_KIND[disposition]).toBeDefined();
-      expect(`${outcome}:${disposition}`).toBeTruthy();
     }
   });
 
@@ -501,7 +535,7 @@ describe('I-JOIN all sixty-five negative fixtures', () => {
       // tautological: a wrong observation would change the C-REST outcome and fail here first.
       expect(`${row.id}:${classified.result}:${classified.stage}`)
         .toBe(`${row.id}:${row.result}:${row.firstPhase}`);
-      const expected = M2_ADAPTER.RESTORE_DISPOSITIONS[row.result];
+      const expected = EXPECTED_RESTORE_DISPOSITIONS[row.result];
       const result = invokeRestore(observation);
       expect(`${row.id}:${result.kind}:${code(result)}`).toBe(`${row.id}:REJECTED:${expected}`);
       expect(M2_ADAPTER.ERROR_CODES).toContain(result.error.code);
@@ -558,11 +592,14 @@ describe('I-JOIN create and Welcome', () => {
   });
 
   test('CREATE with INDETERMINATE returns the held reference, the original state and no output', () => {
-    const result = invokeAdapter({
+    const { result, snapshot } = invokeAdapterTransition({
       request: request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }),
       snapshot: empty(),
       observation: createObservation('SUPPORTED', 'INDETERMINATE'),
     });
+    expect(snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    expect(snapshot.held.originalStateBefore).toBe('EMPTY');
+    expect(snapshot.held.reconciliationRef).toBe(result.reconciliationRef);
     expect(result.kind).toBe('INDETERMINATE');
     expect(result.commitOutcome).toBe('INDETERMINATE');
     expect(typeof result.reconciliationRef).toBe('string');
@@ -572,15 +609,20 @@ describe('I-JOIN create and Welcome', () => {
     expect(Object.hasOwn(result, 'output')).toBe(false);
   });
 
-  test('CREATE that commits with no staged Welcome is FAIL_CLOSED_INTERNAL, never a success', () => {
-    const result = invokeAdapter({
+  test('CREATE that commits with no staged Welcome is never REJECTED and never a success: it holds', () => {
+    // C-API /rules/internalFailureBoundary: after COMMITTED the adapter emits success or retains
+    // reconciliation evidence, never REJECTED.
+    const { result, snapshot } = invokeAdapterTransition({
       request: request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }),
       snapshot: empty(),
       observation: createObservation('SUPPORTED', 'COMMITTED', null),
     });
-    expect(result.kind).toBe('REJECTED');
-    expect(result.error.code).toBe('FAIL_CLOSED_INTERNAL');
+    expect(result.kind).toBe('INDETERMINATE');
+    expect(result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    expect(result.originalStateBefore).toBe('EMPTY');
     expect(Object.hasOwn(result, 'output')).toBe(false);
+    expect(snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    expect(snapshot.held.reconciliationRef).toBe(result.reconciliationRef);
     const notCommitted = invokeAdapter({
       request: request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }),
       snapshot: empty(),
@@ -667,15 +709,17 @@ describe('I-JOIN create and Welcome', () => {
 });
 
 describe('I-JOIN fail-closed request validation', () => {
+  // A P02 to P04 case carries a valid observation: an unreadable observation is itself a P01 defect
+  // and would preempt the level under test (C-API /withinLevelErrorOrder).
   const cases = [
     ['unknown request member', request('RESTORE', {}, { extra: 1 }), {}, 'UNKNOWN_FIELD'],
     ['missing request member', { api: API, operation: 'RESTORE', requestId: 'r', profile: { ...PROFILE }, bindingRef: new Uint8Array([0x01]) }, {}, 'INVALID_REQUEST'],
     ['non-plain request', 'not-a-record', {}, 'THROWS'],
-    ['foreign api constant', request('RESTORE', {}, { api: 'styx-m2-session-adapter/v2' }), {}, 'UNSUPPORTED_API_VERSION'],
-    ['profile member drifted by one character', request('RESTORE', {}, { profile: { ...PROFILE, topology: 'three-member-direct' } }), {}, 'UNSUPPORTED_PROFILE'],
-    ['missing profile member', request('RESTORE', {}, { profile: { adapterApi: API } }), {}, 'UNSUPPORTED_PROFILE'],
-    ['unknown profile member', request('RESTORE', {}, { profile: { ...PROFILE, extra: 1 } }), {}, 'UNSUPPORTED_PROFILE'],
-    ['empty bindingRef', request('RESTORE', {}, { bindingRef: new Uint8Array(0) }), {}, 'BINDING_MISMATCH'],
+    ['foreign api constant', request('RESTORE', {}, { api: 'styx-m2-session-adapter/v2' }), restoreObservation({}), 'UNSUPPORTED_API_VERSION'],
+    ['profile member drifted by one character', request('RESTORE', {}, { profile: { ...PROFILE, topology: 'three-member-direct' } }), restoreObservation({}), 'UNSUPPORTED_PROFILE'],
+    ['missing profile member', request('RESTORE', {}, { profile: { adapterApi: API } }), restoreObservation({}), 'UNSUPPORTED_PROFILE'],
+    ['unknown profile member', request('RESTORE', {}, { profile: { ...PROFILE, extra: 1 } }), restoreObservation({}), 'UNSUPPORTED_PROFILE'],
+    ['empty bindingRef', request('RESTORE', {}, { bindingRef: new Uint8Array(0) }), restoreObservation({}), 'BINDING_MISMATCH'],
     ['non-byte bindingRef', request('RESTORE', {}, { bindingRef: 7 }), {}, 'INVALID_REQUEST'],
     ['unknown operation', request('ADD_MEMBER', {}), {}, 'UNSUPPORTED_OPERATION'],
     ['operation outside the integrated three', request('PROTECT_APPLICATION', { applicationBytes: new Uint8Array([0x01]) }), {}, 'UNSUPPORTED_OPERATION'],
@@ -828,15 +872,18 @@ describe('I-JOIN total precedence', () => {
   });
 
   test('an owning-layer rejection at P08 preempts a P09 owning-layer outcome', () => {
-    const p08 = invokeRestore(restoreObservation({
+    // A P08 fault and a P09 fault together: the selector-authentication failure (P08) is reported over
+    // the later-phase authenticated-profile drift (P09); the C-REST first-failure order agrees with
+    // the C-API level order here.
+    const p08AndP09 = ['authenticatedProfileIncompatible', 'selectorAuthenticationFailed'];
+    expect(classifyRestore({ ...GOOD_RESTORE(), faults: [...p08AndP09] }).result).toBe('AUTHENTICATION_FAILED');
+    expect(code(invokeRestore(restoreObservation({ faults: p08AndP09 })))).toBe('AUTHENTICATION_FAILED');
+    const keyedRoot = invokeRestore(restoreObservation({
       faults: ['recordAuthenticationFailed', 'manifestOrRootMismatch'],
     }));
-    const p08Classification = classifyRestore({
-      faults: ['recordAuthenticationFailed', 'manifestOrRootMismatch'],
-      inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE',
-    });
-    expect(p08Classification.result).toBe('MANIFEST_INVALID');
-    expect(code(p08)).toBe('AUTHENTICATED_STATE_INCONSISTENT');
+    expect(classifyRestore({ ...GOOD_RESTORE(), faults: ['recordAuthenticationFailed', 'manifestOrRootMismatch'] }).result)
+      .toBe('MANIFEST_INVALID');
+    expect(code(keyedRoot)).toBe('AUTHENTICATION_FAILED');
     const p09 = invokeRestore(restoreObservation({ faults: ['selectorHeaderVersionUnknown'] }));
     expect(code(p09)).toBe('STORED_SESSION_INCOMPATIBLE');
   });
@@ -970,10 +1017,10 @@ describe('I-JOIN immutability and purity', () => {
     expect([...result.output.embeddedTreeWelcome]).toEqual([0x05, 0x06]);
   });
 
-  test('the module exposes exactly its four documented names', async () => {
+  test('the module exposes exactly its five documented names', async () => {
     const namespace = await import('../../../src/crypto/mls/m2/adapter.js');
     expect(Object.keys(namespace).sort()).toEqual([
-      'M2AdapterError', 'M2_ADAPTER', 'invokeAdapter', 'validateAdapterRequest',
+      'M2AdapterError', 'M2_ADAPTER', 'invokeAdapter', 'invokeAdapterTransition', 'validateAdapterRequest',
     ]);
   });
 });

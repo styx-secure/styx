@@ -89,29 +89,38 @@ const CODE_TO_KIND = Object.freeze({
   NOT_COMMITTED: 'NOT_COMMITTED', INDETERMINATE: 'INDETERMINATE',
 });
 
-/** C-API `/precedenceLevels`, transposed: the level of each closed error code. */
-const ERROR_LEVEL = Object.freeze({
-  UNKNOWN_FIELD: 1, INVALID_REQUEST: 1, UNKNOWN_VALUE: 1,
-  UNSUPPORTED_API_VERSION: 2,
-  UNSUPPORTED_PROFILE: 3, BINDING_MISMATCH: 3,
-  UNSUPPORTED_OPERATION: 4,
-  SESSION_ALREADY_EXISTS: 5, NO_ACTIVE_SESSION: 5, NO_STORED_SESSION: 5,
-  RECONCILIATION_REQUIRED: 5, NO_RECONCILIATION_PENDING: 5,
-  RECONCILIATION_REFERENCE_MISMATCH: 5,
-  VALUE_OUT_OF_RANGE: 6,
-  EPOCH_OUTSIDE_RETAINED_WINDOW: 7, FUTURE_EPOCH: 7,
-  AUTHENTICATION_FAILED: 8, AUTHENTICATED_STATE_INCONSISTENT: 8,
-  STORED_SESSION_INCOMPATIBLE: 9, UNSUPPORTED_ONBOARDING: 9,
-  WELCOME_NO_MATCHING_KEY_PACKAGE: 9, UNSUPPORTED_UPDATE_FORM: 9,
-  UNSUPPORTED_COMMIT_SHAPE: 9, KEY_PACKAGE_ALREADY_CONSUMED: 9,
-  FAIL_CLOSED_INTERNAL: 10,
-});
+/**
+ * C-API `/withinLevelErrorOrder`, transcribed exactly: level `P01` to `P10`, each with its ratified
+ * within-level order. Both the level and the within-level rank of every error code derive from it.
+ */
+const WITHIN_LEVEL_ERROR_ORDER = Object.freeze([
+  Object.freeze(['UNKNOWN_FIELD', 'INVALID_REQUEST', 'UNKNOWN_VALUE']),
+  Object.freeze(['UNSUPPORTED_API_VERSION']),
+  Object.freeze(['UNSUPPORTED_PROFILE', 'BINDING_MISMATCH']),
+  Object.freeze(['UNSUPPORTED_OPERATION']),
+  Object.freeze([
+    'RECONCILIATION_REQUIRED', 'SESSION_ALREADY_EXISTS', 'NO_ACTIVE_SESSION', 'NO_STORED_SESSION',
+    'NO_RECONCILIATION_PENDING', 'RECONCILIATION_REFERENCE_MISMATCH',
+  ]),
+  Object.freeze(['VALUE_OUT_OF_RANGE']),
+  Object.freeze(['EPOCH_OUTSIDE_RETAINED_WINDOW', 'FUTURE_EPOCH']),
+  Object.freeze(['AUTHENTICATION_FAILED', 'AUTHENTICATED_STATE_INCONSISTENT']),
+  Object.freeze([
+    'STORED_SESSION_INCOMPATIBLE', 'UNSUPPORTED_ONBOARDING', 'WELCOME_NO_MATCHING_KEY_PACKAGE',
+    'UNSUPPORTED_UPDATE_FORM', 'UNSUPPORTED_COMMIT_SHAPE', 'KEY_PACKAGE_ALREADY_CONSUMED',
+  ]),
+  Object.freeze(['FAIL_CLOSED_INTERNAL']),
+]);
 
-/** C-API `/errorDefinitions` `errorOrder`: the within-level tie-break, in ratified order. */
-const ERROR_RANK = Object.freeze(ERROR_CODES.reduce((table, code, index) => {
-  table[code] = index;
-  return table;
-}, {}));
+/** C-API `/errorPrecedenceLevel`: the level (1 to 10) of each closed error code. */
+const ERROR_LEVEL = Object.freeze(Object.fromEntries(
+  WITHIN_LEVEL_ERROR_ORDER.flatMap((codes, index) => codes.map((code) => [code, index + 1])),
+));
+
+/** The ratified within-level tie-break: the position of each code in `/withinLevelErrorOrder`. */
+const ERROR_RANK = Object.freeze(Object.fromEntries(
+  WITHIN_LEVEL_ERROR_ORDER.flat().map((code, index) => [code, index]),
+));
 
 /** C-API `/profile`, transcribed exactly (13 closed fields). */
 const PROFILE = Object.freeze({
@@ -134,15 +143,26 @@ const PROFILE_KEYS = Object.freeze(Object.keys(PROFILE));
 /** C-API `/request/commonRequired`; `/request/commonOptional` is empty. */
 const REQUEST_FIELDS = Object.freeze(['api', 'operation', 'requestId', 'profile', 'bindingRef', 'input']);
 
-/** C-API `/request/inputByOperation`, transcribed exactly. */
+/**
+ * C-API `/request/inputByOperation`, transcribed exactly for all eight operations, so that a
+ * malformed `input` is a P01 defect even for an operation this card does not integrate.
+ */
 const INPUT_BY_OPERATION = Object.freeze({
   CREATE: Object.freeze(['peerFramedKeyPackage']),
   RESTORE: Object.freeze([]),
   JOIN_WELCOME: Object.freeze(['embeddedTreeWelcome']),
+  PROTECT_APPLICATION: Object.freeze(['applicationBytes']),
+  OPEN_APPLICATION: Object.freeze(['protectedApplicationMessage']),
+  SELF_UPDATE: Object.freeze([]),
+  APPLY_PEER_UPDATE: Object.freeze(['protectedCommitBytes']),
+  RECONCILE_INDETERMINATE: Object.freeze(['reconciliationRef']),
 });
 
-/** The opaque-byte members of `/request/inputByOperation`. */
-const INPUT_BYTES = Object.freeze(['peerFramedKeyPackage', 'embeddedTreeWelcome']);
+/** The `AP_OPAQUE_BYTES` members of `/request/inputByOperation`. */
+const INPUT_BYTES = Object.freeze([
+  'peerFramedKeyPackage', 'embeddedTreeWelcome', 'applicationBytes', 'protectedApplicationMessage',
+  'protectedCommitBytes',
+]);
 
 /** C-API `/response/commonRequired`, transcribed exactly. */
 const RESULT_COMMON = Object.freeze(['api', 'requestId', 'operation', 'kind', 'stateBefore', 'stateAfter']);
@@ -165,8 +185,10 @@ const OUTPUT_BY_SUCCESS_CODE = Object.freeze({
 const TRI_STATE_ROWS = Object.freeze(['CAPI-S001', 'CAPI-S006']);
 
 /**
- * The closed C-REST outcome to C-API disposition mapping of the contract (issue #402). The first
- * column is the complete C-REST `resultSets` union; no other outcome can be classified.
+ * The closed C-REST outcome to C-API disposition mapping of the contract. The first column is the
+ * complete C-REST `resultSets` union; no other outcome can be classified. `MANIFEST_INVALID` is the
+ * C-REST `MANIFEST_ROOT` failure (manifest or keyed-root mismatch) and therefore C-API CAPI-S005
+ * "authentication or keyed-root validation fails" -> `AUTHENTICATION_FAILED`.
  */
 const RESTORE_DISPOSITIONS = Object.freeze({
   NO_M2_STATE: 'NO_STORED_SESSION',
@@ -181,7 +203,7 @@ const RESTORE_DISPOSITIONS = Object.freeze({
   WRAPPER_AUTH_FAILED: 'AUTHENTICATION_FAILED',
   AUTHENTICATION_FAILED: 'AUTHENTICATION_FAILED',
   SELECTOR_INVALID: 'AUTHENTICATED_STATE_INCONSISTENT',
-  MANIFEST_INVALID: 'AUTHENTICATED_STATE_INCONSISTENT',
+  MANIFEST_INVALID: 'AUTHENTICATION_FAILED',
   RECORD_SET_INCOMPLETE: 'AUTHENTICATED_STATE_INCONSISTENT',
   RECORD_INVALID: 'AUTHENTICATED_STATE_INCONSISTENT',
   REFERENCE_INCONSISTENT: 'AUTHENTICATED_STATE_INCONSISTENT',
@@ -206,15 +228,12 @@ const RESTORE_FACTS = Object.freeze({
   WRAPPER_AUTH_FAILED: 'AUTHENTICATION_FAILED',
   AUTHENTICATION_FAILED: 'AUTHENTICATION_FAILED',
   SELECTOR_INVALID: 'MULTIPLE_OR_MIXED_NONLEGACY_CANDIDATES',
-  MANIFEST_INVALID: 'AUTHENTICATED_RECORD_INCONSISTENT',
+  MANIFEST_INVALID: 'AUTHENTICATION_FAILED',
   RECORD_SET_INCOMPLETE: 'AUTHENTICATED_RECORD_INCONSISTENT',
   RECORD_INVALID: 'AUTHENTICATED_RECORD_INCONSISTENT',
   REFERENCE_INCONSISTENT: 'AUTHENTICATED_RECORD_INCONSISTENT',
   PARTIAL_GENERATION: 'AUTHENTICATED_RECORD_INCONSISTENT',
 });
-
-/** The C-REST outcomes this card cannot route through a ratified I-SM decision row. */
-const UNROUTABLE_OUTCOMES = Object.freeze(['LOCKED_ELSEWHERE', 'INTERNAL_VALIDATION_FAILED']);
 
 /**
  * The bounds this card selects for the adapter boundary. C-API §4 leaves the bounded-byte limits to a
@@ -250,12 +269,15 @@ const RESTORE_OBSERVATION_KEYS = Object.freeze(['faults', 'inventory', 'legacy',
 
 const TYPED_ARRAY_PROTOTYPE = Object.getPrototypeOf(Uint8Array.prototype);
 const TYPED_ARRAY_TAG = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, Symbol.toStringTag).get;
+/** The intrinsic `byteLength` getter: an own `byteLength` property on a byte array is never read. */
+const TYPED_ARRAY_BYTE_LENGTH = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, 'byteLength').get;
 
 /**
  * The only error this module throws. It carries a C-API error code and nothing else: no free text, no
  * field name, no value, no path and no offending input. It is thrown exactly when a closed C-API
  * result record cannot be shaped at all, because the request does not carry a readable `requestId`
- * and `operation`, or one of the three input members is unreadable.
+ * and `operation`, the snapshot carries no readable state, or one of the three input members is
+ * unreadable. Any other internal exception is converted to it with `FAIL_CLOSED_INTERNAL`.
  */
 export class M2AdapterError extends Error {
   constructor(code) {
@@ -295,9 +317,19 @@ function isUint8Array(value) {
   }
 }
 
+/** The intrinsic byte length of a value `isUint8Array` accepted, or `-1` when it cannot be read. */
+function byteLengthOf(bytes) {
+  try {
+    return TYPED_ARRAY_BYTE_LENGTH.call(bytes);
+  } catch {
+    return -1;
+  }
+}
+
 /**
  * Read a closed record: every own key must be an allowed member, every allowed member must be present,
- * every member must be a plain own data property. Returns `{ error, values }` with a C-API error code.
+ * every member must be a plain own data property. No accessor is ever invoked: members are read from
+ * their property descriptors. Returns `{ error, values }` with a C-API error code.
  */
 function readClosed(value, allowed) {
   if (!isPlainObject(value)) return { error: 'INVALID_REQUEST', values: null };
@@ -338,6 +370,13 @@ function worst(candidates) {
   return [...candidates].sort((left, right) => levelOf(left) - levelOf(right) || rankOf(left) - rankOf(right))[0];
 }
 
+/** Whether `code` preempts the code of `decision` under the C-API total precedence. */
+function preempts(code, decision) {
+  if (decision === null) return true;
+  const other = decision.result.code;
+  return levelOf(code) < levelOf(other) || (levelOf(code) === levelOf(other) && rankOf(code) < rankOf(other));
+}
+
 function resultRecord(requestId, operation, kind, stateBefore, stateAfter, extra) {
   return freezeData({
     api: API,
@@ -350,20 +389,85 @@ function resultRecord(requestId, operation, kind, stateBefore, stateAfter, extra
   });
 }
 
-function rejected(requestId, operation, stateBefore, stateAfter, code) {
-  return resultRecord(requestId, operation, 'REJECTED', stateBefore, stateAfter, { error: freezeData({ code }) });
+function rejected(requestId, operation, stateBefore, code) {
+  return resultRecord(requestId, operation, 'REJECTED', stateBefore, stateBefore, { error: freezeData({ code }) });
+}
+
+/** The P01 to P04 error code of a closed request record, or `null`. */
+function requestLevelCode(value) {
+  const candidates = [];
+  if (typeof value.api !== 'string') candidates.push('INVALID_REQUEST');
+  else if (value.api !== API) candidates.push('UNSUPPORTED_API_VERSION');
+
+  const profileShape = readClosed(value.profile, PROFILE_KEYS);
+  if (profileShape.error) candidates.push('UNSUPPORTED_PROFILE');
+  else if (profileShape.values.adapterApi !== value.api) candidates.push('UNSUPPORTED_API_VERSION');
+  else if (PROFILE_KEYS.some((key) => profileShape.values[key] !== PROFILE[key])) candidates.push('UNSUPPORTED_PROFILE');
+
+  if (!isUint8Array(value.bindingRef)) {
+    // C-API §4: the binding reference is opaque AP bytes; anything that is not a `Uint8Array` is
+    // malformed framing at P01, while an empty or over-bound reference is `BINDING_MISMATCH` at P03.
+    candidates.push('INVALID_REQUEST');
+  } else {
+    const length = byteLengthOf(value.bindingRef);
+    if (length < 0) candidates.push('INVALID_REQUEST');
+    else if (length === 0 || length > BOUNDS.MAX_BINDING_REF_BYTES) candidates.push('BINDING_MISMATCH');
+  }
+
+  if (typeof value.operation !== 'string' || !OPERATIONS.includes(value.operation)) {
+    candidates.push('UNSUPPORTED_OPERATION');
+  } else {
+    if (!INTEGRATED_OPERATIONS.includes(value.operation)) candidates.push('UNSUPPORTED_OPERATION');
+    // C-API `/request/inputByOperation` closes `input` for every operation of `operationEnum`, so a
+    // malformed `input` is a P01 defect that preempts the P04 refusal of a non-integrated operation.
+    const inputShape = readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
+    if (inputShape.error) candidates.push(inputShape.error);
+    else if (INPUT_BY_OPERATION[value.operation].some((key) => INPUT_BYTES.includes(key)
+      && (!isUint8Array(inputShape.values[key]) || byteLengthOf(inputShape.values[key]) < 0))) {
+      candidates.push('INVALID_REQUEST');
+    }
+  }
+
+  if (typeof value.requestId !== 'string' || value.requestId.length === 0) candidates.push('INVALID_REQUEST');
+  return candidates.length === 0 ? null : worst(candidates);
+}
+
+/** The P06 bound codes of an admissible request (no P01 to P04 defect), or an empty list. */
+function requestBoundCodes(value) {
+  const candidates = [];
+  if (value.requestId.length > BOUNDS.MAX_REQUEST_ID_CHARS) candidates.push('VALUE_OUT_OF_RANGE');
+  const inputShape = readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
+  for (const key of INPUT_BY_OPERATION[value.operation]) {
+    if (INPUT_BYTES.includes(key) && byteLengthOf(inputShape.values[key]) > BOUNDS.MAX_OPAQUE_BYTES) {
+      candidates.push('VALUE_OUT_OF_RANGE');
+    }
+  }
+  return candidates;
+}
+
+function validateRequestRecord(request) {
+  const shape = readClosed(request, REQUEST_FIELDS);
+  if (shape.error) return { code: shape.error, values: null };
+  const levelCode = requestLevelCode(shape.values);
+  return { code: levelCode, values: shape.values };
 }
 
 /**
- * Validate the closed C-API request alone. Returns a frozen `{ ok, code }` record: `code` is the
- * exact C-API error code of the first applicable P01 to P04 defect, or `null` when the request itself
- * is admissible (the state gate, the bounds and the owning-layer decision are not decided here).
+ * Validate the closed C-API request alone — the pre-commit request gate. Returns a frozen
+ * `{ ok, code }` record: `code` is the exact C-API error code of the highest-precedence request-level
+ * defect (P01 to P04, and the P06 bounds of the request), or `null` when the request itself is
+ * admissible. The state gate and the owning-layer decision are not decided here.
  */
 export function validateAdapterRequest(request) {
-  const shape = readClosed(request, REQUEST_FIELDS);
-  if (shape.error) return freezeData({ ok: false, code: shape.error });
-  const code = requestLevelCode(shape.values);
-  return freezeData({ ok: code === null, code });
+  try {
+    const checked = validateRequestRecord(request);
+    if (checked.code !== null) return freezeData({ ok: false, code: checked.code });
+    const bounds = requestBoundCodes(checked.values);
+    const code = bounds.length === 0 ? null : worst(bounds);
+    return freezeData({ ok: code === null, code });
+  } catch {
+    return freezeData({ ok: false, code: 'FAIL_CLOSED_INTERNAL' });
+  }
 }
 
 /** Read one own data-property string member, or `null` when it is absent or not a string. */
@@ -379,82 +483,7 @@ function readMemberString(record, key) {
   return descriptor.value;
 }
 
-/** The P01 to P04 error code of a request, or `null`. */
-function requestLevelCode(value) {
-  const candidates = [];
-  if (typeof value.api !== 'string') candidates.push('INVALID_REQUEST');
-  else if (value.api !== API) candidates.push('UNSUPPORTED_API_VERSION');
-
-  const profileShape = readClosed(value.profile, PROFILE_KEYS);
-  if (profileShape.error === 'INVALID_REQUEST') candidates.push('UNSUPPORTED_PROFILE');
-  else if (profileShape.error === 'UNKNOWN_FIELD') candidates.push('UNSUPPORTED_PROFILE');
-  else if (profileShape.values.adapterApi !== value.api) candidates.push('UNSUPPORTED_API_VERSION');
-  else {
-    for (const key of PROFILE_KEYS) {
-      if (profileShape.values[key] !== PROFILE[key]) {
-        candidates.push('UNSUPPORTED_PROFILE');
-        break;
-      }
-    }
-  }
-
-  if (!isUint8Array(value.bindingRef)) {
-    // C-API §4: the binding reference is opaque AP bytes; anything that is not a `Uint8Array` is
-    // malformed framing at P01, while an empty or over-bound reference is `BINDING_MISMATCH` at P03.
-    candidates.push('INVALID_REQUEST');
-  } else if (value.bindingRef.byteLength === 0) {
-    candidates.push('BINDING_MISMATCH');
-  }
-
-  if (typeof value.operation !== 'string' || !OPERATIONS.includes(value.operation)) {
-    candidates.push('UNSUPPORTED_OPERATION');
-  } else if (!INTEGRATED_OPERATIONS.includes(value.operation)) {
-    candidates.push('UNSUPPORTED_OPERATION');
-  } else {
-    const inputShape = readClosed(value.input, INPUT_BY_OPERATION[value.operation]);
-    if (inputShape.error) candidates.push(inputShape.error);
-    else {
-      for (const key of INPUT_BY_OPERATION[value.operation]) {
-        if (INPUT_BYTES.includes(key) && !isUint8Array(inputShape.values[key])) {
-          candidates.push('INVALID_REQUEST');
-          break;
-        }
-      }
-    }
-  }
-
-  if (typeof value.requestId !== 'string' || value.requestId.length === 0) candidates.push('INVALID_REQUEST');
-  return candidates.length === 0 ? null : worst(candidates);
-}
-
-/** The P06 bound codes of a request and its observation, or an empty list. */
-function boundCodes(value, observation) {
-  const candidates = [];
-  if (typeof value.requestId === 'string' && value.requestId.length > BOUNDS.MAX_REQUEST_ID_CHARS) {
-    candidates.push('VALUE_OUT_OF_RANGE');
-  }
-  if (isUint8Array(value.bindingRef) && value.bindingRef.byteLength > BOUNDS.MAX_BINDING_REF_BYTES) {
-    candidates.push('BINDING_MISMATCH');
-  }
-  const inputShape = isPlainObject(value.input) && typeof value.operation === 'string'
-    ? readClosed(value.input, INPUT_BY_OPERATION[value.operation] ?? [])
-    : { error: 'INVALID_REQUEST', values: null };
-  if (inputShape.error === null) {
-    for (const key of INPUT_BY_OPERATION[value.operation] ?? []) {
-      if (INPUT_BYTES.includes(key) && isUint8Array(inputShape.values[key])
-        && inputShape.values[key].byteLength > BOUNDS.MAX_OPAQUE_BYTES) {
-        candidates.push('VALUE_OUT_OF_RANGE');
-      }
-    }
-  }
-  if (isPlainObject(observation) && isUint8Array(observation.stagedOutput?.embeddedTreeWelcome)
-    && observation.stagedOutput.embeddedTreeWelcome.byteLength > BOUNDS.MAX_OPAQUE_BYTES) {
-    candidates.push('VALUE_OUT_OF_RANGE');
-  }
-  return candidates;
-}
-
-/** Read the M2 snapshot state. Throws when the snapshot is unreadable at all. */
+/** Read the M2 snapshot state. Throws when the snapshot carries no readable C-API state at all. */
 function snapshotStateOf(snapshot) {
   if (!isPlainObject(snapshot)) throw new M2AdapterError('FAIL_CLOSED_INTERNAL');
   let descriptor;
@@ -470,45 +499,47 @@ function snapshotStateOf(snapshot) {
 }
 
 /**
- * The owning-layer decision for one integrated operation. Returns `{ facts, commitOutcome,
- * operationIdentity, stagedOutput }` or `{ error }` with a C-API error code, or `{ unroutable: code }`
- * for an outcome this card cannot route through a ratified decision row.
+ * The P01 code of a snapshot that is not a closed I-SM snapshot (exactly `state` and `held`, with a
+ * valid hold), or `null`. The check is the merged I-SM core's own: an invalid snapshot is the one for
+ * which `transitionAdapter` returns no next snapshot.
  */
-function deriveDecision(operation, observation) {
+function snapshotShapeCode(snapshot) {
+  let decision;
+  try {
+    decision = transitionAdapter(snapshot, { operation: 'RESTORE', applicableErrors: [], facts: 'NO_STORED_SESSION' });
+  } catch {
+    return 'FAIL_CLOSED_INTERNAL';
+  }
+  return decision.snapshot === null ? decision.result.code : null;
+}
+
+/**
+ * Read the closed observation of one integrated operation, at P01: an unknown member is
+ * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
+ * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }` or the decoded observation.
+ */
+function readObservation(operation, observation) {
   const shape = readClosed(observation, OBSERVATION_KEYS[operation]);
   if (shape.error) return { error: shape.error };
   const value = shape.values;
 
   if (operation === 'RESTORE') {
-    const restoreShape = readClosed(value.restoreObservation, RESTORE_OBSERVATION_KEYS);
-    if (restoreShape.error) return { error: 'FAIL_CLOSED_INTERNAL' };
-    let outcome;
-    try {
-      outcome = classifyRestore(value.restoreObservation);
-    } catch {
-      return { error: 'FAIL_CLOSED_INTERNAL' };
-    }
-    if (outcome === null || typeof outcome !== 'object' || !Object.isFrozen(outcome)
-      || !Object.hasOwn(RESTORE_DISPOSITIONS, outcome.result)) {
-      return { error: 'FAIL_CLOSED_INTERNAL' };
-    }
-    const code = RESTORE_DISPOSITIONS[outcome.result];
-    if (UNROUTABLE_OUTCOMES.includes(outcome.result)) return { unroutable: code, facts: RESTORE_FACTS.NO_M2_STATE };
-    return { facts: RESTORE_FACTS[outcome.result], commitOutcome: null, operationIdentity: null };
+    const inner = readClosed(value.restoreObservation, RESTORE_OBSERVATION_KEYS);
+    if (inner.error) return { error: inner.error };
+    return { error: null, restoreObservation: inner.values };
   }
 
   const factKey = operation === 'CREATE' ? 'onboarding' : 'keyPackage';
   const allowed = operation === 'CREATE' ? ONBOARDING_VALUES : KEY_PACKAGE_VALUES;
   if (typeof value[factKey] !== 'string') return { error: 'INVALID_REQUEST' };
   if (!allowed.includes(value[factKey])) return { error: 'UNKNOWN_VALUE' };
-  const reached = operation === 'CREATE'
-    ? value.onboarding === 'SUPPORTED'
-    : value.keyPackage === 'MATCHED';
+  const facts = operation === 'CREATE' ? value.onboarding : JOIN_FACTS[value.keyPackage];
+  const reached = facts === 'SUPPORTED';
 
   if (!reached) {
     if (value.commitOutcome !== null || value.operationIdentity !== null) return { error: 'INVALID_REQUEST' };
     if (operation === 'CREATE' && value.stagedOutput !== null) return { error: 'INVALID_REQUEST' };
-    return { facts: operation === 'CREATE' ? value.onboarding : JOIN_FACTS[value.keyPackage], commitOutcome: null, operationIdentity: null };
+    return { error: null, facts, commitOutcome: null, operationIdentity: null, staged: null };
   }
 
   if (typeof value.commitOutcome !== 'string') return { error: 'INVALID_REQUEST' };
@@ -516,46 +547,65 @@ function deriveDecision(operation, observation) {
   if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
     return { error: 'INVALID_REQUEST' };
   }
-  let stagedOutput = null;
+  let staged = null;
   if (operation === 'CREATE' && value.stagedOutput !== null) {
-    const staged = readClosed(value.stagedOutput, ['embeddedTreeWelcome']);
-    if (staged.error) return { error: staged.error };
-    if (!isUint8Array(staged.values.embeddedTreeWelcome)) return { error: 'INVALID_REQUEST' };
-    stagedOutput = staged.values;
+    const stagedShape = readClosed(value.stagedOutput, ['embeddedTreeWelcome']);
+    if (stagedShape.error) return { error: stagedShape.error };
+    const bytes = stagedShape.values.embeddedTreeWelcome;
+    if (!isUint8Array(bytes)) return { error: 'INVALID_REQUEST' };
+    const length = byteLengthOf(bytes);
+    if (length < 0) return { error: 'INVALID_REQUEST' };
+    staged = { bytes, length };
   }
-  return {
-    facts: operation === 'CREATE' ? value.onboarding : JOIN_FACTS[value.keyPackage],
-    commitOutcome: value.commitOutcome,
-    operationIdentity: value.operationIdentity,
-    stagedOutput,
-  };
+  return { error: null, facts, commitOutcome: value.commitOutcome, operationIdentity: value.operationIdentity, staged };
 }
 
-/**
- * The state-gate rejection of the current state for one operation, or `null` when the state row
- * allows the operation. Used for the outcomes that have no ratified I-SM decision row.
- */
-function stateGateResult(snapshot, operation) {
-  const probe = { operation, applicableErrors: [], facts: 'NO_STORED_SESSION' };
-  let decision;
+/** Run the merged I-SM core; an exception or a malformed return is `null` (an internal failure). */
+function decide(snapshot, event) {
   try {
-    decision = transitionAdapter(snapshot, probe);
+    const decision = transitionAdapter(snapshot, event);
+    if (decision === null || typeof decision !== 'object' || decision.result === null
+      || typeof decision.result !== 'object') {
+      return null;
+    }
+    return decision;
   } catch {
     return null;
   }
-  return typeof decision.result.scenario === 'string' && decision.result.scenario.startsWith('CAPI-G')
-    ? decision
-    : null;
 }
 
-function shapeDecision(decision, requestId, operation, stagedOutput) {
+/**
+ * The owning-layer `RESTORE` decision: classify the closed C-REST observation with the merged I-REST
+ * classifier and map its outcome. Returns `{ decision, code }`: an I-SM decision, and/or the C-API
+ * code of an outcome that cannot be routed through a ratified decision row.
+ */
+function decideRestore(snapshot, restoreObservation) {
+  let outcome;
+  try {
+    outcome = classifyRestore({ ...restoreObservation });
+  } catch {
+    return { decision: null, code: 'FAIL_CLOSED_INTERNAL' };
+  }
+  if (outcome === null || typeof outcome !== 'object' || !Object.isFrozen(outcome)
+    || typeof outcome.result !== 'string' || !Object.hasOwn(RESTORE_DISPOSITIONS, outcome.result)) {
+    return { decision: null, code: 'FAIL_CLOSED_INTERNAL' };
+  }
+  if (Object.hasOwn(RESTORE_FACTS, outcome.result)) {
+    const decision = decide(snapshot, { operation: 'RESTORE', applicableErrors: [], facts: RESTORE_FACTS[outcome.result] });
+    return decision === null ? { decision: null, code: 'FAIL_CLOSED_INTERNAL' } : { decision, code: null };
+  }
+  // `LOCKED_ELSEWHERE` and `INTERNAL_VALIDATION_FAILED` have no ratified decision row: only the P05
+  // state gate of the current state can preempt their P10 disposition.
+  const gate = decide(snapshot, { operation: 'RESTORE', applicableErrors: [], facts: 'NO_STORED_SESSION' });
+  const isGate = gate !== null && typeof gate.result.scenario === 'string' && gate.result.scenario.startsWith('CAPI-G');
+  return { decision: isGate ? gate : null, code: RESTORE_DISPOSITIONS[outcome.result] };
+}
+
+function shapeDecision(decision, requestId, operation, staged) {
   const result = decision.result;
   const kind = result.kind;
   const base = [requestId, operation, kind, result.stateBefore, result.stateAfter];
-  if (kind === 'REJECTED') return rejected(...base, result.code);
-  if (kind === 'NOT_COMMITTED') {
-    return resultRecord(...base, { commitOutcome: 'NOT_COMMITTED' });
-  }
+  if (kind === 'NOT_COMMITTED') return resultRecord(...base, { commitOutcome: 'NOT_COMMITTED' });
   if (kind === 'INDETERMINATE') {
     return resultRecord(...base, {
       commitOutcome: 'INDETERMINATE',
@@ -565,88 +615,132 @@ function shapeDecision(decision, requestId, operation, stagedOutput) {
   }
   const extra = { successCode: result.code };
   if (TRI_STATE_ROWS.includes(result.scenario)) extra.commitOutcome = 'COMMITTED';
-  if (kind === 'SUCCESS' && Object.hasOwn(OUTPUT_BY_SUCCESS_CODE, result.code)
-    && OUTPUT_BY_SUCCESS_CODE[result.code].length > 0) {
-    const output = {};
-    for (const member of OUTPUT_BY_SUCCESS_CODE[result.code]) {
-      if (member === 'embeddedTreeWelcome' && stagedOutput !== null
-        && isUint8Array(stagedOutput.embeddedTreeWelcome)) {
-        output.embeddedTreeWelcome = new Uint8Array(stagedOutput.embeddedTreeWelcome);
-      }
-    }
-    if (Object.keys(output).length > 0) extra.output = output;
+  if (kind === 'SUCCESS' && result.code === 'CREATED' && staged !== null) {
+    extra.output = { embeddedTreeWelcome: new Uint8Array(staged.bytes) };
   }
   return resultRecord(...base, extra);
 }
 
-/**
- * The integration entry point. `input` is a closed record with exactly `request`, `snapshot` and
- * `observation`; returns exactly one closed C-API result record, or throws `M2AdapterError` when no
- * closed result record can be shaped.
- */
-export function invokeAdapter(input) {
+function transitionResult(result, snapshot) {
+  return freezeData({ result, snapshot });
+}
+
+function rejectedTransition(requestId, operation, stateBefore, code) {
+  return transitionResult(rejected(requestId, operation, stateBefore, code), null);
+}
+
+function decisionTransition(decision, requestId, operation, staged) {
+  if (decision.result.kind === 'REJECTED') {
+    return rejectedTransition(requestId, operation, decision.result.stateBefore, decision.result.code);
+  }
+  return transitionResult(shapeDecision(decision, requestId, operation, staged), decision.snapshot);
+}
+
+function run(input) {
   const outer = readClosed(input, ['request', 'snapshot', 'observation']);
   if (outer.error) throw new M2AdapterError(outer.error === 'UNKNOWN_FIELD' ? 'UNKNOWN_FIELD' : 'FAIL_CLOSED_INTERNAL');
   const { request, snapshot, observation } = outer.values;
-  const requestShape = readClosed(request, REQUEST_FIELDS);
   const requestId = readMemberString(request, 'requestId');
   const operation = readMemberString(request, 'operation');
   if (requestId === null || requestId.length === 0 || operation === null) {
-    throw new M2AdapterError(requestShape.error ?? 'INVALID_REQUEST');
+    const shape = readClosed(request, REQUEST_FIELDS);
+    throw new M2AdapterError(shape.error ?? 'INVALID_REQUEST');
   }
   const stateBefore = snapshotStateOf(snapshot);
-  if (requestShape.error) return rejected(requestId, operation, stateBefore, stateBefore, requestShape.error);
 
-  const levelCode = requestLevelCode(requestShape.values);
-  if (levelCode !== null) return rejected(requestId, operation, stateBefore, stateBefore, levelCode);
+  // P01 to P04: the request, the snapshot and the observation are all checked before any level is
+  // chosen, so a P01 defect of any of the three preempts every P02 to P04 defect.
+  const checked = validateRequestRecord(request);
+  const framing = [];
+  if (checked.code !== null) framing.push(checked.code);
+  const snapshotCode = snapshotShapeCode(snapshot);
+  if (snapshotCode !== null) framing.push(snapshotCode);
+  const observed = INTEGRATED_OPERATIONS.includes(operation) ? readObservation(operation, observation) : { error: null };
+  if (observed.error) framing.push(observed.error);
+  if (framing.length > 0) return rejectedTransition(requestId, operation, stateBefore, worst(framing));
 
-  const derived = INTEGRATED_OPERATIONS.includes(operation)
-    ? deriveDecision(operation, observation)
-    : { error: 'UNSUPPORTED_OPERATION' };
-  const bounds = boundCodes(requestShape.values, observation);
-  const candidates = [...bounds];
+  // P06: the request bounds, decidable before any commit request (see `validateAdapterRequest`).
+  const bounds = requestBoundCodes(checked.values);
 
-  let decision = null;
-  if (Object.hasOwn(derived, 'error')) {
-    candidates.push(derived.error);
-  } else if (Object.hasOwn(derived, 'unroutable')) {
-    const gate = stateGateResult(snapshot, operation);
-    const gateLevel = gate === null ? 10 : levelOf(gate.result.code);
-    if (gate !== null && gateLevel < 10) decision = gate;
-    else candidates.push(derived.unroutable);
-  } else {
-    const event = { operation, applicableErrors: [], facts: derived.facts };
-    if (derived.commitOutcome !== null) {
-      event.commitOutcome = derived.commitOutcome;
-      event.operationIdentity = derived.operationIdentity;
+  if (operation === 'RESTORE') {
+    const restore = decideRestore(snapshot, observed.restoreObservation);
+    const candidates = [...bounds];
+    if (restore.code !== null) candidates.push(restore.code);
+    if (restore.decision !== null && restore.decision.result.kind === 'REJECTED') candidates.push(restore.decision.result.code);
+    if (candidates.length > 0) {
+      const code = worst(candidates);
+      if (preempts(code, restore.decision)) return rejectedTransition(requestId, operation, stateBefore, code);
     }
-    try {
-      decision = transitionAdapter(snapshot, event);
-    } catch {
-      candidates.push('FAIL_CLOSED_INTERNAL');
-    }
-    if (decision !== null && decision.result.kind === 'REJECTED') candidates.push(decision.result.code);
-    // A `CREATE` that commits with no staged Welcome is an internal failure strictly before any output
-    // release; it can never be reported as a success.
-    if (decision !== null && decision.result.kind === 'SUCCESS' && operation === 'CREATE'
-      && (derived.stagedOutput ?? null) === null) {
-      candidates.push('FAIL_CLOSED_INTERNAL');
-    }
+    if (restore.decision === null) return rejectedTransition(requestId, operation, stateBefore, 'FAIL_CLOSED_INTERNAL');
+    return decisionTransition(restore.decision, requestId, operation, null);
   }
 
-  if (candidates.length > 0) {
-    const code = worst(candidates);
-    const preempts = decision === null
-      || levelOf(code) < levelOf(decision.result.code)
-      || (levelOf(code) === levelOf(decision.result.code)
-        && rankOf(code) < rankOf(decision.result.code));
-    if (preempts) return rejected(requestId, operation, stateBefore, stateBefore, code);
+  // CREATE and JOIN_WELCOME.
+  const event = { operation, applicableErrors: [], facts: observed.facts };
+  if (observed.commitOutcome !== null) {
+    event.commitOutcome = observed.commitOutcome;
+    event.operationIdentity = observed.operationIdentity;
   }
-  if (decision === null) return rejected(requestId, operation, stateBefore, stateBefore, 'FAIL_CLOSED_INTERNAL');
-  if (decision.result.kind === 'REJECTED') {
-    return rejected(requestId, operation, decision.result.stateBefore, decision.result.stateAfter, decision.result.code);
+  const decision = decide(snapshot, event);
+  if (decision === null) {
+    return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
   }
-  return shapeDecision(decision, requestId, operation, derived.stagedOutput ?? null);
+  if (decision.result.kind === 'REJECTED' || observed.commitOutcome === null) {
+    // No RS commit request was made: every applicable error preempts by the C-API total precedence.
+    const candidates = [...bounds];
+    if (decision.result.kind === 'REJECTED') candidates.push(decision.result.code);
+    if (candidates.length > 0) {
+      const code = worst(candidates);
+      if (preempts(code, decision)) return rejectedTransition(requestId, operation, stateBefore, code);
+    }
+    return decisionTransition(decision, requestId, operation, null);
+  }
+
+  // A commit request reached RS and RS answered with `observed.commitOutcome`. C-API
+  // `/rules/internalFailureBoundary`: FAIL_CLOSED_INTERNAL applies only before any RS commit request;
+  // after it the adapter never emits REJECTED. A defect this layer detects only now (a request bound,
+  // or a `CREATE` staged Welcome that is absent, empty or over the bound) is therefore an internal
+  // failure after the request: `NOT_COMMITTED` stays `NOT_COMMITTED` (RS proves absence), while
+  // `COMMITTED` and `INDETERMINATE` retain the held mutation and enter `RECONCILIATION_REQUIRED`
+  // through the merged I-SM `INDETERMINATE` row, with no output and no blind retry.
+  const stagedDefect = operation === 'CREATE'
+    && (observed.staged === null || observed.staged.length === 0 || observed.staged.length > BOUNDS.MAX_OPAQUE_BYTES);
+  const defect = bounds.length > 0 || stagedDefect;
+  if (!defect || observed.commitOutcome === 'NOT_COMMITTED') {
+    return decisionTransition(decision, requestId, operation, defect ? null : observed.staged);
+  }
+  const held = decide(snapshot, { ...event, commitOutcome: 'INDETERMINATE' });
+  if (held === null || held.result.kind !== 'INDETERMINATE') {
+    throw new M2AdapterError('FAIL_CLOSED_INTERNAL');
+  }
+  return decisionTransition(held, requestId, operation, null);
+}
+
+/**
+ * The integration entry point with the next snapshot. `input` is a closed record with exactly
+ * `request`, `snapshot` and `observation`. Returns a frozen `{ result, snapshot }`: `result` is exactly
+ * one closed C-API result record, and `snapshot` is the next I-SM snapshot the caller must hold — the
+ * `ACTIVE` snapshot after `SUCCESS`, the unchanged state after `NOT_COMMITTED`, the
+ * `RECONCILIATION_REQUIRED` snapshot carrying the held mutation after `INDETERMINATE` — or `null` after
+ * `REJECTED`, whose state is unchanged. Throws only `M2AdapterError`, and only when no closed result
+ * record can be shaped.
+ */
+export function invokeAdapterTransition(input) {
+  try {
+    return run(input);
+  } catch (error) {
+    if (error instanceof M2AdapterError) throw error;
+    throw new M2AdapterError('FAIL_CLOSED_INTERNAL');
+  }
+}
+
+/**
+ * The integration entry point. Returns exactly one closed C-API result record — the `result` member of
+ * `invokeAdapterTransition(input)` — or throws `M2AdapterError` when no closed result record can be
+ * shaped.
+ */
+export function invokeAdapter(input) {
+  return invokeAdapterTransition(input).result;
 }
 
 /** Frozen metadata: exactly the closed members the contract names. */
