@@ -131,7 +131,7 @@ jobs:
           B33B2A_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
           B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
           RUSTUP_TOOLCHAIN: 1.97.1
-          NOSTR_RELAY: ws://localhost:17777
+          NOSTR_RELAY: ws://127.0.0.1:17777
           REQUIRE_RELAY: '1'
         run: |
           npm ci
