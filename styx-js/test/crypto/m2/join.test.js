@@ -255,7 +255,7 @@ const OSCEN_SCENARIOS = {
 const MAPPING_SHA256 = 'b650f0f6cf755a0d0eadb2a86f39f5824215ff45151c23c42108c91cc22a4a48';
 const MAPPING_SCHEMA = 'styx-m2-i-join-scenario-mapping/v1';
 
-const MODULE_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../src/crypto/mls/m2/adapter.js');
+const MODULE_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../../src/crypto/mls/m2/adapter.js');
 
 const PROFILE = M2_ADAPTER.PROFILE;
 const API = M2_ADAPTER.API;
