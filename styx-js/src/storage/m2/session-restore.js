@@ -156,6 +156,8 @@ export const FAULT_PRECEDENCE = deepFreeze([
 
 const FAULT_RANK = new Map(FAULT_PRECEDENCE.map((row, index) => [row.fault, index]));
 const FAULT_ROW = new Map(FAULT_PRECEDENCE.map((row) => [row.fault, row]));
+const phaseIndexOf = (phase) => PHASES.indexOf(phase);
+const INVENTORY_PHASE_INDEX = phaseIndexOf('INVENTORY');
 
 /**
  * The twenty `negativeClassMap` rows, in the record's order.
@@ -305,12 +307,18 @@ export const FRESHNESS = deepFreeze({
 });
 
 /**
- * The vector values carried by the ratified fixtures. The observation's `vector` member is drawn from
- * this closed set, or is `null` for a store with no M2 generation (`NONE` and `LEGACY_ONLY`).
+ * The vector values carried by the ratified fixtures, and the slot state each one names in the
+ * record's `compatibilityRegistry.vectorIdentities`. A vector always describes exactly one state, so
+ * a store whose vector and authenticated selector state disagree is contradictory evidence.
  */
-const VECTOR_ALLOWLIST = deepFreeze([
-  'FMT-KAT-EMPTY', 'FMT-KAT-ACTIVE', 'FMT-KAT-HOLD', 'FMT-KAT-EMPTY-HOLD',
-]);
+const VECTOR_STATES = deepFreeze({
+  'FMT-KAT-EMPTY': 'EMPTY',
+  'FMT-KAT-ACTIVE': 'ACTIVE',
+  'FMT-KAT-HOLD': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-EMPTY-HOLD': 'RECONCILIATION_REQUIRED',
+});
+
+const VECTOR_ALLOWLIST = deepFreeze(Object.keys(VECTOR_STATES));
 
 const OBSERVATION_KEYS = deepFreeze(['faults', 'inventory', 'legacy', 'vector', 'selectorState']);
 const SELECTOR_STATES = Object.freeze(Object.keys(SUCCESS_BY_SELECTOR_STATE));
@@ -487,18 +495,18 @@ const isVersionNumber = (value) => Number.isInteger(value) && Object.is(value, M
   && !Object.is(value, -0);
 
 const bytesEqual = (left, right) => {
-  if (!isBytes(left, left.byteLength) || !isBytes(right, right.byteLength)) {
-    return false;
-  }
-  if (left.byteLength !== right.byteLength) {
-    return false;
-  }
-  for (let index = 0; index < left.byteLength; index += 1) {
-    if (left[index] !== right[index]) {
+  if (left instanceof Uint8Array && right instanceof Uint8Array) {
+    if (left.byteLength !== right.byteLength) {
       return false;
     }
+    for (let index = 0; index < left.byteLength; index += 1) {
+      if (left[index] !== right[index]) {
+        return false;
+      }
+    }
+    return true;
   }
-  return true;
+  return false;
 };
 
 const frozenBytes32 = (value) => value;
@@ -597,13 +605,16 @@ export function checkAuthenticatedCompatibility(authenticated) {
     return 'INTERNAL_VALIDATION_FAILED';
   }
   const versions = memberOf(authenticated, 'versions');
+  // C-REST §2: unknown, future, missing, mixed or downgraded versions are UNSUPPORTED_VERSION, so a
+  // version set that is not the exact closed eight-member set is an unsupported version, never an
+  // internal validator failure. §2's only INTERNAL_VALIDATION_FAILED case is a malformed argument.
   if (!hasExactMembers(versions, VERSION_KEYS)) {
-    return 'INTERNAL_VALIDATION_FAILED';
+    return 'UNSUPPORTED_VERSION';
   }
   for (const key of VERSION_KEYS) {
     const value = memberOf(versions, key);
     if (!isVersionNumber(value)) {
-      return 'INTERNAL_VALIDATION_FAILED';
+      return 'UNSUPPORTED_VERSION';
     }
     if (value !== VERSIONS[key]) {
       return 'UNSUPPORTED_VERSION';
@@ -611,14 +622,14 @@ export function checkAuthenticatedCompatibility(authenticated) {
   }
   const profile = memberOf(authenticated, 'profile');
   if (!hasExactMembers(profile, ['readerProfile', 'algorithms'])) {
-    return 'INTERNAL_VALIDATION_FAILED';
+    return 'INCOMPATIBLE_FORMAT';
   }
   if (memberOf(profile, 'readerProfile') !== READER_PROFILE) {
     return 'INCOMPATIBLE_FORMAT';
   }
   const algorithms = memberOf(profile, 'algorithms');
   if (!hasExactMembers(algorithms, ALGORITHM_KEYS)) {
-    return 'INTERNAL_VALIDATION_FAILED';
+    return 'INCOMPATIBLE_FORMAT';
   }
   for (const key of ALGORITHM_KEYS) {
     if (memberOf(algorithms, key) !== ALGORITHMS[key]) {
@@ -653,7 +664,7 @@ const invalidFacts = () => fail('INTERNAL_VALIDATION_FAILED', 'CLASSIFY');
 const recordInvalid = () => fail('RECORD_INVALID', 'RECORD_DECODE');
 const inconsistent = () => fail('REFERENCE_INCONSISTENT', 'REFERENCES');
 
-const locatorShapeValid = (locator, facts) => {
+const locatorKeyValid = (locator) => {
   if (!hasExactMembers(locator, LOCATOR_KEYS)) {
     return false;
   }
@@ -676,21 +687,19 @@ const locatorShapeValid = (locator, facts) => {
   if (memberOf(locator, 'objectIdLength') !== 0) {
     return false;
   }
-  if (!isGeneration(memberOf(locator, 'generation'))) {
-    return false;
-  }
-  if (memberOf(locator, 'generation') !== memberOf(facts, 'candidateGeneration')) {
-    return false;
-  }
-  if (!bytesEqual(memberOf(locator, 'localContextId'), memberOf(facts, 'localContextId'))) {
-    return false;
-  }
-  if (!bytesEqual(memberOf(locator, 'sha256'), memberOf(facts, 'candidateManifestKeyDigest'))) {
-    return false;
-  }
-  return memberOf(locator, 'localContextId').byteLength === 32
-    && memberOf(locator, 'sha256').byteLength === 32;
+  return isGeneration(memberOf(locator, 'generation'))
+    && isBytes(memberOf(locator, 'localContextId'), 32)
+    && isBytes(memberOf(locator, 'sha256'), 32);
 };
+
+/**
+ * The three carried equalities of a canonical kind-16 locator. A canonical locator that disagrees with
+ * the candidate it locates is `candidateManifestKeyMismatch`, a `REFERENCES` fault, and not a
+ * `RECORD_DECODE` fault: only a non-canonical key or a scope/session substitution is `RECORD_INVALID`.
+ */
+const locatorMatchesFacts = (locator, facts) => memberOf(locator, 'generation') === memberOf(facts, 'candidateGeneration')
+  && bytesEqual(memberOf(locator, 'localContextId'), memberOf(facts, 'localContextId'))
+  && bytesEqual(memberOf(locator, 'sha256'), memberOf(facts, 'candidateManifestKeyDigest'));
 
 const candidateShapeValid = (candidate, profile) => {
   if (!hasExactMembers(candidate, CANDIDATE_KEYS) || !hasExactMembers(profile, ['generation', 'bindingProfileDigest'])) {
@@ -746,17 +755,27 @@ export function validateReconciliationCandidate(facts) {
   if (typeof selectorState !== 'string' || !SELECTOR_STATES.includes(selectorState)) {
     return invalidFacts();
   }
-  if (memberOf(facts, 'candidateGeneration') === memberOf(facts, 'selectedGeneration')
-    && bytesEqual(memberOf(facts, 'keyedRoot'), memberOf(facts, 'selectedKeyedRoot'))) {
-    // A candidate that is physically the selected generation is not a separate candidate.
-    if (selectorState === 'RECONCILIATION_REQUIRED') {
-      return inconsistent();
-    }
-  } else if (selectorState !== 'RECONCILIATION_REQUIRED') {
+  const candidateEqualsSelected = memberOf(facts, 'candidateGeneration') === memberOf(facts, 'selectedGeneration')
+    && bytesEqual(memberOf(facts, 'keyedRoot'), memberOf(facts, 'selectedKeyedRoot'));
+  const generationEquals = memberOf(facts, 'candidateGeneration') === memberOf(facts, 'selectedGeneration');
+  const rootEquals = bytesEqual(memberOf(facts, 'keyedRoot'), memberOf(facts, 'selectedKeyedRoot'));
+  if (generationEquals !== rootEquals) {
+    // Neither the selected tuple nor a distinct one: an "other combination", which rejects.
     return inconsistent();
   }
-  if (!locatorShapeValid(memberOf(facts, 'locator'), facts)) {
+  if (candidateEqualsSelected && selectorState === 'RECONCILIATION_REQUIRED') {
+    // A candidate that is physically the selected generation is not a separate candidate.
+    return inconsistent();
+  }
+  if (!candidateEqualsSelected && selectorState !== 'RECONCILIATION_REQUIRED') {
+    return inconsistent();
+  }
+  const locator = memberOf(facts, 'locator');
+  if (!locatorKeyValid(locator)) {
     return recordInvalid();
+  }
+  if (!locatorMatchesFacts(locator, facts)) {
+    return inconsistent();
   }
   const candidate = memberOf(facts, 'candidate');
   const profile = memberOf(facts, 'candidateBindingProfile');
@@ -768,9 +787,12 @@ export function validateReconciliationCandidate(facts) {
     || !isBytes(memberOf(commitResult, 'originalAuthorityReference'), 32)) {
     return invalidFacts();
   }
-  // The located candidate manifest binding digest must match that candidate generation's own profile.
+  // The located candidate manifest binding digest must match that candidate generation's own profile,
+  // which the candidate repeats in its manifest binding digest and in its own binding profile digest.
   if (memberOf(profile, 'generation') !== memberOf(facts, 'candidateGeneration')
-    || !bytesEqual(memberOf(candidate, 'manifestBindingDigest'), memberOf(profile, 'bindingProfileDigest'))) {
+    || !bytesEqual(memberOf(candidate, 'manifestBindingDigest'), memberOf(profile, 'bindingProfileDigest'))
+    || !bytesEqual(memberOf(candidate, 'bindingProfileDigest'), memberOf(profile, 'bindingProfileDigest'))
+    || !bytesEqual(memberOf(candidate, 'bindingProfileDigest'), memberOf(candidate, 'manifestBindingDigest'))) {
     return inconsistent();
   }
   if (!bytesEqual(memberOf(candidate, 'manifestCiphertextDigest'), memberOf(facts, 'manifestCiphertextDigest'))
@@ -792,7 +814,7 @@ export function validateReconciliationCandidate(facts) {
   return deepFreeze({
     candidateGeneration: memberOf(facts, 'candidateGeneration'),
     bindingProfileVerified: true,
-    candidateEqualsSelected: false,
+    candidateEqualsSelected,
     authority: 'CANDIDATE_NOT_AUTHORITY',
   });
 }
@@ -817,6 +839,7 @@ function readObservation(observation) {
   if (!Array.isArray(faults)) {
     return invalidObservation();
   }
+  const snapshot = [];
   const seen = new Set();
   for (const fault of faults) {
     if (typeof fault !== 'string' || !FAULT_RANK.has(fault)) {
@@ -826,7 +849,9 @@ function readObservation(observation) {
       return invalidObservation();
     }
     seen.add(fault);
+    snapshot.push(fault);
   }
+  Object.freeze(snapshot);
   const inventory = memberOf(observation, 'inventory');
   if (typeof inventory !== 'string' || !OBSERVED_INVENTORY.includes(inventory)) {
     return invalidObservation();
@@ -852,10 +877,14 @@ function readObservation(observation) {
   if (inventory === 'M2' && vector === null) {
     return invalidObservation();
   }
-  if (faults.length > 0 && inventory !== 'M2') {
+  if (vector !== null && VECTOR_STATES[vector] !== selectorState) {
     return invalidObservation();
   }
-  return { faults, inventory, legacy, vector, selectorState };
+  if (snapshot.some((fault) => phaseIndexOf(FAULT_ROW.get(fault).phase) > INVENTORY_PHASE_INDEX)
+    && inventory !== 'M2') {
+    return invalidObservation();
+  }
+  return { faults: snapshot, inventory, legacy, vector, selectorState };
 }
 
 const reasonFor = (result) => (FAILURE_RESULTS.includes(result) || INVENTORY_RESULTS.includes(result)
@@ -951,9 +980,11 @@ function observationForFixture(row, fallback) {
   const vector = hasOwn(row, 'vector') ? row.vector : fallback.vector;
   const legacy = hasOwn(row, 'legacy') ? row.legacy : fallback.legacy;
   const faults = hasOwn(row, 'faults') ? row.faults : [];
-  const selectorState = faults.length > 0
-    ? 'ACTIVE'
-    : SELECTOR_STATE_OF_SUCCESS[row.result] ?? 'ACTIVE';
+  // The authenticated selector state is read from the store vector, never from the row's expected
+  // result: feeding the expectation back in as input would make the matrix tautological.
+  const selectorState = vector === null
+    ? (faults.length > 0 ? 'ACTIVE' : SELECTOR_STATE_OF_SUCCESS[row.result] ?? 'ACTIVE')
+    : VECTOR_STATES[vector];
   return { faults, inventory, legacy, vector, selectorState };
 }
 

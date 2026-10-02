@@ -75,6 +75,18 @@ const rejectionOf = (thunk) => {
   }
 };
 
+// The full rejection, including the deterministic message, for the raw-TypeError regression test.
+const rejectionDetailedOf = (thunk) => {
+  try {
+    thunk();
+    return null;
+  } catch (error) {
+    return {
+      name: error.name, result: error.result, stage: error.stage, message: error.message,
+    };
+  }
+};
+
 // The O-SCEN rows whose canonical clause content concerns the restore surface, as required by the
 // contract: each C-REST root is mapped to the named test that exercises it.
 const SCENARIO_TESTS = Object.freeze({
@@ -336,10 +348,55 @@ describe('the ordered outcome', () => {
       .toMatchObject({ result: 'NO_M2_STATE', stage: 'INVENTORY', exposed: false });
     expect(outcomeOf({ inventory: 'LEGACY_ONLY', legacy: true, vector: null, selectorState: 'ACTIVE' }))
       .toMatchObject({ result: 'LEGACY_ONLY', stage: 'INVENTORY', exposed: false });
-    expect(outcomeOf({ selectorState: 'EMPTY' }))
+    expect(outcomeOf({ vector: 'FMT-KAT-EMPTY', selectorState: 'EMPTY' }))
       .toMatchObject({ result: 'RESTORED_EMPTY', stage: 'EXPOSE', exposed: true });
-    expect(outcomeOf({ selectorState: 'RECONCILIATION_REQUIRED' }))
+    expect(outcomeOf({ vector: 'FMT-KAT-HOLD', selectorState: 'RECONCILIATION_REQUIRED' }))
       .toMatchObject({ result: 'RESTORED_RECONCILIATION_REQUIRED', stage: 'EXPOSE', exposed: true });
+  });
+
+  test('a fault before INVENTORY resolves at its own phase with any inventory', () => {
+    // C-REST phaseOrder puts LOCK and BUILD_ELIGIBILITY before INVENTORY: both hold before any stored
+    // byte is read, so a fresh or legacy-only profile still reports them by faultPrecedence.
+    const cases = [
+      [{ inventory: 'M2' }, 'lockUnavailable', 'LOCKED_ELSEWHERE', 'LOCK'],
+      [{ inventory: 'NONE', legacy: false, vector: null, selectorState: 'EMPTY' },
+        'lockUnavailable', 'LOCKED_ELSEWHERE', 'LOCK'],
+      [{ inventory: 'LEGACY_ONLY', legacy: true, vector: null, selectorState: 'EMPTY' },
+        'lockUnavailable', 'LOCKED_ELSEWHERE', 'LOCK'],
+      [{ inventory: 'M2' }, 'buildNotListed', 'INCOMPATIBLE_BUILD', 'BUILD_ELIGIBILITY'],
+      [{ inventory: 'NONE', legacy: false, vector: null, selectorState: 'EMPTY' },
+        'buildNotListed', 'INCOMPATIBLE_BUILD', 'BUILD_ELIGIBILITY'],
+      [{ inventory: 'LEGACY_ONLY', legacy: true, vector: null, selectorState: 'EMPTY' },
+        'buildNotListed', 'INCOMPATIBLE_BUILD', 'BUILD_ELIGIBILITY'],
+    ];
+    for (const [store, fault, result, stage] of cases) {
+      expect(outcomeOf({ ...store, faults: [fault] }))
+        .toMatchObject({ result, stage, exposed: false });
+    }
+    // A fault after INVENTORY still requires the M2 store it can only be observed on.
+    expect(outcomeOf({ inventory: 'NONE', legacy: false, vector: null, faults: ['manifestInvalid'] }))
+      .toMatchObject({ result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY', exposed: false });
+  });
+
+  test('a vector that contradicts the authenticated selector state is never a success', () => {
+    const stateOfVector = {
+      'FMT-KAT-EMPTY': 'EMPTY',
+      'FMT-KAT-ACTIVE': 'ACTIVE',
+      'FMT-KAT-HOLD': 'RECONCILIATION_REQUIRED',
+      'FMT-KAT-EMPTY-HOLD': 'RECONCILIATION_REQUIRED',
+    };
+    for (const [vector, state] of Object.entries(stateOfVector)) {
+      expect(outcomeOf({ vector, selectorState: state }))
+        .toMatchObject({ stage: 'EXPOSE', exposed: true });
+      for (const other of Object.keys(SUCCESS_BY_SELECTOR_STATE)) {
+        if (other === state) {
+          continue;
+        }
+        const outcome = outcomeOf({ vector, selectorState: other });
+        expect(outcome).toMatchObject({ result: 'INTERNAL_VALIDATION_FAILED', exposed: false });
+        expect(SUCCESS_RESULTS).not.toContain(outcome.result);
+      }
+    }
   });
 
   test('LEGACY_PRESENT is a condition on the M2 result, never a result', () => {
@@ -456,6 +513,27 @@ describe('fail-closed observation', () => {
     }
     expect(() => classifyRestore(observation({ faults }))).not.toThrow();
     expect(classifyRestore(observation({ faults })).result).toBe('INTERNAL_VALIDATION_FAILED');
+  });
+
+  test('an iterator that lies on the second pass cannot change the decision', () => {
+    // The classifier reads the fault set once, into a frozen snapshot; a Proxy or an iterator that
+    // returns different values on the second pass cannot turn a fault set into a success.
+    const real = ['lockUnavailable'];
+    const lying = new Proxy(real, {
+      get(target, key) {
+        if (key === 'length') {
+          return target.length;
+        }
+        if (key === Symbol.iterator || key === '0') {
+          return undefined;
+        }
+        return target[key];
+      },
+    });
+    const outcome = classifyRestore({ ...observation(), faults: lying });
+    expect(outcome.exposed).toBe(false);
+    expect(SUCCESS_RESULTS).not.toContain(outcome.result);
+    expect(FAILURE_RESULTS).toContain(outcome.result);
   });
 });
 
@@ -574,22 +652,20 @@ describe('the authenticated compatibility conjunction', () => {
     for (const item of cases) {
       expect(checkAuthenticatedCompatibility(item)).toBe('INTERNAL_VALIDATION_FAILED');
     }
-    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
-      readerProfile: READER_PROFILE, algorithms: { ...ALGORITHMS, futureAead: 'XCHACHA20' },
-    }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
-      readerProfile: READER_PROFILE, algorithms: null,
-    }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
-      readerProfile: READER_PROFILE, algorithms: 'AES-256-GCM',
-    }))).toBe('INTERNAL_VALIDATION_FAILED');
-    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
-      readerProfile: READER_PROFILE, algorithms: Object.assign(Object.create(null), ALGORITHMS),
-    }))).toBe(null);
+    // C-REST §2: only a malformed argument is INTERNAL_VALIDATION_FAILED. A profile or algorithm
+    // deviation is INCOMPATIBLE_FORMAT, and a version deviation is UNSUPPORTED_VERSION.
+    for (const algorithms of [{ ...ALGORITHMS, futureAead: 'XCHACHA20' }, null, 'AES-256-GCM']) {
+      expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
+        readerProfile: READER_PROFILE, algorithms,
+      }))).toBe('INCOMPATIBLE_FORMAT');
+    }
     const label = profile();
     label.labels = { recordAead: 'evil/label' };
     expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, label)))
-      .toBe('INTERNAL_VALIDATION_FAILED');
+      .toBe('INCOMPATIBLE_FORMAT');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS }, {
+      readerProfile: READER_PROFILE, algorithms: Object.assign(Object.create(null), ALGORITHMS),
+    }))).toBe(null);
     expect(checkAuthenticatedCompatibility(null)).toBe('INTERNAL_VALIDATION_FAILED');
   });
 
@@ -597,9 +673,18 @@ describe('the authenticated compatibility conjunction', () => {
     const partial = { ...VERSIONS };
     delete partial.plaintext;
     expect(checkAuthenticatedCompatibility(authenticated(partial, profile())))
-      .toBe('INTERNAL_VALIDATION_FAILED');
+      .toBe('UNSUPPORTED_VERSION');
     expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS, format: 0 }, profile())))
       .toBe('UNSUPPORTED_VERSION');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS, futureVersion: 1 }, profile())))
+      .toBe('UNSUPPORTED_VERSION');
+    expect(checkAuthenticatedCompatibility(authenticated({ ...VERSIONS, format: '2' }, profile())))
+      .toBe('UNSUPPORTED_VERSION');
+    // A mismatch the store cannot explain away still classifies at AUTHENTICATED_COMPATIBILITY.
+    expect(FAULT_PRECEDENCE.some((row) => row.fault === 'authenticatedVersionUnknownOrMixed'
+      && row.phase === 'AUTHENTICATED_COMPATIBILITY' && row.result === 'UNSUPPORTED_VERSION')).toBe(true);
+    expect(FAULT_PRECEDENCE.some((row) => row.fault === 'authenticatedProfileIncompatible'
+      && row.phase === 'AUTHENTICATED_COMPATIBILITY' && row.result === 'INCOMPATIBLE_FORMAT')).toBe(true);
   });
 });
 
@@ -649,14 +734,22 @@ describe('reconciliation candidate and physical parent', () => {
     for (const mutate of [
       (item) => { item.locator.recordKind = 17; },
       (item) => { item.locator.objectIdLength = 1; },
-      (item) => { item.locator.generation = 8n; },
-      (item) => { item.locator.localContextId = bytes(0x12); },
-      (item) => { item.locator.sha256 = bytes(0x22); },
       (item) => { item.locator.scope = 'NOT_A_SCOPE'; },
       (item) => { delete item.locator.sha256; },
     ]) {
       expect(rejectionOf(() => validateReconciliationCandidate(withFacts(mutate))))
         .toEqual({ name: 'M2RestoreError', result: 'RECORD_INVALID', stage: 'RECORD_DECODE' });
+    }
+  });
+
+  test('a canonical locator that disagrees with its candidate is REFERENCE_INCONSISTENT', () => {
+    for (const mutate of [
+      (item) => { item.locator.generation = 8n; },
+      (item) => { item.locator.localContextId = bytes(0x12); },
+      (item) => { item.locator.sha256 = bytes(0x22); },
+    ]) {
+      expect(rejectionOf(() => validateReconciliationCandidate(withFacts(mutate))))
+        .toEqual({ name: 'M2RestoreError', result: 'REFERENCE_INCONSISTENT', stage: 'REFERENCES' });
     }
   });
 
@@ -668,6 +761,74 @@ describe('reconciliation candidate and physical parent', () => {
       expect(rejectionOf(() => validateReconciliationCandidate(withFacts(mutate))).result)
         .toBe('REFERENCE_INCONSISTENT');
     }
+  });
+
+  test("the candidate's own binding profile digest must agree with its manifest binding digest", () => {
+    // The located candidate manifest binding digest must equal that candidate generation's own
+    // BINDING_PROFILE: the candidate states it twice, and a contradiction in either statement rejects.
+    expect(rejectionOf(() => validateReconciliationCandidate(
+      withFacts((item) => { item.candidate.bindingProfileDigest = bytes(0x99); }),
+    )).result).toBe('REFERENCE_INCONSISTENT');
+    expect(rejectionOf(() => validateReconciliationCandidate(
+      withFacts((item) => { item.candidate.bindingProfileDigest = zeros(); }),
+    )).result).toBe('REFERENCE_INCONSISTENT');
+    expect(rejectionOf(() => validateReconciliationCandidate(
+      withFacts((item) => { item.candidateBindingProfile.bindingProfileDigest = bytes(0x99); }),
+    )).result).toBe('REFERENCE_INCONSISTENT');
+    expect(() => validateReconciliationCandidate(withFacts(() => {})))
+      .not.toThrow();
+  });
+
+  test('a selected/candidate tuple that is neither equal nor different rejects', () => {
+    // candidateRules.selectedRelation: "every other combination rejects". A tuple whose generation
+    // agrees with the selected generation but whose keyed root does not, and the converse, is neither.
+    expect(rejectionOf(() => validateReconciliationCandidate(
+      withFacts((item) => { item.selectedGeneration = 7n; }),
+    )).result).toBe('REFERENCE_INCONSISTENT');
+    expect(rejectionOf(() => validateReconciliationCandidate(
+      withFacts((item) => {
+        item.selectedGeneration = 9n;
+        item.selectedKeyedRoot = bytes(0x41);
+      }),
+    )).result).toBe('REFERENCE_INCONSISTENT');
+    // The verified result states the relation it verified instead of a literal.
+    const distinct = validateReconciliationCandidate(withFacts((item) => {
+      item.candidate.resultStatus = 'COMMITTED';
+      item.selectedGeneration = 9n;
+      item.selectedKeyedRoot = bytes(0x61);
+    }));
+    expect(distinct.candidateEqualsSelected).toBe(false);
+    const same = validateReconciliationCandidate(withFacts((item) => {
+      item.candidate.resultStatus = 'COMMITTED';
+      item.selectedGeneration = 7n;
+      item.selectedKeyedRoot = bytes(0x41);
+      item.selectorState = 'ACTIVE';
+    }));
+    expect(same.candidateEqualsSelected).toBe(true);
+  });
+
+  test('a malformed fact set is a closed rejection, never a raw TypeError', () => {
+    for (const value of [null, undefined, 0, 'x']) {
+      for (const key of ['locator.localContextId', 'locator.sha256', 'keyedRoot']) {
+        const [outer, inner] = key.split('.');
+        const result = rejectionDetailedOf(() => validateReconciliationCandidate(withFacts((item) => {
+          if (inner === undefined) {
+            item[outer] = value;
+          } else {
+            item[outer][inner] = value;
+          }
+        })));
+        // A non-canonical key is RECORD_INVALID at RECORD_DECODE; any other malformed member is
+        // INTERNAL_VALIDATION_FAILED at CLASSIFY. Neither path may be a TypeError with free text.
+        expect(result.name).toBe('M2RestoreError');
+        expect(FAILURE_RESULTS).toContain(result.result);
+        expect(PHASES).toContain(result.stage);
+        expect(result.message).toBe(`${result.result}@${result.stage}`);
+      }
+    }
+    expect(rejectionOf(() => validateReconciliationCandidate(
+      withFacts((item) => { item.keyedRoot = null; }),
+    ))).toEqual({ name: 'M2RestoreError', result: 'INTERNAL_VALIDATION_FAILED', stage: 'CLASSIFY' });
   });
 
   test('an unresolved hold must name the selector generation and keyed root as physical parent', () => {
