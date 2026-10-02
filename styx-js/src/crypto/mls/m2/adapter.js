@@ -709,7 +709,21 @@ function readObservation(operation, observation) {
   }
   if (selfUpdate && value.stagedOutput !== null) {
     const stagedShape = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
-    if (stagedShape.error) return { error: stagedShape.error };
+    if (stagedShape.error) {
+      // C-API `/rules/internalFailureBoundary`: after COMMITTED the adapter emits success or retains
+      // reconciliation evidence and never emits REJECTED. An escrow the owning layer cannot hand over
+      // after a commit report is therefore held, exactly as an absent, empty or over-bound one is;
+      // before a commit proof the same defect stays the P01 rejection the closure fixes. `CREATE` keeps
+      // the merged I-JOIN behaviour unchanged.
+      if (value.commitOutcome !== 'COMMITTED') return { error: stagedShape.error };
+      return {
+        error: null,
+        facts,
+        commitOutcome: value.commitOutcome,
+        operationIdentity: value.operationIdentity,
+        staged: null,
+      };
+    }
     staged = stagedShape.staged;
   }
   return { error: null, facts, commitOutcome: value.commitOutcome, operationIdentity: value.operationIdentity, staged };
@@ -802,12 +816,15 @@ function shapeDecision(decision, requestId, operation, staged, heldOutput = null
     // `SELF_UPDATED` release the staged escrow of the mutation just applied; `RECONCILED_COMMITTED`
     // returns the escrow of the mutation that was already committed, under its original success code.
     // Nothing else is ever released, and a released member is never the caller's own buffer.
-    const expectedMember = typeof result.outputKind === 'string' ? OUTPUT_MEMBER_BY_KIND[result.outputKind] : undefined;
+    const expectedMember = typeof result.outputKind === 'string' ? OUTPUT_MEMBER_BY_KIND[result.outputKind] : null;
     if (result.code === 'RECONCILED_COMMITTED') {
-      const released = heldOutput !== null && expectedMember !== undefined && heldOutput.member === expectedMember
-        ? releasedOutput(heldOutput) : null;
-      extra.output = freezeData({ originalSuccessCode: result.originalSuccessCode, originalOutput: released });
-    } else if (expectedMember !== undefined && staged !== null && staged.member === expectedMember) {
+      if (expectedMember !== null && (heldOutput === null || heldOutput.member !== expectedMember)) return null;
+      extra.output = freezeData({
+        originalSuccessCode: result.originalSuccessCode,
+        originalOutput: expectedMember === null ? null : releasedOutput(heldOutput),
+      });
+    } else if (expectedMember !== null) {
+      if (staged === null || staged.member !== expectedMember) return null;
       extra.output = freezeData(releasedOutput(staged));
     }
   }
@@ -826,7 +843,13 @@ function decisionTransition(decision, requestId, operation, staged, heldOutput =
   if (decision.result.kind === 'REJECTED') {
     return rejectedTransition(requestId, operation, decision.result.stateBefore, decision.result.code);
   }
-  return transitionResult(shapeDecision(decision, requestId, operation, staged, heldOutput), decision.snapshot);
+  const shaped = shapeDecision(decision, requestId, operation, staged, heldOutput);
+  // A decision that names an escrow it cannot release is an inconsistent injected observation: refuse it
+  // fail-closed at P01 rather than emit a result that silently released nothing (review finding M3).
+  if (shaped === null) {
+    return rejectedTransition(requestId, operation, decision.result.stateBefore, 'INVALID_REQUEST');
+  }
+  return transitionResult(shaped, decision.snapshot);
 }
 
 function run(input) {
@@ -878,9 +901,17 @@ function run(input) {
       applicableErrors: [],
       facts: observed.facts,
       reconciliationRef: readMemberString(request.input, 'reconciliationRef'),
-      commitOutcome: observed.commitOutcome,
     };
-    if (observed.responseEmission !== null) event.responseEmission = observed.responseEmission;
+    // The RS proof belongs to the held mutation. With none held it is forwarded to no one: the ratified
+    // answer is then the state gate (`CAPI-G008`/`CAPI-G016` `NO_RECONCILIATION_PENDING`, C-MUT
+    // `/reconciliation/afterHoldClearedRepeat`), which an AP repeating the reconcile after the hold was
+    // cleared reaches with durable RS evidence. Forwarding a proof the state cannot own would make the
+    // merged core refuse the emission at P01, ahead of the P05 gate, and answer a well-formed repeat with
+    // `INVALID_REQUEST` instead of the ratified code.
+    if (snapshot !== null && snapshot.state === 'RECONCILIATION_REQUIRED') {
+      event.commitOutcome = observed.commitOutcome;
+      if (observed.responseEmission !== null) event.responseEmission = observed.responseEmission;
+    }
     const decision = decide(snapshot, event);
     if (decision === null) {
       return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));

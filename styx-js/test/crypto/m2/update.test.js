@@ -506,6 +506,50 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
     expect(code(result)).toBe('INVALID_REQUEST');
   });
 
+  test('a staged update the owning layer reports NOT_COMMITTED releases nothing even when bytes are handed over', () => {
+    const transition = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}),
+      snapshot: active(),
+      observation: updateObservation({ commitOutcome: 'NOT_COMMITTED' }),
+    });
+    assertEnvelope(transition.result, 'NOT_COMMITTED', ['commitOutcome']);
+    expect(transition.result.successCode).toBe(undefined);
+    expect(transition.result.output).toBe(undefined);
+    expect(transition.result.stateBefore).toBe('ACTIVE');
+    expect(transition.result.stateAfter).toBe('ACTIVE');
+    expect(transition.snapshot.state).toBe('ACTIVE');
+    expect(transition.snapshot.held).toBe(null);
+  });
+
+  test('a staged update the owning layer leaves INDETERMINATE applies nothing even when bytes are handed over', () => {
+    const transition = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}),
+      snapshot: active(),
+      observation: updateObservation({ commitOutcome: 'INDETERMINATE' }),
+    });
+    assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(transition.result.successCode).toBe(undefined);
+    expect(transition.result.output).toBe(undefined);
+    expect(transition.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    expect(transition.snapshot.held.expectedSuccessCode).toBe('SELF_UPDATED');
+  });
+
+  test('an escrow the owning layer cannot hand over after a commit report is held, never rejected', () => {
+    for (const stagedOutput of [null, { protectedCommitBytes: 7 }, { embeddedTreeWelcome: WELCOME }]) {
+      const transition = invokeAdapterTransition({
+        request: request('SELF_UPDATE', {}),
+        snapshot: active(),
+        observation: updateObservation({ stagedOutput }),
+      });
+      assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+      expect(transition.result.commitOutcome).toBe('INDETERMINATE');
+      expect(transition.result.output).toBe(undefined);
+      expect(transition.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+      expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    }
+  });
+
   test('a staged update with no active session is refused', () => {
     const result = invoke('SELF_UPDATE', empty(), updateObservation({}));
     assertEnvelope(result, 'REJECTED', ['error']);
@@ -563,6 +607,11 @@ describe('I-UPD ambiguity reconciles through RECONCILE_INDETERMINATE', () => {
     expect(transition.result.successCode).toBe('RECONCILED_COMMITTED');
     expect(transition.result.stateAfter).toBe('ACTIVE');
     expect(transition.result.output.originalOutput.protectedCommitBytes).toEqual(STAGED);
+    // The ratified C-API defines no `responseEmission` result member, so the adapter drops the merged
+    // core's internal marker; the retained hold is observable through `invokeAdapterTransition`, whose
+    // snapshot keeps `RECONCILIATION_REQUIRED` with the terminal evidence committed (C-MUT
+    // `/reconciliation/interruptedCommittedReconciliationRepeat`).
+    expect(transition.result.responseEmission).toBe(undefined);
     expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
     expect(transition.snapshot.held.terminalEvidenceStatus).toBe('COMMITTED');
   });
@@ -637,6 +686,18 @@ describe('I-UPD ambiguity reconciles through RECONCILE_INDETERMINATE', () => {
     expect(code(emp)).toBe('NO_RECONCILIATION_PENDING');
     expect(emp.stateAfter).toBe('EMPTY');
   });
+
+  test('a repeat after the hold was cleared answers the ratified code even with durable RS evidence', () => {
+    const durable = { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null };
+    const clearedPending = reconcile(active(), durable, heldRef('cleared-hold'));
+    expect(code(clearedPending)).toBe('NO_RECONCILIATION_PENDING');
+    expect(clearedPending.stateAfter).toBe('ACTIVE');
+    const clearedEmpty = reconcile(empty(), durable, heldRef('cleared-hold'));
+    expect(code(clearedEmpty)).toBe('NO_RECONCILIATION_PENDING');
+    expect(clearedEmpty.stateAfter).toBe('EMPTY');
+    const interrupted = reconcile(active(), { ...durable, responseEmission: 'INTERRUPTED' }, heldRef('cleared-hold'));
+    expect(code(interrupted)).toBe('NO_RECONCILIATION_PENDING');
+  });
 });
 const withoutMember = (record, key) => {
   const copy = { ...record };
@@ -678,11 +739,15 @@ describe('I-UPD fail-closed request validation', () => {
     ['missing observation member', request('SELF_UPDATE', {}), active(), withoutMember(okUpdate, 'stagedOutput'), 'INVALID_REQUEST'],
     ['out-of-set update form', request('SELF_UPDATE', {}), active(), { ...okUpdate, updateForm: 'PROPOSAL_FREE' }, 'UNKNOWN_VALUE'],
     ['malformed staged output with an unsupported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: 'x' } }, 'INVALID_REQUEST'],
+    ['non-closed reconciliation observation', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), { ...reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), extra: 1 }, 'UNKNOWN_FIELD'],
+    ['missing reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withoutMember(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'responseEmission'), 'INVALID_REQUEST'],
+    ['accessor reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withAccessor(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'heldOutput'), 'INVALID_REQUEST'],
+    ['held escrow withheld from a reconciliation with no proof', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null }), 'INVALID_REQUEST'],
     ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
     ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
-    ['staged output of the wrong member', request('SELF_UPDATE', {}), active(), updateObservation({ stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
-    ['staged output of the wrong type', request('SELF_UPDATE', {}), active(), updateObservation({ stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
+    ['staged output of the wrong member without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'INVALID_REQUEST'],
+    ['staged output of the wrong type without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
     ['out-of-set commit outcome', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE' }, 'UNKNOWN_VALUE'],
     ['missing operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: null }, 'INVALID_REQUEST'],
     ['empty operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: '' }, 'INVALID_REQUEST'],
@@ -711,6 +776,11 @@ describe('I-UPD fail-closed request validation', () => {
     expect(validateAdapterRequest(request('RECONCILE_INDETERMINATE', { reconciliationRef: longRef })))
       .toEqual({ ok: false, code: 'VALUE_OUT_OF_RANGE' });
     expect(validateAdapterRequest(request('SELF_UPDATE', {}))).toEqual({ ok: true, code: null });
+    // The bound itself is exactly the contract bound: 256 characters are admissible, 257 are not.
+    expect(validateAdapterRequest(request('RECONCILE_INDETERMINATE', {
+      reconciliationRef: 'r'.repeat(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS),
+    }))).toEqual({ ok: true, code: null });
+    expect(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS).toBe(256);
     expect(Object.isFrozen(validateAdapterRequest(request('SELF_UPDATE', {})))).toBe(true);
   });
 
@@ -754,6 +824,29 @@ describe('I-UPD total precedence and the internal failure boundary', () => {
       .toBe('UNSUPPORTED_PROFILE');
   });
 
+  test('the P05 state gate is decided after the earlier P01-P04 errors and before the later P06-P10 ones', () => {
+    const malformed = invokeAdapter({
+      request: request('SELF_UPDATE', {}), snapshot: empty(), observation: { ...updateObservation({}), extra: 1 },
+    });
+    expect(code(malformed)).toBe('UNKNOWN_FIELD');
+    const overBound = invokeAdapter({
+      request: request('SELF_UPDATE', {}, { requestId: 'r'.repeat(M2_ADAPTER.BOUNDS.MAX_REQUEST_ID_CHARS + 1) }),
+      snapshot: empty(),
+      observation: updateObservation({}),
+    });
+    expect(code(overBound)).toBe('NO_ACTIVE_SESSION');
+  });
+
+  test('a durable committed proof with no pending hold reaches the ratified gate code, not a P01 defect', () => {
+    const result = invokeAdapter({
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }),
+      snapshot: active(),
+      observation: reconcileObservation({ heldOutput: null }),
+    });
+    expect(code(result)).toBe('NO_RECONCILIATION_PENDING');
+    expect(result.stateBefore).toBe('ACTIVE');
+    expect(result.stateAfter).toBe('ACTIVE');
+  });
   test('a request-level error preempts an otherwise valid operation', () => {
     const drifted = request('SELF_UPDATE', {}, { profile: { ...PROFILE, stage: 'other-profile' } });
     const result = invokeAdapter({
@@ -907,7 +1000,7 @@ describe('I-UPD seeded property sweep', () => {
       expect(result.requestId).toMatch(/^req-iupd-/);
       if (result.kind === 'SUCCESS') {
         expect(observation.updateForm).toBe('SUPPORTED');
-        expect(M2_ADAPTER.COMMIT_OUTCOMES).toContain(observation.commitOutcome);
+        expect(observation.commitOutcome).toBe('COMMITTED');
         expect(result.commitOutcome).toBe('COMMITTED');
         expect(result.successCode).toBe('SELF_UPDATED');
       }
@@ -948,6 +1041,7 @@ describe('I-UPD seeded property sweep', () => {
         expect(M2_ADAPTER.RESULT_KINDS).toContain(result.kind);
         expect(result.stateBefore).toBe(snapshot.state);
         if (result.kind === 'SUCCESS') {
+          expect(observation.commitOutcome).toBe('COMMITTED');
           expect(result.successCode).toBe('RECONCILED_COMMITTED');
           expect(held).not.toBe(null);
           expect(result.output.originalSuccessCode).toBe(held.expectedSuccessCode);
