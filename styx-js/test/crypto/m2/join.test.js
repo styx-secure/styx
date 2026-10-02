@@ -268,6 +268,14 @@ const KIND_MEMBERS = {
   INDETERMINATE: ['commitOutcome', 'reconciliationRef', 'originalStateBefore'],
   REJECTED: ['error'],
 };
+/** C-API `response/byKind`: the members each kind requires, without the common ones. */
+const KIND_REQUIRED = {
+  SUCCESS: ['successCode'],
+  NO_CHANGE: ['successCode'],
+  NOT_COMMITTED: ['commitOutcome'],
+  INDETERMINATE: ['commitOutcome', 'reconciliationRef', 'originalStateBefore'],
+  REJECTED: ['error'],
+};
 
 const request = (operation, input, overrides = {}) => ({
   api: API,
@@ -601,7 +609,7 @@ describe('I-JOIN create and Welcome', () => {
   test('JOIN_WELCOME returns its four closed outcomes with no output', () => {
     const cases = [
       ['MATCHED', 'COMMITTED', 'SUCCESS', 'JOINED'],
-      ['MATCHED', 'NOT_COMMITTED', 'NOT_COMMITTED', 'NOT_COMMITTED'],
+      ['MATCHED', 'INDETERMINATE', 'INDETERMINATE', 'INDETERMINATE'],
       ['KEY_PACKAGE_ALREADY_CONSUMED', null, 'REJECTED', 'KEY_PACKAGE_ALREADY_CONSUMED'],
       ['WELCOME_NO_MATCHING_KEY_PACKAGE', null, 'REJECTED', 'WELCOME_NO_MATCHING_KEY_PACKAGE'],
       ['UNSUPPORTED_ONBOARDING', null, 'REJECTED', 'UNSUPPORTED_ONBOARDING'],
@@ -612,9 +620,21 @@ describe('I-JOIN create and Welcome', () => {
         snapshot: empty(),
         observation: joinObservation(keyPackage, commitOutcome),
       });
-      expect(`${keyPackage}:${result.kind}:${code(result)}`).toBe(`${keyPackage}:${kind}:${expected}`);
+      const observed = result.kind === 'REJECTED'
+        ? result.error.code
+        : (result.successCode ?? result.commitOutcome);
+      expect(`${keyPackage}:${result.kind}:${observed}`).toBe(`${keyPackage}:${kind}:${expected}`);
       expect(Object.hasOwn(result, 'output')).toBe(false);
     }
+    const notCommitted = invokeAdapter({
+      request: request('JOIN_WELCOME', { embeddedTreeWelcome: new Uint8Array([0x02]) }),
+      snapshot: empty(),
+      observation: joinObservation('MATCHED', 'NOT_COMMITTED'),
+    });
+    expect(notCommitted.kind).toBe('NOT_COMMITTED');
+    expect(notCommitted.commitOutcome).toBe('NOT_COMMITTED');
+    expect(notCommitted.stateAfter).toBe('EMPTY');
+    expect(Object.hasOwn(notCommitted, 'output')).toBe(false);
   });
 
   test('JOIN_WELCOME with INDETERMINATE keeps the KeyPackage decision without blind retry', () => {
@@ -633,7 +653,7 @@ describe('I-JOIN fail-closed request validation', () => {
   const cases = [
     ['unknown request member', request('RESTORE', {}, { extra: 1 }), {}, 'UNKNOWN_FIELD'],
     ['missing request member', { api: API, operation: 'RESTORE', requestId: 'r', profile: { ...PROFILE }, bindingRef: new Uint8Array([0x01]) }, {}, 'INVALID_REQUEST'],
-    ['non-plain request', 'not-a-record', {}, 'INVALID_REQUEST'],
+    ['non-plain request', 'not-a-record', {}, 'THROWS'],
     ['foreign api constant', request('RESTORE', {}, { api: 'styx-m2-session-adapter/v2' }), {}, 'UNSUPPORTED_API_VERSION'],
     ['profile member drifted by one character', request('RESTORE', {}, { profile: { ...PROFILE, topology: 'three-member-direct' } }), {}, 'UNSUPPORTED_PROFILE'],
     ['missing profile member', request('RESTORE', {}, { profile: { adapterApi: API } }), {}, 'UNSUPPORTED_PROFILE'],
@@ -654,6 +674,13 @@ describe('I-JOIN fail-closed request validation', () => {
   ];
 
   test.each(cases)('%s rejects with its exact code', (_label, req, observation, expected) => {
+    if (expected === 'THROWS') {
+      // A request that is not a record at all carries no readable `requestId` and `operation`, so no
+      // closed C-API result record can be shaped: the module's single error class is the only outcome.
+      expect(() => invokeAdapter({ request: req, snapshot: empty(), observation }))
+        .toThrow(M2AdapterError);
+      return;
+    }
     const result = invokeAdapter({ request: req, snapshot: empty(), observation });
     expect(result.kind).toBe('REJECTED');
     expect(result.error.code).toBe(expected);
@@ -661,7 +688,7 @@ describe('I-JOIN fail-closed request validation', () => {
     expect(Object.hasOwn(result, 'output')).toBe(false);
   });
 
-  test('an accessor request member is rejected without invoking it', () => {
+  test('an accessor request member is a malformed field and is never invoked', () => {
     let reads = 0;
     const req = request('RESTORE', {});
     Object.defineProperty(req, 'bindingRef', {
@@ -672,7 +699,7 @@ describe('I-JOIN fail-closed request validation', () => {
       },
     });
     const result = invokeAdapter({ request: req, snapshot: empty(), observation: restoreObservation({}) });
-    expect(code(result)).toBe('UNKNOWN_FIELD');
+    expect(code(result)).toBe('INVALID_REQUEST');
     expect(reads).toBe(0);
   });
 
@@ -761,16 +788,33 @@ describe('I-JOIN total precedence', () => {
     expect(code(noStored)).toBe('NO_STORED_SESSION');
   });
 
-  test('an owning-layer rejection at P08 preempts a P09 outcome', () => {
-    const result = invokeRestore(restoreObservation({
-      faults: ['manifestOrRootMismatch', 'authenticatedVersionUnknownOrMixed'],
+  test('an owning-layer rejection at P08 preempts a P09 owning-layer outcome', () => {
+    const p08 = invokeRestore(restoreObservation({
+      faults: ['recordAuthenticationFailed', 'manifestOrRootMismatch'],
     }));
-    const classification = classifyRestore({
-      faults: ['manifestOrRootMismatch', 'authenticatedVersionUnknownOrMixed'],
+    const p08Classification = classifyRestore({
+      faults: ['recordAuthenticationFailed', 'manifestOrRootMismatch'],
       inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE',
     });
-    expect(classification.result).toBe('MANIFEST_INVALID');
-    expect(code(result)).toBe('AUTHENTICATED_STATE_INCONSISTENT');
+    expect(p08Classification.result).toBe('MANIFEST_INVALID');
+    expect(code(p08)).toBe('AUTHENTICATED_STATE_INCONSISTENT');
+    const p09 = invokeRestore(restoreObservation({ faults: ['selectorHeaderVersionUnknown'] }));
+    expect(code(p09)).toBe('STORED_SESSION_INCOMPATIBLE');
+  });
+
+  test('a P03 defect and a P05 gate each preempt the owning-layer outcome', () => {
+    const drifted = invokeAdapter({
+      request: request('RESTORE', {}, { profile: { ...PROFILE, topology: 'three-member-direct' } }),
+      snapshot: empty(),
+      observation: restoreObservation({ faults: ['recordAuthenticationFailed'] }),
+    });
+    expect(code(drifted)).toBe('UNSUPPORTED_PROFILE');
+    const gated = invokeAdapter({
+      request: request('RESTORE', {}),
+      snapshot: active(),
+      observation: restoreObservation({ faults: ['selectorHeaderVersionUnknown'] }),
+    });
+    expect(code(gated)).toBe('SESSION_ALREADY_EXISTS');
   });
 
   test('an over-limit requestId at P06 preempts a P10 success', () => {
@@ -809,29 +853,33 @@ describe('I-JOIN result envelope shape', () => {
     }),
   ];
 
-  test('every result carries exactly the common members plus the members its kind permits', () => {
+  test('every result carries the common members, only members its kind permits, and the required ones', () => {
     const kinds = new Set();
     for (const sample of samples) {
       const result = sample();
       kinds.add(result.kind);
       const allowed = [...RESULT_COMMON_MEMBERS, ...KIND_MEMBERS[result.kind]];
-      expect(Object.keys(result).sort()).toEqual([...new Set(allowed)].sort());
+      const required = [...RESULT_COMMON_MEMBERS, ...KIND_REQUIRED[result.kind]];
+      for (const member of required) expect(Object.hasOwn(result, member)).toBe(true);
+      expect(Object.keys(result).every((key) => allowed.includes(key))).toBe(true);
       expect(result.api).toBe(API);
       expect(result.operation).toBeTruthy();
       expect(M2_ADAPTER.RESULT_KINDS).toContain(result.kind);
       expect(M2_ADAPTER.STATES).toContain(result.stateBefore);
       expect(M2_ADAPTER.STATES).toContain(result.stateAfter);
       expect(Object.isFrozen(result)).toBe(true);
-      if (result.kind === 'REJECTED') {
-        expect(Object.keys(result.error)).toEqual(['code']);
-        expect(M2_ADAPTER.ERROR_CODES).toContain(result.error.code);
-        expect(M2_ADAPTER.CODE_TO_KIND[result.error.code]).toBe('REJECTED');
-      }
       if (result.kind === 'SUCCESS') {
         expect(M2_ADAPTER.SUCCESS_CODES).toContain(result.successCode);
         expect(M2_ADAPTER.CODE_TO_KIND[result.successCode]).toBe('SUCCESS');
         expect(M2_ADAPTER.OUTPUT_BY_SUCCESS_CODE[result.successCode].length === 0)
           .toBe(Object.hasOwn(result, 'output') === false);
+      }
+      if (result.kind === 'REJECTED') {
+        expect(Object.keys(result.error)).toEqual(['code']);
+        expect(M2_ADAPTER.ERROR_CODES).toContain(result.error.code);
+        expect(M2_ADAPTER.CODE_TO_KIND[result.error.code]).toBe('REJECTED');
+        expect(Object.hasOwn(result, 'successCode')).toBe(false);
+        expect(Object.hasOwn(result, 'commitOutcome')).toBe(false);
       }
     }
     expect([...kinds].sort()).toEqual(['INDETERMINATE', 'NOT_COMMITTED', 'REJECTED', 'SUCCESS']);
