@@ -17,9 +17,9 @@ import {
   M2AdapterError,
   invokeAdapter,
   validateAdapterRequest,
-} from '../../src/crypto/mls/m2/adapter.js';
-import { createAdapterSnapshot, transitionAdapter } from '../../src/crypto/mls/m2/state-machine.js';
-import { FRESH_WORKER_FIXTURES, classifyRestore } from '../../src/storage/m2/session-restore.js';
+} from '../../../src/crypto/mls/m2/adapter.js';
+import { createAdapterSnapshot, transitionAdapter } from '../../../src/crypto/mls/m2/state-machine.js';
+import { FRESH_WORKER_FIXTURES, classifyRestore } from '../../../src/storage/m2/session-restore.js';
 
 // The ratified O-SCEN scenario ids this card's implemented clause pointers are mapped to, by the
 // clause-identity rule of M2-I-JOIN-SCENARIO-MAPPING.json (see the evidence bundle). The whole blind
@@ -884,7 +884,7 @@ describe('I-JOIN immutability and purity', () => {
   });
 
   test('the module exposes exactly its four documented names', async () => {
-    const namespace = await import('../../src/crypto/mls/m2/adapter.js');
+    const namespace = await import('../../../src/crypto/mls/m2/adapter.js');
     expect(Object.keys(namespace).sort()).toEqual([
       'M2AdapterError', 'M2_ADAPTER', 'invokeAdapter', 'validateAdapterRequest',
     ]);
