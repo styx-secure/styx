@@ -386,6 +386,20 @@ function byteLengthOf(bytes) {
 }
 
 /**
+ * Read one own property descriptor, or `null` when reading it raises. A hostile record can carry a proxy
+ * trap that throws while its own member is being inspected (review finding p13a): the throw is a defect
+ * of the record being read, never an error this module propagates, so every own-descriptor read goes
+ * through this helper.
+ */
+function readOwnDescriptor(record, key) {
+  try {
+    return Object.getOwnPropertyDescriptor(record, key);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read a closed record: every own key must be an allowed member, every allowed member must be present,
  * every member must be a plain own data property. No accessor is ever invoked: members are read from
  * their property descriptors. Returns `{ error, values }` with a C-API error code.
@@ -618,7 +632,7 @@ function readHeldOutput(value) {
   if (typeof member !== 'string' || !OUTPUT_MEMBERS.includes(member)) {
     return { error: 'UNKNOWN_FIELD', heldOutput: null };
   }
-  const descriptor = Object.getOwnPropertyDescriptor(value, member);
+  const descriptor = readOwnDescriptor(value, member);
   if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
     return { error: 'INVALID_REQUEST', heldOutput: null };
   }
@@ -781,11 +795,40 @@ function decideRestore(snapshot, restoreObservation) {
   return { decision: isGate ? gate : null, code: RESTORE_DISPOSITIONS[outcome.result] };
 }
 
-/** The one C-API output member the held mutation's C-MUT escrow kind fixes, or `null` for `NONE`. */
-function heldOutputMemberOf(snapshot) {
-  const held = snapshot !== null && typeof snapshot === 'object' ? snapshot.held : null;
-  if (held === null || typeof held !== 'object') return null;
-  return OUTPUT_MEMBER_BY_KIND[held.outputKind] ?? null;
+/**
+ * The hold's own C-MUT facts, read exactly once from the snapshot's own descriptors. The hold decides
+ * which escrow a reconciliation may release, so it is read the way the merged I-SM core reads it —
+ * through property descriptors, never by plain property access, which a proxy snapshot can answer
+ * differently for the same member (review finding p13b). Returns the decoded facts and the C-API code of
+ * a hold this layer cannot read, never a value the caller can change between two reads.
+ */
+function readHeldFacts(snapshot) {
+  const unreadable = { error: 'INVALID_REQUEST', outputKind: null, expectedSuccessCode: null, selectedCandidateRef: null };
+  if (snapshot === null || typeof snapshot !== 'object') return unreadable;
+  const descriptor = readOwnDescriptor(snapshot, 'held');
+  if (!descriptor || !Object.hasOwn(descriptor, 'value')) return unreadable;
+  const held = descriptor.value;
+  if (held === null) return { error: null, outputKind: null, expectedSuccessCode: null, selectedCandidateRef: null };
+  if (!isPlainObject(held)) return unreadable;
+  let descriptors;
+  try {
+    descriptors = Object.getOwnPropertyDescriptors(held);
+  } catch {
+    return unreadable;
+  }
+  const member = (key) => (descriptors[key] && Object.hasOwn(descriptors[key], 'value') ? descriptors[key].value : null);
+  return {
+    error: null,
+    outputKind: member('outputKind'),
+    expectedSuccessCode: member('expectedSuccessCode'),
+    selectedCandidateRef: member('selectedCandidateRef'),
+  };
+}
+
+/** The one C-API output member the hold's decoded C-MUT escrow kind fixes, or `null` for `NONE`. */
+function heldOutputMemberOf(heldFacts) {
+  if (heldFacts.error !== null || typeof heldFacts.outputKind !== 'string') return null;
+  return OUTPUT_MEMBER_BY_KIND[heldFacts.outputKind] ?? null;
 }
 
 /**
@@ -795,32 +838,43 @@ function heldOutputMemberOf(snapshot) {
  * independent of the outcome: the held mutation is what the SS reports as held, and the readback of a
  * committed, a terminal or a still ambiguous hold is read against the same hold.
  */
-function heldOutputShapeCode(snapshot, heldOutput) {
-  const expected = heldOutputMemberOf(snapshot);
+function heldOutputShapeCode(heldFacts, heldOutput) {
+  const expected = heldOutputMemberOf(heldFacts);
   if (expected === null) return heldOutput === null ? null : 'INVALID_REQUEST';
   if (heldOutput === null || heldOutput.member !== expected) return 'INVALID_REQUEST';
   // Cross-check the two ratified transcriptions: wherever `/response/outputBySuccessCode` fixes a single
   // released member for the held row, it must be the member the hold's C-MUT escrow kind names. They
   // disagree only for escrow kinds the success table leaves empty (`JOINED` releases the welcome, not a
   // success output), so the guard fires exactly where both speak and stays silent where only one does.
-  const byCode = snapshot === null || snapshot.held === null
-    ? undefined : OUTPUT_BY_SUCCESS_CODE[snapshot.held.expectedSuccessCode];
+  const byCode = heldFacts.error === null ? OUTPUT_BY_SUCCESS_CODE[heldFacts.expectedSuccessCode] : undefined;
   if (Array.isArray(byCode) && byCode.length === 1 && byCode[0] !== expected) return 'INVALID_REQUEST';
   if (REFERENCE_OUTPUT_MEMBERS.includes(expected)) {
     // The hold fixes the winner: releasing whatever reference the observation hands over would report an
     // escrow the held mutation does not own.
-    const fixed = snapshot !== null && snapshot.held !== null ? snapshot.held.selectedCandidateRef : null;
+    const fixed = heldFacts.selectedCandidateRef;
     return typeof fixed === 'string' && heldOutput.ref === fixed ? null : 'INVALID_REQUEST';
   }
   // The released escrow is bounded exactly like the staged one, or a hold created for an escrow the direct
-  // path refused could be cleared in two calls by presenting an empty or over-bound one.
-  return heldOutput.length > 0 && heldOutput.length <= BOUNDS.MAX_OPAQUE_BYTES ? null : 'INVALID_REQUEST';
+  // path refused could be cleared in two calls by presenting an empty or over-bound one. The length is
+  // re-measured here, after the merged core has read the snapshot: a resizable backing buffer the caller
+  // grows between the observation read and this decision must not be able to widen what is released
+  // (review finding p13c).
+  const length = byteLengthOf(heldOutput.bytes);
+  return length > 0 && length <= BOUNDS.MAX_OPAQUE_BYTES && length === heldOutput.length ? null : 'INVALID_REQUEST';
 }
 
-/** The closed C-API `output` record of one released staged or held escrow. */
+/** The closed C-API `output` record of one released staged or held escrow, or `null` when it cannot be copied. */
 function releasedOutput(output) {
   if (REFERENCE_OUTPUT_MEMBERS.includes(output.member)) return { [output.member]: output.ref };
-  return { [output.member]: new Uint8Array(output.bytes) };
+  // The copy is the moment the escrow leaves this module, so the bound is re-checked here against the
+  // buffer's own intrinsic length: the length the observation read validated is not the length a
+  // resizable buffer necessarily has when the copy is taken (review finding p13c). A length that changed,
+  // emptied or grew past the bound releases nothing.
+  const length = byteLengthOf(output.bytes);
+  if (length !== output.length || length <= 0 || length > BOUNDS.MAX_OPAQUE_BYTES) return null;
+  const copy = new Uint8Array(output.bytes);
+  if (copy.length !== length) return null;
+  return { [output.member]: copy };
 }
 
 function shapeDecision(decision, requestId, operation, staged, heldOutput = null) {
@@ -846,13 +900,17 @@ function shapeDecision(decision, requestId, operation, staged, heldOutput = null
     const expectedMember = typeof result.outputKind === 'string' ? OUTPUT_MEMBER_BY_KIND[result.outputKind] : null;
     if (result.code === 'RECONCILED_COMMITTED') {
       if (expectedMember !== null && (heldOutput === null || heldOutput.member !== expectedMember)) return null;
+      const released = expectedMember === null ? null : releasedOutput(heldOutput);
+      if (expectedMember !== null && released === null) return null;
       extra.output = freezeData({
         originalSuccessCode: result.originalSuccessCode,
-        originalOutput: expectedMember === null ? null : releasedOutput(heldOutput),
+        originalOutput: released,
       });
     } else if (expectedMember !== null) {
       if (staged === null || staged.member !== expectedMember) return null;
-      extra.output = freezeData(releasedOutput(staged));
+      const released = releasedOutput(staged);
+      if (released === null) return null;
+      extra.output = freezeData(released);
     }
   }
   return resultRecord(...base, extra);
@@ -961,7 +1019,12 @@ function run(input) {
       return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
     }
     const candidates = [...bounds];
-    const heldShape = heldOutputShapeCode(snapshot, observed.heldOutput);
+    // The hold is decoded once, through descriptors, and the same decoded facts close the injected held
+    // escrow: a snapshot that answers `held` differently to a property access than to a descriptor read
+    // cannot pick the escrow this reconciliation releases (review finding p13b).
+    const heldFacts = readHeldFacts(snapshot);
+    if (heldFacts.error !== null) candidates.push(heldFacts.error);
+    const heldShape = heldFacts.error === null ? heldOutputShapeCode(heldFacts, observed.heldOutput) : null;
     if (heldShape !== null) candidates.push(heldShape);
     if (decision.result.kind === 'REJECTED') candidates.push(decision.result.code);
     if (candidates.length > 0) {
@@ -999,8 +1062,15 @@ function run(input) {
   // internal failure after the request: `NOT_COMMITTED` stays `NOT_COMMITTED` (RS proves absence), while
   // `COMMITTED` and `INDETERMINATE` retain the held mutation and enter `RECONCILIATION_REQUIRED`
   // through the merged I-SM `INDETERMINATE` row, with no output and no blind retry.
+  //
+  // The escrow is re-measured here, at the point this layer decides whether to release it: a resizable
+  // backing buffer can be grown by a trap that fires while the merged core reads the snapshot, after the
+  // length the observation read recorded. A length that changed, emptied or grew past the bound is
+  // released by nothing, exactly like an absent or over-bound one (review finding p13c).
+  const escrowLength = observed.staged === null ? -1 : byteLengthOf(observed.staged.bytes);
   const stagedDefect = (operation === 'CREATE' || operation === 'SELF_UPDATE')
-    && (observed.staged === null || observed.staged.length === 0 || observed.staged.length > BOUNDS.MAX_OPAQUE_BYTES);
+    && (observed.staged === null || escrowLength <= 0 || escrowLength > BOUNDS.MAX_OPAQUE_BYTES
+      || escrowLength !== observed.staged.length);
   const defect = bounds.length > 0 || stagedDefect;
   if (!defect || observed.commitOutcome === 'NOT_COMMITTED') {
     return decisionTransition(decision, requestId, operation, defect ? null : observed.staged);
@@ -1025,8 +1095,12 @@ export function invokeAdapterTransition(input) {
   try {
     return run(input);
   } catch (error) {
-    if (error instanceof M2AdapterError) throw error;
-    throw new M2AdapterError('FAIL_CLOSED_INTERNAL');
+    // A hostile input can throw an `M2AdapterError` of its own — a proxy trap handing back an instance
+    // whose `code` was overwritten after construction. The thrown error is therefore rebuilt from its
+    // code and never passed through as it arrived: `M2AdapterError` closes every code it does not
+    // recognise to `FAIL_CLOSED_INTERNAL`, and its message is the code, never text chosen by the caller
+    // (review finding p13a).
+    throw new M2AdapterError(error instanceof M2AdapterError ? error.code : 'FAIL_CLOSED_INTERNAL');
   }
 }
 

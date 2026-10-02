@@ -1179,3 +1179,268 @@ describe('I-UPD seeded property sweep', () => {
     expect(first.length).toBe(40);
   });
 });
+
+// The release path closes the escrow twice: once when the observation is read, and once when the copy
+// leaves this module. A resizable backing buffer and a proxy record are the two ways a caller can make
+// those two reads disagree, so both are driven here through the public entry point only.
+const resizable = (values, maxByteLength) => {
+  if (typeof ArrayBuffer.prototype.resize !== 'function') return null;
+  const buffer = new ArrayBuffer(values.length, { maxByteLength: Math.max(values.length, maxByteLength) });
+  const view = new Uint8Array(buffer);
+  view.set(values);
+  return { view, resize: (bytes) => buffer.resize(bytes) };
+};
+
+// The escrow is grown only once the observation record has already been read: the staged-output proxy
+// flips `escrowRead` while the module decodes it, and the snapshot proxy then resizes the buffer on the
+// next own-keys read, which is the merged core reading the snapshot inside the decision. The two reads
+// of the same buffer therefore disagree by construction, not by a call count that happens to line up.
+const growEscrowDuringDecision = (values, grownBytes) => {
+  const located = resizable(values, grownBytes);
+  if (located === null) return null;
+  const state = { escrowRead: false, grown: false };
+  const stagedOutput = new Proxy({ protectedCommitBytes: located.view }, {
+    getOwnPropertyDescriptor(target, key) {
+      const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+      if (key === 'protectedCommitBytes') state.escrowRead = true;
+      return descriptor;
+    },
+  });
+  const snapshot = new Proxy({ state: 'ACTIVE', held: null }, {
+    ownKeys(target) {
+      if (state.escrowRead && !state.grown) {
+        located.resize(grownBytes);
+        state.grown = true;
+      }
+      return Reflect.ownKeys(target);
+    },
+  });
+  return { stagedOutput, snapshot, state, view: located.view };
+};
+
+const heldRefOf = (id) => heldRef(id);
+
+describe('I-UPD the release path re-checks the escrow it hands over', () => {
+  test('the runtime under test provides the resizable buffers these probes drive', () => {
+    expect(typeof ArrayBuffer.prototype.resize).toBe('function');
+  });
+
+  test('an escrow grown after the observation read is held, and released by nothing', () => {
+    const grown = growEscrowDuringDecision([0x11, 0x22, 0x33, 0x44], 2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
+    expect(grown).not.toBe(null);
+    const transition = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}),
+      snapshot: grown.snapshot,
+      observation: updateObservation({ stagedOutput: grown.stagedOutput }),
+    });
+    // The trap really fired: the buffer did grow between the two reads of the same escrow.
+    expect(grown.state.grown).toBe(true);
+    expect(grown.view.length).toBe(2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
+    // ... and the adapter holds the mutation instead of releasing an escrow it did not validate.
+    assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(transition.result.commitOutcome).toBe('INDETERMINATE');
+    expect(transition.result.output).toBe(undefined);
+    expect(transition.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+  });
+
+  test('an escrow that shrank after the observation read is held too, never released short', () => {
+    const shrunk = growEscrowDuringDecision([0x11, 0x22, 0x33, 0x44], 2);
+    expect(shrunk).not.toBe(null);
+    const transition = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}),
+      snapshot: shrunk.snapshot,
+      observation: updateObservation({ stagedOutput: shrunk.stagedOutput }),
+    });
+    expect(shrunk.state.grown).toBe(true);
+    expect(shrunk.view.length).toBe(2);
+    assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(transition.result.output).toBe(undefined);
+    expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+  });
+
+  test('a held escrow grown after the observation read refuses the reconciliation and keeps the hold', () => {
+    const located = resizable([0x51, 0x52, 0x53, 0x54], 2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
+    expect(located).not.toBe(null);
+    const hold = heldUpdate('held-upd-toctou');
+    const reference = heldRefOf('held-upd-toctou');
+    const state = { escrowRead: false, grown: false };
+    const heldOutput = new Proxy({ protectedCommitBytes: located.view }, {
+      getOwnPropertyDescriptor(target, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        if (key === 'protectedCommitBytes') state.escrowRead = true;
+        return descriptor;
+      },
+    });
+    // The growth is driven by the merged core reading the snapshot, exactly as in the staged case above.
+    const snapshot = new Proxy(hold, {
+      ownKeys(target) {
+        if (state.escrowRead && !state.grown) {
+          located.resize(2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
+          state.grown = true;
+        }
+        return Reflect.ownKeys(target);
+      },
+    });
+    const truthful = reconcile(hold, reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), reference);
+    expect(truthful.kind).toBe('SUCCESS');
+    const result = reconcile(snapshot, {
+      commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput,
+    }, reference);
+    expect(state.grown).toBe(true);
+    assertEnvelope(result, 'REJECTED', ['error']);
+    expect(code(result)).toBe('INVALID_REQUEST');
+    // Nothing was released and the hold survives the refusal: the state is unchanged, not cleared.
+    expect(result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    expect(result.output).toBe(undefined);
+  });
+
+  test('a snapshot that answers `held` to a property read differently than to a descriptor read cannot pick the escrow', () => {
+    const hold = heldUpdate('held-upd-lying');
+    const reference = heldRefOf('held-upd-lying');
+    const other = holdOf('JOIN_WELCOME', empty(), 'held-upd-lying');
+    // The lie the merged core's own descriptor-based inspection never sees: a plain `snapshot.held` that
+    // hands back a hold of a different escrow kind (here the escrow-less Welcome hold).
+    const lying = new Proxy({ state: 'RECONCILIATION_REQUIRED', held: hold.held }, {
+      get(target, key) { return key === 'held' ? other.held : Reflect.get(target, key); },
+    });
+    const observation = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } });
+    const truthful = reconcile(hold, observation, reference);
+    const throughLie = reconcile(lying, observation, reference);
+    expect(truthful.kind).toBe('SUCCESS');
+    expect(truthful.successCode).toBe('RECONCILED_COMMITTED');
+    expect(truthful.output.originalSuccessCode).toBe('SELF_UPDATED');
+    // The hold the code reads is the one the descriptor read decoded, so the lie changes nothing.
+    expect(throughLie.kind).toBe('SUCCESS');
+    expect(throughLie.successCode).toBe(truthful.successCode);
+    expect(throughLie.output.originalSuccessCode).toBe(truthful.output.originalSuccessCode);
+    expect([...throughLie.output.originalOutput.protectedCommitBytes]).toEqual([...STAGED]);
+    expect(throughLie.stateAfter).toBe(truthful.stateAfter);
+    // And the escrow the hold fixes is still required: with no escrow supplied the same snapshot refuses.
+    expect(code(reconcile(lying, reconcileObservation({ heldOutput: null }), reference))).toBe('INVALID_REQUEST');
+  });
+
+  test('a released escrow is the bounded copy of exactly the bytes the observation validated', () => {
+    const source = bytes(0x0a, 0x0b, 0x0c, 0x0d);
+    const transition = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}),
+      snapshot: active(),
+      observation: updateObservation({ stagedOutput: { protectedCommitBytes: source } }),
+    });
+    expect(transition.result.kind).toBe('SUCCESS');
+    expect(transition.result.successCode).toBe('SELF_UPDATED');
+    expect([...transition.result.output.protectedCommitBytes]).toEqual([...source]);
+    expect(transition.result.output.protectedCommitBytes).not.toBe(source);
+    expect(Object.isFrozen(transition.result.output)).toBe(true);
+  });
+
+  test('an over-bound escrow is released by nothing on either path', () => {
+    const over = new Uint8Array(M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES + 1);
+    // After a commit report an escrow the owning layer cannot hand over is held, never released: an
+    // over-bound one is a handover failure, not a rejection of the mutation RS already committed.
+    const staged = invokeAdapterTransition({
+      request: request('SELF_UPDATE', {}),
+      snapshot: active(),
+      observation: updateObservation({ stagedOutput: { protectedCommitBytes: over } }),
+    });
+    assertEnvelope(staged.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(staged.result.output).toBe(undefined);
+    expect(staged.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    // A held escrow past the bound is a P01 observation defect, and the hold survives the refusal.
+    const held = invokeAdapterTransition({
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRefOf('held-upd-over') }),
+      snapshot: heldUpdate('held-upd-over'),
+      observation: reconcileObservation({ heldOutput: { protectedCommitBytes: over } }),
+    });
+    assertEnvelope(held.result, 'REJECTED', ['error']);
+    expect(code(held.result)).toBe('INVALID_REQUEST');
+    expect(held.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+  });
+});
+
+describe('I-UPD hostile inputs never widen the closed vocabulary', () => {
+  const forged = () => {
+    const error = new M2AdapterError('UNKNOWN_FIELD');
+    error.code = 'NOT_A_CAPI_CODE';
+    error.message = 'text chosen by the input';
+    throw error;
+  };
+
+  test('an M2AdapterError a hostile record throws never escapes with a code outside the closed set', () => {
+    const hostile = new Proxy({ protectedCommitBytes: bytes(0x11) }, { getOwnPropertyDescriptor: forged });
+    const reference = heldRefOf('held-upd-hostile');
+    let thrown = null;
+    let result = null;
+    try {
+      result = reconcile(heldUpdate('held-upd-hostile'), {
+        commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: hostile,
+      }, reference);
+    } catch (error) {
+      thrown = error;
+    }
+    if (thrown !== null) {
+      expect(thrown).toBeInstanceOf(M2AdapterError);
+      expect(M2_ADAPTER.ERROR_CODES).toContain(thrown.code);
+      expect(thrown.message).toBe(thrown.code);
+    } else {
+      assertEnvelope(result, 'REJECTED', ['error']);
+      expect(M2_ADAPTER.ERROR_CODES).toContain(code(result));
+      expect(result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    }
+  });
+
+  test('the same hostile throw on the outer input record stays a closed code as well', () => {
+    const hostileInput = new Proxy({
+      request: request('SELF_UPDATE', {}),
+      snapshot: active(),
+      observation: updateObservation({}),
+    }, { getOwnPropertyDescriptor: forged });
+    let thrown = null;
+    try {
+      invokeAdapterTransition(hostileInput);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(M2AdapterError);
+    expect(M2_ADAPTER.ERROR_CODES).toContain(thrown.code);
+    expect(thrown.message).toBe(thrown.code);
+    expect(thrown.code).not.toBe('NOT_A_CAPI_CODE');
+  });
+
+  test('every thrown error the public surface can raise carries exactly one closed C-API code', () => {
+    const cases = [
+      new Proxy({}, { getOwnPropertyDescriptor: forged }),
+      new Proxy({ state: 'ACTIVE', held: null }, { ownKeys: forged }),
+      new Proxy({ state: 'ACTIVE', held: null }, { getOwnPropertyDescriptor: forged }),
+    ];
+    for (const snapshot of cases) {
+      for (const probe of [
+        () => invokeAdapterTransition({
+          request: request('SELF_UPDATE', {}), snapshot, observation: updateObservation({}),
+        }).result,
+        () => invokeAdapterTransition({
+          request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRefOf('held-upd-x') }),
+          snapshot,
+          observation: reconcileObservation({}),
+        }).result,
+        () => invokeAdapter({ request: request('SELF_UPDATE', {}), snapshot, observation: updateObservation({}) }),
+      ]) {
+        let result = null;
+        let thrown = null;
+        try {
+          result = probe();
+        } catch (error) {
+          thrown = error;
+        }
+        if (thrown === null) {
+          expect(M2_ADAPTER.RESULT_KINDS).toContain(result.kind);
+          if (result.kind === 'REJECTED') expect(M2_ADAPTER.ERROR_CODES).toContain(code(result));
+        } else {
+          expect(thrown).toBeInstanceOf(M2AdapterError);
+          expect(M2_ADAPTER.ERROR_CODES).toContain(thrown.code);
+          expect(thrown.message).toBe(thrown.code);
+        }
+      }
+    }
+  });
+});
