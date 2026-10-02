@@ -25,11 +25,17 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Dependencies: committed workspace `Cargo.lock`, always built with `--locked`
 - `termion` (git dependency of the upstream `cli` workspace member, recorded in
   `Cargo.lock` as `gitlab.redox-os.org/Jezza/termion.git#9e35f915…`): fetched
-  by exact commit from `github.com/redox-os/termion` (merge-request 151 head),
-  checked against commit `9e35f915e54ead30d02cf67c56eb56709f569ffd` and tree
+  by exact commit from `github.com/redox-os/termion` (ref
+  `refs/merge-requests/151/head`), checked against commit
+  `9e35f915e54ead30d02cf67c56eb56709f569ffd` and tree
   `fa273e9ef3642f0363327e9ad9d0be4c4a4565b4`, and served to cargo from a local
   mirror. `gitlab.redox-os.org` is never contacted: inside the container it
   resolves to `127.0.0.1`, so any attempt fails instead of silently succeeding.
+  `build.sh` refuses a `Cargo.lock` whose `gitlab.redox-os.org` source is not
+  exactly this commit.
+- Not pinned by this repository: the wasm32 `rust-std` component fetched by
+  `rustup target add` (rustup checks it against its channel manifest). Any drift
+  is caught by `./verify.sh` against the committed bytes.
 - Enabled upstream feature: `extensions-draft`
 
 These tool and `termion` pins supersede the "pinned only indirectly" paragraph

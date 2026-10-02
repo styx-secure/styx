@@ -2,7 +2,7 @@
 # Build the styx-kdf-wasm artifact reproducibly, via Docker.
 # Requires: Docker. No host Rust toolchain needed.
 #
-# Every input to the build is pinned:
+# Pinned build inputs:
 #   - the crate source                    (this directory, committed)
 #   - the Rust toolchain                  (RUST_IMAGE, by manifest digest — the
 #                                          SAME image pinned by the canonical
@@ -12,6 +12,9 @@
 #                                          must equal the Cargo.lock wasm-bindgen)
 #   - binaryen / wasm-opt                 (release binary, sha256-verified)
 #   - the whole dependency graph          (./Cargo.lock, built with --locked)
+# Not pinned by this repository: the wasm32 `rust-std` component that `rustup target
+# add` fetches (verified by rustup against its channel manifest) — any drift is caught
+# by verify.sh against the committed bytes.
 #
 # wasm-pack runs with `--mode no-install`: it uses only the hash-verified tools on
 # PATH and can neither download a tool nor fall back to `cargo install`.
@@ -43,33 +46,45 @@ mkdir -p "$WORK/crate/src"
 cp "$HERE/Cargo.toml" "$WORK/crate/"
 cp "$HERE/src/lib.rs" "$WORK/crate/src/"
 
-# Cargo.lock round-trip. Steady state: build --locked against the vendored
-# lockfile. First run (or after a dependency bump): bootstrap one and commit it.
-LOCKED="no"
+# Container runs as root (rustup/cargo own /usr/local/cargo); it chowns the work tree
+# back to us on the way out so the cleanup trap never meets root-owned files.
+DOCKER_ARGS=(
+  --rm -v "$WORK:/work" -w /work/crate
+  -e HOST_UID="$(id -u)"
+  -e HOST_GID="$(id -g)"
+)
+
+# Cargo.lock round-trip. Steady state: build --locked against the vendored lockfile.
+# First run (or after a dependency bump): bootstrap — resolve a fresh lockfile, export
+# it to this directory, then hold it to the same pins as a committed one.
 if [[ -f "$HERE/Cargo.lock" ]]; then
   cp "$HERE/Cargo.lock" "$WORK/crate/Cargo.lock"
-  LOCKED="yes"
-  locked_bindgen="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' "$HERE/Cargo.lock")"
-  [[ "$locked_bindgen" == "$WASM_BINDGEN_VERSION" ]] || {
-    echo "ERROR: Cargo.lock wasm-bindgen is '$locked_bindgen' but the pinned wasm-bindgen-cli is $WASM_BINDGEN_VERSION." >&2
-    exit 1
-  }
 else
-  echo "WARNING: no vendored Cargo.lock — bootstrap build, one will be generated." >&2
+  echo "WARNING: no vendored Cargo.lock — bootstrap: resolving one with cargo generate-lockfile." >&2
+  docker run "${DOCKER_ARGS[@]}" "$RUST_IMAGE" bash -c '
+    set -euo pipefail
+    trap "chown -R ${HOST_UID}:${HOST_GID} /work" EXIT
+    cargo generate-lockfile
+  '
+  cp "$WORK/crate/Cargo.lock" "$HERE/Cargo.lock"
+  echo "Bootstrapped Cargo.lock into $HERE — review and commit it alongside the artifact."
 fi
+locked_bindgen="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' "$HERE/Cargo.lock")"
+[[ "$locked_bindgen" == "$WASM_BINDGEN_VERSION" ]] || {
+  echo "ERROR: Cargo.lock wasm-bindgen is '$locked_bindgen' but the pinned wasm-bindgen-cli is $WASM_BINDGEN_VERSION." >&2
+  echo "       Update WASM_BINDGEN_VERSION/WASM_BINDGEN_SHA256 in build.sh to match, then rebuild." >&2
+  exit 1
+}
 
 echo "Building styx-kdf-wasm in $RUST_IMAGE ..."
-docker run --rm -v "$WORK:/work" -w /work/crate \
+docker run "${DOCKER_ARGS[@]}" \
   -e WASM_PACK_VERSION="$WASM_PACK_VERSION" \
   -e WASM_PACK_SHA256="$WASM_PACK_SHA256" \
   -e WASM_BINDGEN_VERSION="$WASM_BINDGEN_VERSION" \
   -e WASM_BINDGEN_SHA256="$WASM_BINDGEN_SHA256" \
   -e BINARYEN_VERSION="$BINARYEN_VERSION" \
   -e BINARYEN_SHA256="$BINARYEN_SHA256" \
-  -e LOCKED="$LOCKED" \
   -e CARGO_TEST="${CARGO_TEST:-0}" \
-  -e HOST_UID="$(id -u)" \
-  -e HOST_GID="$(id -g)" \
   "$RUST_IMAGE" bash -c '
     set -euo pipefail
     trap "chown -R ${HOST_UID}:${HOST_GID} /work" EXIT
@@ -89,28 +104,23 @@ docker run --rm -v "$WORK:/work" -w /work/crate \
     echo "${BINARYEN_SHA256}  /tmp/by.tar.gz" | sha256sum -c -
     tar -xzf /tmp/by.tar.gz -C /tmp
     install "/tmp/binaryen-${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
-    [[ "$(wasm-bindgen --version)" == "wasm-bindgen ${WASM_BINDGEN_VERSION}" ]]
-    [[ "$(wasm-opt --version)" == "wasm-opt version ${BINARYEN_VERSION#version_} (${BINARYEN_VERSION})" ]]
+    # Required: under --mode no-install wasm-pack would silently SKIP a missing
+    # wasm-opt rather than fail, so its presence and version are enforced here.
+    [[ "$(wasm-bindgen --version)" == "wasm-bindgen ${WASM_BINDGEN_VERSION}" ]] || {
+      echo "ERROR: wasm-bindgen on PATH is not the pinned ${WASM_BINDGEN_VERSION}." >&2; exit 1; }
+    [[ "$(wasm-opt --version)" == "wasm-opt version ${BINARYEN_VERSION#version_} (${BINARYEN_VERSION})" ]] || {
+      echo "ERROR: wasm-opt on PATH is not the pinned ${BINARYEN_VERSION}." >&2; exit 1; }
     if [[ "$CARGO_TEST" == "1" ]]; then
-      if [[ "$LOCKED" == "yes" ]]; then cargo test --locked; else cargo test; fi
+      cargo test --locked
     fi
-    if [[ "$LOCKED" == "yes" ]]; then
-      wasm-pack build --mode no-install --target web -- --locked
-    else
-      wasm-pack build --mode no-install --target web
-    fi
+    wasm-pack build --mode no-install --target web -- --locked
   '
 
-# Drift guard (steady state) / lockfile export (bootstrap).
-if [[ "$LOCKED" == "yes" ]]; then
-  cmp -s "$HERE/Cargo.lock" "$WORK/crate/Cargo.lock" || {
-    echo "ERROR: Cargo.lock changed despite --locked — pin drift; refusing the artifact." >&2
-    exit 1
-  }
-else
-  cp "$WORK/crate/Cargo.lock" "$HERE/Cargo.lock"
-  echo "Bootstrapped Cargo.lock into $HERE — commit it alongside the artifact."
-fi
+# Drift guard: the lockfile (committed or freshly bootstrapped) must survive --locked.
+cmp -s "$HERE/Cargo.lock" "$WORK/crate/Cargo.lock" || {
+  echo "ERROR: Cargo.lock changed despite --locked — pin drift; refusing the artifact." >&2
+  exit 1
+}
 
 echo "Copying artifact into $OUT_DIR ..."
 mkdir -p "$OUT_DIR"

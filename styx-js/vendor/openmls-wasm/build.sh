@@ -2,7 +2,7 @@
 # Rebuild the vendored OpenMLS-WASM artifact from source, reproducibly, via Docker.
 # Requires: Docker. No host Rust toolchain needed.
 #
-# Every input to the build is pinned:
+# Pinned build inputs:
 #   - the OpenMLS source commit          (OPENMLS_COMMIT, see PROVENANCE.md)
 #   - the Rust toolchain                 (RUST_IMAGE, by manifest digest)
 #   - wasm-pack                          (release binary, sha256-verified)
@@ -12,7 +12,10 @@
 #   - the whole dependency graph         (./Cargo.lock, built with --locked)
 #   - termion (git dep of the upstream `cli` workspace member), fetched by exact
 #     commit from GITHUB_TERMION_URL and served to cargo from a local mirror; the
-#     lockfile's gitlab.redox-os.org host is never contacted (see PROVENANCE.md)
+#     lockfile's gitlab.redox-os.org host is never contacted (see README.md)
+# Not pinned by this repository: the wasm32 `rust-std` component that `rustup target
+# add` fetches (verified by rustup against its channel manifest) — any drift is caught
+# by verify.sh against the committed bytes.
 #
 # wasm-pack runs with `--mode no-install`: it uses only the hash-verified tools on
 # PATH and can neither download a tool nor fall back to `cargo install`.
@@ -38,7 +41,8 @@ BINARYEN_SHA256="3dc677006555b355ea2da5e82602065a161d5e83eaefd3f759afa00b96e8321
 
 # termion: Cargo.lock records it as
 #   git+https://gitlab.redox-os.org/Jezza/termion.git?branch=windows-support#<TERMION_COMMIT>
-# The same commit is published on GitHub (redox-os/termion, merge request 151 head).
+# The same commit is published on GitHub (redox-os/termion, ref
+# refs/merge-requests/151/head).
 LOCKED_TERMION_URL="https://gitlab.redox-os.org/Jezza/termion.git"
 GITHUB_TERMION_URL="https://github.com/redox-os/termion.git"
 TERMION_BRANCH="windows-support"
@@ -50,6 +54,27 @@ OUT_DIR="${OUT_DIR:-$HERE}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Refuse a lockfile whose wasm-bindgen differs from the pinned CLI, or whose termion
+# git source differs from the mirrored pin, before any build starts.
+check_lockfile() {
+  local lock="$1" locked_bindgen termion_sources
+  locked_bindgen="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' "$lock")"
+  [[ "$locked_bindgen" == "$WASM_BINDGEN_VERSION" ]] || {
+    echo "ERROR: Cargo.lock wasm-bindgen is '$locked_bindgen' but the pinned wasm-bindgen-cli is $WASM_BINDGEN_VERSION." >&2
+    echo "       Update WASM_BINDGEN_VERSION/WASM_BINDGEN_SHA256 in build.sh to match, then rebuild." >&2
+    exit 1
+  }
+  termion_sources="$(grep -c '^source = "git+https://gitlab.redox-os.org/' "$lock" || true)"
+  if [[ "$termion_sources" != "0" ]]; then
+    grep -qxF "source = \"git+${LOCKED_TERMION_URL}?branch=${TERMION_BRANCH}#${TERMION_COMMIT}\"" "$lock" \
+      && [[ "$termion_sources" == "1" ]] || {
+      echo "ERROR: Cargo.lock gitlab.redox-os.org source is not exactly termion @ $TERMION_COMMIT;" >&2
+      echo "       update the TERMION_* pins in build.sh and test.sh to match." >&2
+      exit 1
+    }
+  fi
+}
+
 echo "Cloning openmls @ $OPENMLS_COMMIT ..."
 git clone --quiet https://github.com/openmls/openmls.git "$WORK/openmls"
 git -C "$WORK/openmls" checkout --quiet "$OPENMLS_COMMIT"
@@ -60,58 +85,72 @@ git -C "$WORK/openmls" checkout --quiet "$OPENMLS_COMMIT"
 echo "Applying Styx patch (patch/lib.rs) ..."
 cp "$HERE/patch/lib.rs" "$WORK/openmls/openmls-wasm/src/lib.rs"
 
-# Cargo.lock round-trip. openmls is a cargo workspace, so the lockfile lives at the
-# workspace root. Steady state: build --locked against the vendored lockfile. First run
-# (or after an OPENMLS_COMMIT bump): bootstrap a fresh one and commit it.
-LOCKED="no"
-if [[ -f "$HERE/Cargo.lock" ]]; then
-  cp "$HERE/Cargo.lock" "$WORK/openmls/Cargo.lock"
-  LOCKED="yes"
-  locked_bindgen="$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print; exit }' "$HERE/Cargo.lock")"
-  [[ "$locked_bindgen" == "$WASM_BINDGEN_VERSION" ]] || {
-    echo "ERROR: Cargo.lock wasm-bindgen is '$locked_bindgen' but the pinned wasm-bindgen-cli is $WASM_BINDGEN_VERSION." >&2
-    exit 1
-  }
-else
-  echo "WARNING: no vendored Cargo.lock — bootstrap build, one will be generated." >&2
-fi
-
 # Local, commit-verified termion mirror. Cargo is pointed at it with a git
 # url.insteadOf rewrite inside the container; Cargo.lock is not modified.
 echo "Mirroring termion @ $TERMION_COMMIT from $GITHUB_TERMION_URL ..."
 MIRROR="$WORK/mirrors/termion.git"
 git init --quiet --bare "$MIRROR"
-git -C "$MIRROR" fetch --quiet --no-tags "$GITHUB_TERMION_URL" "$TERMION_COMMIT"
-[[ "$(git -C "$MIRROR" rev-parse --verify "${TERMION_COMMIT}^{commit}")" == "$TERMION_COMMIT" ]]
-[[ "$(git -C "$MIRROR" rev-parse --verify "${TERMION_COMMIT}^{tree}")" == "$TERMION_TREE" ]] || {
+git --git-dir="$MIRROR" fetch --quiet --no-tags "$GITHUB_TERMION_URL" "$TERMION_COMMIT"
+[[ "$(git --git-dir="$MIRROR" rev-parse --verify "${TERMION_COMMIT}^{commit}")" == "$TERMION_COMMIT" ]] || {
+  echo "ERROR: termion commit $TERMION_COMMIT not obtained from $GITHUB_TERMION_URL." >&2
+  exit 1
+}
+[[ "$(git --git-dir="$MIRROR" rev-parse --verify "${TERMION_COMMIT}^{tree}")" == "$TERMION_TREE" ]] || {
   echo "ERROR: termion $TERMION_COMMIT does not have the pinned tree $TERMION_TREE." >&2
   exit 1
 }
-git -C "$MIRROR" update-ref "refs/heads/$TERMION_BRANCH" "$TERMION_COMMIT"
-git -C "$MIRROR" symbolic-ref HEAD "refs/heads/$TERMION_BRANCH"
+git --git-dir="$MIRROR" update-ref "refs/heads/$TERMION_BRANCH" "$TERMION_COMMIT"
+git --git-dir="$MIRROR" symbolic-ref HEAD "refs/heads/$TERMION_BRANCH"
 
-echo "Building openmls-wasm in $RUST_IMAGE ..."
-# The container builds as root (rustup/cargo own /usr/local/cargo), so it chowns the
+# Common container setup. gitlab.redox-os.org resolves to a closed local port inside
+# the container, so any attempt to reach it fails instead of silently succeeding.
+# The container runs as root (rustup/cargo own /usr/local/cargo), so it chowns the
 # work tree back to us on the way out — otherwise root-owned build output would make
 # the cleanup trap fail and leak temp dirs on every run.
-# gitlab.redox-os.org resolves to a closed local port inside the container, so any
-# attempt to reach it fails instead of silently succeeding.
-docker run --rm -v "$WORK:/work" -w /work \
-  --add-host "gitlab.redox-os.org:127.0.0.1" \
+DOCKER_ARGS=(
+  --rm -v "$WORK:/work"
+  --add-host "gitlab.redox-os.org:127.0.0.1"
+  -e LOCKED_TERMION_URL="$LOCKED_TERMION_URL"
+  -e CARGO_NET_GIT_FETCH_WITH_CLI=true
+  -e HOST_UID="$(id -u)"
+  -e HOST_GID="$(id -g)"
+)
+# shellcheck disable=SC2016  # expanded inside the container
+GIT_SETUP='git config --global --add safe.directory /work/mirrors/termion.git
+    git config --global "url.file:///work/mirrors/termion.git.insteadOf" "${LOCKED_TERMION_URL}"'
+
+# Cargo.lock round-trip. openmls is a cargo workspace, so the lockfile lives at the
+# workspace root. Steady state: build --locked against the vendored lockfile. First run
+# (or after an OPENMLS_COMMIT bump): bootstrap — resolve a fresh lockfile, export it to
+# this directory, then hold it to the same pins as a committed one.
+if [[ -f "$HERE/Cargo.lock" ]]; then
+  cp "$HERE/Cargo.lock" "$WORK/openmls/Cargo.lock"
+else
+  echo "WARNING: no vendored Cargo.lock — bootstrap: resolving one with cargo generate-lockfile." >&2
+  docker run "${DOCKER_ARGS[@]}" -w /work/openmls "$RUST_IMAGE" bash -c "
+    set -euo pipefail
+    trap 'chown -R \${HOST_UID}:\${HOST_GID} /work' EXIT
+    $GIT_SETUP
+    cargo generate-lockfile
+  "
+  cp "$WORK/openmls/Cargo.lock" "$HERE/Cargo.lock"
+  echo "Bootstrapped Cargo.lock into $HERE — review and commit it alongside the artifact."
+fi
+check_lockfile "$HERE/Cargo.lock"
+
+echo "Building openmls-wasm in $RUST_IMAGE ..."
+docker run "${DOCKER_ARGS[@]}" -w /work \
   -e WASM_PACK_VERSION="$WASM_PACK_VERSION" \
   -e WASM_PACK_SHA256="$WASM_PACK_SHA256" \
   -e WASM_BINDGEN_VERSION="$WASM_BINDGEN_VERSION" \
   -e WASM_BINDGEN_SHA256="$WASM_BINDGEN_SHA256" \
   -e BINARYEN_VERSION="$BINARYEN_VERSION" \
   -e BINARYEN_SHA256="$BINARYEN_SHA256" \
-  -e LOCKED_TERMION_URL="$LOCKED_TERMION_URL" \
-  -e CARGO_NET_GIT_FETCH_WITH_CLI=true \
-  -e LOCKED="$LOCKED" \
-  -e HOST_UID="$(id -u)" \
-  -e HOST_GID="$(id -g)" \
-  "$RUST_IMAGE" bash -c '
+  "$RUST_IMAGE" bash -c "
     set -euo pipefail
-    trap "chown -R ${HOST_UID}:${HOST_GID} /work" EXIT
+    trap 'chown -R \${HOST_UID}:\${HOST_GID} /work' EXIT
+    $GIT_SETUP
+"'
     rustup target add wasm32-unknown-unknown
     wp="wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl"
     curl -sSfLo /tmp/wp.tar.gz "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/${wp}.tar.gz"
@@ -128,28 +167,21 @@ docker run --rm -v "$WORK:/work" -w /work \
     echo "${BINARYEN_SHA256}  /tmp/by.tar.gz" | sha256sum -c -
     tar -xzf /tmp/by.tar.gz -C /tmp
     install "/tmp/binaryen-${BINARYEN_VERSION}/bin/wasm-opt" /usr/local/bin/wasm-opt
-    [[ "$(wasm-bindgen --version)" == "wasm-bindgen ${WASM_BINDGEN_VERSION}" ]]
-    [[ "$(wasm-opt --version)" == "wasm-opt version ${BINARYEN_VERSION#version_} (${BINARYEN_VERSION})" ]]
-    git config --global --add safe.directory "*"
-    git config --global "url.file:///work/mirrors/termion.git.insteadOf" "${LOCKED_TERMION_URL}"
+    # Required: under --mode no-install wasm-pack would silently SKIP a missing
+    # wasm-opt rather than fail, so its presence and version are enforced here.
+    [[ "$(wasm-bindgen --version)" == "wasm-bindgen ${WASM_BINDGEN_VERSION}" ]] || {
+      echo "ERROR: wasm-bindgen on PATH is not the pinned ${WASM_BINDGEN_VERSION}." >&2; exit 1; }
+    [[ "$(wasm-opt --version)" == "wasm-opt version ${BINARYEN_VERSION#version_} (${BINARYEN_VERSION})" ]] || {
+      echo "ERROR: wasm-opt on PATH is not the pinned ${BINARYEN_VERSION}." >&2; exit 1; }
     cd /work/openmls/openmls-wasm
-    if [[ "$LOCKED" == "yes" ]]; then
-      wasm-pack build --mode no-install --target web -- --locked --features extensions-draft
-    else
-      wasm-pack build --mode no-install --target web -- --features extensions-draft
-    fi
+    wasm-pack build --mode no-install --target web -- --locked --features extensions-draft
   '
 
-# Drift guard (steady state) / lockfile export (bootstrap).
-if [[ "$LOCKED" == "yes" ]]; then
-  cmp -s "$HERE/Cargo.lock" "$WORK/openmls/Cargo.lock" || {
-    echo "ERROR: Cargo.lock changed despite --locked — pin drift; refusing the artifact." >&2
-    exit 1
-  }
-else
-  cp "$WORK/openmls/Cargo.lock" "$HERE/Cargo.lock"
-  echo "Bootstrapped Cargo.lock into $HERE — commit it alongside the artifact."
-fi
+# Drift guard: the lockfile (committed or freshly bootstrapped) must survive --locked.
+cmp -s "$HERE/Cargo.lock" "$WORK/openmls/Cargo.lock" || {
+  echo "ERROR: Cargo.lock changed despite --locked — pin drift; refusing the artifact." >&2
+  exit 1
+}
 
 echo "Copying artifact into $OUT_DIR ..."
 mkdir -p "$OUT_DIR"
