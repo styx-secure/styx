@@ -12,8 +12,38 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Commit: `09e92777dba0528d3d29e2e5e681b7e91637c7be`
 - Rust image: `rust:1.96.1`, pinned by manifest digest
 - wasm-pack: `0.15.0`, release archive verified by SHA-256
+- wasm-bindgen-cli: `0.2.126`, release archive
+  `wasm-bindgen-0.2.126-x86_64-unknown-linux-musl.tar.gz` verified by SHA-256
+  `064948d58e2d6c0a745216477a639ba696216d6309aaa902939d1b865b1d869d`; the build
+  refuses to start if the `Cargo.lock` `wasm-bindgen` version differs
+- binaryen / wasm-opt: `version_117`, release archive
+  `binaryen-version_117-x86_64-linux.tar.gz` verified by SHA-256
+  `3dc677006555b355ea2da5e82602065a161d5e83eaefd3f759afa00b96e83212`
+- wasm-pack runs with `--mode no-install`: it uses only the two verified tools
+  above and can neither download a tool itself nor fall back to
+  `cargo install wasm-bindgen-cli`
 - Dependencies: committed workspace `Cargo.lock`, always built with `--locked`
+- `termion` (git dependency of the upstream `cli` workspace member, recorded in
+  `Cargo.lock` as `gitlab.redox-os.org/Jezza/termion.git#9e35f915…`): fetched
+  by exact commit from `github.com/redox-os/termion` (ref
+  `refs/merge-requests/151/head`), checked against commit
+  `9e35f915e54ead30d02cf67c56eb56709f569ffd` and tree
+  `fa273e9ef3642f0363327e9ad9d0be4c4a4565b4`, and served to cargo from a local
+  mirror. `gitlab.redox-os.org` is never contacted: inside the container it
+  resolves to `127.0.0.1`, so any attempt fails instead of silently succeeding.
+  `build.sh` refuses a `Cargo.lock` whose `gitlab.redox-os.org` source is not
+  exactly this commit.
+- Not pinned by this repository: the wasm32 `rust-std` component fetched by
+  `rustup target add` (rustup checks it against its channel manifest). Any drift
+  is caught by `./verify.sh` against the committed bytes.
 - Enabled upstream feature: `extensions-draft`
+
+These tool and `termion` pins supersede the "pinned only indirectly" paragraph
+at the end of `PROVENANCE.md`. That file is left byte-identical on purpose: its
+SHA-256 is an approved Phase B3.3b-1 pin checked by
+`spikes/marmot-phase-b3-3b-1/verify-pins.mjs`. The pins change no byte of the
+committed artifact (`./verify.sh`: REPRODUCIBLE and equal to the committed
+files).
 
 The source revision has not changed. The draft feature is enabled because the
 non-product Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a/B3.3b-1 probes need the upstream application-data dictionary and
