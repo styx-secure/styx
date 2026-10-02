@@ -123,26 +123,26 @@ jobs:
           printf 'services:\n  strfry:\n    ulimits:\n      nofile:\n        soft: 524288\n        hard: 524288\n' > /tmp/relay-override.yml
           cat /tmp/relay-override.yml
           docker compose -f docker-compose.test.yml -f /tmp/relay-override.yml up -d
-          # A TCP accept is not readiness: with docker's userland proxy the port
-          # answers as soon as the container is created, before strfry itself is
-          # listening. Probe the protocol the suites use — a websocket upgrade.
+          # A TCP accept is not readiness: docker's userland proxy answers the
+          # published port as soon as the container is created, even when the
+          # relay inside dies on startup — which is exactly how a NOFILES
+          # startup failure first hid behind a green probe. Require a real HTTP
+          # answer from the relay itself.
           ready=0
           code=none
           for _ in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-              -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
-              -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: aGVsbG8gd29ybGQ=' \
               "http://127.0.0.1:17777/" || true)
-            if [ "$code" = "101" ]; then ready=1; break; fi
+            if [ "$code" = "101" ] || [ "$code" = "200" ]; then ready=1; break; fi
             sleep 1
           done
           if [ "$ready" != "1" ]; then
-            echo "::error::pinned strfry relay did not answer a websocket upgrade on 127.0.0.1:17777 (last http code: $code)"
+            echo "::error::pinned strfry relay did not answer on 127.0.0.1:17777 (last http code: $code)"
             docker compose -f docker-compose.test.yml ps || true
             docker compose -f docker-compose.test.yml logs --tail 80 || true
             exit 1
           fi
-          echo "pinned strfry relay answers websocket upgrades on 127.0.0.1:17777"
+          echo "pinned strfry relay answers on 127.0.0.1:17777 (http $code)"
       - name: Unit + app tests
         working-directory: styx-js
         env:
