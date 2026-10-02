@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
 import fc from 'fast-check';
 import M2_LOCK, {
@@ -17,15 +19,49 @@ const ctx = (contextId, role, ownership, intent) => ({ contextId, role, ownershi
 /** Build a lock observation by name. */
 const obs = (contextId, role, ownership, action) => ({ contextId, role, ownership, action });
 
+/** The exact C-REC /fixtures/56 NEG-NO-LOCK agreement, as a matrix row or gate must carry it. */
+const NEG_NO_LOCK = Object.freeze({
+  result: 'LOCKED_ELSEWHERE',
+  disposition: 'LOCK_RETRY',
+  authority: 'NONE',
+  firstFailingPhase: 'LOCK',
+  markerState: 'UNCHANGED',
+  authorized: false,
+});
+const agreementOf = (row) => ({
+  result: row.result,
+  disposition: row.disposition,
+  authority: row.authority,
+  firstFailingPhase: row.firstFailingPhase,
+  markerState: row.markerState,
+  authorized: row.authorized,
+});
+
+const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+
 const EXPECTED_CLAUSE_SHA = {
   SINGLE_WRITER: 'bd5b8b8356c0c60e04ed40241930e3c136d26ba6c5d93e0b1c269f4e7d81f115',
   REST_PHASE_LOCK: 'ebe3cbb6ed4cdd42001a028b0b7c41b6bd08cfb69a4d389103dad0a5839b1ffa',
   REST_PROSE_19: '9c4a27bfed3e189e09bc8eb444938fbe669007715364b47f326bd047d026c89b',
   REC_REQUIRES_LOCK: '89fb9dae2b011c6943b81a32ab9e74f654080f61587d784adc299da452827893',
+  REC_DISPOSITION_LOCK_RETRY: '89fb9dae2b011c6943b81a32ab9e74f654080f61587d784adc299da452827893',
+  REC_REQUIRES_LOCK_FOR_STATE_CHANGE: 'b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b',
+  REC_AMBIGUOUS_FACTS: '5f73f2562834ac35edc6bbdfadda70ffad8debcbb4e1f67cf456caf7bdeb6cc1',
+  REC_ENUMERATION_ORDER: 'fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa',
   REC_FAULT_PRECEDENCE: '2ea8afd00482766b96f24d364ffec2cabfb0caab307bf8ab6c45ccb91a356d52',
   REST_FAULT_PRECEDENCE: '2ea8afd00482766b96f24d364ffec2cabfb0caab307bf8ab6c45ccb91a356d52',
   REC_NEG_NO_LOCK: '7f51788a637285f57a20e0c83229b0aecfe084ad81552d39fd86b127bbbede0a',
+  REC_RESET_NO_LOCK: 'accdc51e23385e5a76d7927678ed85f9e6d0ea292d130ee58b8ff81ad17c4087',
   REC_MARKER_TRANSITIONS: 'eb3c0cd8d0f8a62c6adfa413b3644317cf1cbf9ee4568921a44a1c46cc4f411d',
+};
+
+/** Canonical JSON: sorted keys, compact separators (the O-SCEN canonical clause rule). */
+const canonical = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -78,16 +114,51 @@ describe('M2_LOCK closed sets', () => {
   });
 
   test('the ratified C-API singleWriter sentence is carried verbatim', () => {
-    expect(LOCK_CLAUSES.SINGLE_WRITER.content).toBe(
+    expect(JSON.parse(LOCK_CLAUSES.SINGLE_WRITER.content)).toBe(
       'I-LOCK prevents a second active context before it invokes this API; '
       + 'session-active-elsewhere is therefore an outer UI/controller result, not an adapter result',
     );
   });
 
   test('the ratified C-REST LOCK-phase rule is carried verbatim', () => {
-    expect(LOCK_CLAUSES.REST_PHASE_LOCK.content).toBe(
-      'Acquire the one-writer Web Lock; read no M2 or legacy bytes before success.',
-    );
+    expect(JSON.parse(LOCK_CLAUSES.REST_PHASE_LOCK.content)).toEqual({
+      phase: 'LOCK',
+      rule: 'Acquire the one-writer Web Lock; read no M2 or legacy bytes before success.',
+    });
+  });
+
+  test('every carried clause content is the canonical content its clauseSha256 covers', () => {
+    for (const [name, clause] of Object.entries(LOCK_CLAUSES)) {
+      expect([name, sha256(clause.content)]).toEqual([name, clause.clauseSha256]);
+      expect([name, canonical(JSON.parse(clause.content))]).toEqual([name, clause.content]);
+    }
+  });
+
+  test('every ratified C-REC marker transition requires the lock', () => {
+    const transitions = JSON.parse(LOCK_CLAUSES.REC_MARKER_TRANSITIONS.content);
+    expect(transitions.map((t) => t.id)).toEqual(['START', 'CANCEL', 'CONFIRM', 'COMMIT_MARKER', 'REPEAT_COMPLETION']);
+    for (const t of transitions) expect(t.requiresLock).toBe(true);
+  });
+
+  test('the ratified C-REC precedence and disposition clauses the matrix relies on are carried', () => {
+    expect(JSON.parse(LOCK_CLAUSES.REC_AMBIGUOUS_FACTS.content)).toBe('SAFER_DISPOSITION_NO_AUTHORITY');
+    expect(JSON.parse(LOCK_CLAUSES.REC_ENUMERATION_ORDER.content)).toBe(false);
+    expect(JSON.parse(LOCK_CLAUSES.REC_REQUIRES_LOCK_FOR_STATE_CHANGE.content)).toBe(true);
+    expect(JSON.parse(LOCK_CLAUSES.REC_DISPOSITION_LOCK_RETRY.content)).toBe(LOCK_DISPOSITIONS[0]);
+    expect(JSON.parse(LOCK_CLAUSES.REC_REQUIRES_LOCK.content)).toBe(LOCK_DISPOSITIONS[0]);
+  });
+
+  test('NEG-NO-LOCK and RESET-NO-LOCK carry the same lock agreement the gate emits', () => {
+    for (const clause of [LOCK_CLAUSES.REC_NEG_NO_LOCK, LOCK_CLAUSES.REC_RESET_NO_LOCK]) {
+      const { expected } = JSON.parse(clause.content);
+      expect(expected.reject).toBe(NEG_NO_LOCK.result);
+      expect(expected.agreement).toEqual({
+        authorityIdentity: NEG_NO_LOCK.authority,
+        disposition: NEG_NO_LOCK.disposition,
+        firstFailingPhase: NEG_NO_LOCK.firstFailingPhase,
+        markerState: NEG_NO_LOCK.markerState,
+      });
+    }
   });
 });
 
@@ -261,6 +332,34 @@ describe('evaluateLockAction — malformed observations reject with C-API codes'
     expect(out.error).toBe('INVALID_REQUEST');
     expect(executed).toBe(false);
   });
+
+  test('rejects a Proxy whose descriptor reports a value its target does not hold', () => {
+    const lying = (field) => new Proxy(
+      { contextId: 'tabB', role: 'WRITER', ownership: 'HELD_BY_OTHER', [field]: 'STATE_CHANGE' },
+      {
+        getOwnPropertyDescriptor(target, key) {
+          const d = Reflect.getOwnPropertyDescriptor(target, key);
+          return key === 'ownership' && d ? { ...d, value: 'HELD_BY_SELF' } : d;
+        },
+      },
+    );
+    const single = evaluateLockAction(lying('action'));
+    expect(single.accepted).toBe(false);
+    expect(single.error).toBe('INVALID_REQUEST');
+    expect(single.authorized).toBe(false);
+    const matrix = evaluateSecondTabMatrix([lying('intent')]);
+    expect(matrix.accepted).toBe(false);
+    expect(matrix.error).toBe('INVALID_REQUEST');
+    expect(matrix.activeContextIds).toEqual([]);
+  });
+
+  test('rejects a Proxy whose trap throws, and a revoked Proxy, with INVALID_REQUEST', () => {
+    const throwing = new Proxy(obs('a', 'WORKER', 'FREE', 'READ'), { ownKeys() { throw new Error('trap'); } });
+    expect(evaluateLockAction(throwing).error).toBe('INVALID_REQUEST');
+    const { proxy, revoke } = Proxy.revocable(obs('a', 'WORKER', 'FREE', 'READ'), {});
+    revoke();
+    expect(evaluateLockAction(proxy).error).toBe('INVALID_REQUEST');
+  });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -297,10 +396,21 @@ describe('evaluateSecondTabMatrix — exact disabled/active outcomes', () => {
   test('a fresh worker with a free lock starts locked and may only acquire', () => {
     const matrix = evaluateSecondTabMatrix([ctx('fresh', 'WORKER', 'FREE', 'ACQUIRE')]);
     expect(matrix.activeContextIds).toEqual([]);
+    expect(matrix.ambiguous).toBe(false);
     const row = matrix.contexts[0];
     expect(row.outcome).toBe(SESSION_ACTIVE_ELSEWHERE);
     expect(row.authorized).toBe(false);
     expect(row.result).toBeNull();
+    expect(row.authority).toBe('NONE');
+    expect(row.firstFailingPhase).toBe('NONE');
+  });
+
+  test('a free lock gates READ and STATE_CHANGE in the matrix with the NEG-NO-LOCK agreement', () => {
+    const matrix = evaluateSecondTabMatrix([
+      ctx('fresh', 'WORKER', 'FREE', 'READ'),
+      ctx('other', 'WRITER', 'FREE', 'STATE_CHANGE'),
+    ]);
+    for (const row of matrix.contexts) expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
   });
 
   test('a single holder is ACTIVE and is the only active context', () => {
@@ -349,6 +459,58 @@ describe('evaluateSecondTabMatrix — contradictory and degenerate inputs', () =
     expect(anySecondContextSilentlyActive(matrix)).toBe(false);
   });
 
+  test('two claimants: every non-active READ/STATE_CHANGE row carries exactly NEG-NO-LOCK', () => {
+    for (const [intentA, intentB] of [['STATE_CHANGE', 'READ'], ['READ', 'READ'], ['STATE_CHANGE', 'STATE_CHANGE']]) {
+      const input = [
+        ctx('tabA', 'WRITER', 'HELD_BY_SELF', intentA),
+        ctx('tabB', 'WORKER', 'HELD_BY_SELF', intentB),
+      ];
+      for (const order of [input, input.slice().reverse()]) {
+        const matrix = evaluateSecondTabMatrix(order);
+        expect(matrix.ambiguous).toBe(true);
+        expect(matrix.activeContextIds).toEqual([]);
+        for (const row of matrix.contexts) {
+          expect(row.outcome).toBe(SESSION_ACTIVE_ELSEWHERE);
+          expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
+        }
+      }
+    }
+  });
+
+  test('a claimant beside a context observing the lock FREE is contradictory: no context is active', () => {
+    const input = [
+      ctx('tabA', 'WRITER', 'HELD_BY_SELF', 'STATE_CHANGE'),
+      ctx('tabB', 'WRITER', 'FREE', 'ACQUIRE'),
+    ];
+    for (const order of [input, input.slice().reverse()]) {
+      const matrix = evaluateSecondTabMatrix(order);
+      expect(matrix.ambiguous).toBe(true);
+      expect(matrix.activeContextIds).toEqual([]);
+      for (const row of matrix.contexts) {
+        expect(row.outcome).toBe(SESSION_ACTIVE_ELSEWHERE);
+        expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
+      }
+    }
+  });
+
+  test('a claimant beside a context that cannot observe the lock (UNAVAILABLE) is not made active', () => {
+    const matrix = evaluateSecondTabMatrix([
+      ctx('tabA', 'WRITER', 'HELD_BY_SELF', 'READ'),
+      ctx('tabB', 'WORKER', 'UNAVAILABLE', 'READ'),
+    ]);
+    expect(matrix.ambiguous).toBe(true);
+    expect(matrix.activeContextIds).toEqual([]);
+    for (const row of matrix.contexts) expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
+  });
+
+  test('every matrix row carries an authority field', () => {
+    const matrix = evaluateSecondTabMatrix([
+      ctx('tabA', 'WRITER', 'HELD_BY_SELF', 'STATE_CHANGE'),
+      ctx('tabB', 'WORKER', 'HELD_BY_OTHER', 'READ'),
+    ]);
+    expect(matrix.contexts.map((r) => r.authority)).toEqual(['SELF', 'NONE']);
+  });
+
   test('a duplicate context id rejects', () => {
     const matrix = evaluateSecondTabMatrix([
       ctx('tabA', 'WRITER', 'HELD_BY_SELF', 'STATE_CHANGE'),
@@ -371,7 +533,9 @@ describe('evaluateSecondTabMatrix — contradictory and degenerate inputs', () =
   });
 
   test('a non-array input rejects', () => {
-    for (const value of [null, undefined, {}, 'tabA', 7]) {
+    const { proxy, revoke } = Proxy.revocable([], {});
+    revoke();
+    for (const value of [null, undefined, {}, 'tabA', 7, proxy]) {
       expect(evaluateSecondTabMatrix(value).accepted).toBe(false);
     }
   });
@@ -416,6 +580,41 @@ describe('anySecondContextSilentlyActive', () => {
       ],
     };
     expect(anySecondContextSilentlyActive(cheating)).toBe(true);
+  });
+
+  test('an authorized row labelled SESSION_ACTIVE_ELSEWHERE beside the holder is caught', () => {
+    expect(anySecondContextSilentlyActive({
+      accepted: true,
+      activeContextIds: ['a'],
+      contexts: [
+        { contextId: 'a', outcome: 'ACTIVE', authorized: true },
+        { contextId: 'b', outcome: SESSION_ACTIVE_ELSEWHERE, authorized: true },
+      ],
+    })).toBe(true);
+  });
+
+  test('activeContextIds naming two contexts is caught even with no rows', () => {
+    expect(anySecondContextSilentlyActive({ accepted: true, activeContextIds: ['a', 'b'], contexts: [] })).toBe(true);
+    expect(anySecondContextSilentlyActive({
+      accepted: true,
+      activeContextIds: ['b'],
+      contexts: [{ contextId: 'a', outcome: 'ACTIVE', authorized: true }],
+    })).toBe(true);
+  });
+
+  test('a malformed activeContextIds fails closed', () => {
+    expect(anySecondContextSilentlyActive({ accepted: true, activeContextIds: 'a', contexts: [] })).toBe(true);
+  });
+
+  test('one holder consistently named by its row and activeContextIds is not flagged', () => {
+    expect(anySecondContextSilentlyActive({
+      accepted: true,
+      activeContextIds: ['a'],
+      contexts: [
+        { contextId: 'a', outcome: 'ACTIVE', authorized: true },
+        { contextId: 'b', outcome: SESSION_ACTIVE_ELSEWHERE, authorized: false },
+      ],
+    })).toBe(false);
   });
 
   test('throws on a value that is not a matrix', () => {
@@ -505,12 +704,71 @@ describe('property sweep (seed 20261002)', () => {
       const matrix = evaluateSecondTabMatrix(input);
       for (const row of matrix.contexts) {
         if (row.authorized) continue;
-        if (row.result === null) continue; // FREE + ACQUIRE: acquisition attempt only
-        expect(row.result).toBe('LOCKED_ELSEWHERE');
-        expect(row.disposition).toBe('LOCK_RETRY');
-        expect(row.firstFailingPhase).toBe('LOCK');
-        expect(row.markerState).toBe('UNCHANGED');
+        // The only non-authorized row that is not a lock rejection is the acquisition attempt
+        // itself (intent ACQUIRE); a READ or STATE_CHANGE row is never skipped, whatever
+        // ownership it reported — including a HELD_BY_SELF claimant in a contradictory matrix.
+        if (row.intent === 'ACQUIRE' && row.result === null) continue;
+        expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
       }
+      return true;
+    }), { seed: 20261002, numRuns: 200 });
+  });
+
+  test('every non-ACTIVE READ/STATE_CHANGE row carries NEG-NO-LOCK, over every 1..3-context matrix', () => {
+    // Exhaustive, not sampled: every ownership x intent combination for one to three contexts
+    // (12^1 + 12^2 + 12^3 = 1884 matrices), so no contradictory combination is skipped.
+    const cells = [];
+    for (const ownership of OWNERSHIP) for (const intent of ACTIONS) cells.push([ownership, intent]);
+    let checkedRows = 0;
+    let contradictoryGated = 0;
+    const visit = (prefix, depth) => {
+      if (prefix.length > 0) {
+        const input = prefix.map(([ownership, intent], i) => ctx(`c${i}`, i % 2 ? 'WORKER' : 'WRITER', ownership, intent));
+        const matrix = evaluateSecondTabMatrix(input);
+        expect(matrix.accepted).toBe(true);
+        const claimants = input.filter((c) => c.ownership === 'HELD_BY_SELF');
+        const consistent = claimants.length === 1 && input.every((c) => c.ownership === 'HELD_BY_SELF'
+          || c.ownership === 'HELD_BY_OTHER');
+        expect(matrix.activeContextIds).toEqual(consistent ? [claimants[0].contextId] : []);
+        expect(matrix.ambiguous).toBe(claimants.length > 1 || (claimants.length === 1 && !consistent));
+        for (const row of matrix.contexts) {
+          checkedRows += 1;
+          expect(Object.hasOwn(row, 'authority')).toBe(true);
+          if (row.outcome === 'ACTIVE') {
+            expect(row.authorized).toBe(true);
+            expect(row.authority).toBe('SELF');
+            continue;
+          }
+          expect(row.outcome).toBe(SESSION_ACTIVE_ELSEWHERE);
+          expect(row.authorized).toBe(false);
+          if (row.intent === 'READ' || row.intent === 'STATE_CHANGE') {
+            expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
+            if (row.ownership === 'HELD_BY_SELF') contradictoryGated += 1;
+          } else if (row.ownership === 'FREE' && !matrix.ambiguous) {
+            expect(agreementOf(row)).toEqual({ ...NEG_NO_LOCK, result: null, disposition: null, firstFailingPhase: 'NONE' });
+          } else {
+            expect(agreementOf(row)).toEqual(NEG_NO_LOCK);
+          }
+        }
+      }
+      if (depth === 0) return;
+      for (const cell of cells) visit([...prefix, cell], depth - 1);
+    };
+    visit([], 3);
+    expect(checkedRows).toBe(12 + 2 * 144 + 3 * 1728);
+    expect(contradictoryGated).toBeGreaterThan(0);
+  });
+
+  test('the matrix depends only on the multiset of observations, never on their order', () => {
+    fc.assert(fc.property(arbMatrix, fc.nat(5), (input, k) => {
+      const perms = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+      const permuted = perms[k].map((i) => input[i]);
+      const a = evaluateSecondTabMatrix(input);
+      const b = evaluateSecondTabMatrix(permuted);
+      const byId = (m) => Object.fromEntries(m.contexts.map((r) => [r.contextId, JSON.stringify(r)]));
+      expect(byId(a)).toEqual(byId(b));
+      expect(a.activeContextIds).toEqual(b.activeContextIds);
+      expect(a.ambiguous).toBe(b.ambiguous);
       return true;
     }), { seed: 20261002, numRuns: 200 });
   });
@@ -540,19 +798,24 @@ describe('property sweep (seed 20261002)', () => {
 // ---------------------------------------------------------------------------------------------
 
 const MAPPING = [
-  { item: 'clause:CL-CAPI-b02195b48fbc', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['exact disabled/active outcomes', 'a second tab that only reads is still SESSION_ACTIVE_ELSEWHERE'] },
-  { item: 'clause:CL-CREST-bb9bf966faca', disposition: 'MAPPED', scenarios: ['OSC-968ce5454a763f57'], tests: ['FREE permits only the acquisition attempt itself', 'actionRequiresLock READ requires the lock'] },
-  { item: 'clause:PROSE-CREST-19-7b3a0709a784', disposition: 'MAPPED', scenarios: ['OSC-847305bb3c22662a'], tests: ['FREE permits only the acquisition attempt itself'] },
+  { item: 'clause:CL-CAPI-b02195b48fbc', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['one holder and one second tab: exactly ACTIVE and SESSION_ACTIVE_ELSEWHERE', 'a second tab that only reads is still SESSION_ACTIVE_ELSEWHERE, never ACTIVE'] },
+  { item: 'clause:CL-CREST-bb9bf966faca', disposition: 'MAPPED', scenarios: ['OSC-968ce5454a763f57'], tests: ['FREE permits only the acquisition attempt itself', 'READ requires the lock (C-REST /phaseRules/0, /prose/19)', 'the ratified C-REST LOCK-phase rule is carried verbatim'] },
+  { item: 'clause:PROSE-CREST-19-7b3a0709a784', disposition: 'MAPPED', scenarios: ['OSC-847305bb3c22662a'], tests: ['FREE permits only the acquisition attempt itself', 'a free lock gates READ and STATE_CHANGE in the matrix with the NEG-NO-LOCK agreement'] },
   { item: 'clause:CL-CREC-75e30e3c094e', disposition: 'MAPPED', scenarios: ['OSC-54b26121e663f399'], tests: ['HELD_BY_OTHER yields LOCKED_ELSEWHERE with disposition LOCK_RETRY'] },
-  { item: 'clause:CL-CREC-07ea4cb3e02d', disposition: 'MAPPED', scenarios: ['OSC-398767b7cf0d54b3'], tests: ['UNAVAILABLE yields LOCKED_ELSEWHERE at the LOCK phase'] },
-  { item: 'clause:CL-CREST-f29f714b4f0e', disposition: 'MAPPED', scenarios: ['OSC-28721c8bb3dd0d1c'], tests: ['UNAVAILABLE yields LOCKED_ELSEWHERE at the LOCK phase'] },
-  { item: 'clause:CL-CREC-207db887bd1c', disposition: 'MAPPED', scenarios: ['OSC-5856153389554186'], tests: ['reproduces the C-REC /fixtures/56 NEG-NO-LOCK agreement'] },
-  { item: 'clause:CL-CREC-7d3c371b9cb1', disposition: 'MAPPED', scenarios: ['OSC-0c458c1dd534931c'], tests: ['the ratified lock clauses and their canonical SHA-256 are transcribed exactly'] },
+  { item: 'clause:CL-CREC-6a5601422fde', disposition: 'MAPPED', scenarios: ['OSC-8683e98159d91cfa'], tests: ['the ratified C-REC precedence and disposition clauses the matrix relies on are carried', 'HELD_BY_OTHER yields LOCKED_ELSEWHERE with disposition LOCK_RETRY'] },
+  { item: 'clause:CL-CREC-f0b168585993', disposition: 'MAPPED', scenarios: ['OSC-0f9e9c754c5d5946'], tests: ['STATE_CHANGE requires the lock (C-REC requiresOneWriterLockForStateChange)', 'the ratified C-REC precedence and disposition clauses the matrix relies on are carried'] },
+  { item: 'clause:CL-CREC-b778a6264679', disposition: 'MAPPED', scenarios: ['OSC-da53590e29e58465'], tests: ['two claimants: every non-active READ/STATE_CHANGE row carries exactly NEG-NO-LOCK', 'a claimant beside a context observing the lock FREE is contradictory: no context is active', 'a claimant beside a context that cannot observe the lock (UNAVAILABLE) is not made active'] },
+  { item: 'clause:CL-CREC-3002d7e0cddb', disposition: 'MAPPED', scenarios: ['OSC-c0cffa17b8b81768'], tests: ['outcomes are independent of the input order', 'the matrix depends only on the multiset of observations, never on their order'] },
+  { item: 'clause:CL-CREC-07ea4cb3e02d', disposition: 'MAPPED', scenarios: ['OSC-398767b7cf0d54b3'], tests: ['UNAVAILABLE (C-REC lockUnavailable) yields LOCKED_ELSEWHERE at the LOCK phase'] },
+  { item: 'clause:CL-CREST-f29f714b4f0e', disposition: 'MAPPED', scenarios: ['OSC-28721c8bb3dd0d1c'], tests: ['UNAVAILABLE (C-REC lockUnavailable) yields LOCKED_ELSEWHERE at the LOCK phase'] },
+  { item: 'clause:CL-CREC-207db887bd1c', disposition: 'MAPPED', scenarios: ['OSC-5856153389554186'], tests: ['the rejection envelope reproduces the C-REC /fixtures/56 NEG-NO-LOCK agreement', 'NEG-NO-LOCK and RESET-NO-LOCK carry the same lock agreement the gate emits'] },
+  { item: 'clause:CL-CREC-d365f4775117', disposition: 'MAPPED', scenarios: ['OSC-ae3bda700eed1be3'], tests: ['NEG-NO-LOCK and RESET-NO-LOCK carry the same lock agreement the gate emits'] },
+  { item: 'clause:CL-CREC-7d3c371b9cb1', disposition: 'MAPPED', scenarios: ['OSC-0c458c1dd534931c'], tests: ['every ratified C-REC marker transition requires the lock', 'every carried clause content is the canonical content its clauseSha256 covers'] },
   { item: 'outcome:ACTIVE', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['a single holder is ACTIVE and is the only active context'] },
-  { item: 'outcome:SESSION_ACTIVE_ELSEWHERE', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['a second tab that only reads is still SESSION_ACTIVE_ELSEWHERE'] },
-  { item: 'rejection:LOCKED_ELSEWHERE', disposition: 'MAPPED', scenarios: ['OSC-5856153389554186'], tests: ['HELD_BY_OTHER yields LOCKED_ELSEWHERE'] },
-  { item: 'rejection:LOCK_RETRY', disposition: 'MAPPED', scenarios: ['OSC-54b26121e663f399'], tests: ['HELD_BY_OTHER yields LOCKED_ELSEWHERE with disposition LOCK_RETRY'] },
-  { item: 'fault:lockUnavailable', disposition: 'MAPPED', scenarios: ['OSC-398767b7cf0d54b3', 'OSC-28721c8bb3dd0d1c'], tests: ['UNAVAILABLE yields LOCKED_ELSEWHERE at the LOCK phase'] },
+  { item: 'outcome:SESSION_ACTIVE_ELSEWHERE', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['a second tab that only reads is still SESSION_ACTIVE_ELSEWHERE, never ACTIVE'] },
+  { item: 'rejection:LOCKED_ELSEWHERE', disposition: 'MAPPED', scenarios: ['OSC-5856153389554186'], tests: ['HELD_BY_OTHER yields LOCKED_ELSEWHERE with disposition LOCK_RETRY', 'every non-ACTIVE READ/STATE_CHANGE row carries NEG-NO-LOCK, over every 1..3-context matrix'] },
+  { item: 'rejection:LOCK_RETRY', disposition: 'MAPPED', scenarios: ['OSC-54b26121e663f399', 'OSC-8683e98159d91cfa'], tests: ['HELD_BY_OTHER yields LOCKED_ELSEWHERE with disposition LOCK_RETRY'] },
+  { item: 'fault:lockUnavailable', disposition: 'MAPPED', scenarios: ['OSC-398767b7cf0d54b3', 'OSC-28721c8bb3dd0d1c'], tests: ['UNAVAILABLE (C-REC lockUnavailable) yields LOCKED_ELSEWHERE at the LOCK phase'] },
   { item: 'role:WORKER', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['one holder and one second tab: exactly ACTIVE and SESSION_ACTIVE_ELSEWHERE'] },
   { item: 'role:WRITER', disposition: 'MAPPED', scenarios: ['OSC-7e009f23be2707b5'], tests: ['one holder and one second tab: exactly ACTIVE and SESSION_ACTIVE_ELSEWHERE'] },
   { item: 'owner:SCOPE-M2-D13-read-disabled', disposition: 'UNMAPPED', reason: 'O-SCEN is blind to the owner proposal SCOPE-M2 D13: it names a UI read-disabled presentation, and no ratified O-SCEN row asserts a UI or presentation outcome. The policy exposes the outcome name; the presentation is out of scope for this module.' },
@@ -560,6 +823,14 @@ const MAPPING = [
   { item: 'owner:C-REC-crash-release', disposition: 'UNMAPPED', reason: 'Whether lock release takes part in crash recovery (the I-TXN ratification 5938316207 MEDIUM) is owned by I-REST; no O-SCEN lock row asserts a release-after-crash outcome and this module exposes no release API.' },
   { item: 'owner:browser-web-lock-reality', disposition: 'UNMAPPED', reason: 'O-SCEN rows are abstract and claim no browser behaviour; whether navigator.locks is exclusive, survives a crash or is reachable across tabs is unobservable in Node and is deliberately not claimed.' },
 ];
+
+/** Every test() and describe() title in this file, read from its own source bytes. */
+const OWN_TITLES = (() => {
+  const source = readFileSync(new URL(import.meta.url), 'utf8');
+  const titles = [];
+  for (const m of source.matchAll(/\b(?:test|describe)\(\s*(['`])((?:(?!\1).)*)\1/g)) titles.push(m[2]);
+  return titles;
+})();
 
 describe('scenario mapping against O-SCEN', () => {
   test('every owned item appears exactly once and every disposition is closed', () => {
@@ -578,6 +849,13 @@ describe('scenario mapping against O-SCEN', () => {
     }
   });
 
+  test('every test name a MAPPED item cites is the exact title of a test in this file', () => {
+    expect(OWN_TITLES.length).toBeGreaterThan(50);
+    const titles = new Set(OWN_TITLES);
+    const dangling = MAPPING.flatMap((m) => m.tests || []).filter((name) => !titles.has(name));
+    expect(dangling).toEqual([]);
+  });
+
   test('the owned clause set is exactly the transcribed LOCK_CLAUSES anchors', () => {
     const owned = MAPPING.filter((m) => m.item.startsWith('clause:')).map((m) => m.item.slice(7));
     expect(owned.sort()).toEqual(Object.values(LOCK_CLAUSES).map((c) => c.key).sort());
@@ -591,10 +869,28 @@ describe('scenario mapping against O-SCEN', () => {
     }
   });
 
-  test('the transcribed O-SCEN lock scenario set is exactly the eight rows this card owns', () => {
-    expect(LOCK_SCENARIOS.map((s) => s.id).sort()).toEqual([
-      'OSC-0c458c1dd534931c', 'OSC-28721c8bb3dd0d1c', 'OSC-398767b7cf0d54b3', 'OSC-54b26121e663f399',
-      'OSC-5856153389554186', 'OSC-7e009f23be2707b5', 'OSC-847305bb3c22662a', 'OSC-968ce5454a763f57',
+  test('each clause item cites exactly the scenario row whose clause is that key', () => {
+    for (const entry of MAPPING.filter((m) => m.item.startsWith('clause:'))) {
+      const key = entry.item.slice(7);
+      expect([key, entry.scenarios]).toEqual([key, LOCK_SCENARIOS.filter((s) => s.clause === key).map((s) => s.id)]);
+    }
+  });
+
+  test('the transcribed O-SCEN lock scenario set is exactly the thirteen rows this card owns', () => {
+    expect(LOCK_SCENARIOS.map((s) => [s.id, s.clause]).sort()).toEqual([
+      ['OSC-0c458c1dd534931c', 'CL-CREC-7d3c371b9cb1'],
+      ['OSC-0f9e9c754c5d5946', 'CL-CREC-f0b168585993'],
+      ['OSC-28721c8bb3dd0d1c', 'CL-CREST-f29f714b4f0e'],
+      ['OSC-398767b7cf0d54b3', 'CL-CREC-07ea4cb3e02d'],
+      ['OSC-54b26121e663f399', 'CL-CREC-75e30e3c094e'],
+      ['OSC-5856153389554186', 'CL-CREC-207db887bd1c'],
+      ['OSC-7e009f23be2707b5', 'CL-CAPI-b02195b48fbc'],
+      ['OSC-847305bb3c22662a', 'PROSE-CREST-19-7b3a0709a784'],
+      ['OSC-8683e98159d91cfa', 'CL-CREC-6a5601422fde'],
+      ['OSC-968ce5454a763f57', 'CL-CREST-bb9bf966faca'],
+      ['OSC-ae3bda700eed1be3', 'CL-CREC-d365f4775117'],
+      ['OSC-c0cffa17b8b81768', 'CL-CREC-3002d7e0cddb'],
+      ['OSC-da53590e29e58465', 'CL-CREC-b778a6264679'],
     ].sort());
   });
 
@@ -602,6 +898,6 @@ describe('scenario mapping against O-SCEN', () => {
     const cited = new Set(MAPPING.flatMap((m) => m.scenarios || []));
     for (const scenario of LOCK_SCENARIOS) expect(cited.has(scenario.id)).toBe(true);
     expect(MAPPING.filter((m) => m.disposition === 'UNMAPPED').length).toBe(4);
-    expect(MAPPING.length).toBe(19);
+    expect(MAPPING.length).toBe(24);
   });
 });
