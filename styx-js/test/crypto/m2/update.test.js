@@ -781,7 +781,7 @@ describe('I-UPD fail-closed request validation', () => {
     ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output of the wrong member without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
     ['staged output of the wrong type without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
-    ['out-of-set commit outcome', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE' }, 'UNKNOWN_VALUE'],
+    ['out-of-set commit outcome with no request issued', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE', operationIdentity: null }, 'INVALID_REQUEST'],
     ['missing operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: null }, 'INVALID_REQUEST'],
     ['empty operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: '' }, 'INVALID_REQUEST'],
     ['out-of-set response emission', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ responseEmission: 'DELIVERED' }), 'UNKNOWN_VALUE'],
@@ -1790,6 +1790,71 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
       const result = reconcileWith(SLOT.slice(), snapshot, observation, heldRef(id));
       expect(code(result.result)).toBe('UNKNOWN_FIELD');
       expect(result.snapshot).toBe(null);
+    }
+  });
+
+  test('the public validator uses one decoded request: two invalid presentations never combine into a valid one (cycle 5e review)', () => {
+    const first = request('SELF_UPDATE', {}, { api: 'styx-m2-session-adapter/v2' });
+    const second = request('SELF_UPDATE', { extra: 1 });
+    expect(validateAdapterRequest(first).ok).toBe(false);
+    expect(validateAdapterRequest(second).ok).toBe(false);
+    let reads = 0;
+    const proxy = new Proxy({ ...first }, {
+      ownKeys(target) { return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, key) {
+        if (key === 'api') reads += 1;
+        const source = reads > 1 ? second : first;
+        return Reflect.getOwnPropertyDescriptor(source, key);
+      },
+    });
+    const verdict = validateAdapterRequest(proxy);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.code).toBe('UNSUPPORTED_API_VERSION');
+    expect(reads).toBe(1);
+  });
+
+  test('a readable nested input defect competes with a malformed request member at P01 (cycle 5e review)', () => {
+    const accessor = { enumerable: true, configurable: true, get() { throw new Error('never invoked'); } };
+    const malformedApi = request('SELF_UPDATE', { extra: 1 });
+    Object.defineProperty(malformedApi, 'api', accessor);
+    expect(validateAdapterRequest(malformedApi).code).toBe('UNKNOWN_FIELD');
+    expect(code(invokeAdapter({ request: malformedApi, snapshot: active(), observation: updateObservation({}) }))).toBe('UNKNOWN_FIELD');
+    const malformedOnly = request('SELF_UPDATE', {});
+    Object.defineProperty(malformedOnly, 'api', accessor);
+    expect(validateAdapterRequest(malformedOnly).code).toBe('INVALID_REQUEST');
+  });
+
+  test('a malformed hold value preempts an out-of-set one (cycle 5e review)', () => {
+    const id = 'held-values';
+    const pending = heldUpdate(id);
+    const observation = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } });
+    const both = { state: pending.state, held: { ...pending.held, originalStateBefore: 'unknown', operationIdentity: 42 } };
+    expect(code(reconcileWith(SLOT.slice(), both, observation, heldRef(id)).result)).toBe('INVALID_REQUEST');
+    const outOfSetOnly = { state: pending.state, held: { ...pending.held, originalStateBefore: 'unknown' } };
+    expect(code(reconcileWith(SLOT.slice(), outOfSetOnly, observation, heldRef(id)).result)).toBe('UNKNOWN_VALUE');
+    const badStatus = { state: pending.state, held: { ...pending.held, scenario: 'CAPI-S999', terminalEvidenceStatus: 'LATER' } };
+    expect(code(reconcileWith(SLOT.slice(), badStatus, observation, heldRef(id)).result)).toBe('INVALID_REQUEST');
+  });
+
+  test('an unknown RS outcome after the commit request is INDETERMINATE, and a committed hold is kept (cycle 5e review)', () => {
+    const id = 'held-unknown';
+    const reference = heldRef(id);
+    const committed = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
+    expect(committed.held.terminalEvidenceStatus).toBe('COMMITTED');
+    for (const outcome of ['unknown', 42, true, { kind: 'COMMITTED' }]) {
+      // The held escrow is a required SS fact of the observation; withholding it stays the P01 framing
+      // defect for every outcome, known or not, so only the escrow-carrying readback is exercised here.
+      const kept = reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: outcome, responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      expect(kept.result.kind).toBe('INDETERMINATE');
+      expect(kept.snapshot).toEqual(committed);
+      const pending = heldUpdate(id);
+      const still = reconcileWith(SLOT.slice(), pending, reconcileObservation({ commitOutcome: outcome, responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      expect(still.result.kind).toBe('INDETERMINATE');
+      expect(still.snapshot).toEqual(pending);
+      const issued = selfUpdate(SLOT.slice(), updateObservation({ commitOutcome: outcome, stagedOutput: { protectedCommitBytes: STAGED } }));
+      expect(issued.result.kind).toBe('INDETERMINATE');
+      expect(issued.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+      expect(issued.result.output).toBe(undefined);
     }
   });
 });

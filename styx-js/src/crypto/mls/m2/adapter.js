@@ -431,14 +431,22 @@ function readClosed(value, allowed) {
   } catch {
     return { error: 'INVALID_REQUEST', values: null };
   }
+  // A shape defect still returns the members that are readable data, as `partial`, so a caller can let a
+  // nested record's own P01 defect compete in the same precedence (C-API `/withinLevelErrorOrder/P01`).
+  // These are values the descriptors above already hold; nothing is read again.
+  const partial = {};
+  for (const key of keys) {
+    const descriptor = descriptors[key];
+    if (descriptor && Object.hasOwn(descriptor, 'value') && descriptor.enumerable === true) partial[key] = descriptor.value;
+  }
   for (const key of keys) {
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
-      return { error: 'INVALID_REQUEST', values: null };
+      return { error: 'INVALID_REQUEST', values: null, partial };
     }
   }
   for (const key of allowed) {
-    if (!Object.hasOwn(descriptors, key)) return { error: 'INVALID_REQUEST', values: null };
+    if (!Object.hasOwn(descriptors, key)) return { error: 'INVALID_REQUEST', values: null, partial };
   }
   const values = {};
   for (const key of allowed) values[key] = descriptors[key].value;
@@ -546,9 +554,28 @@ function requestBoundCodes(value, inputShape = null) {
 
 function validateRequestRecord(request, inputShape = null, decoded = null) {
   const shape = decoded ?? readClosed(request, REQUEST_FIELDS);
-  if (shape.error) return { code: shape.error, values: null };
+  if (shape.error) {
+    // A malformed request record still lets the P01 defect of a readable `input` compete: C-API
+    // `/withinLevelErrorOrder/P01` orders UNKNOWN_FIELD first whichever record carries it.
+    const nested = inputShape && inputShape.error ? [inputShape.error] : [];
+    return { code: worst([shape.error, ...nested]), values: null };
+  }
   const levelCode = requestLevelCode(shape.values, inputShape);
   return { code: levelCode, values: shape.values };
+}
+
+/**
+ * The decoded `input` of a request, read from the request's own decoded record and never through a
+ * property get. When the request record itself is malformed, the input is still decoded from the readable
+ * members (`partial`) so its P01 defect can compete; an unreadable or absent input contributes nothing.
+ */
+function decodeRequestInput(requestShape, operation) {
+  if (typeof operation !== 'string' || !Object.hasOwn(INPUT_BY_OPERATION, operation)) return null;
+  if (requestShape.error === null) return readClosed(requestShape.values.input, INPUT_BY_OPERATION[operation]);
+  if (requestShape.partial && Object.hasOwn(requestShape.partial, 'input')) {
+    return readClosed(requestShape.partial.input, INPUT_BY_OPERATION[operation]);
+  }
+  return null;
 }
 
 /**
@@ -560,9 +587,12 @@ function validateRequestRecord(request, inputShape = null, decoded = null) {
 export function validateAdapterRequest(request) {
   try {
     const decoded = readClosed(request, REQUEST_FIELDS);
-    const decodedInput = decoded.error === null && Object.hasOwn(INPUT_BY_OPERATION, decoded.values.operation)
-      ? readClosed(decoded.values.input, INPUT_BY_OPERATION[decoded.values.operation]) : null;
-    const checked = validateRequestRecord(request, decodedInput);
+    // One decoded record is used for every step below: the request is never read a second time, so a
+    // Proxy cannot answer one record to the input check and another to the request check (cycle 5e review).
+    const operation = decoded.error === null ? decoded.values.operation
+      : (decoded.partial && typeof decoded.partial.operation === 'string' ? decoded.partial.operation : null);
+    const decodedInput = decodeRequestInput(decoded, operation);
+    const checked = validateRequestRecord(request, decodedInput, decoded);
     if (checked.code !== null) return freezeData({ ok: false, code: checked.code });
     const bounds = requestBoundCodes(checked.values, decodedInput);
     const code = bounds.length === 0 ? null : worst(bounds);
@@ -634,7 +664,33 @@ function snapshotShapeCode(snapshot) {
   } catch {
     return 'FAIL_CLOSED_INTERNAL';
   }
-  return decision.snapshot === null ? decision.result.code : null;
+  if (decision.snapshot !== null) return null;
+  const coreCode = decision.result.code;
+  // The core stops at the first hold value it rejects, and its out-of-set checks (`originalStateBefore`,
+  // `scenario`: UNKNOWN_VALUE) come before its malformed-value checks (INVALID_REQUEST). P01 orders
+  // INVALID_REQUEST first, so a hold that also carries a malformed value the out-of-set member cannot
+  // explain answers INVALID_REQUEST: an identity that is not a non-empty string, a reference that is not
+  // the one the identity fixes, or a terminal-evidence status outside its two values (cycle 5e review).
+  if (coreCode === 'UNKNOWN_VALUE' && heldHasMalformedValue(snapshot)) return 'INVALID_REQUEST';
+  return coreCode;
+}
+
+/** Whether a plain hold of data members carries a scenario-independent INVALID_REQUEST value. */
+function heldHasMalformedValue(snapshot) {
+  if (!isPlainObject(snapshot)) return false;
+  const held = Object.getOwnPropertyDescriptor(snapshot, 'held');
+  if (!held || !Object.hasOwn(held, 'value') || !isPlainObject(held.value)) return false;
+  const member = (key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(held.value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value') ? { value: descriptor.value } : null;
+  };
+  const identity = member('operationIdentity');
+  const reference = member('reconciliationRef');
+  const status = member('terminalEvidenceStatus');
+  if (identity === null || reference === null || status === null) return false;
+  if (typeof identity.value !== 'string' || identity.value.length === 0) return true;
+  if (reference.value !== `I-SM-HOLD:${identity.value}`) return true;
+  return !['PENDING', 'COMMITTED'].includes(status.value);
 }
 
 /**
@@ -747,11 +803,11 @@ function readObservation(operation, observation) {
     // this layer happens to read its members (`CAPI-EP001`-`CAPI-EP003`).
     const defects = [...slotDefects];
     // C-API `/rules/rsTriState`: `INDETERMINATE` "includes every absent, failed or unknown RS outcome",
-    // and a reconciliation is only ever asked after the original commit request. An absent RS readback
-    // is therefore the still-ambiguous outcome (`CAPI-S024`), never a malformed request (probe p14).
-    const commitOutcome = value.commitOutcome === null ? 'INDETERMINATE' : value.commitOutcome;
-    if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
-    else if (!COMMIT_OUTCOMES.includes(commitOutcome)) defects.push('UNKNOWN_VALUE');
+    // and a reconciliation is only ever asked after the original commit request. An absent or unknown RS
+    // readback is therefore the still-ambiguous outcome (`CAPI-S024`), never a malformed or out-of-set
+    // request (probe p14; cycle 5e review), and `/rules/internalFailureBoundary` then keeps a committed
+    // hold instead of rejecting.
+    const commitOutcome = COMMIT_OUTCOMES.includes(value.commitOutcome) ? value.commitOutcome : 'INDETERMINATE';
     const committed = commitOutcome === 'COMMITTED';
     if (value.responseEmission === null) {
       if (committed) defects.push('INVALID_REQUEST');
@@ -796,11 +852,11 @@ function readObservation(operation, observation) {
     // C-MUT §3 and §5, C-API `/rules/rsTriState`: an SS_RS operation identity exists only for a mutation
     // whose commit request is issued, and once it may have reached RS "an absent/failed/unknown outcome
     // is INDETERMINATE, never REJECTED". A supported `SELF_UPDATE` that carries its identity but no RS
-    // outcome is therefore the ambiguous outcome and is held (probe p14). With no identity either, no
-    // request was ever made and the missing proof stays the P01 defect below. `CREATE` and
-    // `JOIN_WELCOME` keep the merged I-JOIN closure unchanged.
-    const commitOutcome = selfUpdate && value.commitOutcome === null
-      && typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0
+    // outcome is therefore the ambiguous outcome and is held (probe p14); so is one carrying an unknown
+    // outcome (cycle 5e review). With no identity, no request was ever made and the missing or unknown
+    // proof stays the P01 defect below. `CREATE` and `JOIN_WELCOME` keep the merged I-JOIN closure unchanged.
+    const requestIssued = selfUpdate && typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0;
+    const commitOutcome = requestIssued && !COMMIT_OUTCOMES.includes(value.commitOutcome)
       ? 'INDETERMINATE' : value.commitOutcome;
     if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
     else if (!COMMIT_OUTCOMES.includes(commitOutcome)) defects.push('UNKNOWN_VALUE');
@@ -1101,9 +1157,8 @@ function run(input) {
   // The request itself is decoded through its descriptors first and `input` is taken from that decoded
   // record, never through a property get, so an accessor `input` is never invoked and stays a P01 defect.
   const requestShape = readClosed(request, REQUEST_FIELDS);
-  const decodedInput = !Object.hasOwn(INPUT_BY_OPERATION, operation) ? { error: null, values: {} }
-    : requestShape.error ? { error: requestShape.error, values: null }
-      : readClosed(requestShape.values.input, INPUT_BY_OPERATION[operation]);
+  const decodedInput = Object.hasOwn(INPUT_BY_OPERATION, operation)
+    ? decodeRequestInput(requestShape, operation) : { error: null, values: {} };
   const checked = validateRequestRecord(request, decodedInput, requestShape);
   const framing = [];
   if (checked.code !== null) framing.push(checked.code);
