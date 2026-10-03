@@ -1,6 +1,6 @@
 # Scenario `relayLoss` — a relay lost after publication, retired and replaced
 
-Purpose item (scope record `O-SCEN3`): **relay loss**. Harness scenario of C-DLV §12 exercised here:
+Purpose item (scope record `O-SCEN3`): **relay loss**. Harness scenario exercised here (the name is C-DLV §12's; the behaviour is C-DLV §10's):
 `relayLossAndReplacement`; the relay-loss step of this set is the same mechanism the §12 list describes for a connection lost after publication, and the record claims only the one name its timeline runs.
 
 <!-- styx-m3-scenario:v1:start -->
@@ -112,7 +112,7 @@ Purpose item (scope record `O-SCEN3`): **relay loss**. Harness scenario of C-DLV
         "Both relay servers run inside the test on loopback IP literals and ephemeral ports (C-DLV §2 item 6, §10) and their URLs reach the client only through config.relays (C-SDK §4.1).",
         "relay1's dropAfterFrames counts EVENT frames, and it applies to its first connection only; every later connection of relay1 is neverAnswering.",
         "relay0 keeps both its connections open, so it is never UNREACHABLE: a relay that holds its connection and does not answer is TIMED_OUT.",
-        "The injected clock port fires each armed timer at exactly its delay; the injected random port returns the two values of randomValues in draw order, the first for the reconnection delay of the k-th consecutive lost connection and the second for the retry delay of attempt 1, which is 4294967295, so delay(k, 0) = floor(base(k) / 2) for the reconnection and delay(1, 4294967295) = floor(1000 / 2) + floor(4294967295 × 1000 / 2^33) = 999 for the retry.",
+        "The injected clock port fires each armed timer at exactly its delay; the injected random port returns the two values of randomValues in draw order, the first for the reconnection delay of the k-th consecutive lost connection and the second, which is 4294967295, for the retry delay of attempt 1, which is 4294967295, so delay(k, 0) = floor(base(k) / 2) for the reconnection and delay(1, 4294967295) = floor(1000 / 2) + floor(4294967295 × 1000 / 2^33) = 999 for the retry.",
         "No relay answers attempt 1 inside its per-relay timeout, so attempt 1 records no acceptance.",
         "Relay supervision runs every relay supervision interval from the moment start() resolves, so the first supervision read after the socket drop is the one at 13000 ms; that reading is stated in the index under open readings."
       ],
@@ -481,7 +481,7 @@ Purpose item (scope record `O-SCEN3`): **relay loss**. Harness scenario of C-DLV
           "result": "{ ok: true, value: { deliveryId: 'd1', recipient: '<recipient public key>', state: 'RELAY_ACCEPTED', terminal: true, attempts: 2, createdAt: 12000, deadlineAt: 132000, lastCode: null, relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'TIMED_OUT' }] } }"
         },
         {
-          "at": 36999,
+          "at": 37009,
           "call": "shutdown()",
           "result": "{ ok: true, value: { clientState: 'STOPPED', lost: 0 } }"
         }

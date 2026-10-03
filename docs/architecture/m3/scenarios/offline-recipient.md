@@ -28,6 +28,7 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
     "C-SDK §2",
     "C-SDK §4.1",
     "C-SDK §4.2",
+    "C-SDK §4.3",
     "C-SDK §6.1",
     "C-SDK §6.2",
     "C-SDK §6.3",
@@ -118,6 +119,7 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
         "C-SDK §2",
         "C-SDK §4.1",
         "C-SDK §4.2",
+        "C-SDK §4.3",
         "C-SDK §6.1",
         "C-SDK §6.2",
         "C-SDK §6.3",
@@ -366,15 +368,16 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
           "at": 61250,
           "actor": "recipient",
           "event": "the second copy of the same message event arrives",
-          "detail": "the same kind-4741 message id arrives once more, from relay1's duplicate delivery; that id is already in the window, so this copy is dropped without an event and without a second receipt; the kind-4742 receipt of this timeline is addressed to the sender (its p tag is the sender's own key) and is never delivered to this subscription",
+          "detail": "the same kind-4741 message id arrives once more, from relay1's copy; that id is already in the window, so this copy is dropped without an event and without a second receipt; the kind-4742 receipt of this timeline is addressed to the sender (its p tag is the sender's own key) and is never delivered to this subscription",
           "timing": {
             "kind": "deltaFromPrevious",
             "valueMs": 50
           },
           "checks": [
+            "C-DLV §7.1",
             "C-DLV §7.2",
             "C-DLV §8",
-            "C-SDK §4.2"
+            "C-SDK §4.3"
           ]
         },
         {
@@ -573,6 +576,7 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
         "C-SDK §2",
         "C-SDK §4.1",
         "C-SDK §4.2",
+        "C-SDK §4.3",
         "C-SDK §6.1",
         "C-SDK §6.2",
         "C-SDK §6.3",
@@ -783,7 +787,7 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
           "at": 134105,
           "actor": "recipient",
           "event": "relay0's stored match arrives",
-          "detail": "the event passes every check of C-DLV §7.1 and is not in the window, so MESSAGE_RECEIVED is emitted and the recipient signs and publishes a kind-4742 receipt for it once on every connected pool; the message reaches the recipient 2105 ms before the sender's item became terminal",
+          "detail": "the event passes every check of C-DLV §7.1 and is not in the window, so MESSAGE_RECEIVED is emitted and the recipient signs and publishes a kind-4742 receipt for it once on every connected pool; the message reaches the recipient 2105 ms after the sender's item became terminal",
           "timing": {
             "kind": "deltaFromPrevious",
             "valueMs": 5
@@ -820,9 +824,10 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
           },
           "checks": [
             "C-DLV §4.4",
+            "C-DLV §7.1",
             "C-DLV §7.3",
             "C-DLV §8",
-            "C-SDK §4.2"
+            "C-SDK §4.3"
           ]
         },
         {
@@ -1380,12 +1385,12 @@ reading can produce `RECIPIENT_RECEIPT_RECEIVED`.
 
 **Clauses.** C-SDK §2 (outer bounds), C-SDK §4.1 (createStyxClient and delivery config),
 C-SDK §4.2 (client
-methods), C-SDK §6.1 (closed states), C-SDK §6.2 (snapshot),
-C-SDK §6.3 (per-relay outcomes), C-SDK §7 (events), C-SDK §8.4 (clock and randomness),
-C-DLV §2 (outer bounds), C-DLV §3 (bounds and defaults), C-DLV §4.2 (admission),
-C-DLV §4.3 (attempts, the first
-acceptance and backoff), C-DLV §4.4 (deadline),
-C-DLV §4.6 (shutdown), C-DLV §5.1 (one pool per relay, replaced after loss),
+methods), C-SDK §4.3 (inbound messages), C-SDK §6.1 (closed states),
+C-SDK §6.2 (snapshot), C-SDK §6.3 (per-relay outcomes), C-SDK §7 (events),
+C-SDK §8.4 (clock and randomness), C-DLV §2 (outer bounds), C-DLV §3 (bounds and defaults),
+C-DLV §4.2 (admission), C-DLV §4.3 (attempts, the first
+acceptance and backoff),
+C-DLV §4.4 (deadline), C-DLV §4.6 (shutdown), C-DLV §5.1 (one pool per relay, replaced after loss),
 C-DLV §5.2 (supervision and reconnection), C-DLV §5.3 (per-relay outcomes),
 C-DLV §5.4 (subscribe, REQ when a connection opens), C-DLV §6.1 (event shape),
 C-DLV §6.3 (receipt event), C-DLV §7.1 (inbound processing),

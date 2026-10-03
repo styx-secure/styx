@@ -1,7 +1,7 @@
 # Scenario `hungRelay` — a relay that answers and a relay that never answers
 
 Purpose item (scope record `O-SCEN3`): **hung relay**. Harness scenario of C-DLV §12 exercised here:
-`hungRelay`, which C-DLV §12 describes as "a never-answering relay next to a normal one (the normal
+`hungRelay` (the name is C-DLV §12's), which C-DLV §10 describes as "a never-answering relay next to a normal one (the normal
 relay's outcome and the item's acceptance arrive within one per-relay timeout)".
 
 <!-- styx-m3-scenario:v1:start -->
@@ -909,7 +909,7 @@ relay's outcome and the item's acceptance arrive within one per-relay timeout)".
         "no DELIVERY_STATE_CHANGED for a per-relay TIMED_OUT",
         "no claim of exactly-once delivery, of ordering or of cross-restart recovery"
       ],
-      "harnessNote": "C-DLV §12 describes `hungRelay` as a never-answering relay next to a normal one; this timeline runs the never-answering behaviour on both relays to reach the exhaustion path of the same harness scenario, which the §12 description does not name separately. It is a reading, stated in the index under open readings."
+      "harnessNote": "C-DLV §10 describes the never-answering relay of `hungRelay` next to a normal one; this timeline runs the never-answering behaviour on both relays to reach the exhaustion path of the same harness scenario, which the §12 description does not name separately. It is a reading, stated in the index under open readings."
     }
   ]
 }
@@ -930,8 +930,7 @@ makes that acceptance end the publication phase: the item moves to `RELAY_ACCEPT
 outcome changes an item's state only through the first acceptance of an item in `IN_FLIGHT`). In this receipt
 mode the accepted attempt is the last one and it ends only at a receipt, the deadline, a fault, a cancel or
 shutdown, so no retry delay is drawn and no second attempt begins; the attempt timeout still settles relay0
-`TIMED_OUT` at 24000, one per-relay timeout after the publication start, which is the settlement rule of C-DLV §5.3 (a relay still `PENDING` at the attempt timeout becomes `TIMED_OUT`); the bound of C-DLV §10 on this harness scenario concerns the normal relay's outcome and the item's acceptance, both of which this timeline records at 12050, and it is not a rule about a hung relay. That C-DLV §10 places
-on this harness scenario. The item is not terminal at the shutdown of 24020, so it takes `LOST_ON_SHUTDOWN`
+`TIMED_OUT` at 24000, one per-relay timeout after the publication start, which is the settlement rule of C-DLV §5.3 (a relay still `PENDING` at the attempt timeout becomes `TIMED_OUT`); the bound of C-DLV §10 on this harness scenario concerns the normal relay's outcome and the item's acceptance, both of which this timeline records at 12050, and it is not a rule about a hung relay. The item is not terminal at the shutdown of 24020, so it takes `LOST_ON_SHUTDOWN`
 and the result counts it, exactly as C-DLV §2 item 4 and §4.6 require of any non-terminal item at an orderly
 `shutdown()`.
 

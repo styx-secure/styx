@@ -47,7 +47,8 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
     "C-DLV §5.3",
     "C-DLV §5.5",
     "C-DLV §6.1",
-    "C-DLV §6.4"
+    "C-DLV §6.4",
+    "C-DLV §10"
   ],
   "nonClaims": {
     "exactlyOnce": false,
@@ -111,7 +112,7 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
         "The new client of 20100 is a separate client with its own storage port, which returns an empty array to its storage.list(); the two clients share nothing but the two relay servers.",
         "The old client is read again at 36010, which is after 24000, the instant at which a leaked attempt timeout would have fired had it not been cleared; the read shows that no timer survived the shutdown.",
         "The injected clock port fires each armed timer at exactly its delay; no retry delay is drawn in this timeline, so randomValues is empty.",
-        "The timer handles themselves are asserted through the injected clock port: the port-call expectation of this timeline records the two clearTimer calls of the shutdown step, so the timeline checks the cancellation of the handles and not only the immutability of the snapshot."
+        "The timer handles themselves are asserted through the injected clock port: the port-call expectation of this timeline records the five clearTimer calls of the shutdown step, so the timeline checks the cancellation of the handles and not only the immutability of the snapshot."
       ],
       "clauses": [
         "C-SDK §2",
@@ -135,7 +136,8 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
         "C-DLV §5.3",
         "C-DLV §5.5",
         "C-DLV §6.1",
-        "C-DLV §6.4"
+        "C-DLV §6.4",
+        "C-DLV §10"
       ],
       "events": [
         {
@@ -220,7 +222,7 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
           "at": 20000,
           "actor": "sender",
           "event": "shutdown()",
-          "detail": "the orderly shutdown of C-DLV §4.6 runs in its fixed order: it records the stopped state and refuses further start, send, cancel and shutdown calls; it stops accepting relay frames; it delivers the LOST_ON_SHUTDOWN events; then, in its fourth step, it writes the two records back through storage.update (each write bounded by the port-call timeout), clears every timer it armed, including the two attempt timers, and closes every relay connection; no item was ever accepted, so both items take LOST_ON_SHUTDOWN, terminal, and the result is { clientState: STOPPED, lost: 2 }; two DELIVERY_STATE_CHANGED events with LOST_ON_SHUTDOWN are emitted, one per item, and CLIENT_STATE_CHANGED with STOPPED; the listeners registered before the call are called asynchronously, after the state change they report is recorded and in registration order, and they are removed only after those deliveries (C-SDK §7), so a listener that dispatches synchronously inside the shutdown call is not conforming; the portCall bound of this event is the bound of each individual storage write of that step, not one bound on the whole orderly stop; the injected clock port records both clearTimer calls of that step, one per armed timer handle (expectedPortCalls): the two deadline timers of C-DLV §4.2 step 4, the two attempt timers and the supervision timer of C-DLV §4.5, so the cleanup is asserted by the port itself and not only by the frozen snapshot",
+          "detail": "the orderly shutdown of C-DLV §4.6 runs in its fixed order: it records the stopped state and refuses further start, send, cancel and shutdown calls; it stops the supervision timer; and it clears every timer handle the client still holds, which at this instant are two deadline timers (one per item of C-DLV §4.2 step 4), two attempt timers (one per item, armed at 12000 when the item entered IN_FLIGHT) and the supervision timer of C-DLV §5.2 — five handles in all (expectedPortCalls), each passed to clearTimer a single time; the listeners of C-SDK §4.2 are removed",
           "timing": {
             "kind": "portCall",
             "valueMs": 6000
@@ -236,9 +238,11 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
             }
           ],
           "checks": [
+            "C-DLV §10",
             "C-DLV §4.2",
             "C-DLV §4.5",
             "C-DLV §4.6",
+            "C-DLV §5.2",
             "C-DLV §5.5",
             "C-SDK §4.2",
             "C-SDK §7"
@@ -316,15 +320,18 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
           "at": 36010,
           "actor": "sender",
           "event": "getDelivery({ deliveryId: d1 }) again, 12010 ms after the instant at which the attempt timeout of attempt 1 would have elapsed (12000 + perRelayTimeoutMs = 24000)",
-          "detail": "the snapshot is unchanged: state LOST_ON_SHUTDOWN, terminal true, attempts 1, relayOutcomes [{ relayIndex: 0, outcome: PENDING }, { relayIndex: 1, outcome: PENDING }]; the attempt timeout of attempt 1 would have elapsed at 24000 (12000 + perRelayTimeoutMs), and no attempt timeout fired, because the shutdown cleared both attempt handles of C-DLV §4.5 and §4.6 as the injected clock port records (clearTimer twice at 20000), and no timer of a stopped client can change a state or an outcome; attempts remains 1 and no second attempt exists",
+          "detail": "the orderly shutdown of C-DLV §4.6 runs in its fixed order: it records the stopped state and refuses further start, send, cancel and shutdown calls; it stops the supervision timer; and it clears every timer handle the client still holds, which at this instant are two deadline timers (one per item of C-DLV §4.2 step 4), two attempt timers (one per item, armed at 12000 when the item entered IN_FLIGHT) and the supervision timer of C-DLV §5.2 — five handles in all (expectedPortCalls), each passed to clearTimer a single time; the listeners of C-SDK §4.2 are removed",
           "timing": {
             "kind": "deltaFromPrevious",
             "valueMs": 3900
           },
           "checks": [
+            "C-DLV §4.2",
             "C-DLV §4.3",
             "C-DLV §4.5",
             "C-DLV §4.6",
+            "C-DLV §5.2",
+            "C-SDK §4.2",
             "C-SDK §6.2"
           ]
         },
@@ -591,7 +598,7 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
         "no relay connection, no subscription and no pool, because the storage checks run before the pools are prepared",
         "no LOST_ON_SHUTDOWN and no recovery: the records are refused rather than adopted"
       ],
-      "harnessNote": "C-DLV §12 describes `shutdownLostThenNewClient` with a new empty store; this timeline runs the same new client against a non-empty store to show the refusal of C-DLV §5.2, a case the §12 description does not name. It is a reading, stated in the index under open readings."
+      "harnessNote": "C-DLV §10's description of `shutdownLostThenNewClient` gives a new empty store; this timeline runs the same new client against a non-empty store to show the refusal of C-DLV §5.2, a case the §12 description does not name. It is a reading, stated in the index under open readings."
     }
   ]
 }
@@ -631,4 +638,4 @@ acceptance and backoff),
 C-DLV §4.5 (timers and faults), C-DLV §4.6 (shutdown),
 C-DLV §5.1 (one pool per relay, replaced after loss), C-DLV §5.2 (supervision and reconnection),
 C-DLV §5.3 (per-relay outcomes), C-DLV §5.5 (closing), C-DLV §6.1 (event shape),
-C-DLV §6.4 (admission is the only storage call that writes a new record).
+C-DLV §6.4 (admission is the only storage call that writes a new record), C-DLV §10.

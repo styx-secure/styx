@@ -19,14 +19,14 @@ documents.
 
 Each file is one record: a fenced `json` block between the markers `<!-- styx-m3-scenario:v1:start -->` and
 `<!-- styx-m3-scenario:v1:end -->`, followed by prose. The JSON is the record; the prose explains it and
-carries the **Clauses.** paragraph. Identifiers are camel case, state names are the closed enumeration of
+carries the **Clauses.** paragraph. `expectedEvents`, `expectedTransitions`, `expectedItemStates`, `expectedRelayStates`, `expectedMethodResults` and `expectedPortCalls` state what a reader must be able to see, not everything that happens: a timeline may record more events, transitions or snapshots than they list, and the checker reads them as assertions about the record, never as an exhaustive scheme. Identifiers are camel case, state names are the closed enumeration of
 C-SDK §6.1, per-relay outcomes the closed enumeration of C-SDK §6.3, and codes the closed set of C-SDK §5.2.
 
 The record object is **closed**: a file declares exactly the keys `schema`, `closed`, `scenarioId`,
 `purposeItem`, `title`, `harnessScenarios`, `contracts`, `clauses`, `nonClaims` and `timelines`. A timeline
 declares exactly `id`, `harness`, `config`, `preconditions`, `clauses`, `events`, `expectedTransitions`,
 `expectedItemStates`, `expectedRelayStates`, `expectedMethodResults`, `expectedEvents` and `notEmitted`, plus
-two optional keys: `harnessNote` (a sentence that states how far the C-DLV §12 description of this timeline's
+two optional keys: `harnessNote` (a sentence that states how far the C-DLV §10 description behind this timeline's
 `harness` name differs from what the timeline runs) and `expectedPortCalls` (a list of
 `{ at, port, call, count }` objects, each asserting that the injected port `port` received `count` calls of
 `call` at the event instant `at` — the timelines use it for the timer handles an orderly shutdown clears). An
@@ -77,7 +77,7 @@ after the begin of that attempt, so the arithmetic of a timeline cannot be wrong
 A timeline configures at least two relays, each with an index, a loopback host (`127.0.0.1` or `::1`, C-DLV §2
 item 6), an ephemeral port, a non-empty `behaviours` array and a `role` sentence. The behaviour names are the
 closed list of C-DLV §10: `normal`, `neverAnswering`, `rejecting`, `dropAfterFrames`, `delayFrames`,
-`duplicateDelivery`, `reverseOrder`. Two conventions make the injection unambiguous, and the records state
+`duplicateDelivery`, `reverseOrder`. Three conventions make the injection unambiguous, and the records state
 them in the `role` text of the relay they use:
 
 - `dropAfterFrames` counts **EVENT frames published to the relay**, and it applies to the relay's first
@@ -192,7 +192,7 @@ is a defect of the scenario**: this set is a candidate record, and the two docum
 
 ## 9. Open readings
 
-Three readings are stated in the records themselves, because the two documents leave them open, and each
+Five readings are stated in the records themselves, because the two documents leave them open, and each
 record that depends on one says so in its preconditions:
 
 1. **The instant of inbound processing during a connection phase.** C-DLV §7.1 processes inbound `EVENT`
@@ -209,12 +209,12 @@ record that depends on one says so in its preconditions:
    reading and no copy before it. The owner decides whether that capability belongs in the §12 harness
    description.
 4. **The first relay supervision read.** Relay supervision runs every relay supervision interval from the
-   moment `start()` resolves, so the first read after an event at 13000 ms is the read at 13000 ms;
+   moment `start()` resolves, so the first read after the socket drop at 12050 ms is the read at 13000 ms;
    `relayLossAndReplacement` fixes that reading in its preconditions.
-5. **The harness name a timeline attaches itself to.** C-DLV §12 describes `hungRelay` as a never-answering
+5. **The harness name a timeline attaches itself to.** C-DLV §10 describes `hungRelay` as a never-answering
    relay next to a **normal** one and `shutdownLostThenNewClient` as a shutdown followed by a new client
    with a **new empty** store. Two timelines here need the same behaviour without those neighbours: the
    exhaustion path of the hung relay uses two never-answering relays, and the storage refusal of
    `start()` is reached with a store that is not empty. Each names its `harness` and carries a
-   `harnessNote` that states the difference, and the owner decides whether the §12 description or the
+   `harnessNote` that states the difference, and the owner decides whether the §10 description or the
    timeline is the one to change.

@@ -96,7 +96,7 @@ exercised here: `duplicateAndReordered`.
             "behaviours": [
               "normal"
             ],
-            "role": "normal relay that replays its stored matches in insertion order, then EOSE, then forwards live matches, and answers OK true once per event; its connection for the recipient's subscription opens 200 ms after relay1's, so its copies of the replayed events arrive after relay1's"
+            "role": "normal relay that replays its stored matches in insertion order, then EOSE, then forwards live matches, and answers OK true once per event; its connection for the recipient's subscription opens 100 ms after relay1's, so its copies of the replayed events arrive after relay1's"
           },
           {
             "index": 1,
@@ -113,7 +113,7 @@ exercised here: `duplicateAndReordered`.
       "preconditions": [
         "The sender runs in RECIPIENT_RECEIPT mode, so the kind-4741 event carries the r tag as its fourth tag and asks for a receipt.",
         "The recipient client is created and started only after both events were stored by both relays, so the copies it receives come from the relay replay of C-DLV §5.4, which a relay may do for events stored before the client started; the REQ of the subscription is sent on each connection when that connection opens, not at the end of the connection phase.",
-        "relay1 replays its stored matches in reverse insertion order, each of them twice, and relay1's connection for the recipient's subscription opens 200 ms before relay0's, so relay1's copies arrive first and relay0's arrive last; neither relay is configured to hold frames, so no arrival below is produced by a frame delay.",
+        "relay1 replays its stored matches in reverse insertion order, each of them twice, and relay1's connection for the recipient's subscription opens 100 ms before relay0's, so relay1's copies arrive first and relay0's arrive last; neither relay is configured to hold frames, so no arrival below is produced by a frame delay.",
         "C-DLV §7.1 processes inbound EVENT frames per client, one at a time and in arrival order across all relays, and neither §5.2 nor §7.1 holds inbound frames while the recipient's start() has not yet resolved and its state is still CREATED (C-SDK §4 names CREATED, RUNNING and STOPPED only); this timeline therefore fixes the processing instants of the inbound frames at their arrivals, during the connection phase of the recipient client, and marks that reading as the one point where the two documents leave the instant of inbound processing during a connection phase open. The receipt publication of C-DLV §7.2 carries no RUNNING condition of its own: C-DLV §5.2 states no RUNNING condition for inbound processing, and the recipient client of this timeline has no outbound item.",
         "The two payloads differ and the two events carry different n tags, so they have different event ids even though they share the recipient and the created_at second.",
         "The injected clock port fires each armed timer at exactly its delay; no retry delay is drawn in this timeline, so randomValues is empty."
@@ -309,7 +309,7 @@ exercised here: `duplicateAndReordered`.
           "at": 21100,
           "actor": "recipient",
           "event": "relay0's connection opens and the REQ is sent on it",
-          "detail": "relay0's connection for the recipient's subscription opens 200 ms after relay1's (the harness fixes both instants); relay0 replays its stored matches for that filter in insertion order, then EOSE",
+          "detail": "relay0's connection for the recipient's subscription opens 100 ms after relay1's (the harness fixes both instants); relay0 replays its stored matches for that filter in insertion order, then EOSE",
           "timing": {
             "kind": "deltaFromPrevious",
             "valueMs": 100
@@ -480,7 +480,7 @@ exercised here: `duplicateAndReordered`.
             "valueMs": 75
           },
           "checks": [
-            "C-DLV §5.3",
+            "C-DLV §7.1",
             "C-DLV §8"
           ]
         },
@@ -657,7 +657,7 @@ exercised here: `duplicateAndReordered`.
       "notEmitted": [
         "no MESSAGE_RECEIVED and no INBOUND_DISCARDED for a copy whose event id is already in the window, and no second receipt for an event id while that id is in the window",
         "no second DELIVERY_STATE_CHANGED for a terminal item",
-        "no ordering guarantee: C-SDK §2 bound 2 and C-DLV §8 say a message may be received zero, one or more times and in any order, and the recipient's processing order here is e2 then e1, the reverse of the sending order, because that is the arrival order",
+        "no ordering guarantee: C-SDK §2 bound 2 says a message may be received zero, one or more times and in any order, and the recipient's processing order here is e2 then e1, the reverse of the sending order, because that is the arrival order",
         "no claim that the relay replay is guaranteed: it is the relay's own behaviour of C-DLV §5.4"
       ]
     },
@@ -854,7 +854,7 @@ exercised here: `duplicateAndReordered`.
           "at": 24000,
           "actor": "clock",
           "event": "the attempt timeout of attempt 1 elapses and the retry is armed",
-          "detail": "the attempt timeout elapses: relay1 is still PENDING and becomes TIMED_OUT; relay0 keeps UNREACHABLE for this attempt; no acceptance was recorded, so the SDK draws the second value and computes delay(1, 4294967295) = floor(1000 / 2) + floor(4294967295 × 1000 / 2^33) = 500 + 499 = 999; clock.now() + 500 = 24999 is before deadlineAt 132000, so the retry is armed; IN_FLIGHT to QUEUED",
+          "detail": "the attempt timeout elapses: relay1 is still PENDING and becomes TIMED_OUT; relay0 keeps UNREACHABLE for this attempt; no acceptance was recorded, so the SDK draws the second value and computes delay(1, 4294967295) = floor(1000 / 2) + floor(4294967295 × 1000 / 2^33) = 500 + 499 = 999; clock.now() + 999 = 24999 is before deadlineAt 132000, so the retry is armed; IN_FLIGHT to QUEUED",
           "timing": {
             "kind": "retryDelay",
             "valueMs": 999,
@@ -1048,7 +1048,7 @@ exercised here: `duplicateAndReordered`.
           "result": "{ ok: true, value: { deliveryId: 'd1', recipient: '<recipient public key>', state: 'RELAY_ACCEPTED', terminal: true, attempts: 2, createdAt: 12000, deadlineAt: 132000, lastCode: null, relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'TIMED_OUT' }] } }"
         },
         {
-          "at": 36999,
+          "at": 37009,
           "call": "shutdown()",
           "result": "{ ok: true, value: { clientState: 'STOPPED', lost: 0 } }"
         }
