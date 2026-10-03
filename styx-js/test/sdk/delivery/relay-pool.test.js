@@ -1450,6 +1450,9 @@ describe('createRelaySet — O-SCEN3 scenarios', () => {
     // Let the replacement's connectAll() settle first: a publication on it could
     // only happen after that handler, so asserting before it would be vacuous.
     await flush();
+    // The replacement pool is prepared in the C-DLV §5.1 order, like every pool:
+    // disconnectAll, then subscribe, then connectAll.
+    expect(h.created[2].order.slice(0, 3)).toEqual(['disconnectAll', 'subscribe', 'connectAll']);
     // The replacement connection exists but nothing was published on it in this
     // attempt (C-DLV §5.3).
     expect(h.created[2].published).toEqual([]);

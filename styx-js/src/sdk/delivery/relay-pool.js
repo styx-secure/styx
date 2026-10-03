@@ -217,6 +217,36 @@ function attemptState(event, index, relayCount) {
 }
 
 /**
+ * The public face of one attempt: exactly the members the card contract lists
+ * (Issue #426, Observable outcome) and nothing else. The module keeps its own
+ * record, which holds the timers, the settlement and the per-pool bookkeeping, so
+ * a caller cannot forge a settlement, reach a live `RelayPool` through
+ * `calledPool`, or disarm a timeout by overwriting a handle.
+ */
+const publicAttempts = new WeakMap();
+function publicAttempt(record) {
+  const cached = publicAttempts.get(record);
+  if (cached) return cached;
+  const facade = {
+    index: record.index,
+    event: record.event,
+    outcomes: record.outcomes,
+    publishedOnce: record.publishedOnce,
+    get acceptedIndex() { return record.acceptedIndex; },
+    isSettled: record.isSettled,
+    onOutcome: record.onOutcome,
+    onSettled: record.onSettled,
+    ignoreAcks: record.ignoreAcks,
+    get acceptGate() { return record.acceptGate; },
+    set acceptGate(gate) { record.acceptGate = gate; },
+    get latePublishGate() { return record.latePublishGate; },
+    set latePublishGate(gate) { record.latePublishGate = gate; },
+  };
+  publicAttempts.set(record, facade);
+  return facade;
+}
+
+/**
  * Create the relay set of one client.
  *
  * @param {object} options
@@ -835,7 +865,7 @@ export function createRelaySet(options) {
     }
     if (stopped) {
       attempt.frozen = true;
-      return attempt;
+      return publicAttempt(attempt);
     }
     const onTimeout = () => {
       const clockHandle = attempt.clockHandle;
@@ -882,7 +912,7 @@ export function createRelaySet(options) {
     }
     // C-DLV §5.2 reads `healthCheck()` whenever `publish` returns 0.
     if (anyZero) superviseOnce();
-    return attempt;
+    return publicAttempt(attempt);
   };
 
   /**
