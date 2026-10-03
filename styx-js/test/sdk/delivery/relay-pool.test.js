@@ -1099,6 +1099,187 @@ describe('createRelaySet — publish and per-relay outcomes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 2b. The attempt facade: a caller can read an attempt and assign its two
+//     gates, and nothing else. These are the controller's reproduction of the
+//     review of 717d044 (H1: a gate received the module's record; H2: the
+//     facade exposed the record's own arrays), turned into regression tests.
+// ---------------------------------------------------------------------------
+
+const CONTRACT_MEMBERS = [
+  'index', 'event', 'outcomes', 'publishedOnce', 'acceptedIndex', 'isSettled',
+  'onOutcome', 'onSettled', 'ignoreAcks', 'acceptGate', 'latePublishGate',
+];
+
+describe('createRelaySet — the attempt facade', () => {
+  test('both gates receive the facade publish returned, never the record', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'late', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    const seen = [];
+    attempt.acceptGate = (index, given) => { seen.push(['accept', index, given]); return false; };
+    attempt.latePublishGate = (index, given) => { seen.push(['late', index, given]); return false; };
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true, 'saved'] });
+    h.created[1].openLate();
+    await flush();
+    expect(seen.map(([kind, index]) => [kind, index])).toEqual([['accept', 0], ['late', 1]]);
+    for (const [, , given] of seen) {
+      expect(given).toBe(attempt);
+      expect(Reflect.ownKeys(given).sort()).toEqual([...CONTRACT_MEMBERS].sort());
+      for (const hidden of ['settle', 'calledPool', 'clockHandle', 'hostHandle', 'frozen', 'acksIgnored']) {
+        expect(given[hidden]).toBeUndefined();
+      }
+    }
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+    const closing = set.dispose();
+    h.clock.advance(RELAYPOOL_CONNECT_TIMEOUT_MS);
+    await closing;
+  });
+
+  test('a refusing gate cannot forge an acceptance through its argument (H1)', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    let given = null;
+    attempt.acceptGate = (index, arg) => { given = arg; return false; };
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true, 'saved'] });
+    expect(given).not.toBeNull();
+    expect(typeof given.settle).toBe('undefined');
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+    expect(attempt.acceptedIndex).toBe(-1);
+    h.clock.advance(PER_RELAY_TIMEOUT_MS);
+    expect(attempt.outcomes).toEqual(['TIMED_OUT', 'TIMED_OUT']);
+    await set.dispose();
+  });
+
+  test('outcomes and publishedOnce are live but cannot be written (H2)', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    expect(attempt.publishedOnce).toEqual([true, true]);
+    const writes = [
+      () => { attempt.outcomes[0] = 'ACCEPTED'; },
+      () => { attempt.outcomes[1] = 'ACCEPTED'; },
+      () => { attempt.publishedOnce[0] = false; },
+      () => { attempt.outcomes.length = 0; },
+      () => { attempt.outcomes.push('ACCEPTED'); },
+      () => { attempt.outcomes.fill('ACCEPTED'); },
+      () => { attempt.publishedOnce.splice(0, 2); },
+      () => { delete attempt.outcomes[0]; },
+      () => { Object.defineProperty(attempt.outcomes, 0, { value: 'ACCEPTED' }); },
+      () => { Object.setPrototypeOf(attempt.outcomes, null); },
+      () => { Object.preventExtensions(attempt.publishedOnce); },
+    ];
+    for (const write of writes) {
+      // ES modules are strict code, so a refused write throws.
+      expect(write).toThrow(TypeError);
+    }
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+    expect(attempt.publishedOnce).toEqual([true, true]);
+    expect(attempt.isSettled()).toBe(false);
+    expect(attempt.acceptedIndex).toBe(-1);
+    const replayed = [];
+    attempt.onOutcome((index, outcome) => replayed.push([index, outcome]));
+    expect(replayed).toEqual([]);
+    let settled = 0;
+    attempt.onSettled(() => { settled += 1; });
+    expect(settled).toBe(0);
+    // The views are live: a real acknowledgement is read through them.
+    h.created[1].messages.emit('message', { relay: h.relays[1], data: ['OK', EVENT.id, true, 'saved'] });
+    expect(attempt.outcomes).toEqual(['PENDING', 'ACCEPTED']);
+    expect(attempt.outcomes[1]).toBe('ACCEPTED');
+    expect(attempt.outcomes).toHaveLength(2);
+    expect(Array.isArray(attempt.outcomes)).toBe(true);
+    expect([...attempt.outcomes]).toEqual(['PENDING', 'ACCEPTED']);
+    expect(attempt.acceptedIndex).toBe(1);
+    expect(replayed).toEqual([[1, 'ACCEPTED']]);
+    h.clock.advance(PER_RELAY_TIMEOUT_MS);
+    expect(attempt.outcomes).toEqual(['TIMED_OUT', 'ACCEPTED']);
+    expect(replayed).toEqual([[1, 'ACCEPTED'], [0, 'TIMED_OUT']]);
+    expect(settled).toBe(1);
+    await set.dispose();
+  });
+
+  test('a forged outcome after the close changes nothing (H2, controller probe)', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    await set.dispose();
+    expect(() => { attempt.outcomes[0] = 'ACCEPTED'; }).toThrow(TypeError);
+    expect(() => { attempt.outcomes[1] = 'ACCEPTED'; }).toThrow(TypeError);
+    const replayed = [];
+    attempt.onOutcome((index, outcome) => replayed.push([index, outcome]));
+    expect(replayed).toEqual([]);
+    expect(attempt.isSettled()).toBe(false);
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+  });
+
+  test('the facade cannot be extended, redefined or re-prototyped', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    expect(Object.isFrozen(attempt)).toBe(true);
+    expect(Object.getPrototypeOf(attempt)).toBeNull();
+    const tampering = [
+      () => { attempt.settle = () => {}; },
+      () => { attempt.outcomes = ['ACCEPTED']; },
+      () => { attempt.publishedOnce = [false]; },
+      () => { attempt.isSettled = () => true; },
+      () => { attempt.onOutcome = () => () => {}; },
+      () => { attempt.index = 99; },
+      () => { attempt.acceptedIndex = 0; },
+      () => { delete attempt.acceptGate; },
+      () => { delete attempt.outcomes; },
+      () => { Object.defineProperty(attempt, 'acceptedIndex', { value: 0 }); },
+      () => { Object.defineProperty(attempt, 'acceptGate', { value: () => true }); },
+      () => { Object.setPrototypeOf(attempt, { settle: () => {} }); },
+    ];
+    for (const tamper of tampering) expect(tamper).toThrow(TypeError);
+    for (const name of CONTRACT_MEMBERS) {
+      const descriptor = Object.getOwnPropertyDescriptor(attempt, name);
+      expect(descriptor.configurable).toBe(false);
+      if (name === 'acceptGate' || name === 'latePublishGate') {
+        expect(typeof descriptor.get).toBe('function');
+        expect(typeof descriptor.set).toBe('function');
+      } else if ('value' in descriptor) {
+        expect(descriptor.writable).toBe(false);
+      } else {
+        expect(descriptor.set).toBeUndefined();
+      }
+    }
+    expect(Reflect.ownKeys(attempt).sort()).toEqual([...CONTRACT_MEMBERS].sort());
+    // The module is unaffected: the next publication returns its own facade, and
+    // the original still settles through the module only.
+    expect(set.publish({ ...EVENT, id: 'f'.repeat(64) })).not.toBe(attempt);
+    expect(attempt.isSettled()).toBe(false);
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true, 'saved'] });
+    expect(attempt.outcomes).toEqual(['ACCEPTED']);
+    expect(attempt.acceptedIndex).toBe(0);
+    await set.dispose();
+  });
+
+  test('the two gates stay assignable and are read back', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    expect(attempt.acceptGate).toBeNull();
+    expect(attempt.latePublishGate).toBeNull();
+    const accept = () => true;
+    const late = () => true;
+    attempt.acceptGate = accept;
+    attempt.latePublishGate = late;
+    expect(attempt.acceptGate).toBe(accept);
+    expect(attempt.latePublishGate).toBe(late);
+    await set.dispose();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. Supervision, loss and replacement
 // ---------------------------------------------------------------------------
 

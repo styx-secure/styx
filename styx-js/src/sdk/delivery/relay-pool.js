@@ -222,26 +222,56 @@ function attemptState(event, index, relayCount) {
  * record, which holds the timers, the settlement and the per-pool bookkeeping, so
  * a caller cannot forge a settlement, reach a live `RelayPool` through
  * `calledPool`, or disarm a timeout by overwriting a handle.
+ *
+ * The facade is frozen, has a null prototype and non-configurable members, so
+ * it cannot be extended or redefined; only the two gates are assignable, as
+ * accessor pairs. `outcomes` and `publishedOnce` are read-only live views of
+ * the record's arrays: they always read the current values, and every write,
+ * definition, deletion, extension prevention or prototype change through them
+ * is refused (a TypeError in strict code), so a caller cannot forge an outcome.
  */
+const READ_ONLY_VIEW = Object.freeze({
+  set: () => false,
+  defineProperty: () => false,
+  deleteProperty: () => false,
+  preventExtensions: () => false,
+  setPrototypeOf: () => false,
+});
+const readOnlyView = (array) => new Proxy(array, READ_ONLY_VIEW);
+
 const publicAttempts = new WeakMap();
 function publicAttempt(record) {
   const cached = publicAttempts.get(record);
   if (cached) return cached;
-  const facade = {
-    index: record.index,
-    event: record.event,
-    outcomes: record.outcomes,
-    publishedOnce: record.publishedOnce,
-    get acceptedIndex() { return record.acceptedIndex; },
-    isSettled: record.isSettled,
-    onOutcome: record.onOutcome,
-    onSettled: record.onSettled,
-    ignoreAcks: record.ignoreAcks,
-    get acceptGate() { return record.acceptGate; },
-    set acceptGate(gate) { record.acceptGate = gate; },
-    get latePublishGate() { return record.latePublishGate; },
-    set latePublishGate(gate) { record.latePublishGate = gate; },
-  };
+  const value = (v) => ({ value: v, enumerable: true, writable: false, configurable: false });
+  const facade = Object.create(null, {
+    index: value(record.index),
+    event: value(record.event),
+    outcomes: value(readOnlyView(record.outcomes)),
+    publishedOnce: value(readOnlyView(record.publishedOnce)),
+    acceptedIndex: {
+      get: () => record.acceptedIndex,
+      enumerable: true,
+      configurable: false,
+    },
+    isSettled: value(record.isSettled),
+    onOutcome: value(record.onOutcome),
+    onSettled: value(record.onSettled),
+    ignoreAcks: value(record.ignoreAcks),
+    acceptGate: {
+      get: () => record.acceptGate,
+      set: (gate) => { record.acceptGate = gate; },
+      enumerable: true,
+      configurable: false,
+    },
+    latePublishGate: {
+      get: () => record.latePublishGate,
+      set: (gate) => { record.latePublishGate = gate; },
+      enumerable: true,
+      configurable: false,
+    },
+  });
+  Object.freeze(facade);
   publicAttempts.set(record, facade);
   return facade;
 }
@@ -547,12 +577,13 @@ export function createRelaySet(options) {
    * Read one caller-supplied gate. Both gates default to allowing and a gate
    * that throws is read as refusing, so an ill-behaved client can fail the
    * recording of an acceptance but never make this module record one it
-   * refused, and a gate fault never escapes into a pool's emitter.
+   * refused, and a gate fault never escapes into a pool's emitter. The gate
+   * receives the attempt's public facade, never the module's own record.
    */
   const gateAllows = (gate, relayIndex, attempt) => {
     if (typeof gate !== 'function') return true;
     try {
-      return gate(relayIndex, attempt) !== false;
+      return gate(relayIndex, publicAttempt(attempt)) !== false;
     } catch {
       return false;
     }
