@@ -849,7 +849,11 @@ function readObservation(operation, observation) {
   let value = shape.values;
   if (shape.error) {
     const evidence = Object.hasOwn(EVIDENCE_MEMBERS, operation) ? EVIDENCE_MEMBERS[operation] : null;
-    if (shape.error === 'INVALID_REQUEST' && evidence !== null && Array.isArray(shape.bad) && shape.bad.length > 0
+    // C-API `/withinLevelErrorOrder/P01`: a readable nested record's own P01 defect competes first, before
+    // any failed evidence member is read as absent (cycle 5j review).
+    const nested = nestedObservationDefects(operation, shape.partial);
+    if (shape.error === 'INVALID_REQUEST' && nested.length === 0 && evidence !== null
+      && Array.isArray(shape.bad) && shape.bad.length > 0
       && shape.bad.every((key) => evidence.includes(key))) {
       // Only post-request evidence members failed: every other member was read once, as a plain data
       // member, into `partial`; the failed ones are read as absent and decided below.
@@ -861,7 +865,7 @@ function readObservation(operation, observation) {
       // C-API `/withinLevelErrorOrder/P01`: a malformed observation still lets the P01 defect of a readable
       // nested record (the staged or held escrow, the restore facts) compete, so an unknown member there
       // preempts a malformed member of the outer record whatever the order (cycle 5f review).
-      return { error: worst([shape.error, ...nestedObservationDefects(operation, shape.partial)]) };
+      return { error: worst([shape.error, ...nested]) };
     }
   }
 
@@ -972,7 +976,11 @@ function readObservation(operation, observation) {
       defects.push('INVALID_REQUEST');
     }
     let staged = null;
-    if ((operation === 'CREATE' || operation === 'SELF_UPDATE') && value.stagedOutput !== null) {
+    if (selfUpdate && requestIssued && value.stagedOutput === ABSENT_MEMBER && commitOutcome !== 'COMMITTED') {
+      // A failed escrow member of an issued update that RS has not proved committed is the absent escrow:
+      // the ambiguous outcome is still held and nothing is released (cycle 5j review).
+      staged = null;
+    } else if ((operation === 'CREATE' || operation === 'SELF_UPDATE') && value.stagedOutput !== null) {
       const member = operation === 'CREATE' ? STAGED_OUTPUT_BY_CODE.CREATED : STAGED_OUTPUT_BY_CODE.SELF_UPDATED;
       const stagedShape = value.stagedOutput === ABSENT_MEMBER ? { error: 'INVALID_REQUEST' }
         : readStagedOutput(value.stagedOutput, member);

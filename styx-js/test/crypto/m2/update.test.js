@@ -2036,6 +2036,18 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     expect(committedNoEscrow.result.kind).toBe('INDETERMINATE');
     expect(committedNoEscrow.result.output).toBe(undefined);
     expect(committedNoEscrow.snapshot.held.terminalEvidenceStatus).toBe('COMMITTED');
+    // An issued, not-committed update whose escrow member fails is held (INDETERMINATE) or closed
+    // (NOT_COMMITTED) exactly as with an absent escrow, releasing nothing (cycle 5j review).
+    for (const [outcome, kind] of [['INDETERMINATE', 'INDETERMINATE'], ['NOT_COMMITTED', 'NOT_COMMITTED']]) {
+      const failedEscrow = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: withoutMember({ ...issued, commitOutcome: outcome }, 'stagedOutput') });
+      expect(failedEscrow.result.kind).toBe(kind);
+      expect(failedEscrow.result.output).toBe(undefined);
+      if (kind === 'INDETERMINATE') expect(failedEscrow.snapshot.held.terminalEvidenceStatus).toBe('PENDING');
+    }
+    // A readable non-enumerable escrow's nested unknown member still preempts at P01.
+    const hidden = { ...issued, operationIdentity: null, commitOutcome: null, stagedOutput: { protectedCommitBytes: STAGED, extra: true } };
+    Object.defineProperty(hidden, 'stagedOutput', { enumerable: false });
+    expect(code(invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: hidden }).result)).toBe('UNKNOWN_FIELD');
     // With no operation identity no request was issued: the omitted outcome stays the P01 defect.
     const unissued = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: withoutMember({ ...issued, operationIdentity: null }, 'commitOutcome') });
     expect(code(unissued.result)).toBe('INVALID_REQUEST');
