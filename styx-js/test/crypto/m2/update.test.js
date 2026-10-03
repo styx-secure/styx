@@ -325,7 +325,8 @@ describe('I-UPD module surface and the widened closed sets', () => {
   test('the integrated operation set is this slice widened onto the merged base', () => {
     expect(M2_ADAPTER.API).toBe('styx-m2-session-adapter/v1');
     expect([...M2_ADAPTER.INTEGRATED_OPERATIONS]).toEqual([
-      'CREATE', 'RESTORE', 'JOIN_WELCOME', 'SELF_UPDATE', 'RECONCILE_INDETERMINATE',
+      'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION', 'SELF_UPDATE',
+      'RECONCILE_INDETERMINATE',
     ]);
     expect([...M2_ADAPTER.OPERATIONS]).toEqual([
       'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
@@ -570,8 +571,6 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
 
   test('a valid C-API operation outside this slice stays UNSUPPORTED_OPERATION', () => {
     const outside = [
-      ['PROTECT_APPLICATION', { applicationBytes: bytes(0x01) }],
-      ['OPEN_APPLICATION', { protectedApplicationMessage: bytes(0x01) }],
       ['APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) }],
       ['ADD_MEMBER', {}],
     ];
@@ -771,7 +770,7 @@ describe('I-UPD fail-closed request validation', () => {
     ['missing profile member', request('SELF_UPDATE', {}, { profile: withoutMember({ ...PROFILE }, 'adapterApi') }), active(), okUpdate, 'UNSUPPORTED_PROFILE'],
     ['unknown operation', request('ADD_MEMBER', {}), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
     ['operation outside the slice', request('APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) }), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
-    ['malformed input of an outside operation', request('PROTECT_APPLICATION', {}), active(), okUpdate, 'INVALID_REQUEST'],
+    ['malformed input of an outside operation', request('APPLY_PEER_UPDATE', {}), active(), okUpdate, 'INVALID_REQUEST'],
     ['unknown input member', request('SELF_UPDATE', { extra: 1 }), active(), okUpdate, 'UNKNOWN_FIELD'],
     ['missing reconcile reference', request('RECONCILE_INDETERMINATE', {}), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
     ['empty reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: '' }), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
@@ -926,7 +925,7 @@ describe('I-UPD total precedence and the internal failure boundary', () => {
     const several = request('ADD_MEMBER', {}, { extra: 1, api: 'styx-m2-session-adapter/v2' });
     expect(code(invokeAdapter({ request: several, snapshot: active(), observation: updateObservation({}) })))
       .toBe('UNKNOWN_FIELD');
-    const apiThenOperation = request('PROTECT_APPLICATION', { applicationBytes: bytes(0x01) },
+    const apiThenOperation = request('APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) },
       { api: 'styx-m2-session-adapter/v2' });
     expect(code(invokeAdapter({ request: apiThenOperation, snapshot: active(), observation: updateObservation({}) })))
       .toBe('UNSUPPORTED_API_VERSION');
