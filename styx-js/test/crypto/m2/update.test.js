@@ -1466,7 +1466,7 @@ describe('I-UPD hostile inputs never widen the closed vocabulary', () => {
 });
 
 // Fifth correction cycle: one regression per finding fixed, all through the public entry points.
-describe('I-UPD fifth-cycle regressions (probes p12, p14, p16)', () => {
+describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () => {
   const selfUpdate = (bindingRef, observation, snapshot = active()) => invokeAdapterTransition({
     request: request('SELF_UPDATE', {}, { bindingRef }), snapshot, observation,
   });
@@ -1568,5 +1568,55 @@ describe('I-UPD fifth-cycle regressions (probes p12, p14, p16)', () => {
     const wrong = reconcileWith(SLOT.slice(), interrupted.snapshot,
       reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), heldRef('other'));
     expect(code(wrong.result)).toBe('RECONCILIATION_REFERENCE_MISMATCH');
+  });
+
+  test('p16: a snapshot that answers a different hold on a second read cannot swap the committed hold', () => {
+    const hold = heldUpdate('held-upd-swap');
+    const reference = heldRef('held-upd-swap');
+    const interrupted = reconcileWith(SLOT.slice(), hold, reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference);
+    const genuine = interrupted.snapshot.held;
+    // Same reference and evidence status, a different decoded mutation (a JOIN_WELCOME hold of the same
+    // operation identity): valid on its own, but never the mutation RS proved committed.
+    const swapped = { ...heldJoin('held-upd-swap').held, terminalEvidenceStatus: 'COMMITTED' };
+    expect(swapped.reconciliationRef).toBe(genuine.reconciliationRef);
+    expect(swapped.scenario).not.toBe(genuine.scenario);
+    // The swap is tried from every read position on, because the adapter reads `held` more than once
+    // before this path; whichever read is the one that decides, the answer must be a rejection or the
+    // genuine committed hold returned exactly as it was.
+    for (let swapFrom = 1; swapFrom <= 8; swapFrom += 1) {
+      let reads = 0;
+      const hostile = new Proxy({ ...interrupted.snapshot }, {
+        getOwnPropertyDescriptor(target, key) {
+          if (key === 'held') {
+            reads += 1;
+            return { value: reads >= swapFrom ? swapped : genuine, writable: true, enumerable: true, configurable: true };
+          }
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+      });
+      const later = reconcileWith(SLOT.slice(), hostile,
+        reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      if (later.result.kind === 'INDETERMINATE') {
+        expect(later.snapshot).toEqual(interrupted.snapshot);
+      } else {
+        expect(later.result.kind).toBe('REJECTED');
+        expect(later.snapshot).toBe(null);
+      }
+    }
+  });
+
+  test('p08: two P01 defects in one observation follow the ratified order whatever the member order', () => {
+    const withAccessor = (first) => {
+      const value = first === 'unknown' ? { extra: 1 } : {};
+      Object.defineProperty(value, 'updateForm', { enumerable: true, get() { return 'SUPPORTED'; } });
+      Object.assign(value, { slotContext: SLOT.slice(), commitOutcome: null, operationIdentity: null, stagedOutput: null });
+      if (first !== 'unknown') value.extra = 1;
+      return value;
+    };
+    for (const first of ['accessor', 'unknown']) {
+      const result = selfUpdate(SLOT.slice(), withAccessor(first));
+      expect(code(result.result)).toBe('UNKNOWN_FIELD');
+      expect(result.snapshot).toBe(null);
+    }
   });
 });

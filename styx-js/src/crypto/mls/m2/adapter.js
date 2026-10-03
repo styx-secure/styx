@@ -423,9 +423,10 @@ function readClosed(value, allowed) {
   } catch {
     return { error: 'INVALID_REQUEST', values: null };
   }
-  if (keys.some((key) => typeof key !== 'string')) return { error: 'UNKNOWN_FIELD', values: null };
+  // C-API `/withinLevelErrorOrder` P01: UNKNOWN_FIELD preempts INVALID_REQUEST. Every member is checked
+  // for membership before any member's shape, so the answer never depends on the member order.
+  if (keys.some((key) => typeof key !== 'string' || !allowed.includes(key))) return { error: 'UNKNOWN_FIELD', values: null };
   for (const key of keys) {
-    if (!allowed.includes(key)) return { error: 'UNKNOWN_FIELD', values: null };
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
       return { error: 'INVALID_REQUEST', values: null };
@@ -879,8 +880,13 @@ function readHeldFacts(snapshot) {
     return unreadable;
   }
   const member = (key) => (descriptors[key] && Object.hasOwn(descriptors[key], 'value') ? descriptors[key].value : null);
+  // `copy` is the single data-only read of every held member. A caller that needs the hold itself (the
+  // committed-hold path) uses this copy, so a snapshot cannot answer one hold to the guard and another
+  // to the decision (review finding: double-read of `held`).
+  const copy = Object.fromEntries(Object.keys(descriptors).map((key) => [key, member(key)]));
   return {
     error: null,
+    copy,
     outputKind: member('outputKind'),
     expectedSuccessCode: member('expectedSuccessCode'),
     selectedCandidateRef: member('selectedCandidateRef'),
@@ -1101,17 +1107,11 @@ function run(input) {
       && heldFacts.error === null && heldFacts.terminalEvidenceStatus === 'COMMITTED'
       && observed.commitOutcome !== 'COMMITTED' && event.reconciliationRef === heldFacts.reconciliationRef;
     if (committedHold) {
-      // The hold is copied from its own descriptors (the read `readHeldFacts` uses), never by property
-      // access, and the merged core re-validates the copy in full (review finding p13b).
-      const heldDescriptor = readOwnDescriptor(snapshot, 'held');
-      let heldCopy = null;
-      try {
-        heldCopy = Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(heldDescriptor.value))
-          .map(([key, member]) => [key, Object.hasOwn(member, 'value') ? member.value : undefined]));
-      } catch {
-        heldCopy = null;
-      }
-      const pending = heldCopy === null ? null : decide(
+      // The guard above, the re-decision below and the hold returned are all the one descriptor read
+      // `readHeldFacts` took; the merged core re-validates that copy in full (review findings p13b and
+      // the cycle-5 double-read of `held`).
+      const heldCopy = heldFacts.copy;
+      const pending = decide(
         { state: 'RECONCILIATION_REQUIRED', held: { ...heldCopy, terminalEvidenceStatus: 'PENDING' } },
         { ...event, commitOutcome: 'INDETERMINATE' },
       );
