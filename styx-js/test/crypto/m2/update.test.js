@@ -250,13 +250,18 @@ const API = M2_ADAPTER.API;
 const REQUEST_MEMBERS = ['api', 'operation', 'requestId', 'profile', 'bindingRef', 'input'];
 const RESULT_COMMON_MEMBERS = ['api', 'requestId', 'operation', 'kind', 'stateBefore', 'stateAfter'];
 
+// C-BIND §4: the authoritative slot context of the session (the 32 nonzero `localContextId` bytes) the
+// SS resolves for a session-bound operation, and the request `bindingRef` that names it.
+const SLOT = new Uint8Array(32).fill(0xa1);
+const OTHER_SLOT = new Uint8Array(32).fill(0xb2);
+
 let counter = 0;
 const request = (operation, input, overrides = {}) => ({
   api: API,
   operation,
   requestId: `req-iupd-${++counter}`,
   profile: { ...PROFILE },
-  bindingRef: new Uint8Array([0x01, 0x02, 0x03]),
+  bindingRef: SLOT.slice(),
   input,
   ...overrides,
 });
@@ -285,6 +290,7 @@ const heldJoin = (id = 'held-join-1') => holdOf('JOIN_WELCOME', empty(), id);
 const updateObservation = ({
   updateForm = 'SUPPORTED', commitOutcome = 'COMMITTED', stagedOutput = undefined, operationIdentity = undefined,
 } = {}) => ({
+  slotContext: SLOT.slice(),
   updateForm,
   commitOutcome,
   operationIdentity: operationIdentity === undefined ? (commitOutcome === null ? null : 'op-upd-1') : operationIdentity,
@@ -294,6 +300,7 @@ const updateObservation = ({
 });
 
 const reconcileObservation = ({ commitOutcome = 'COMMITTED', responseEmission = 'SUCCEEDED', heldOutput = undefined } = {}) => ({
+  slotContext: SLOT.slice(),
   commitOutcome,
   responseEmission,
   heldOutput: heldOutput === undefined
@@ -473,7 +480,7 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
   });
 
   test('an unsupported update form is refused before any commit proof is consulted', () => {
-    const refused = { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null };
+    const refused = { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null };
     const active1 = invoke('SELF_UPDATE', active(), refused);
     assertEnvelope(active1, 'REJECTED', ['error']);
     expect(code(active1)).toBe('UNSUPPORTED_UPDATE_FORM');
@@ -485,6 +492,7 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
 
   test('an unsupported update form with a staged output supplied still releases nothing', () => {
     const result = invoke('SELF_UPDATE', active(), {
+      slotContext: SLOT.slice(),
       updateForm: 'UNSUPPORTED_UPDATE_FORM',
       commitOutcome: null,
       operationIdentity: null,
@@ -499,6 +507,7 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
 
   test('an unsupported update form with a malformed staged output is a P01 defect, not a typed outcome', () => {
     const result = invoke('SELF_UPDATE', active(), {
+      slotContext: SLOT.slice(),
       updateForm: 'UNSUPPORTED_UPDATE_FORM',
       commitOutcome: null,
       operationIdentity: null,
@@ -707,7 +716,7 @@ describe('I-UPD ambiguity reconciles through RECONCILE_INDETERMINATE', () => {
   });
 
   test('a repeat after the hold was cleared answers the ratified code even with durable RS evidence', () => {
-    const durable = { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null };
+    const durable = { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null };
     const clearedPending = reconcile(active(), durable, heldRef('cleared-hold'));
     expect(code(clearedPending)).toBe('NO_RECONCILIATION_PENDING');
     expect(clearedPending.stateAfter).toBe('ACTIVE');
@@ -760,16 +769,16 @@ describe('I-UPD fail-closed request validation', () => {
     ['non-closed observation', request('SELF_UPDATE', {}), active(), { ...okUpdate, extra: 1 }, 'UNKNOWN_FIELD'],
     ['reconciliation with no hold and no proof at all', request('RECONCILE_INDETERMINATE', { reconciliationRef: 'I-SM-HOLD:none' }), active(), noProofReconcile, 'NO_RECONCILIATION_PENDING'],
     ['missing observation member', request('SELF_UPDATE', {}), active(), withoutMember(okUpdate, 'stagedOutput'), 'INVALID_REQUEST'],
-    ['out-of-set update form', request('SELF_UPDATE', {}), active(), { updateForm: 'PROPOSAL_FREE', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'UNKNOWN_VALUE'],
+    ['out-of-set update form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'PROPOSAL_FREE', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'UNKNOWN_VALUE'],
     ['out-of-set update form with a commit proof supplied', request('SELF_UPDATE', {}), active(), { ...okUpdate, updateForm: 'PROPOSAL_FREE' }, 'INVALID_REQUEST'],
-    ['malformed staged output with an unsupported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: 'x' } }, 'INVALID_REQUEST'],
+    ['malformed staged output with an unsupported form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: 'x' } }, 'INVALID_REQUEST'],
     ['non-closed reconciliation observation', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), { ...reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), extra: 1 }, 'UNKNOWN_FIELD'],
     ['missing reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withoutMember(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'responseEmission'), 'INVALID_REQUEST'],
     ['accessor reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withAccessor(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'heldOutput'), 'INVALID_REQUEST'],
     ['held escrow withheld from a reconciliation with no proof', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null }), 'INVALID_REQUEST'],
-    ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
-    ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
-    ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
+    ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
+    ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
+    ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output of the wrong member without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
     ['staged output of the wrong type without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
     ['out-of-set commit outcome', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE' }, 'UNKNOWN_VALUE'],
@@ -809,34 +818,45 @@ describe('I-UPD fail-closed request validation', () => {
     expect(Object.isFrozen(validateAdapterRequest(request('SELF_UPDATE', {})))).toBe(true);
   });
 
-  test('the tri-state proof identity is bounded so the reference this module issues fits its own bound', () => {
+  test('an operation identity past its bound is rejected at P06 before any commit request (probe p06)', () => {
     const identity = 'i'.repeat(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS);
     const accepted = invokeAdapter({
       request: request('SELF_UPDATE', {}), snapshot: active(), observation: updateObservation({ operationIdentity: identity }),
     });
     expect(accepted.kind).toBe('SUCCESS');
     expect(accepted.successCode).toBe('SELF_UPDATED');
-    const bounded = invokeAdapter({
+    // The longest accepted identity mints a reference that fits the reconciliation bound exactly, and that
+    // reference reconciles.
+    const fits = invokeAdapterTransition({
       request: request('SELF_UPDATE', {}), snapshot: active(),
-      observation: updateObservation({ commitOutcome: 'NOT_COMMITTED', operationIdentity: `${identity}i` }),
+      observation: updateObservation({ commitOutcome: 'INDETERMINATE', operationIdentity: identity }),
     });
-    // RS proved absence, so nothing was applied and nothing is rejected either: the proof rules.
-    expect(bounded.kind).toBe('NOT_COMMITTED');
-    expect(bounded.stateAfter).toBe('ACTIVE');
-    const applied = invokeAdapter({
-      request: request('SELF_UPDATE', {}), snapshot: active(),
+    expect(fits.result.kind).toBe('INDETERMINATE');
+    expect(fits.result.reconciliationRef.length).toBe(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS);
+    const resolved = invokeAdapter({
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: fits.result.reconciliationRef }),
+      snapshot: fits.snapshot, observation: reconcileObservation({}),
+    });
+    expect(resolved.successCode).toBe('RECONCILED_COMMITTED');
+    // C-API `CAPI-E014` (P06, REJECTED, UNCHANGED, persistence NONE) and C-MUT §3: one character more is
+    // a structural bound exceeded before any commit request, whatever outcome is reported — nothing is
+    // applied, nothing is held, and no reference this module would refuse is ever minted.
+    for (const commitOutcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
+      const over = invokeAdapterTransition({
+        request: request('SELF_UPDATE', {}), snapshot: active(),
+        observation: updateObservation({ commitOutcome, operationIdentity: `${identity}i` }),
+      });
+      assertEnvelope(over.result, 'REJECTED', ['error']);
+      expect(code(over.result)).toBe('VALUE_OUT_OF_RANGE');
+      expect(over.result.stateAfter).toBe('ACTIVE');
+      expect(over.snapshot).toBe(null);
+    }
+    // The P05 state gates still outrank the P06 bound.
+    const gated = invokeAdapter({
+      request: request('SELF_UPDATE', {}), snapshot: heldUpdate(),
       observation: updateObservation({ operationIdentity: `${identity}i` }),
     });
-    // The over-long identity can never be applied: the mutation is held instead of committed under a
-    // reference this module would refuse, so the bound is fail-closed on the applying path.
-    expect(applied.kind).not.toBe('SUCCESS');
-    const held = invokeAdapterTransition({
-      request: request('SELF_UPDATE', {}), snapshot: active(),
-      observation: updateObservation({ operationIdentity: `${identity}i` }),
-    });
-    // After a commit report the bound cannot reject: the mutation is held instead, never applied.
-    expect(held.result.kind).toBe('INDETERMINATE');
-    expect(held.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    expect(code(gated)).toBe('RECONCILIATION_REQUIRED');
   });
 
   test('no accessor of any injected record is ever invoked', () => {
@@ -916,7 +936,7 @@ describe('I-UPD total precedence and the internal failure boundary', () => {
     const refused = invokeAdapter({
       request: request('SELF_UPDATE', {}, { requestId: longId }),
       snapshot: active(),
-      observation: { updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null },
+      observation: { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null },
     });
     expect(code(refused)).toBe('VALUE_OUT_OF_RANGE');
   });
@@ -993,7 +1013,7 @@ describe('I-UPD purity, immutability and the closed envelope', () => {
       // The injected snapshot is read, never written: reconciliation moves state by returning a new
       // snapshot, so the caller's own record must come back byte-for-byte unchanged.
       expect(snapshot).toEqual(snapshotBefore);
-      expect(input.request.bindingRef).toEqual(new Uint8Array([1, 2, 3]));
+      expect(input.request.bindingRef).toEqual(SLOT);
     }
   });
 
@@ -1052,8 +1072,8 @@ describe('I-UPD seeded property sweep', () => {
     const seen = { success: 0, released: 0, rejected: 0, held: 0 };
     fc.assert(fc.property(snapshotArbitrary, fc.oneof(
       observationArbitrary,
-      fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([7]) } }),
-      fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'INDETERMINATE', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([8]) } }),
+      fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([7]) } }),
+      fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'INDETERMINATE', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([8]) } }),
     ), (snapshot, observation) => {
       let result;
       try {
@@ -1112,10 +1132,10 @@ describe('I-UPD seeded property sweep', () => {
       fc.oneof(
         // Correlated pairs: each hold with the exact escrow and proof that resolves it, so the release path
         // is genuinely reachable, plus the free product of every other shape.
-        fc.constant([heldUpdate(), { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { protectedCommitBytes: STAGED } }]),
-        fc.constant([heldCreate(), { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { embeddedTreeWelcome: WELCOME } }]),
-        fc.constant([heldJoin(), { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null }]),
-        fc.constant([heldUpdate(), { commitOutcome: 'COMMITTED', responseEmission: 'INTERRUPTED', heldOutput: { protectedCommitBytes: STAGED } }]),
+        fc.constant([heldUpdate(), { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { protectedCommitBytes: STAGED } }]),
+        fc.constant([heldCreate(), { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { embeddedTreeWelcome: WELCOME } }]),
+        fc.constant([heldJoin(), { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null }]),
+        fc.constant([heldUpdate(), { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'INTERRUPTED', heldOutput: { protectedCommitBytes: STAGED } }]),
         fc.tuple(snapshotArbitrary, reconcileObservationArbitrary),
       ),
       (pair) => {
@@ -1128,7 +1148,7 @@ describe('I-UPD seeded property sweep', () => {
           result = invokeAdapter({
             request: request('RECONCILE_INDETERMINATE', { reconciliationRef: reference }),
             snapshot,
-            observation: { commitOutcome, responseEmission, heldOutput },
+            observation: { slotContext: SLOT.slice(), commitOutcome, responseEmission, heldOutput },
           });
         } catch (error) {
           expect(error).toBeInstanceOf(M2AdapterError);
@@ -1164,9 +1184,9 @@ describe('I-UPD seeded property sweep', () => {
     const sampler = (seed) => {
       const trace = [];
       fc.assert(fc.property(snapshotArbitrary, fc.oneof(
-        fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([1]) } }),
-        fc.constant({ updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }),
-        fc.constant({ updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null }),
+        fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([1]) } }),
+        fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }),
+        fc.constant({ slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null }),
       ), (snapshot, observation) => {
         const result = invokeAdapter({ request: request('SELF_UPDATE', {}), snapshot, observation });
         trace.push(`${snapshot.state}|${observation.commitOutcome}|${result.kind}|${result.stateAfter}|${result.error === undefined ? result.successCode ?? '' : result.error.code}`);
@@ -1285,7 +1305,7 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
     const truthful = reconcile(hold, reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), reference);
     expect(truthful.kind).toBe('SUCCESS');
     const result = reconcile(snapshot, {
-      commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput,
+      slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput,
     }, reference);
     expect(state.grown).toBe(true);
     assertEnvelope(result, 'REJECTED', ['error']);
@@ -1373,7 +1393,7 @@ describe('I-UPD hostile inputs never widen the closed vocabulary', () => {
     let result = null;
     try {
       result = reconcile(heldUpdate('held-upd-hostile'), {
-        commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: hostile,
+        slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: hostile,
       }, reference);
     } catch (error) {
       thrown = error;
@@ -1442,5 +1462,111 @@ describe('I-UPD hostile inputs never widen the closed vocabulary', () => {
         }
       }
     }
+  });
+});
+
+// Fifth correction cycle: one regression per finding fixed, all through the public entry points.
+describe('I-UPD fifth-cycle regressions (probes p12, p14, p16)', () => {
+  const selfUpdate = (bindingRef, observation, snapshot = active()) => invokeAdapterTransition({
+    request: request('SELF_UPDATE', {}, { bindingRef }), snapshot, observation,
+  });
+  const reconcileWith = (bindingRef, snapshot, observation, reference) => invokeAdapterTransition({
+    request: request('RECONCILE_INDETERMINATE', { reconciliationRef: reference }, { bindingRef }), snapshot, observation,
+  });
+
+  test('p12: SELF_UPDATE compares bindingRef byte-for-byte with the authoritative slot at P03', () => {
+    // C-BIND `/comparisonRules/active` and §4, C-API `CAPI-E006`: wrong length, unknown reference and
+    // byte mismatch are all BINDING_MISMATCH at P03, REJECTED, state unchanged, nothing persisted.
+    expect(selfUpdate(SLOT.slice(), updateObservation({})).result.successCode).toBe('SELF_UPDATED');
+    const lastByte = SLOT.slice();
+    lastByte[31] ^= 0x01;
+    for (const bindingRef of [OTHER_SLOT.slice(), lastByte, SLOT.slice(0, 31), bytes(1, 2, 3), new Uint8Array(4096).fill(7)]) {
+      const transition = selfUpdate(bindingRef, updateObservation({}));
+      assertEnvelope(transition.result, 'REJECTED', ['error']);
+      expect(code(transition.result)).toBe('BINDING_MISMATCH');
+      expect(transition.result.stateAfter).toBe('ACTIVE');
+      expect(transition.snapshot).toBe(null);
+    }
+    // P03 outranks the P05 state gate and every decision row.
+    expect(code(selfUpdate(OTHER_SLOT.slice(), updateObservation({}), heldUpdate()).result)).toBe('BINDING_MISMATCH');
+    expect(code(selfUpdate(OTHER_SLOT.slice(), updateObservation({}), empty()).result)).toBe('BINDING_MISMATCH');
+    // ...and P01/P02 outrank P03.
+    expect(code(invokeAdapter({
+      request: request('SELF_UPDATE', {}, { bindingRef: OTHER_SLOT.slice(), api: 'other' }), snapshot: active(), observation: updateObservation({}),
+    }))).toBe('UNSUPPORTED_API_VERSION');
+  });
+
+  test('p12: RECONCILE_INDETERMINATE compares bindingRef with the original slot of the hold', () => {
+    // C-BIND `/comparisonRules/reconciliationRequired`: a hold created in context A cannot be resolved
+    // through context B; the mismatch is CAPI-E006 and the hold survives unchanged.
+    const held = selfUpdate(SLOT.slice(), updateObservation({ commitOutcome: 'INDETERMINATE' }));
+    expect(held.result.kind).toBe('INDETERMINATE');
+    const cross = reconcileWith(OTHER_SLOT.slice(), held.snapshot, reconcileObservation({}), held.result.reconciliationRef);
+    assertEnvelope(cross.result, 'REJECTED', ['error']);
+    expect(code(cross.result)).toBe('BINDING_MISMATCH');
+    expect(cross.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    expect(cross.snapshot).toBe(null);
+    const same = reconcileWith(SLOT.slice(), held.snapshot, reconcileObservation({}), held.result.reconciliationRef);
+    expect(same.result.successCode).toBe('RECONCILED_COMMITTED');
+  });
+
+  test('p12: the authoritative slot context is a closed, mandatory SS fact of exactly 32 nonzero bytes', () => {
+    for (const slotContext of [undefined, null, bytes(1, 2, 3), new Uint8Array(32), 'a'.repeat(32), [...SLOT]]) {
+      const observation = { ...updateObservation({}), slotContext };
+      if (slotContext === undefined) delete observation.slotContext;
+      expect(code(selfUpdate(SLOT.slice(), observation).result)).toBe('INVALID_REQUEST');
+    }
+    // A slot fact is refused on the operations that do not carry one.
+    const created = invokeAdapter({
+      request: request('CREATE', { peerFramedKeyPackage: bytes(1) }), snapshot: empty(),
+      observation: { onboarding: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-c', stagedOutput: { embeddedTreeWelcome: WELCOME }, slotContext: SLOT.slice() },
+    });
+    expect(code(created)).toBe('UNKNOWN_FIELD');
+  });
+
+  test('p14: a reconciliation with no RS readback is the still-pending CAPI-S024 answer, never INVALID_REQUEST', () => {
+    const hold = heldUpdate('held-upd-p14');
+    const reference = heldRef('held-upd-p14');
+    const pending = reconcileWith(SLOT.slice(), hold, reconcileObservation({ commitOutcome: null, responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+    assertEnvelope(pending.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(pending.result.reconciliationRef).toBe(reference);
+    expect(pending.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    // With nothing held the same request reaches the ratified CAPI-G016 gate.
+    const nothing = reconcileWith(SLOT.slice(), active(), reconcileObservation({ commitOutcome: null, responseEmission: null, heldOutput: null }), reference);
+    expect(code(nothing.result)).toBe('NO_RECONCILIATION_PENDING');
+  });
+
+  test('p14: a supported SELF_UPDATE whose issued request has no RS outcome is held, not rejected', () => {
+    // C-API `/rules/rsTriState` INDETERMINATE "includes every absent, failed or unknown RS outcome after a
+    // commit request"; the SS_RS operation identity is the evidence that the request was issued.
+    const transition = selfUpdate(SLOT.slice(), updateObservation({ commitOutcome: null, operationIdentity: 'op-upd-p14', stagedOutput: { protectedCommitBytes: STAGED } }));
+    assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(transition.result.output).toBe(undefined);
+    expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    // With no identity either, no request was issued: that stays the P01 defect.
+    expect(code(selfUpdate(SLOT.slice(), updateObservation({ commitOutcome: null })).result)).toBe('INVALID_REQUEST');
+  });
+
+  test('p16: after RS proved COMMITTED, a later readback never answers REJECTED and keeps the committed hold', () => {
+    const hold = heldUpdate('held-upd-p16');
+    const reference = heldRef('held-upd-p16');
+    const interrupted = reconcileWith(SLOT.slice(), hold, reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference);
+    expect(interrupted.result.successCode).toBe('RECONCILED_COMMITTED');
+    expect(interrupted.snapshot.held.terminalEvidenceStatus).toBe('COMMITTED');
+    for (const commitOutcome of ['INDETERMINATE', 'NOT_COMMITTED', null]) {
+      const later = reconcileWith(SLOT.slice(), interrupted.snapshot,
+        reconcileObservation({ commitOutcome, responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      assertEnvelope(later.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+      expect(later.result.output).toBe(undefined);
+      expect(later.snapshot).toEqual(interrupted.snapshot);
+    }
+    // The repeat with the committed proof still releases the same escrow (C-MUT
+    // `/reconciliation/interruptedCommittedReconciliationRepeat`), and a wrong reference keeps CAPI-S028.
+    const repeat = reconcileWith(SLOT.slice(), interrupted.snapshot, reconcileObservation({}), reference);
+    expect(repeat.result.successCode).toBe('RECONCILED_COMMITTED');
+    expect(repeat.snapshot.state).toBe('ACTIVE');
+    const wrong = reconcileWith(SLOT.slice(), interrupted.snapshot,
+      reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), heldRef('other'));
+    expect(code(wrong.result)).toBe('RECONCILIATION_REFERENCE_MISMATCH');
   });
 });

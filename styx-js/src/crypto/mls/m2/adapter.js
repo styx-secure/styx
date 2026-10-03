@@ -305,9 +305,18 @@ const OBSERVATION_KEYS = Object.freeze({
   CREATE: Object.freeze(['onboarding', 'commitOutcome', 'operationIdentity', 'stagedOutput']),
   JOIN_WELCOME: Object.freeze(['keyPackage', 'commitOutcome', 'operationIdentity']),
   RESTORE: Object.freeze(['restoreObservation']),
-  SELF_UPDATE: Object.freeze(['updateForm', 'commitOutcome', 'operationIdentity', 'stagedOutput']),
-  RECONCILE_INDETERMINATE: Object.freeze(['commitOutcome', 'responseEmission', 'heldOutput']),
+  SELF_UPDATE: Object.freeze(['updateForm', 'commitOutcome', 'operationIdentity', 'stagedOutput', 'slotContext']),
+  RECONCILE_INDETERMINATE: Object.freeze(['commitOutcome', 'responseEmission', 'heldOutput', 'slotContext']),
 });
+
+/**
+ * C-BIND §4: `bindingRef` denotes exactly the 32 `localContextId` bytes of a local binding slot. The two
+ * session-bound operations of this slice compare it at P03 with the authoritative slot context the SS
+ * reports in the observation member `slotContext` (C-BIND `/comparisonRules/active` and
+ * `/comparisonRules/reconciliationRequired`, C-API `CAPI-E006`).
+ */
+const BINDING_CONTEXT_BYTES = 32;
+const SLOT_BOUND_OPERATIONS = Object.freeze(['SELF_UPDATE', 'RECONCILE_INDETERMINATE']);
 
 /** The two closed `responseEmission` values of the merged I-SM reconciliation rows. */
 const RESPONSE_EMISSIONS = Object.freeze(['SUCCEEDED', 'INTERRUPTED']);
@@ -649,6 +658,31 @@ function readHeldOutput(value) {
 }
 
 /**
+ * The authoritative slot context of a session-bound operation (C-BIND §4): exactly 32 nonzero
+ * `localContextId` bytes, copied once. Returns the copy, or `null` for anything else.
+ */
+function readSlotContext(value) {
+  if (!isUint8Array(value) || byteLengthOf(value) !== BINDING_CONTEXT_BYTES) return null;
+  const copy = new Uint8Array(value);
+  if (copy.length !== BINDING_CONTEXT_BYTES || copy.every((byte) => byte === 0)) return null;
+  return copy;
+}
+
+/**
+ * C-BIND `/comparisonRules`: byte equality of the request `bindingRef` with the authoritative slot
+ * context, over all 32 bytes. Wrong length, unknown reference, byte mismatch and cross-context use are all
+ * a mismatch; a partial match never authorizes.
+ */
+function bindingRefMatches(bindingRef, slotContext) {
+  if (!isUint8Array(bindingRef) || byteLengthOf(bindingRef) !== BINDING_CONTEXT_BYTES) return false;
+  const copy = new Uint8Array(bindingRef);
+  if (copy.length !== BINDING_CONTEXT_BYTES) return false;
+  let difference = 0;
+  for (let index = 0; index < BINDING_CONTEXT_BYTES; index += 1) difference |= copy[index] ^ slotContext[index];
+  return difference === 0;
+}
+
+/**
  * Read the closed observation of one integrated operation, at P01: an unknown member is
  * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
  * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }` or the decoded observation.
@@ -664,6 +698,17 @@ function readObservation(operation, observation) {
     return { error: null, restoreObservation: inner.values };
   }
 
+  // C-BIND §4 and `/comparisonRules`: the authoritative slot context the SS resolves for the request — the
+  // active slot in `ACTIVE`, the original slot in `RECONCILIATION_REQUIRED`, the empty slot in `EMPTY` —
+  // is an SS fact of exactly the 32 `localContextId` bytes. It is copied once, here, so the P03
+  // comparison reads the bytes this read validated and nothing a caller can change afterwards.
+  let slotContext = null;
+  const slotDefects = [];
+  if (SLOT_BOUND_OPERATIONS.includes(operation)) {
+    slotContext = readSlotContext(value.slotContext);
+    if (slotContext === null) slotDefects.push('INVALID_REQUEST');
+  }
+
   if (operation === 'RECONCILE_INDETERMINATE') {
     // C-API `/request/derivedByOperation` `RECONCILE_INDETERMINATE`: the RS commit/readback outcome and
     // the held SS original state are owning-layer facts. The merged I-SM core additionally fixes the
@@ -672,10 +717,14 @@ function readObservation(operation, observation) {
     // Every P01 defect the observation carries is collected before one is returned: the ratified
     // `/withinLevelErrorOrder` is total over the defects a request carries, not over the order in which
     // this layer happens to read its members (`CAPI-EP001`-`CAPI-EP003`).
-    const defects = [];
-    if (typeof value.commitOutcome !== 'string') defects.push('INVALID_REQUEST');
-    else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) defects.push('UNKNOWN_VALUE');
-    const committed = value.commitOutcome === 'COMMITTED';
+    const defects = [...slotDefects];
+    // C-API `/rules/rsTriState`: `INDETERMINATE` "includes every absent, failed or unknown RS outcome",
+    // and a reconciliation is only ever asked after the original commit request. An absent RS readback
+    // is therefore the still-ambiguous outcome (`CAPI-S024`), never a malformed request (probe p14).
+    const commitOutcome = value.commitOutcome === null ? 'INDETERMINATE' : value.commitOutcome;
+    if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(commitOutcome)) defects.push('UNKNOWN_VALUE');
+    const committed = commitOutcome === 'COMMITTED';
     if (value.responseEmission === null) {
       if (committed) defects.push('INVALID_REQUEST');
     } else if (typeof value.responseEmission !== 'string') {
@@ -695,16 +744,17 @@ function readObservation(operation, observation) {
     return {
       error: null,
       facts: 'RECONCILE_HELD',
-      commitOutcome: value.commitOutcome,
+      commitOutcome,
       responseEmission: value.responseEmission,
       heldOutput,
+      slotContext,
     };
   }
 
   const selfUpdate = operation === 'SELF_UPDATE';
   const factKey = selfUpdate ? 'updateForm' : (operation === 'CREATE' ? 'onboarding' : 'keyPackage');
   const allowed = selfUpdate ? UPDATE_FORMS : (operation === 'CREATE' ? ONBOARDING_VALUES : KEY_PACKAGE_VALUES);
-  const defects = [];
+  const defects = [...slotDefects];
   const factKnown = typeof value[factKey] === 'string' && allowed.includes(value[factKey]);
   if (typeof value[factKey] !== 'string') defects.push('INVALID_REQUEST');
   else if (!allowed.includes(value[factKey])) defects.push('UNKNOWN_VALUE');
@@ -715,8 +765,17 @@ function readObservation(operation, observation) {
   const reached = facts === 'SUPPORTED';
 
   if (reached) {
-    if (typeof value.commitOutcome !== 'string') defects.push('INVALID_REQUEST');
-    else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) defects.push('UNKNOWN_VALUE');
+    // C-MUT §3 and §5, C-API `/rules/rsTriState`: an SS_RS operation identity exists only for a mutation
+    // whose commit request is issued, and once it may have reached RS "an absent/failed/unknown outcome
+    // is INDETERMINATE, never REJECTED". A supported `SELF_UPDATE` that carries its identity but no RS
+    // outcome is therefore the ambiguous outcome and is held (probe p14). With no identity either, no
+    // request was ever made and the missing proof stays the P01 defect below. `CREATE` and
+    // `JOIN_WELCOME` keep the merged I-JOIN closure unchanged.
+    const commitOutcome = selfUpdate && value.commitOutcome === null
+      && typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0
+      ? 'INDETERMINATE' : value.commitOutcome;
+    if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(commitOutcome)) defects.push('UNKNOWN_VALUE');
     if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
       defects.push('INVALID_REQUEST');
     }
@@ -730,13 +789,13 @@ function readObservation(operation, observation) {
         // hand over after a commit report is therefore held, exactly as an absent, empty or over-bound one
         // is; before a commit proof the same defect stays the P01 rejection the closure fixes. `CREATE`
         // keeps the merged I-JOIN behaviour unchanged.
-        if (!(selfUpdate && value.commitOutcome === 'COMMITTED')) defects.push(stagedShape.error);
+        if (!(selfUpdate && commitOutcome === 'COMMITTED')) defects.push(stagedShape.error);
       } else {
         staged = stagedShape.staged;
       }
     }
     if (defects.length > 0) return { error: worst(defects) };
-    return { error: null, facts, commitOutcome: value.commitOutcome, operationIdentity: value.operationIdentity, staged };
+    return { error: null, facts, commitOutcome, operationIdentity: value.operationIdentity, staged, slotContext };
   }
 
   // A form the owning layer does not support (or a form outside the closed set) carries no commit proof
@@ -751,7 +810,7 @@ function readObservation(operation, observation) {
     if (unsupportedStaged.error) defects.push(unsupportedStaged.error);
   }
   if (defects.length > 0) return { error: worst(defects) };
-  return { error: null, facts, commitOutcome: null, operationIdentity: null, staged: null };
+  return { error: null, facts, commitOutcome: null, operationIdentity: null, staged: null, slotContext };
 }
 
 /** Run the merged I-SM core; an exception or a malformed return is `null` (an internal failure). */
@@ -803,12 +862,15 @@ function decideRestore(snapshot, restoreObservation) {
  * a hold this layer cannot read, never a value the caller can change between two reads.
  */
 function readHeldFacts(snapshot) {
-  const unreadable = { error: 'INVALID_REQUEST', outputKind: null, expectedSuccessCode: null, selectedCandidateRef: null };
+  const unreadable = {
+    error: 'INVALID_REQUEST', outputKind: null, expectedSuccessCode: null, selectedCandidateRef: null,
+    terminalEvidenceStatus: null, reconciliationRef: null, originalStateBefore: null,
+  };
   if (snapshot === null || typeof snapshot !== 'object') return unreadable;
   const descriptor = readOwnDescriptor(snapshot, 'held');
   if (!descriptor || !Object.hasOwn(descriptor, 'value')) return unreadable;
   const held = descriptor.value;
-  if (held === null) return { error: null, outputKind: null, expectedSuccessCode: null, selectedCandidateRef: null };
+  if (held === null) return { ...unreadable, error: null };
   if (!isPlainObject(held)) return unreadable;
   let descriptors;
   try {
@@ -822,6 +884,9 @@ function readHeldFacts(snapshot) {
     outputKind: member('outputKind'),
     expectedSuccessCode: member('expectedSuccessCode'),
     selectedCandidateRef: member('selectedCandidateRef'),
+    terminalEvidenceStatus: member('terminalEvidenceStatus'),
+    reconciliationRef: member('reconciliationRef'),
+    originalStateBefore: member('originalStateBefore'),
   };
 }
 
@@ -962,18 +1027,28 @@ function run(input) {
   if (snapshotCode !== null) framing.push(snapshotCode);
   const observed = INTEGRATED_OPERATIONS.includes(operation) ? readObservation(operation, observation) : { error: null };
   if (observed.error) framing.push(observed.error);
+  // P03 binding (C-BIND §4 and `/comparisonRules/active` / `/comparisonRules/reconciliationRequired`,
+  // C-API `CAPI-E006`): the request `bindingRef` of a session-bound operation must byte-equal the
+  // authoritative slot context the SS resolved for it — the active slot, or the original slot of a held
+  // mutation. Wrong length, unknown reference, byte mismatch and cross-context use are all
+  // `BINDING_MISMATCH`, at P03, ahead of every state gate and decision, with the state unchanged.
+  if (checked.code === null && !observed.error && SLOT_BOUND_OPERATIONS.includes(operation)
+    && !bindingRefMatches(checked.values.bindingRef, observed.slotContext)) {
+    framing.push('BINDING_MISMATCH');
+  }
   if (framing.length > 0) return rejectedTransition(requestId, operation, stateBefore, worst(framing));
 
   // P06: the request bounds, decidable before any commit request (see `validateAdapterRequest`), plus the
   // one bound that only the injected observation can carry: the operation identity the merged core echoes
-  // inside the reconciliation reference it issues. An identity past the reference bound would make this
-  // module issue a reference it then refuses, locking the hold out of every reconciliation, so it is
-  // bounded here — at P06, ahead of the P09 and P10 decision rows and behind the P05 state gates.
+  // inside the reconciliation reference it issues (`I-SM-HOLD:<operationIdentity>`). C-MUT §3 makes the
+  // identity an SS_RS fact whose defects are detected "strictly before an RS request": no request is sent
+  // and "no commit-result evidence exists". An identity past the bound is therefore never a commit the
+  // module must hold — holding it would mint a reference this module then refuses and lock the hold out
+  // of every reconciliation (probe p06). It rejects at P06, whatever outcome is reported, behind the P05
+  // state gates and ahead of the P09 and P10 decision rows, and nothing is held.
   const bounds = requestBoundCodes(checked.values, decodedInput);
-  if (typeof observed.operationIdentity === 'string'
-    && observed.operationIdentity.length > BOUNDS.MAX_OPERATION_IDENTITY_CHARS) {
-    bounds.push('VALUE_OUT_OF_RANGE');
-  }
+  const identityOverBound = typeof observed.operationIdentity === 'string'
+    && observed.operationIdentity.length > BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
 
   if (operation === 'RESTORE') {
     const restore = decideRestore(snapshot, observed.restoreObservation);
@@ -1014,6 +1089,45 @@ function run(input) {
       // still carried, because the tri-state has no absent value and a null member is refused as unknown.
       event.commitOutcome = observed.commitOutcome;
     }
+    // C-API `/rules/internalFailureBoundary` and `/rules/rsTriState` `COMMITTED`, C-MUT §6: once RS has
+    // proved this hold `COMMITTED` (an earlier interrupted emission recorded `terminalEvidenceStatus`
+    // `COMMITTED`), the adapter "emits success or retains reconciliation evidence but never emits
+    // REJECTED", and mismatched later RS evidence "fails closed and leaves the hold unchanged". A later
+    // readback that is absent, unknown or `NOT_COMMITTED` therefore cannot select or discard anything: it
+    // is the still-pending `CAPI-S024` answer, with the committed hold returned exactly as it was and no
+    // output (probe p16). The reference must still match; a mismatch keeps its own `CAPI-S028` row.
+    const heldFacts = readHeldFacts(snapshot);
+    const committedHold = snapshot !== null && snapshot.state === 'RECONCILIATION_REQUIRED'
+      && heldFacts.error === null && heldFacts.terminalEvidenceStatus === 'COMMITTED'
+      && observed.commitOutcome !== 'COMMITTED' && event.reconciliationRef === heldFacts.reconciliationRef;
+    if (committedHold) {
+      // The hold is copied from its own descriptors (the read `readHeldFacts` uses), never by property
+      // access, and the merged core re-validates the copy in full (review finding p13b).
+      const heldDescriptor = readOwnDescriptor(snapshot, 'held');
+      let heldCopy = null;
+      try {
+        heldCopy = Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(heldDescriptor.value))
+          .map(([key, member]) => [key, Object.hasOwn(member, 'value') ? member.value : undefined]));
+      } catch {
+        heldCopy = null;
+      }
+      const pending = heldCopy === null ? null : decide(
+        { state: 'RECONCILIATION_REQUIRED', held: { ...heldCopy, terminalEvidenceStatus: 'PENDING' } },
+        { ...event, commitOutcome: 'INDETERMINATE' },
+      );
+      if (pending === null || pending.result.kind !== 'INDETERMINATE' || pending.snapshot === null) {
+        return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
+      }
+      const committedCandidates = [...bounds];
+      const committedShape = heldOutputShapeCode(heldFacts, observed.heldOutput);
+      if (committedShape !== null) committedCandidates.push(committedShape);
+      if (committedCandidates.length > 0) {
+        const code = worst(committedCandidates);
+        if (preempts(code, pending)) return rejectedTransition(requestId, operation, stateBefore, code);
+      }
+      const retained = { ...pending, snapshot: { state: pending.snapshot.state, held: { ...pending.snapshot.held, terminalEvidenceStatus: 'COMMITTED' } } };
+      return decisionTransition(retained, requestId, operation, null);
+    }
     const decision = decide(snapshot, event);
     if (decision === null) {
       return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
@@ -1022,7 +1136,6 @@ function run(input) {
     // The hold is decoded once, through descriptors, and the same decoded facts close the injected held
     // escrow: a snapshot that answers `held` differently to a property access than to a descriptor read
     // cannot pick the escrow this reconciliation releases (review finding p13b).
-    const heldFacts = readHeldFacts(snapshot);
     if (heldFacts.error !== null) candidates.push(heldFacts.error);
     const heldShape = heldFacts.error === null ? heldOutputShapeCode(heldFacts, observed.heldOutput) : null;
     if (heldShape !== null) candidates.push(heldShape);
@@ -1044,9 +1157,12 @@ function run(input) {
   if (decision === null) {
     return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
   }
-  if (decision.result.kind === 'REJECTED' || observed.commitOutcome === null) {
-    // No RS commit request was made: every applicable error preempts by the C-API total precedence.
+  if (decision.result.kind === 'REJECTED' || observed.commitOutcome === null || identityOverBound) {
+    // No RS commit request was made: every applicable error preempts by the C-API total precedence. An
+    // operation identity past its bound is C-API `CAPI-E014` ("a structural byte/count bound is exceeded
+    // before stateful processing", P06, REJECTED, UNCHANGED): with it, no commit request is ever issued.
     const candidates = [...bounds];
+    if (identityOverBound) candidates.push('VALUE_OUT_OF_RANGE');
     if (decision.result.kind === 'REJECTED') candidates.push(decision.result.code);
     if (candidates.length > 0) {
       const code = worst(candidates);
