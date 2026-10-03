@@ -795,7 +795,21 @@ function nestedObservationDefects(operation, partial) {
     if (unknownIn(partial.stagedOutput, [member])) defects.push('UNKNOWN_FIELD');
   }
   if (operation === 'RECONCILE_INDETERMINATE' && Object.hasOwn(partial, 'heldOutput')) {
-    if (unknownIn(partial.heldOutput, OUTPUT_MEMBERS)) defects.push('UNKNOWN_FIELD');
+    // The same closure `readHeldOutput` enforces: a plain record with more than one member, or with a
+    // member outside the output set, is `UNKNOWN_FIELD` (cycle 5g review).
+    const held = partial.heldOutput;
+    if (isPlainObject(held)) {
+      let keys = null;
+      try {
+        keys = Reflect.ownKeys(held);
+      } catch {
+        keys = null;
+      }
+      if (keys !== null && (keys.length > 1
+        || keys.some((key) => typeof key !== 'string' || !OUTPUT_MEMBERS.includes(key)))) {
+        defects.push('UNKNOWN_FIELD');
+      }
+    }
   }
   if (operation === 'RESTORE' && Object.hasOwn(partial, 'restoreObservation')) {
     if (unknownIn(partial.restoreObservation, RESTORE_OBSERVATION_KEYS)) defects.push('UNKNOWN_FIELD');
@@ -1219,14 +1233,15 @@ function run(input) {
   const observed = INTEGRATED_OPERATIONS.includes(operation) ? readObservation(operation, observation) : { error: null };
   if (observed.error) framing.push(observed.error);
   // The hold is read once, from the adapter's own snapshot copy, and these facts serve every later step.
-  // A reconciliation that names a hold RS has already proved `COMMITTED` keeps its escrow defect out of the
-  // framing: that defect retains the hold below instead of rejecting it (C-API
-  // `/rules/internalFailureBoundary`, cycle 5f review). For every other hold it stays a P01 defect.
+  // A reconciliation that names a hold RS has proved `COMMITTED` — recorded earlier in the hold, or
+  // reported by this very readback — keeps its escrow defect out of the framing: that defect retains the
+  // hold below, with the `COMMITTED` proof, instead of rejecting it (C-API `/rules/internalFailureBoundary`,
+  // C-MUT §6, cycle 5f/5g reviews). For every other hold it stays a P01 defect.
   const heldFacts = operation === 'RECONCILE_INDETERMINATE' ? readHeldFacts(snapshot) : null;
   const echoedRef = decodedInput && decodedInput.error === null ? decodedInput.values.reconciliationRef : undefined;
   const escrowOfCommittedHold = heldFacts !== null && heldFacts.error === null
-    && heldFacts.terminalEvidenceStatus === 'COMMITTED' && typeof echoedRef === 'string'
-    && echoedRef === heldFacts.reconciliationRef;
+    && (heldFacts.terminalEvidenceStatus === 'COMMITTED' || (!observed.error && observed.commitOutcome === 'COMMITTED'))
+    && typeof echoedRef === 'string' && echoedRef === heldFacts.reconciliationRef;
   if (!observed.error && observed.heldOutputError && !escrowOfCommittedHold) framing.push(observed.heldOutputError);
   // P03 binding (C-BIND §4 and `/comparisonRules/active` / `/comparisonRules/reconciliationRequired`,
   // C-API `CAPI-E006`): the request `bindingRef` of a session-bound operation must byte-equal the
@@ -1292,11 +1307,13 @@ function run(input) {
     }
     // C-API `/rules/internalFailureBoundary` and `/rules/rsTriState` `COMMITTED`, C-MUT §6: once RS has
     // proved this hold `COMMITTED` (an earlier interrupted emission recorded `terminalEvidenceStatus`
-    // `COMMITTED`), the adapter "emits success or retains reconciliation evidence but never emits
-    // REJECTED", and mismatched later RS evidence "fails closed and leaves the hold unchanged". A later
-    // readback that is absent, unknown or `NOT_COMMITTED` therefore cannot select or discard anything: it
-    // is the still-pending `CAPI-S024` answer, with the committed hold returned exactly as it was and no
-    // output (probe p16). The reference must still match; a mismatch keeps its own `CAPI-S028` row.
+    // `COMMITTED`, or this readback reports it), the adapter "emits success or retains reconciliation
+    // evidence but never emits REJECTED", and mismatched later RS evidence "fails closed and leaves the
+    // hold unchanged". A later readback that is absent, unknown or `NOT_COMMITTED` therefore cannot select
+    // or discard anything: it is the still-pending `CAPI-S024` answer, with the committed hold returned
+    // exactly as it was and no output (probe p16); a `COMMITTED` readback whose escrow cannot be handed over
+    // retains the hold with the `COMMITTED` proof recorded. The reference must still match; a mismatch
+    // keeps its own `CAPI-S028` row.
     const committedHold = snapshot !== null && snapshot.state === 'RECONCILIATION_REQUIRED'
       && escrowOfCommittedHold && (observed.commitOutcome !== 'COMMITTED'
         || observed.heldOutputError !== null || heldOutputShapeCode(heldFacts, observed.heldOutput) !== null);

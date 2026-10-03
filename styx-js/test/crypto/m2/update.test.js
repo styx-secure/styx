@@ -701,13 +701,23 @@ describe('I-UPD ambiguity reconciles through RECONCILE_INDETERMINATE', () => {
   test('the released held escrow is bounded exactly like the staged one', () => {
     const protectHold = holdOf('PROTECT_APPLICATION', active(), 'op-protect-1');
     expect(protectHold.held.outputKind).toBe('PROTECTED_APPLICATION_BYTES');
+    // With no COMMITTED proof an out-of-bound held escrow is the P01 defect; with RS's COMMITTED proof it
+    // is never released and the hold is retained instead (C-API `/rules/internalFailureBoundary`).
+    const ambiguous = { commitOutcome: 'INDETERMINATE', responseEmission: null };
     const empty = reconcile(protectHold,
-      reconcileObservation({ heldOutput: { protectedApplicationBytes: new Uint8Array(0) } }), heldRef('op-protect-1'));
+      reconcileObservation({ ...ambiguous, heldOutput: { protectedApplicationBytes: new Uint8Array(0) } }), heldRef('op-protect-1'));
     expect(code(empty)).toBe('INVALID_REQUEST');
     const overBound = reconcile(protectHold,
-      reconcileObservation({ heldOutput: { protectedApplicationBytes: new Uint8Array(M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES + 1) } }),
+      reconcileObservation({ ...ambiguous, heldOutput: { protectedApplicationBytes: new Uint8Array(M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES + 1) } }),
       heldRef('op-protect-1'));
     expect(code(overBound)).toBe('INVALID_REQUEST');
+    for (const bad of [new Uint8Array(0), new Uint8Array(M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES + 1)]) {
+      const retained = reconcile(protectHold,
+        reconcileObservation({ heldOutput: { protectedApplicationBytes: bad } }), heldRef('op-protect-1'));
+      expect(retained.kind).toBe('INDETERMINATE');
+      expect(retained.output).toBe(undefined);
+      expect(retained.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    }
     const inBound = reconcile(protectHold,
       reconcileObservation({ heldOutput: { protectedApplicationBytes: bytes(0x01) } }), heldRef('op-protect-1'));
     expect(inBound.kind).toBe('SUCCESS');
@@ -787,10 +797,10 @@ describe('I-UPD fail-closed request validation', () => {
     ['out-of-set response emission', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ responseEmission: 'DELIVERED' }), 'UNKNOWN_VALUE'],
     ['response emission for an outcome that cannot have one', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: 'SUCCEEDED', heldOutput: null }), 'INVALID_REQUEST'],
     ['missing response emission for a committed outcome', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ responseEmission: null }), 'INVALID_REQUEST'],
-    ['held escrow of two members', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED, embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
-    ['held escrow that is not the held mutation\'s escrow', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ heldOutput: { embeddedTreeWelcome: WELCOME } }), 'INVALID_REQUEST'],
+    ['held escrow of two members', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED, embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
+    ['held escrow that is not the held mutation\'s escrow', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { embeddedTreeWelcome: WELCOME } }), 'INVALID_REQUEST'],
     ['held escrow offered while nothing is held', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), active(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), 'INVALID_REQUEST'],
-    ['held escrow withheld while the held kind names one', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ heldOutput: null }), 'INVALID_REQUEST'],
+    ['held escrow withheld while the held kind names one', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null }), 'INVALID_REQUEST'],
   ];
 
   test.each(cases)('%s rejects fail-closed', (_name, req, snapshot, observation, expected) => {
@@ -1355,8 +1365,9 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
     expect(throughLie.output.originalSuccessCode).toBe(truthful.output.originalSuccessCode);
     expect([...throughLie.output.originalOutput.protectedCommitBytes]).toEqual([...STAGED]);
     expect(throughLie.stateAfter).toBe(truthful.stateAfter);
-    // And the escrow the hold fixes is still required: with no escrow supplied the same snapshot refuses.
-    expect(code(reconcile(lying, reconcileObservation({ heldOutput: null }), reference))).toBe('INVALID_REQUEST');
+    // And the escrow the hold fixes is still required: with no escrow supplied and no COMMITTED proof the
+    // same snapshot refuses.
+    expect(code(reconcile(lying, reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null }), reference))).toBe('INVALID_REQUEST');
   });
 
   test('a released escrow is the bounded copy of exactly the bytes the observation validated', () => {
@@ -1385,15 +1396,24 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
     assertEnvelope(staged.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
     expect(staged.result.output).toBe(undefined);
     expect(staged.snapshot.state).toBe('RECONCILIATION_REQUIRED');
-    // A held escrow past the bound is a P01 observation defect, and the hold survives the refusal.
+    // A held escrow past the bound with no COMMITTED proof is a P01 observation defect, and the hold
+    // survives the refusal; with RS's COMMITTED proof it retains the hold instead, releasing nothing.
     const held = invokeAdapterTransition({
       request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRefOf('held-upd-over') }),
       snapshot: heldUpdate('held-upd-over'),
-      observation: reconcileObservation({ heldOutput: { protectedCommitBytes: over } }),
+      observation: reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: over } }),
     });
     assertEnvelope(held.result, 'REJECTED', ['error']);
     expect(code(held.result)).toBe('INVALID_REQUEST');
     expect(held.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
+    const proved = invokeAdapterTransition({
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRefOf('held-upd-over') }),
+      snapshot: heldUpdate('held-upd-over'),
+      observation: reconcileObservation({ heldOutput: { protectedCommitBytes: over } }),
+    });
+    assertEnvelope(proved.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+    expect(proved.result.output).toBe(undefined);
+    expect(proved.snapshot.held.terminalEvidenceStatus).toBe('COMMITTED');
   });
 });
 
@@ -1422,8 +1442,10 @@ describe('I-UPD hostile inputs never widen the closed vocabulary', () => {
       expect(M2_ADAPTER.ERROR_CODES).toContain(thrown.code);
       expect(thrown.message).toBe(thrown.code);
     } else {
-      assertEnvelope(result, 'REJECTED', ['error']);
-      expect(M2_ADAPTER.ERROR_CODES).toContain(code(result));
+      // RS reported COMMITTED for this hold: an escrow the SS cannot hand over retains the hold with the
+      // proof recorded (C-API `/rules/internalFailureBoundary`, cycle 5g review); nothing is released.
+      assertEnvelope(result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
+      expect(result.output).toBe(undefined);
       expect(result.stateAfter).toBe('RECONCILIATION_REQUIRED');
     }
   });
@@ -1903,9 +1925,25 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
       expect(result.result.output).toBe(undefined);
       expect(result.snapshot).toEqual(committed);
     }
-    // The same escrow defects on a hold that is only PENDING stay the P01 rejection.
-    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ heldOutput: null }), reference).result)).toBe('INVALID_REQUEST');
-    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED, extra: 1 } }), reference).result)).toBe('UNKNOWN_FIELD');
+    // A PENDING hold that this readback proves COMMITTED is retained the same way, with the proof recorded;
+    // a later NOT_COMMITTED readback then cannot clear it (cycle 5g review).
+    for (const heldOutput of [null, { protectedCommitBytes: STAGED, extra: 1 }]) {
+      const first = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ heldOutput }), reference);
+      expect(first.result.kind).toBe('INDETERMINATE');
+      expect(first.result.output).toBe(undefined);
+      expect(first.snapshot).toEqual(committed);
+      const second = reconcileWith(SLOT.slice(), first.snapshot, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      expect(second.result.kind).toBe('INDETERMINATE');
+      expect(second.snapshot).toEqual(committed);
+    }
+    // An escrow defect with no COMMITTED proof, recorded or reported, stays the P01 rejection.
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED, extra: 1 } }), reference).result)).toBe('UNKNOWN_FIELD');
+    // The base table's escrow defects, carried by a COMMITTED readback, retain the hold with the proof.
+    for (const heldOutput of [{ protectedCommitBytes: STAGED, embeddedTreeWelcome: WELCOME }, { embeddedTreeWelcome: WELCOME }, null]) {
+      const retained = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ heldOutput }), reference);
+      expect(retained.result.kind).toBe('INDETERMINATE');
+      expect(retained.snapshot).toEqual(committed);
+    }
     // A non-matching reference keeps its own CAPI-S028 answer; its escrow defect stays a P01 defect.
     const mismatch = reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), heldRef('other'));
     expect(mismatch.result.kind).toBe('REJECTED');
@@ -1953,6 +1991,11 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     const observation = updateObservation({ stagedOutput: { protectedCommitBytes: STAGED, extra: 1 } });
     Object.defineProperty(observation, 'updateForm', accessor);
     expect(code(selfUpdate(SLOT.slice(), observation).result)).toBe('UNKNOWN_FIELD');
+    // Nor a held escrow carrying two recognised output members (cycle 5g review).
+    const twoMembers = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED, embeddedTreeWelcome: WELCOME } });
+    expect(code(reconcileWith(SLOT.slice(), empty(), twoMembers, heldRef('x')).result)).toBe('UNKNOWN_FIELD');
+    Object.defineProperty(twoMembers, 'responseEmission', accessor);
+    expect(code(reconcileWith(SLOT.slice(), empty(), twoMembers, heldRef('x')).result)).toBe('UNKNOWN_FIELD');
     // A plan-identity inconsistency is INVALID_REQUEST and outranks an out-of-set original state.
     const id = 'held-plan';
     const pending = heldUpdate(id);
