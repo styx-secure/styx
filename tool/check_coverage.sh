@@ -67,7 +67,7 @@ for PKG in $(cd "$ROOT" && melos list --parsable); do
   fi
 
   # Sum LF/LH across all source files EXCEPT generated *.g.dart sections.
-  read -r H F PCT < <(awk -F: '
+  read -r _ _ PCT < <(awk -F: '
     /^SF:/{gen = ($0 ~ /\.g\.dart$/)}
     /^LF:/{ if(!gen) f += $2 }
     /^LH:/{ if(!gen) h += $2 }
