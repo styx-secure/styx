@@ -229,8 +229,14 @@ function attemptState(event, index, relayCount) {
  * the record's arrays: they always read the current values, and every write,
  * definition, deletion, extension prevention or prototype change through them
  * is refused (a TypeError in strict code), so a caller cannot forge an outcome.
+ *
+ * The Proxy handler and every property descriptor below have a null prototype:
+ * a trap or a descriptor field is looked up through the prototype chain, so an
+ * inherited `Object.prototype.get` would otherwise become a `get` trap that is
+ * handed the record's own array.
  */
 const READ_ONLY_VIEW = Object.freeze({
+  __proto__: null,
   set: () => false,
   defineProperty: () => false,
   deleteProperty: () => false,
@@ -243,13 +249,15 @@ const publicAttempts = new WeakMap();
 function publicAttempt(record) {
   const cached = publicAttempts.get(record);
   if (cached) return cached;
-  const value = (v) => ({ value: v, enumerable: true, writable: false, configurable: false });
+  const value = (v) => ({ __proto__: null, value: v, enumerable: true, writable: false, configurable: false });
   const facade = Object.create(null, {
+    __proto__: null,
     index: value(record.index),
     event: value(record.event),
     outcomes: value(readOnlyView(record.outcomes)),
     publishedOnce: value(readOnlyView(record.publishedOnce)),
     acceptedIndex: {
+      __proto__: null,
       get: () => record.acceptedIndex,
       enumerable: true,
       configurable: false,
@@ -259,12 +267,14 @@ function publicAttempt(record) {
     onSettled: value(record.onSettled),
     ignoreAcks: value(record.ignoreAcks),
     acceptGate: {
+      __proto__: null,
       get: () => record.acceptGate,
       set: (gate) => { record.acceptGate = gate; },
       enumerable: true,
       configurable: false,
     },
     latePublishGate: {
+      __proto__: null,
       get: () => record.latePublishGate,
       set: (gate) => { record.latePublishGate = gate; },
       enumerable: true,

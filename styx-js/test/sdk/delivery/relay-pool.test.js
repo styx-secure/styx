@@ -1262,6 +1262,64 @@ describe('createRelaySet — the attempt facade', () => {
     await set.dispose();
   });
 
+  test('an inherited Object.prototype trap or descriptor field reaches nothing', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const captured = [];
+    const poison = () => {
+      for (const name of ['get', 'set']) {
+        // The descriptor itself has a null prototype, or the first poisoned
+        // `get` would be read as its own accessor field.
+        Object.defineProperty(Object.prototype, name, {
+          __proto__: null,
+          configurable: true,
+          writable: true,
+          enumerable: false,
+          value(...args) {
+            captured.push(args[0]);
+            return name === 'get' ? Reflect.get(...args) : Reflect.set(...args);
+          },
+        });
+      }
+    };
+    const cure = () => {
+      delete Object.prototype.get;
+      delete Object.prototype.set;
+    };
+    let attempt;
+    let first;
+    let length;
+    let publishError = null;
+    try {
+      poison();
+      // Both the facade's construction and a read through its views run with
+      // the poisoned prototype in place.
+      attempt = set.publish(EVENT);
+      first = attempt.outcomes[0];
+      length = attempt.publishedOnce.length;
+    } catch (error) {
+      publishError = error;
+    } finally {
+      cure();
+    }
+    expect(publishError).toBeNull();
+    expect(first).toBe('PENDING');
+    expect(length).toBe(2);
+    // No inherited function became a trap or an accessor of the facade.
+    expect(captured).toEqual([]);
+    for (const name of CONTRACT_MEMBERS) {
+      const descriptor = Object.getOwnPropertyDescriptor(attempt, name);
+      if (name === 'acceptedIndex') expect(descriptor.set).toBeUndefined();
+      if ('value' in descriptor) expect(descriptor.get).toBeUndefined();
+    }
+    expect(attempt.isSettled()).toBe(false);
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+    h.clock.advance(PER_RELAY_TIMEOUT_MS);
+    expect(attempt.outcomes).toEqual(['TIMED_OUT', 'TIMED_OUT']);
+    await set.dispose();
+  });
+
   test('the two gates stay assignable and are read back', async () => {
     const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
     const set = h.make();
