@@ -1978,6 +1978,13 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     }
     // An emission fact on a non-COMMITTED readback stays a P01 defect even with the matching reference.
     expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: 'SUCCEEDED', heldOutput: null }), reference).result)).toBe('INVALID_REQUEST');
+    // An omitted emission member on a later non-COMMITTED readback retains a hold RS already proved
+    // COMMITTED, and stays the P01 rejection for a PENDING hold (cycle 5k review).
+    const omittedEmission = withoutMember(reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), 'responseEmission');
+    const retainedLater = reconcileWith(SLOT.slice(), committed, omittedEmission, reference);
+    expect(retainedLater.result.kind).toBe('INDETERMINATE');
+    expect(retainedLater.snapshot).toEqual(committed);
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), omittedEmission, reference).result)).toBe('INVALID_REQUEST');
   });
 
   test('a COMMITTED proof survives an omitted, accessor or unreadable evidence member (cycle 5i review)', () => {
@@ -2048,6 +2055,16 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     const hidden = { ...issued, operationIdentity: null, commitOutcome: null, stagedOutput: { protectedCommitBytes: STAGED, extra: true } };
     Object.defineProperty(hidden, 'stagedOutput', { enumerable: false });
     expect(code(invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: hidden }).result)).toBe('UNKNOWN_FIELD');
+    // A readable non-enumerable escrow is decided by its value exactly as an enumerable one (cycle 5k review).
+    for (const outcome of ['INDETERMINATE', 'COMMITTED']) {
+      const plain = { ...issued, commitOutcome: outcome, stagedOutput: { protectedCommitBytes: 'invalid' } };
+      const hiddenBad = { ...plain };
+      Object.defineProperty(hiddenBad, 'stagedOutput', { enumerable: false });
+      const sameRequest = request('SELF_UPDATE', {});
+      const expected = invokeAdapterTransition({ request: sameRequest, snapshot: active(), observation: plain });
+      const answer = invokeAdapterTransition({ request: sameRequest, snapshot: active(), observation: hiddenBad });
+      expect(answer).toEqual(expected);
+    }
     // With no operation identity no request was issued: the omitted outcome stays the P01 defect.
     const unissued = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: withoutMember({ ...issued, operationIdentity: null }, 'commitOutcome') });
     expect(code(unissued.result)).toBe('INVALID_REQUEST');

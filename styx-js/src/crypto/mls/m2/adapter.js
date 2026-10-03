@@ -844,8 +844,8 @@ const ABSENT_MEMBER = Object.freeze({ absent: true });
  * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
  * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }` or the decoded observation.
  */
-function readObservation(operation, observation) {
-  const shape = readClosed(observation, OBSERVATION_KEYS[operation]);
+function readObservation(operation, observation, decoded = null) {
+  const shape = decoded !== null ? { error: null, values: decoded } : readClosed(observation, OBSERVATION_KEYS[operation]);
   let value = shape.values;
   if (shape.error) {
     const evidence = Object.hasOwn(EVIDENCE_MEMBERS, operation) ? EVIDENCE_MEMBERS[operation] : null;
@@ -858,8 +858,20 @@ function readObservation(operation, observation) {
       // Only post-request evidence members failed: every other member was read once, as a plain data
       // member, into `partial`; the failed ones are read as absent and decided below.
       value = {};
+      const byValue = {};
+      let readable = false;
       for (const key of OBSERVATION_KEYS[operation]) {
-        value[key] = shape.bad.includes(key) ? ABSENT_MEMBER : shape.partial[key];
+        const failed = shape.bad.includes(key);
+        value[key] = failed ? ABSENT_MEMBER : shape.partial[key];
+        // A readable non-enumerable data member's own value is checked exactly as an enumerable one would
+        // be, so its P01 defect still competes; the member is then still decided as absent and its value
+        // is never released (cycle 5k review).
+        if (failed && Object.hasOwn(shape.partial, key)) readable = true;
+        byValue[key] = failed && !Object.hasOwn(shape.partial, key) ? ABSENT_MEMBER : shape.partial[key];
+      }
+      if (readable) {
+        const checked = readObservation(operation, null, byValue);
+        if (checked.error) return { error: checked.error };
       }
     } else {
       // C-API `/withinLevelErrorOrder/P01`: a malformed observation still lets the P01 defect of a readable
@@ -908,7 +920,11 @@ function readObservation(operation, observation) {
     // instead of rejecting (cycle 5h review). `run` adds it back to the P01 framing for every readback that
     // does not name the hold.
     let emissionError = null;
-    if (value.responseEmission === null) {
+    if (value.responseEmission === ABSENT_MEMBER) {
+      // A failed emission member is decided by the retention rule: it retains a hold RS has proved
+      // `COMMITTED` (now or earlier) and stays the P01 rejection for any other hold (cycle 5k review).
+      emissionError = 'INVALID_REQUEST';
+    } else if (value.responseEmission === null) {
       if (committed) emissionError = 'INVALID_REQUEST';
     } else if (typeof value.responseEmission !== 'string') {
       if (committed) emissionError = 'INVALID_REQUEST';
