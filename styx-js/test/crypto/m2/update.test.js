@@ -1678,4 +1678,69 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     expect(cleared.result.kind).toBe('INDETERMINATE');
     expect(cleared.snapshot).toEqual(committed);
   });
+
+  test('a snapshot copy that fails part-way fails closed and never falls back to the caller object', () => {
+    // Review finding (cycle 5c): when reading the caller's snapshot or its hold throws, the adapter must
+    // not complete the copy from the live object, which could then answer a different hold.
+    const id = 'held-copy-fail';
+    const reference = heldRef(id);
+    const committed = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
+    const replacement = heldCreate(id).held;
+    expect(replacement.reconciliationRef).toBe(committed.held.reconciliationRef);
+    const observations = [
+      reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }),
+      reconcileObservation({ heldOutput: { embeddedTreeWelcome: STAGED } }),
+      reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }),
+      reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: null }),
+    ];
+    const failOuter = () => {
+      let reads = 0;
+      return new Proxy({ ...committed }, {
+        getOwnPropertyDescriptor(target, key) {
+          if (key !== 'held') return Reflect.getOwnPropertyDescriptor(target, key);
+          reads += 1;
+          if (reads === 1) throw new Error('first read fails');
+          return { value: reads === 2 ? committed.held : replacement, writable: true, enumerable: true, configurable: true };
+        },
+      });
+    };
+    const failInner = () => {
+      let reads = 0;
+      const held = new Proxy({ ...committed.held }, {
+        getOwnPropertyDescriptor(target, key) {
+          reads += 1;
+          if (reads === 1) throw new Error('first member read fails');
+          return Reflect.getOwnPropertyDescriptor(reads > 20 ? replacement : target, key);
+        },
+      });
+      return { state: committed.state, held };
+    };
+    for (const make of [failOuter, failInner]) {
+      for (const observation of observations) {
+        const result = reconcileWith(SLOT.slice(), make(), observation, reference);
+        expect(result.result.kind).toBe('REJECTED');
+        expect(code(result.result)).toBe('FAIL_CLOSED_INTERNAL');
+        expect(result.snapshot).toBe(null);
+      }
+    }
+  });
+
+  test('an own __proto__ member of the snapshot or of its hold is still an unknown field', () => {
+    // Review finding (cycle 5c): copying the snapshot must keep every own key, including `__proto__`.
+    const outer = { state: 'ACTIVE', held: null };
+    Object.defineProperty(outer, '__proto__', { value: 'unknown', enumerable: true, writable: true, configurable: true });
+    const direct = transitionAdapter(outer, { operation: 'RESTORE', applicableErrors: [], facts: 'NO_STORED_SESSION' });
+    expect(direct.result.code).toBe('UNKNOWN_FIELD');
+    const update = selfUpdate(SLOT.slice(), updateObservation({ stagedOutput: { protectedCommitBytes: STAGED } }), outer);
+    expect(code(update.result)).toBe('UNKNOWN_FIELD');
+    expect(update.snapshot).toBe(null);
+    const id = 'held-proto';
+    const pending = heldUpdate(id);
+    const held = { ...pending.held };
+    Object.defineProperty(held, '__proto__', { value: 'unknown', enumerable: true, writable: true, configurable: true });
+    const reconciled = reconcileWith(SLOT.slice(), { state: pending.state, held },
+      reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), heldRef(id));
+    expect(code(reconciled.result)).toBe('UNKNOWN_FIELD');
+    expect(reconciled.snapshot).toBe(null);
+  });
 });

@@ -1014,43 +1014,56 @@ function decisionTransition(decision, requestId, operation, staged, heldOutput =
 }
 
 /**
- * The one read of the caller's snapshot. A plain-object snapshot, and a plain-object `held` inside it,
- * are each read through their own property descriptors exactly once into ordinary objects carrying the
- * same descriptors. Every later step (state, shape, hold facts, decision, successor) sees only this copy,
- * so a Proxy or other exotic snapshot cannot answer one hold to validation and a different one to the
- * decision (review findings p13b and cycle-5 hold substitution). Accessor descriptors are copied as
- * descriptors, never invoked, so the merged core still rejects them exactly as before. A snapshot that
- * cannot be read this way is returned as it is, and the existing checks reject it fail-closed.
+ * The one read of the caller's snapshot (review findings p13b and the cycle-5 hold substitutions). The
+ * snapshot and the `held` inside it are each read through their own property descriptors exactly once
+ * into ordinary objects carrying the same descriptors, and every later step (state, shape, hold facts,
+ * decision, successor) sees only that copy. The caller's objects are never read again:
+ * - accessor descriptors are copied as descriptors and never invoked, so the merged core rejects them
+ *   exactly as before;
+ * - an own `__proto__` member is kept as a member (the descriptor maps have no prototype), so it is still
+ *   rejected as unknown;
+ * - a snapshot or `held` that is an object but not a plain one is replaced by a fixed non-plain stand-in,
+ *   which keeps its rejection without a second prototype read;
+ * - a copy whose reads threw is marked `failed`, and the call then fails closed on that alone.
  */
+const NON_PLAIN = Object.freeze([]);
+
 function snapshotOnce(snapshot) {
   const descriptorsOf = (value) => {
-    if (!isPlainObject(value)) return null;
-    const descriptors = {};
+    const descriptors = Object.create(null);
     try {
       for (const key of Reflect.ownKeys(value)) {
         const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
         if (descriptor !== undefined) descriptors[key] = descriptor;
       }
     } catch {
-      return null;
+      return { descriptors, failed: true };
     }
-    return descriptors;
+    return { descriptors, failed: false };
   };
+  if (snapshot === null || typeof snapshot !== 'object') return { snapshot, failed: false };
+  if (!isPlainObject(snapshot)) return { snapshot: NON_PLAIN, failed: false };
   const outer = descriptorsOf(snapshot);
-  if (outer === null) return snapshot;
-  const held = Object.hasOwn(outer, 'held') ? outer.held : undefined;
-  if (held && Object.hasOwn(held, 'value') && held.value !== null) {
-    const inner = descriptorsOf(held.value);
-    if (inner !== null) outer.held = { ...held, value: Object.defineProperties({}, inner) };
+  let failed = outer.failed;
+  const held = outer.descriptors.held;
+  if (held && Object.hasOwn(held, 'value') && held.value !== null && typeof held.value === 'object') {
+    if (isPlainObject(held.value)) {
+      const inner = descriptorsOf(held.value);
+      failed = failed || inner.failed;
+      outer.descriptors.held = { ...held, value: Object.defineProperties({}, inner.descriptors) };
+    } else {
+      outer.descriptors.held = { ...held, value: NON_PLAIN };
+    }
   }
-  return Object.defineProperties({}, outer);
+  return { snapshot: Object.defineProperties({}, outer.descriptors), failed };
 }
 
 function run(input) {
   const outer = readClosed(input, ['request', 'snapshot', 'observation']);
   if (outer.error) throw new M2AdapterError(outer.error === 'UNKNOWN_FIELD' ? 'UNKNOWN_FIELD' : 'FAIL_CLOSED_INTERNAL');
   const { request, observation } = outer.values;
-  const snapshot = snapshotOnce(outer.values.snapshot);
+  const copied = snapshotOnce(outer.values.snapshot);
+  const { snapshot } = copied;
   const requestId = readMemberString(request, 'requestId');
   const operation = readMemberString(request, 'operation');
   if (requestId === null || requestId.length === 0 || operation === null) {
@@ -1068,7 +1081,7 @@ function run(input) {
   const checked = validateRequestRecord(request, decodedInput);
   const framing = [];
   if (checked.code !== null) framing.push(checked.code);
-  const snapshotCode = snapshotShapeCode(snapshot);
+  const snapshotCode = copied.failed ? 'FAIL_CLOSED_INTERNAL' : snapshotShapeCode(snapshot);
   if (snapshotCode !== null) framing.push(snapshotCode);
   const observed = INTEGRATED_OPERATIONS.includes(operation) ? readObservation(operation, observation) : { error: null };
   if (observed.error) framing.push(observed.error);
