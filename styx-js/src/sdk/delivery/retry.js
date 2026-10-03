@@ -9,6 +9,13 @@
  * arguments, so a test can drive the schedule with exactly the values it
  * wants.
  *
+ * Nothing a caller supplies escapes as a throw except the deliberate
+ * `TypeError` API-misuse signal this contract fixes for `attempts`,
+ * `maxAttempts`, `deadlineAt`, `n` and `u`. Every read of an injected port
+ * happens inside a guarded path, so a port that is absent, is not a function,
+ * throws when read or throws when called is an internal fault of the item
+ * (`E_SDK_INTERNAL`), never a value that reaches the caller as an exception.
+ *
  * The schedule is the one C-DLV section 4.3 fixes, and this module adds no
  * bound, no jitter rule and no code:
  *
@@ -57,6 +64,40 @@ function isValidClockValue(value) {
  */
 function isValidDraw(value) {
   return Number.isInteger(value) && value >= 0 && value < DRAW_RANGE;
+}
+
+/**
+ * The closed result of C-DLV section 4.5 and C-SDK section 8.4 for an internal
+ * fault, an invalid clock reading and an invalid draw: the item moves to its
+ * applicable terminal failed state with `lastCode: 'E_SDK_INTERNAL'`.
+ *
+ * @returns {{ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' }}
+ */
+function internalFault() {
+  return Object.freeze({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+}
+
+/**
+ * Read and call one method of an injected port.
+ *
+ * The property read and the call both happen here, inside the guarded path of
+ * the caller, so that a port that is absent, a method that is not a function,
+ * a getter that throws and a method that throws all raise in the same place
+ * and are mapped to `E_SDK_INTERNAL` by the caller. Reading the method only
+ * where section 4.3 reads it is what keeps an exhausted item from touching a
+ * port at all. No value a caller supplied reaches the caller as a throw
+ * (C-SDK section 8.4).
+ *
+ * @param {unknown} port
+ * @param {string} name
+ * @returns {unknown}
+ */
+function callPortMethod(port, name) {
+  const method = port[name];
+  if (typeof method !== 'function') {
+    throw new TypeError(`port method ${name} is not a function`);
+  }
+  return method.call(port);
 }
 
 /**
@@ -123,11 +164,14 @@ export function retryDelayMs(n, u) {
  * exhausted item still fails with `lastCode: null` and without a draw.
  *
  * `clock` and `random` are the injected ports of C-SDK section 8.4, read
- * exactly where section 4.3 reads them: `random.nextUint32()` when a draw is
- * needed and `clock.now()` for the deadline comparison. A port that throws,
- * or a value that is not a valid clock reading or a valid draw, is
- * `E_SDK_INTERNAL` (C-DLV section 4.5, C-SDK section 8.4); that result is
- * recorded for the item exactly as an internal fault is.
+ * exactly where section 4.3 reads them and only there: `random.nextUint32()`
+ * when a draw is needed and `clock.now()` for the deadline comparison. Each
+ * read happens inside its own guarded path, so a port that is absent, a method
+ * that is not a function, a getter that throws and a method that calls back a
+ * throw are all `E_SDK_INTERNAL` (C-DLV section 4.5, C-SDK section 8.4); that
+ * result is recorded for the item exactly as an internal fault is. Because no
+ * port is read before the exhaustion decision, an exhausted item fails with
+ * `lastCode: null` even when both ports are absent.
  *
  * The decision, in the order of section 4.3:
  *
@@ -154,39 +198,40 @@ export function planRetry({ attempts, maxAttempts, clock, deadlineAt, random }) 
   if (attempts > maxAttempts) {
     throw new TypeError('planRetry: attempts must not exceed maxAttempts');
   }
-  if (!clock || typeof clock.now !== 'function') {
-    throw new TypeError('planRetry: clock must be the clock port of C-SDK section 8.4');
-  }
-  if (!random || typeof random.nextUint32 !== 'function') {
-    throw new TypeError('planRetry: random must be the random port of C-SDK section 8.4');
-  }
 
-  // (1) Exhaustion: no draw, no clock reading.
+  // (1) Exhaustion, decided first and exactly as section 4.3 states it: no
+  // attempt remains, so the item fails with `lastCode: null` and without a
+  // draw. No port is read on this path, so even an exhausted item whose ports
+  // are absent, are not functions or throw when read fails as section 4.3
+  // says instead of raising.
   if (attempts === maxAttempts) {
     return Object.freeze({ action: 'FAIL', lastCode: null });
   }
 
-  // (2) One draw and the delay of section 4.3.
+  // (2) One draw and the delay of section 4.3. The method is read here, inside
+  // the guard: a missing, non-function or throwing `nextUint32` is an internal
+  // fault of the item.
   let draw;
   try {
-    draw = random.nextUint32();
+    draw = callPortMethod(random, 'nextUint32');
   } catch {
-    return Object.freeze({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    return internalFault();
   }
   if (!isValidDraw(draw)) {
-    return Object.freeze({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    return internalFault();
   }
   const delayMs = retryDelayMs(attempts, draw);
 
-  // (3) The deadline comparison, on the injected clock.
+  // (3) The deadline comparison, on the injected clock. The method is read
+  // inside this guard for the same reason as the draw above.
   let now;
   try {
-    now = clock.now();
+    now = callPortMethod(clock, 'now');
   } catch {
-    return Object.freeze({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    return internalFault();
   }
   if (!isValidClockValue(now)) {
-    return Object.freeze({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    return internalFault();
   }
 
   // The deadline is a finite number (C-SDK section 6.2); a fractional value is

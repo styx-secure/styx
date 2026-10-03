@@ -452,6 +452,91 @@ describe('C-DLV section 4.3 -- the retry-or-fail decision', () => {
     expect(decision).toStrictEqual({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
   });
 
+  test('a throwing getter on an injected port is E_SDK_INTERNAL, never a thrown value for the caller', () => {
+    // C-SDK section 8.4: a clock or random function that throws is
+    // E_SDK_INTERNAL for the affected operation (C-DLV section 4.5). A getter
+    // that throws when the method is *read* is the same port fault, because
+    // the read sits inside the same guarded path as the call. This is the
+    // regression for the round-2 MEDIUM: the read used to happen while the
+    // port shape was validated, before exhaustion, and the throw escaped.
+    const hostileClock = {};
+    Object.defineProperty(hostileClock, 'now', {
+      get() { throw new Error('boom'); },
+    });
+    const hostileRandom = {};
+    Object.defineProperty(hostileRandom, 'nextUint32', {
+      get() { throw new Error('boom'); },
+    });
+    expect(planRetry({
+      attempts: 1,
+      maxAttempts: 5,
+      clock: hostileClock,
+      deadlineAt: 132000,
+      random: randomOf([DRAW_RANGE - 1]),
+    })).toStrictEqual({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    expect(planRetry({
+      attempts: 1,
+      maxAttempts: 5,
+      clock: clockAt(12000),
+      deadlineAt: 132000,
+      random: hostileRandom,
+    })).toStrictEqual({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+  });
+
+  test('an absent port, or a port whose method is not a function, is E_SDK_INTERNAL', () => {
+    const base = { attempts: 1, maxAttempts: 5, deadlineAt: 132000 };
+    for (const clock of [undefined, null, {}, { now: null }, { now: 42 }, { now: 'now' }, 0, 'clock']) {
+      expect(planRetry({ ...base, clock, random: randomOf([DRAW_RANGE - 1]) }))
+        .toStrictEqual({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    }
+    for (const random of [undefined, null, {}, { nextUint32: null }, { nextUint32: 0 }, { nextUint32: 'draw' }, 0]) {
+      expect(planRetry({ ...base, clock: clockAt(12000), random }))
+        .toStrictEqual({ action: 'FAIL', lastCode: 'E_SDK_INTERNAL' });
+    }
+  });
+
+  test('an exhausted item fails with lastCode null without reading any port, present or absent', () => {
+    // C-DLV section 4.3: `attempts = maxAttempts` fails the item at once,
+    // without drawing a random value. No port is read on that path, so the
+    // ports' shape cannot change the outcome and cannot raise: this is the
+    // second half of the round-2 MEDIUM, which used to throw a `TypeError`.
+    const hostileClock = {};
+    Object.defineProperty(hostileClock, 'now', {
+      get() { throw new Error('clock read'); },
+    });
+    const hostileRandom = {};
+    Object.defineProperty(hostileRandom, 'nextUint32', {
+      get() { throw new Error('random read'); },
+    });
+    const portVariants = [
+      { clock: undefined, random: undefined },
+      { clock: null, random: null },
+      { clock: { now: 42 }, random: { nextUint32: 0 } },
+      { clock: hostileClock, random: hostileRandom },
+    ];
+    for (let maxAttempts = 1; maxAttempts <= 10; maxAttempts += 1) {
+      for (const ports of portVariants) {
+        const decision = planRetry({
+          attempts: maxAttempts,
+          maxAttempts,
+          clock: ports.clock,
+          deadlineAt: 132000,
+          random: ports.random,
+        });
+        expect(decision).toStrictEqual({ action: 'FAIL', lastCode: null });
+        expect(Object.isFrozen(decision)).toBe(true);
+      }
+    }
+    // Exhaustion also wins over a non-finite deadline and over absent ports.
+    expect(planRetry({
+      attempts: 5,
+      maxAttempts: 5,
+      clock: undefined,
+      deadlineAt: Number.NaN,
+      random: undefined,
+    })).toStrictEqual({ action: 'FAIL', lastCode: null });
+  });
+
   test('a non-integer, a zero or an over-max attempt count, or a non-finite deadline, is a misuse and throws', () => {
     const base = { maxAttempts: 5, clock: clockAt(12000), deadlineAt: 132000, random: randomOf([]) };
     expect(() => planRetry({ ...base, attempts: 0 })).toThrow(TypeError);
