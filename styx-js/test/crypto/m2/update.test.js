@@ -794,9 +794,9 @@ describe('I-UPD fail-closed request validation', () => {
     ['out-of-set commit outcome with no request issued', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE', operationIdentity: null }, 'INVALID_REQUEST'],
     ['missing operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: null }, 'INVALID_REQUEST'],
     ['empty operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: '' }, 'INVALID_REQUEST'],
-    ['out-of-set response emission', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ responseEmission: 'DELIVERED' }), 'UNKNOWN_VALUE'],
+    ['out-of-set response emission', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-other') }), heldUpdate(), reconcileObservation({ responseEmission: 'DELIVERED' }), 'UNKNOWN_VALUE'],
     ['response emission for an outcome that cannot have one', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: 'SUCCEEDED', heldOutput: null }), 'INVALID_REQUEST'],
-    ['missing response emission for a committed outcome', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ responseEmission: null }), 'INVALID_REQUEST'],
+    ['missing response emission for a committed outcome', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-other') }), heldUpdate(), reconcileObservation({ responseEmission: null }), 'INVALID_REQUEST'],
     ['held escrow of two members', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED, embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
     ['held escrow that is not the held mutation\'s escrow', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { embeddedTreeWelcome: WELCOME } }), 'INVALID_REQUEST'],
     ['held escrow offered while nothing is held', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), active(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), 'INVALID_REQUEST'],
@@ -1949,6 +1949,26 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     expect(mismatch.result.kind).toBe('REJECTED');
     expect(code(mismatch.result)).toBe('RECONCILIATION_REFERENCE_MISMATCH');
     expect(code(reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: null }), heldRef('other')).result)).toBe('INVALID_REQUEST');
+  });
+
+  test('a COMMITTED readback whose emission fact fails keeps its proof (cycle 5h review)', () => {
+    const id = 'held-emission';
+    const reference = heldRef(id);
+    const committed = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
+    for (const responseEmission of [null, 7, 'DELIVERED']) {
+      const first = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission }), reference);
+      expect(first.result.kind).toBe('INDETERMINATE');
+      expect(first.result.output).toBe(undefined);
+      expect(first.snapshot).toEqual(committed);
+      const later = reconcileWith(SLOT.slice(), first.snapshot, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      expect(later.result.kind).toBe('INDETERMINATE');
+      expect(later.snapshot).toEqual(committed);
+      // A reference that does not name the hold keeps the emission defect at P01.
+      expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission }), heldRef('other')).result))
+        .toBe(responseEmission === 'DELIVERED' ? 'UNKNOWN_VALUE' : 'INVALID_REQUEST');
+    }
+    // An emission fact on a non-COMMITTED readback stays a P01 defect even with the matching reference.
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: 'SUCCEEDED', heldOutput: null }), reference).result)).toBe('INVALID_REQUEST');
   });
 
   test('integration decides on one decoded request: a Proxy cannot validate one operation and dispatch another (cycle 5f review)', () => {

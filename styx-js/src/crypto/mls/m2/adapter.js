@@ -865,12 +865,20 @@ function readObservation(operation, observation) {
     // hold instead of rejecting.
     const commitOutcome = COMMIT_OUTCOMES.includes(value.commitOutcome) ? value.commitOutcome : 'INDETERMINATE';
     const committed = commitOutcome === 'COMMITTED';
+    // The emission fact of a `COMMITTED` readback is reported apart (`emissionError`), like the held
+    // escrow: an emission fact the SS cannot state is a failed emission, and C-API
+    // `/rules/internalFailureBoundary` with C-MUT §6 then retains the hold with the `COMMITTED` proof
+    // instead of rejecting (cycle 5h review). `run` adds it back to the P01 framing for every readback that
+    // does not name the hold.
+    let emissionError = null;
     if (value.responseEmission === null) {
-      if (committed) defects.push('INVALID_REQUEST');
+      if (committed) emissionError = 'INVALID_REQUEST';
     } else if (typeof value.responseEmission !== 'string') {
-      defects.push('INVALID_REQUEST');
+      if (committed) emissionError = 'INVALID_REQUEST';
+      else defects.push('INVALID_REQUEST');
     } else if (!RESPONSE_EMISSIONS.includes(value.responseEmission)) {
-      defects.push('UNKNOWN_VALUE');
+      if (committed) emissionError = 'UNKNOWN_VALUE';
+      else defects.push('UNKNOWN_VALUE');
     } else if (!committed) {
       defects.push('INVALID_REQUEST');
     }
@@ -885,14 +893,17 @@ function readObservation(operation, observation) {
       if (held.error) heldOutputError = held.error;
       else heldOutput = held.heldOutput;
     }
-    if (defects.length > 0) return { error: worst(heldOutputError === null ? defects : [...defects, heldOutputError]) };
+    if (defects.length > 0) {
+      return { error: worst([...defects, ...[heldOutputError, emissionError].filter((code) => code !== null)]) };
+    }
     return {
       error: null,
       facts: 'RECONCILE_HELD',
       commitOutcome,
-      responseEmission: value.responseEmission,
+      responseEmission: emissionError === null ? value.responseEmission : null,
       heldOutput,
       heldOutputError,
+      emissionError,
       slotContext,
     };
   }
@@ -1242,7 +1253,10 @@ function run(input) {
   const escrowOfCommittedHold = heldFacts !== null && heldFacts.error === null
     && (heldFacts.terminalEvidenceStatus === 'COMMITTED' || (!observed.error && observed.commitOutcome === 'COMMITTED'))
     && typeof echoedRef === 'string' && echoedRef === heldFacts.reconciliationRef;
-  if (!observed.error && observed.heldOutputError && !escrowOfCommittedHold) framing.push(observed.heldOutputError);
+  if (!observed.error && !escrowOfCommittedHold) {
+    if (observed.heldOutputError) framing.push(observed.heldOutputError);
+    if (observed.emissionError) framing.push(observed.emissionError);
+  }
   // P03 binding (C-BIND §4 and `/comparisonRules/active` / `/comparisonRules/reconciliationRequired`,
   // C-API `CAPI-E006`): the request `bindingRef` of a session-bound operation must byte-equal the
   // authoritative slot context the SS resolved for it — the active slot, or the original slot of a held
@@ -1315,7 +1329,7 @@ function run(input) {
     // retains the hold with the `COMMITTED` proof recorded. The reference must still match; a mismatch
     // keeps its own `CAPI-S028` row.
     const committedHold = snapshot !== null && snapshot.state === 'RECONCILIATION_REQUIRED'
-      && escrowOfCommittedHold && (observed.commitOutcome !== 'COMMITTED'
+      && escrowOfCommittedHold && (observed.commitOutcome !== 'COMMITTED' || observed.emissionError !== null
         || observed.heldOutputError !== null || heldOutputShapeCode(heldFacts, observed.heldOutput) !== null);
     if (committedHold) {
       // The guard above, the re-decision below and the hold returned are all the one descriptor read
