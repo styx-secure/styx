@@ -1201,8 +1201,9 @@ describe('I-UPD seeded property sweep', () => {
 });
 
 // The release path closes the escrow twice: once when the observation is read, and once when the copy
-// leaves this module. A resizable backing buffer and a proxy record are the two ways a caller can make
-// those two reads disagree, so both are driven here through the public entry point only.
+// leaves this module. A resizable backing buffer resized from a snapshot trap was how a caller could make
+// those two reads disagree. The snapshot is now copied once before the observation is read, so the trap
+// never fires between them; these tests drive that through the public entry point only.
 const resizable = (values, maxByteLength) => {
   if (typeof ArrayBuffer.prototype.resize !== 'function') return null;
   const buffer = new ArrayBuffer(values.length, { maxByteLength: Math.max(values.length, maxByteLength) });
@@ -1245,7 +1246,7 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
     expect(typeof ArrayBuffer.prototype.resize).toBe('function');
   });
 
-  test('an escrow grown after the observation read is held, and released by nothing', () => {
+  test('a snapshot trap that would grow the escrow after it is measured never runs: the measured escrow is released', () => {
     const grown = growEscrowDuringDecision([0x11, 0x22, 0x33, 0x44], 2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
     expect(grown).not.toBe(null);
     const transition = invokeAdapterTransition({
@@ -1253,18 +1254,18 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
       snapshot: grown.snapshot,
       observation: updateObservation({ stagedOutput: grown.stagedOutput }),
     });
-    // The trap really fired: the buffer did grow between the two reads of the same escrow.
-    expect(grown.state.grown).toBe(true);
-    expect(grown.view.length).toBe(2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
-    // ... and the adapter holds the mutation instead of releasing an escrow it did not validate.
-    assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
-    expect(transition.result.commitOutcome).toBe('INDETERMINATE');
-    expect(transition.result.output).toBe(undefined);
-    expect(transition.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
-    expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    // The trap never fires after the escrow read: the caller's snapshot is copied once, before the
+    // observation is read, so nothing the caller controls runs between the measurement and the release.
+    expect(grown.state.grown).toBe(false);
+    expect(grown.view.length).toBe(4);
+    // ... and the adapter answers exactly what the measured escrow supports.
+    expect(transition.result.kind).toBe('SUCCESS');
+    expect(transition.result.successCode).toBe('SELF_UPDATED');
+    expect(Array.from(transition.result.output.protectedCommitBytes)).toEqual([0x11, 0x22, 0x33, 0x44]);
+    expect(transition.snapshot.state).toBe('ACTIVE');
   });
 
-  test('an escrow that shrank after the observation read is held too, never released short', () => {
+  test('a snapshot trap that would shrink the escrow after it is measured never runs either', () => {
     const shrunk = growEscrowDuringDecision([0x11, 0x22, 0x33, 0x44], 2);
     expect(shrunk).not.toBe(null);
     const transition = invokeAdapterTransition({
@@ -1272,14 +1273,14 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
       snapshot: shrunk.snapshot,
       observation: updateObservation({ stagedOutput: shrunk.stagedOutput }),
     });
-    expect(shrunk.state.grown).toBe(true);
-    expect(shrunk.view.length).toBe(2);
-    assertEnvelope(transition.result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
-    expect(transition.result.output).toBe(undefined);
-    expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    expect(shrunk.state.grown).toBe(false);
+    expect(shrunk.view.length).toBe(4);
+    expect(transition.result.kind).toBe('SUCCESS');
+    expect(Array.from(transition.result.output.protectedCommitBytes)).toEqual([0x11, 0x22, 0x33, 0x44]);
+    expect(transition.snapshot.state).toBe('ACTIVE');
   });
 
-  test('a held escrow grown after the observation read refuses the reconciliation and keeps the hold', () => {
+  test('a held escrow cannot be resized by a snapshot trap between its measurement and its release', () => {
     const located = resizable([0x51, 0x52, 0x53, 0x54], 2 * M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES);
     expect(located).not.toBe(null);
     const hold = heldUpdate('held-upd-toctou');
@@ -1307,12 +1308,12 @@ describe('I-UPD the release path re-checks the escrow it hands over', () => {
     const result = reconcile(snapshot, {
       slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput,
     }, reference);
-    expect(state.grown).toBe(true);
-    assertEnvelope(result, 'REJECTED', ['error']);
-    expect(code(result)).toBe('INVALID_REQUEST');
-    // Nothing was released and the hold survives the refusal: the state is unchanged, not cleared.
-    expect(result.stateAfter).toBe('RECONCILIATION_REQUIRED');
-    expect(result.output).toBe(undefined);
+    expect(state.grown).toBe(false);
+    // The held escrow is measured after the one snapshot read, so it cannot change before release: the
+    // answer is the truthful one, releasing exactly the four bytes that were measured.
+    expect(result.kind).toBe('SUCCESS');
+    expect(result.successCode).toBe(truthful.successCode);
+    expect(Array.from(result.output.originalOutput.protectedCommitBytes)).toEqual([0x51, 0x52, 0x53, 0x54]);
   });
 
   test('a snapshot that answers `held` to a property read differently than to a descriptor read cannot pick the escrow', () => {
@@ -1618,5 +1619,63 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
       expect(code(result.result)).toBe('UNKNOWN_FIELD');
       expect(result.snapshot).toBe(null);
     }
+    // A descriptor read that throws is an INVALID_REQUEST defect; the unknown member still preempts it.
+    const throwing = new Proxy({ extra: 1, slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, {
+      getOwnPropertyDescriptor(target, key) {
+        if (key === 'updateForm') throw new Error('hostile descriptor');
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    const thrown = selfUpdate(SLOT.slice(), throwing);
+    expect(code(thrown.result)).toBe('UNKNOWN_FIELD');
+    expect(thrown.snapshot).toBe(null);
+  });
+
+  test('a snapshot that swaps its hold between reads never reports or clears another mutation', () => {
+    // Review finding (cycle 5b): the hold is decoded once from the caller's snapshot, and that one copy
+    // is what is validated, decided and succeeded, so later descriptor reads cannot substitute a valid
+    // hold of another mutation with the same reference (C-MUT §5, §6).
+    const id = 'held-swap-normal';
+    const pending = heldUpdate(id);
+    const reference = heldRef(id);
+    const committed = reconcileWith(SLOT.slice(), pending, reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
+    expect(committed.held.terminalEvidenceStatus).toBe('COMMITTED');
+    const replacement = heldJoin(id).held;
+    expect(replacement.reconciliationRef).toBe(committed.held.reconciliationRef);
+    for (let swapFrom = 1; swapFrom <= 8; swapFrom += 1) {
+      let reads = 0;
+      const hostile = () => {
+        reads = 0;
+        return new Proxy({ ...committed }, {
+          getOwnPropertyDescriptor(target, key) {
+            if (key !== 'held') return Reflect.getOwnPropertyDescriptor(target, key);
+            reads += 1;
+            return { value: reads >= swapFrom ? replacement : committed.held, writable: true, enumerable: true, configurable: true };
+          },
+        });
+      };
+      // Whatever the snapshot answers on its first read of `held` is the one snapshot the call sees: the
+      // answer equals the answer for that plain snapshot, and `held` is read exactly once.
+      const seen = swapFrom === 1 ? { ...committed, held: replacement } : committed;
+      for (const observation of [
+        reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }),
+        reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }),
+        reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: null }),
+        reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }),
+      ]) {
+        const throughProxy = reconcileWith(SLOT.slice(), hostile(), observation, reference);
+        expect(reads).toBe(1);
+        const plain = reconcileWith(SLOT.slice(), seen, observation, reference);
+        expect({ ...throughProxy.result, requestId: null }).toEqual({ ...plain.result, requestId: null });
+        expect(throughProxy.snapshot).toEqual(plain.snapshot);
+      }
+    }
+    // The committed SELF_UPDATE itself is never reported as another mutation nor cleared as NOT_COMMITTED.
+    const success = reconcileWith(SLOT.slice(), committed, reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), reference);
+    expect(success.result.output.originalSuccessCode).toBe('SELF_UPDATED');
+    const cleared = reconcileWith(SLOT.slice(), committed,
+      reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+    expect(cleared.result.kind).toBe('INDETERMINATE');
+    expect(cleared.snapshot).toEqual(committed);
   });
 });

@@ -416,16 +416,21 @@ function readOwnDescriptor(record, key) {
 function readClosed(value, allowed) {
   if (!isPlainObject(value)) return { error: 'INVALID_REQUEST', values: null };
   let keys;
-  let descriptors;
   try {
     keys = Reflect.ownKeys(value);
-    descriptors = Object.getOwnPropertyDescriptors(value);
   } catch {
     return { error: 'INVALID_REQUEST', values: null };
   }
   // C-API `/withinLevelErrorOrder` P01: UNKNOWN_FIELD preempts INVALID_REQUEST. Every member is checked
-  // for membership before any member's shape, so the answer never depends on the member order.
+  // for membership before any member's descriptor is read or its shape checked, so the answer never
+  // depends on member order or on a descriptor read that fails.
   if (keys.some((key) => typeof key !== 'string' || !allowed.includes(key))) return { error: 'UNKNOWN_FIELD', values: null };
+  const descriptors = {};
+  try {
+    for (const key of keys) descriptors[key] = Reflect.getOwnPropertyDescriptor(value, key);
+  } catch {
+    return { error: 'INVALID_REQUEST', values: null };
+  }
   for (const key of keys) {
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
@@ -1008,10 +1013,44 @@ function decisionTransition(decision, requestId, operation, staged, heldOutput =
   return transitionResult(shaped, decision.snapshot);
 }
 
+/**
+ * The one read of the caller's snapshot. A plain-object snapshot, and a plain-object `held` inside it,
+ * are each read through their own property descriptors exactly once into ordinary objects carrying the
+ * same descriptors. Every later step (state, shape, hold facts, decision, successor) sees only this copy,
+ * so a Proxy or other exotic snapshot cannot answer one hold to validation and a different one to the
+ * decision (review findings p13b and cycle-5 hold substitution). Accessor descriptors are copied as
+ * descriptors, never invoked, so the merged core still rejects them exactly as before. A snapshot that
+ * cannot be read this way is returned as it is, and the existing checks reject it fail-closed.
+ */
+function snapshotOnce(snapshot) {
+  const descriptorsOf = (value) => {
+    if (!isPlainObject(value)) return null;
+    const descriptors = {};
+    try {
+      for (const key of Reflect.ownKeys(value)) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+        if (descriptor !== undefined) descriptors[key] = descriptor;
+      }
+    } catch {
+      return null;
+    }
+    return descriptors;
+  };
+  const outer = descriptorsOf(snapshot);
+  if (outer === null) return snapshot;
+  const held = Object.hasOwn(outer, 'held') ? outer.held : undefined;
+  if (held && Object.hasOwn(held, 'value') && held.value !== null) {
+    const inner = descriptorsOf(held.value);
+    if (inner !== null) outer.held = { ...held, value: Object.defineProperties({}, inner) };
+  }
+  return Object.defineProperties({}, outer);
+}
+
 function run(input) {
   const outer = readClosed(input, ['request', 'snapshot', 'observation']);
   if (outer.error) throw new M2AdapterError(outer.error === 'UNKNOWN_FIELD' ? 'UNKNOWN_FIELD' : 'FAIL_CLOSED_INTERNAL');
-  const { request, snapshot, observation } = outer.values;
+  const { request, observation } = outer.values;
+  const snapshot = snapshotOnce(outer.values.snapshot);
   const requestId = readMemberString(request, 'requestId');
   const operation = readMemberString(request, 'operation');
   if (requestId === null || requestId.length === 0 || operation === null) {
