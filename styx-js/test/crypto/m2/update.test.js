@@ -1616,7 +1616,10 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
       const later = reconcileWith(SLOT.slice(), hostile,
         reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
       if (later.result.kind === 'INDETERMINATE') {
-        expect(later.snapshot).toEqual(interrupted.snapshot);
+        // The snapshot is read exactly once: the hold returned is the one that single read gave, never a
+        // mixture of the genuine and the swapped hold.
+        const asRead = swapFrom === 1 ? { ...interrupted.snapshot, held: swapped } : interrupted.snapshot;
+        expect(later.snapshot).toEqual(asRead);
       } else {
         expect(later.result.kind).toBe('REJECTED');
         expect(later.snapshot).toBe(null);
@@ -1842,11 +1845,13 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     const committed = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
     expect(committed.held.terminalEvidenceStatus).toBe('COMMITTED');
     for (const outcome of ['unknown', 42, true, { kind: 'COMMITTED' }]) {
-      // The held escrow is a required SS fact of the observation; withholding it stays the P01 framing
-      // defect for every outcome, known or not, so only the escrow-carrying readback is exercised here.
-      const kept = reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: outcome, responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
-      expect(kept.result.kind).toBe('INDETERMINATE');
-      expect(kept.snapshot).toEqual(committed);
+      // The held escrow is a required SS fact; for a hold RS has proved COMMITTED, withholding it retains the
+      // hold too (C-API `/rules/internalFailureBoundary`), so both readbacks are exercised.
+      for (const heldOutput of [{ protectedCommitBytes: STAGED }, null]) {
+        const kept = reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: outcome, responseEmission: null, heldOutput }), reference);
+        expect(kept.result.kind).toBe('INDETERMINATE');
+        expect(kept.snapshot).toEqual(committed);
+      }
       const pending = heldUpdate(id);
       const still = reconcileWith(SLOT.slice(), pending, reconcileObservation({ commitOutcome: outcome, responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
       expect(still.result.kind).toBe('INDETERMINATE');
@@ -1856,5 +1861,107 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
       expect(issued.snapshot.state).toBe('RECONCILIATION_REQUIRED');
       expect(issued.result.output).toBe(undefined);
     }
+  });
+
+  test('a COMMITTED self-update retained for a late escrow failure keeps its COMMITTED proof (cycle 5f review)', () => {
+    for (const stagedOutput of [null, { protectedCommitBytes: new Uint8Array(0) }]) {
+      const first = selfUpdate(SLOT.slice(), updateObservation({ operationIdentity: 'late-escrow', stagedOutput }));
+      expect(first.result.kind).toBe('INDETERMINATE');
+      expect(first.result.output).toBe(undefined);
+      expect(first.snapshot.held.terminalEvidenceStatus).toBe('COMMITTED');
+      const reference = first.result.reconciliationRef;
+      for (const later of [
+        { commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } },
+        { commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } },
+      ]) {
+        const second = reconcileWith(SLOT.slice(), first.snapshot, reconcileObservation(later), reference);
+        expect(second.result.kind).toBe('INDETERMINATE');
+        expect(second.snapshot).toEqual(first.snapshot);
+      }
+      const released = reconcileWith(SLOT.slice(), first.snapshot, reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      expect(released.result.kind).toBe('SUCCESS');
+      expect(Array.from(released.result.output.originalOutput.protectedCommitBytes)).toEqual(Array.from(STAGED));
+    }
+    // An INDETERMINATE self-update with a late escrow failure keeps the PENDING hold the core builds.
+    const ambiguous = selfUpdate(SLOT.slice(), updateObservation({ commitOutcome: 'INDETERMINATE', operationIdentity: 'late-pending', stagedOutput: null }));
+    expect(ambiguous.snapshot.held.terminalEvidenceStatus).toBe('PENDING');
+  });
+
+  test('a matching readback never rejects a COMMITTED hold for an escrow it cannot hand over (cycle 5f review)', () => {
+    const id = 'held-escrow-missing';
+    const reference = heldRef(id);
+    const committed = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
+    for (const later of [
+      { commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: null },
+      { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: null },
+      { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { protectedCommitBytes: new Uint8Array(0) } },
+      { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { embeddedTreeWelcome: WELCOME } },
+      { commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { protectedCommitBytes: STAGED, extra: 1 } },
+    ]) {
+      const result = reconcileWith(SLOT.slice(), committed, reconcileObservation(later), reference);
+      expect(result.result.kind).toBe('INDETERMINATE');
+      expect(result.result.output).toBe(undefined);
+      expect(result.snapshot).toEqual(committed);
+    }
+    // The same escrow defects on a hold that is only PENDING stay the P01 rejection.
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ heldOutput: null }), reference).result)).toBe('INVALID_REQUEST');
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED, extra: 1 } }), reference).result)).toBe('UNKNOWN_FIELD');
+    // A non-matching reference keeps its own CAPI-S028 answer; its escrow defect stays a P01 defect.
+    const mismatch = reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), heldRef('other'));
+    expect(mismatch.result.kind).toBe('REJECTED');
+    expect(code(mismatch.result)).toBe('RECONCILIATION_REFERENCE_MISMATCH');
+    expect(code(reconcileWith(SLOT.slice(), committed, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: null }), heldRef('other')).result)).toBe('INVALID_REQUEST');
+  });
+
+  test('integration decides on one decoded request: a Proxy cannot validate one operation and dispatch another (cycle 5f review)', () => {
+    const target = request('SELF_UPDATE', { peerFramedKeyPackage: bytes(0x01) });
+    let reads = 0;
+    const proxy = new Proxy(target, {
+      getOwnPropertyDescriptor(object, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(object, key);
+        if (key !== 'operation') return descriptor;
+        reads += 1;
+        return { ...descriptor, value: reads === 1 ? 'CREATE' : 'SELF_UPDATE' };
+      },
+    });
+    const answer = invokeAdapterTransition({
+      request: proxy,
+      snapshot: empty(),
+      observation: { onboarding: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'probe', stagedOutput: { embeddedTreeWelcome: WELCOME } },
+    });
+    expect(reads).toBe(1);
+    // The one read said CREATE, so the call is a CREATE throughout: validated, dispatched and released as
+    // CREATED with its Welcome, never a SELF_UPDATE validation with a CREATE dispatch.
+    expect(answer.result.kind).toBe('SUCCESS');
+    expect(answer.result.successCode).toBe('CREATED');
+    expect(answer.result.requestId).toBe(target.requestId);
+    expect(answer.snapshot.state).toBe('ACTIVE');
+  });
+
+  test('nested P01 defects compete with the outer record whatever the member order (cycle 5f review)', () => {
+    const accessor = { enumerable: true, configurable: true, get() { throw new Error('never invoked'); } };
+    // A descriptor read that throws on one request member does not hide a readable input's unknown member.
+    const target = request('SELF_UPDATE', { extra: 1 });
+    const throwing = new Proxy(target, {
+      getOwnPropertyDescriptor(object, key) {
+        if (key === 'api') throw new Error('descriptor read');
+        return Reflect.getOwnPropertyDescriptor(object, key);
+      },
+    });
+    expect(validateAdapterRequest(throwing).code).toBe('UNKNOWN_FIELD');
+    // An accessor observation member does not hide a readable staged escrow's unknown member.
+    const observation = updateObservation({ stagedOutput: { protectedCommitBytes: STAGED, extra: 1 } });
+    Object.defineProperty(observation, 'updateForm', accessor);
+    expect(code(selfUpdate(SLOT.slice(), observation).result)).toBe('UNKNOWN_FIELD');
+    // A plan-identity inconsistency is INVALID_REQUEST and outranks an out-of-set original state.
+    const id = 'held-plan';
+    const pending = heldUpdate(id);
+    const both = { state: pending.state, held: { ...pending.held, originalStateBefore: 'UNKNOWN', mutationPlanIdentity: 'WRONG' } };
+    const reconcile = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } });
+    expect(code(reconcileWith(SLOT.slice(), both, reconcile, heldRef(id)).result)).toBe('INVALID_REQUEST');
+    const planFixed = { state: pending.state, held: { ...pending.held, originalStateBefore: 'UNKNOWN', outputKind: 'NONE' } };
+    expect(code(reconcileWith(SLOT.slice(), planFixed, reconcile, heldRef(id)).result)).toBe('INVALID_REQUEST');
+    const outOfSetOnly = { state: pending.state, held: { ...pending.held, originalStateBefore: 'UNKNOWN' } };
+    expect(code(reconcileWith(SLOT.slice(), outOfSetOnly, reconcile, heldRef(id)).result)).toBe('UNKNOWN_VALUE');
   });
 });

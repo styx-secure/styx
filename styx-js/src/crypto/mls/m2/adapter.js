@@ -30,7 +30,7 @@
 //   C-REC  docs/architecture/m2/recovery-and-coexistence.md sha256 5b0d2fbd…94f87 (#335 5909885218)
 //   O-SCEN docs/architecture/m2/scenarios/clause-scenarios.md sha256 6c19a01c…4d37ae (#337 5912195865)
 
-import { transitionAdapter } from './state-machine.js';
+import { MUTATION_PLANS, transitionAdapter } from './state-machine.js';
 import { classifyRestore } from '../../../storage/m2/session-restore.js';
 
 /** The exact `adapterApi` constant of C-API §2. */
@@ -421,24 +421,30 @@ function readClosed(value, allowed) {
   } catch {
     return { error: 'INVALID_REQUEST', values: null };
   }
-  // C-API `/withinLevelErrorOrder` P01: UNKNOWN_FIELD preempts INVALID_REQUEST. Every member is checked
-  // for membership before any member's descriptor is read or its shape checked, so the answer never
-  // depends on member order or on a descriptor read that fails.
-  if (keys.some((key) => typeof key !== 'string' || !allowed.includes(key))) return { error: 'UNKNOWN_FIELD', values: null };
-  const descriptors = {};
-  try {
-    for (const key of keys) descriptors[key] = Reflect.getOwnPropertyDescriptor(value, key);
-  } catch {
-    return { error: 'INVALID_REQUEST', values: null };
-  }
-  // A shape defect still returns the members that are readable data, as `partial`, so a caller can let a
-  // nested record's own P01 defect compete in the same precedence (C-API `/withinLevelErrorOrder/P01`).
-  // These are values the descriptors above already hold; nothing is read again.
-  const partial = {};
+  // C-API `/withinLevelErrorOrder` P01: UNKNOWN_FIELD preempts INVALID_REQUEST. Membership is decided
+  // from the key list alone, so the answer never depends on member order or on a descriptor read that
+  // fails. Each descriptor is then read exactly once, key by key: a read that throws is a shape defect of
+  // that member only, and every other readable data member is still returned, as `partial`, so a caller
+  // can let a nested record's own P01 defect compete in the same precedence. Nothing is read again.
+  const unknown = keys.some((key) => typeof key !== 'string' || !allowed.includes(key));
+  // Null-prototype maps: an own `__proto__` member is kept as a member, never taken as a prototype.
+  const descriptors = Object.create(null);
+  let unreadable = false;
   for (const key of keys) {
+    if (typeof key !== 'string') continue;
+    try {
+      descriptors[key] = Reflect.getOwnPropertyDescriptor(value, key);
+    } catch {
+      unreadable = true;
+    }
+  }
+  const partial = Object.create(null);
+  for (const key of Object.keys(descriptors)) {
     const descriptor = descriptors[key];
     if (descriptor && Object.hasOwn(descriptor, 'value') && descriptor.enumerable === true) partial[key] = descriptor.value;
   }
+  if (unknown) return { error: 'UNKNOWN_FIELD', values: null, partial };
+  if (unreadable) return { error: 'INVALID_REQUEST', values: null, partial };
   for (const key of keys) {
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
@@ -602,19 +608,6 @@ export function validateAdapterRequest(request) {
   }
 }
 
-/** Read one own data-property string member, or `null` when it is absent or not a string. */
-function readMemberString(record, key) {
-  if (!isPlainObject(record)) return null;
-  let descriptor;
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(record, key);
-  } catch {
-    return null;
-  }
-  if (!descriptor || !Object.hasOwn(descriptor, 'value') || typeof descriptor.value !== 'string') return null;
-  return descriptor.value;
-}
-
 /** Read the M2 snapshot state. Throws when the snapshot carries no readable C-API state at all. */
 function snapshotStateOf(snapshot) {
   if (!isPlainObject(snapshot)) throw new M2AdapterError('FAIL_CLOSED_INTERNAL');
@@ -680,17 +673,29 @@ function heldHasMalformedValue(snapshot) {
   if (!isPlainObject(snapshot)) return false;
   const held = Object.getOwnPropertyDescriptor(snapshot, 'held');
   if (!held || !Object.hasOwn(held, 'value') || !isPlainObject(held.value)) return false;
-  const member = (key) => {
+  const values = Object.create(null);
+  for (const key of SNAPSHOT_HOLD_KEYS) {
     const descriptor = Object.getOwnPropertyDescriptor(held.value, key);
-    return descriptor && Object.hasOwn(descriptor, 'value') ? { value: descriptor.value } : null;
-  };
-  const identity = member('operationIdentity');
-  const reference = member('reconciliationRef');
-  const status = member('terminalEvidenceStatus');
-  if (identity === null || reference === null || status === null) return false;
-  if (typeof identity.value !== 'string' || identity.value.length === 0) return true;
-  if (reference.value !== `I-SM-HOLD:${identity.value}`) return true;
-  return !['PENDING', 'COMMITTED'].includes(status.value);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) return false;
+    values[key] = descriptor.value;
+  }
+  // Checks that do not depend on the out-of-set member (C-API `/withinLevelErrorOrder/P01`, cycle 5f
+  // review): the identity and the reference it fixes, the terminal-evidence status, and the plan identity
+  // that must name the scenario.
+  if (typeof values.operationIdentity !== 'string' || values.operationIdentity.length === 0) return true;
+  if (values.reconciliationRef !== `I-SM-HOLD:${values.operationIdentity}`) return true;
+  if (!['PENDING', 'COMMITTED'].includes(values.terminalEvidenceStatus)) return true;
+  if (values.mutationPlanIdentity !== values.scenario) return true;
+  // With a scenario in the closed set its plan is known, so every plan-fixed member is decidable whatever
+  // `originalStateBefore` carries; the plan's own state is the out-of-set member's defect and is left to it.
+  if (typeof values.scenario !== 'string' || !Object.hasOwn(MUTATION_PLANS, values.scenario)) return false;
+  const plan = MUTATION_PLANS[values.scenario];
+  if (values.expectedSuccessCode !== plan.successCode || values.expectedStateAfter !== plan.stateAfterCommitted
+    || values.outputKind !== plan.outputKind) return true;
+  if (values.scenario === 'CAPI-S017') {
+    return typeof values.selectedCandidateRef !== 'string' || values.selectedCandidateRef.length === 0;
+  }
+  return values.selectedCandidateRef !== null;
 }
 
 /**
@@ -767,13 +772,50 @@ function bindingRefMatches(bindingRef, slotContext) {
 }
 
 /**
+ * The P01 defects of the readable nested records of a malformed observation (`partial`), for the C-API
+ * `/withinLevelErrorOrder/P01` competition against the outer defect. Only `UNKNOWN_FIELD` can outrank
+ * the outer record's own defect, so only a nested unknown member is reported; a nested record is read
+ * from the value the outer descriptor read already holds, never again from the caller.
+ */
+function nestedObservationDefects(operation, partial) {
+  if (!partial) return [];
+  const defects = [];
+  const unknownIn = (value, allowed) => {
+    if (!isPlainObject(value)) return false;
+    let keys;
+    try {
+      keys = Reflect.ownKeys(value);
+    } catch {
+      return false;
+    }
+    return keys.some((key) => typeof key !== 'string' || !allowed.includes(key));
+  };
+  if ((operation === 'CREATE' || operation === 'SELF_UPDATE') && Object.hasOwn(partial, 'stagedOutput')) {
+    const member = operation === 'CREATE' ? STAGED_OUTPUT_BY_CODE.CREATED : STAGED_OUTPUT_BY_CODE.SELF_UPDATED;
+    if (unknownIn(partial.stagedOutput, [member])) defects.push('UNKNOWN_FIELD');
+  }
+  if (operation === 'RECONCILE_INDETERMINATE' && Object.hasOwn(partial, 'heldOutput')) {
+    if (unknownIn(partial.heldOutput, OUTPUT_MEMBERS)) defects.push('UNKNOWN_FIELD');
+  }
+  if (operation === 'RESTORE' && Object.hasOwn(partial, 'restoreObservation')) {
+    if (unknownIn(partial.restoreObservation, RESTORE_OBSERVATION_KEYS)) defects.push('UNKNOWN_FIELD');
+  }
+  return defects;
+}
+
+/**
  * Read the closed observation of one integrated operation, at P01: an unknown member is
  * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
  * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }` or the decoded observation.
  */
 function readObservation(operation, observation) {
   const shape = readClosed(observation, OBSERVATION_KEYS[operation]);
-  if (shape.error) return { error: shape.error };
+  if (shape.error) {
+    // C-API `/withinLevelErrorOrder/P01`: a malformed observation still lets the P01 defect of a readable
+    // nested record (the staged or held escrow, the restore facts) compete, so an unknown member there
+    // preempts a malformed member of the outer record whatever the order (cycle 5f review).
+    return { error: worst([shape.error, ...nestedObservationDefects(operation, shape.partial)]) };
+  }
   const value = shape.values;
 
   if (operation === 'RESTORE') {
@@ -818,19 +860,25 @@ function readObservation(operation, observation) {
     } else if (!committed) {
       defects.push('INVALID_REQUEST');
     }
+    // The held escrow's own defect is reported apart (`heldOutputError`): for a hold RS has already proved
+    // `COMMITTED` an escrow the SS cannot hand over retains the hold instead of rejecting (C-API
+    // `/rules/internalFailureBoundary`, cycle 5f review); for every other hold `run` adds it back to the
+    // P01 framing, exactly where it was.
     let heldOutput = null;
+    let heldOutputError = null;
     if (value.heldOutput !== null) {
       const held = readHeldOutput(value.heldOutput);
-      if (held.error) defects.push(held.error);
+      if (held.error) heldOutputError = held.error;
       else heldOutput = held.heldOutput;
     }
-    if (defects.length > 0) return { error: worst(defects) };
+    if (defects.length > 0) return { error: worst(heldOutputError === null ? defects : [...defects, heldOutputError]) };
     return {
       error: null,
       facts: 'RECONCILE_HELD',
       commitOutcome,
       responseEmission: value.responseEmission,
       heldOutput,
+      heldOutputError,
       slotContext,
     };
   }
@@ -1142,11 +1190,16 @@ function run(input) {
   const { request, observation } = outer.values;
   const copied = snapshotOnce(outer.values.snapshot);
   const { snapshot } = copied;
-  const requestId = readMemberString(request, 'requestId');
-  const operation = readMemberString(request, 'operation');
+  // The request is decoded exactly once, through its descriptors, and `requestId`, `operation`, `input`,
+  // the bounds, the observation set and the dispatch are all taken from that one decoded record (or from
+  // its readable members when it is malformed). A Proxy therefore cannot validate one operation and
+  // dispatch another (cycle 5f review).
+  const requestShape = readClosed(request, REQUEST_FIELDS);
+  const requestMembers = requestShape.error === null ? requestShape.values : (requestShape.partial ?? {});
+  const requestId = typeof requestMembers.requestId === 'string' ? requestMembers.requestId : null;
+  const operation = typeof requestMembers.operation === 'string' ? requestMembers.operation : null;
   if (requestId === null || requestId.length === 0 || operation === null) {
-    const shape = readClosed(request, REQUEST_FIELDS);
-    throw new M2AdapterError(shape.error ?? 'INVALID_REQUEST');
+    throw new M2AdapterError(requestShape.error ?? 'INVALID_REQUEST');
   }
   const stateBefore = snapshotStateOf(snapshot);
 
@@ -1154,9 +1207,8 @@ function run(input) {
   // chosen, so a P01 defect of any of the three preempts every P02 to P04 defect.
   // The `input` record is decoded exactly once per call and the decoded members are reused below: a proxy
   // or accessor-bearing `input` cannot present one value to validation and another to the event (F14).
-  // The request itself is decoded through its descriptors first and `input` is taken from that decoded
-  // record, never through a property get, so an accessor `input` is never invoked and stays a P01 defect.
-  const requestShape = readClosed(request, REQUEST_FIELDS);
+  // `input` is taken from the decoded request, never through a property get, so an accessor `input` is
+  // never invoked and stays a P01 defect.
   const decodedInput = Object.hasOwn(INPUT_BY_OPERATION, operation)
     ? decodeRequestInput(requestShape, operation) : { error: null, values: {} };
   const checked = validateRequestRecord(request, decodedInput, requestShape);
@@ -1166,6 +1218,16 @@ function run(input) {
   if (snapshotCode !== null) framing.push(snapshotCode);
   const observed = INTEGRATED_OPERATIONS.includes(operation) ? readObservation(operation, observation) : { error: null };
   if (observed.error) framing.push(observed.error);
+  // The hold is read once, from the adapter's own snapshot copy, and these facts serve every later step.
+  // A reconciliation that names a hold RS has already proved `COMMITTED` keeps its escrow defect out of the
+  // framing: that defect retains the hold below instead of rejecting it (C-API
+  // `/rules/internalFailureBoundary`, cycle 5f review). For every other hold it stays a P01 defect.
+  const heldFacts = operation === 'RECONCILE_INDETERMINATE' ? readHeldFacts(snapshot) : null;
+  const echoedRef = decodedInput && decodedInput.error === null ? decodedInput.values.reconciliationRef : undefined;
+  const escrowOfCommittedHold = heldFacts !== null && heldFacts.error === null
+    && heldFacts.terminalEvidenceStatus === 'COMMITTED' && typeof echoedRef === 'string'
+    && echoedRef === heldFacts.reconciliationRef;
+  if (!observed.error && observed.heldOutputError && !escrowOfCommittedHold) framing.push(observed.heldOutputError);
   // P03 binding (C-BIND §4 and `/comparisonRules/active` / `/comparisonRules/reconciliationRequired`,
   // C-API `CAPI-E006`): the request `bindingRef` of a session-bound operation must byte-equal the
   // authoritative slot context the SS resolved for it — the active slot, or the original slot of a held
@@ -1235,27 +1297,29 @@ function run(input) {
     // readback that is absent, unknown or `NOT_COMMITTED` therefore cannot select or discard anything: it
     // is the still-pending `CAPI-S024` answer, with the committed hold returned exactly as it was and no
     // output (probe p16). The reference must still match; a mismatch keeps its own `CAPI-S028` row.
-    const heldFacts = readHeldFacts(snapshot);
     const committedHold = snapshot !== null && snapshot.state === 'RECONCILIATION_REQUIRED'
-      && heldFacts.error === null && heldFacts.terminalEvidenceStatus === 'COMMITTED'
-      && observed.commitOutcome !== 'COMMITTED' && event.reconciliationRef === heldFacts.reconciliationRef;
+      && escrowOfCommittedHold && (observed.commitOutcome !== 'COMMITTED'
+        || observed.heldOutputError !== null || heldOutputShapeCode(heldFacts, observed.heldOutput) !== null);
     if (committedHold) {
       // The guard above, the re-decision below and the hold returned are all the one descriptor read
       // `readHeldFacts` took; the merged core re-validates that copy in full (review findings p13b and
-      // the cycle-5 double-read of `held`).
+      // the cycle-5 double-read of `held`). An escrow the SS cannot hand over, or one that is not the held
+      // mutation's, never rejects a hold RS has proved committed: it is retained unchanged, exactly as a
+      // non-committed readback is, and only a later `COMMITTED` readback with the escrow releases it
+      // (cycle 5f review).
       const heldCopy = heldFacts.copy;
       const pending = decide(
         { state: 'RECONCILIATION_REQUIRED', held: { ...heldCopy, terminalEvidenceStatus: 'PENDING' } },
-        { ...event, commitOutcome: 'INDETERMINATE' },
+        {
+          operation: event.operation, applicableErrors: [], facts: event.facts,
+          reconciliationRef: event.reconciliationRef, commitOutcome: 'INDETERMINATE',
+        },
       );
       if (pending === null || pending.result.kind !== 'INDETERMINATE' || pending.snapshot === null) {
         return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
       }
-      const committedCandidates = [...bounds];
-      const committedShape = heldOutputShapeCode(heldFacts, observed.heldOutput);
-      if (committedShape !== null) committedCandidates.push(committedShape);
-      if (committedCandidates.length > 0) {
-        const code = worst(committedCandidates);
+      if (bounds.length > 0) {
+        const code = worst(bounds);
         if (preempts(code, pending)) return rejectedTransition(requestId, operation, stateBefore, code);
       }
       const retained = { ...pending, snapshot: { state: pending.snapshot.state, held: { ...pending.snapshot.held, terminalEvidenceStatus: 'COMMITTED' } } };
@@ -1325,8 +1389,19 @@ function run(input) {
     return decisionTransition(decision, requestId, operation, defect ? null : observed.staged);
   }
   const held = decide(snapshot, { ...event, commitOutcome: 'INDETERMINATE' });
-  if (held === null || held.result.kind !== 'INDETERMINATE') {
+  if (held === null || held.result.kind !== 'INDETERMINATE' || held.snapshot === null) {
     throw new M2AdapterError('FAIL_CLOSED_INTERNAL');
+  }
+  if (observed.commitOutcome === 'COMMITTED') {
+    // C-MUT §§5-6 and C-API `/rules/internalFailureBoundary`: RS has already proved this mutation
+    // committed, so the retained hold keeps that proof (`terminalEvidenceStatus` `COMMITTED`) exactly as
+    // an interrupted emission does. A later readback that is not `COMMITTED` can then never clear or
+    // reject it; only a `COMMITTED` reconciliation releases its escrow (cycle 5f review).
+    const retained = {
+      ...held,
+      snapshot: { state: held.snapshot.state, held: { ...held.snapshot.held, terminalEvidenceStatus: 'COMMITTED' } },
+    };
+    return decisionTransition(retained, requestId, operation, null);
   }
   return decisionTransition(held, requestId, operation, null);
 }
