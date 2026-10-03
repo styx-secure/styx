@@ -111,7 +111,7 @@ Purpose item (scope record `O-SCEN3`): **relay loss**. Harness scenario exercise
       "preconditions": [
         "Both relay servers run inside the test on loopback IP literals and ephemeral ports (C-DLV §2 item 6, §10) and their URLs reach the client only through config.relays (C-SDK §4.1).",
         "relay1's dropAfterFrames counts EVENT frames, and it applies to its first connection only; every later connection of relay1 is neverAnswering.",
-        "relay0 keeps both its connections open, so it is never UNREACHABLE: a relay that holds its connection and does not answer is TIMED_OUT.",
+        "relay0 keeps its connection open, so it is never UNREACHABLE: a relay that holds its connection and does not answer is TIMED_OUT.",
         "The injected clock port fires each armed timer at exactly its delay; the injected random port returns the two values of randomValues in draw order, the first for the reconnection delay of the k-th consecutive lost connection and the second, which is 4294967295, for the retry delay of attempt 1, which is 4294967295, so delay(k, 0) = floor(base(k) / 2) for the reconnection and delay(1, 4294967295) = floor(1000 / 2) + floor(4294967295 × 1000 / 2^33) = 999 for the retry.",
         "No relay answers attempt 1 inside its per-relay timeout, so attempt 1 records no acceptance.",
         "Relay supervision runs every relay supervision interval from the moment start() resolves, so the first supervision read after the socket drop is the one at 13000 ms; that reading is stated in the index under open readings."

@@ -383,8 +383,8 @@ Purpose item (scope record `O-SCEN3`): **offline recipient**. Harness scenario o
         {
           "at": 61260,
           "actor": "sender",
-          "event": "relay1's copy of the same event arrives",
-          "detail": "dropped as a duplicate of an id already in the window",
+          "event": "the second copy of the same receipt event arrives at the sender",
+          "detail": "relay1 sends its copy of the same kind-4742 receipt to the sender's subscription; the sender's window already holds that id, so the copy is dropped without a second receipt and without an event",
           "timing": {
             "kind": "deltaFromPrevious",
             "valueMs": 10

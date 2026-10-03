@@ -506,7 +506,7 @@ exercised here: `duplicateAndReordered`.
         {
           "at": 32010,
           "actor": "sender",
-          "event": "getDelivery({ deliveryId: d1 }) and ({ deliveryId: d2 })",
+          "event": "getDelivery({ deliveryId: 'd1' }) on the recipient client",
           "detail": "both snapshots report state RECIPIENT_RECEIPT_RECEIVED, terminal true, attempts 1, lastCode null and relayOutcomes [{ relayIndex: 0, outcome: ACCEPTED }, { relayIndex: 1, outcome: ACCEPTED }]",
           "timing": {
             "kind": "deltaFromPrevious",
@@ -521,7 +521,7 @@ exercised here: `duplicateAndReordered`.
         {
           "at": 32010,
           "actor": "recipient",
-          "event": "getDelivery on the recipient client",
+          "event": "getDelivery({ deliveryId: 'd1' }) on the recipient client",
           "detail": "{ ok: false, code: E_SDK_UNKNOWN_DELIVERY }: the recipient client assigned no deliveryId; it emitted exactly two MESSAGE_RECEIVED events, one per event id, in the order it processed them, and published exactly two receipts, one per event id",
           "timing": {
             "kind": "deltaFromPrevious",
@@ -707,7 +707,7 @@ exercised here: `duplicateAndReordered`.
       "preconditions": [
         "A retransmission republishes the identical signed event bytes, so the event id is the same in attempt 1 and attempt 2.",
         "relay0 stored the event in attempt 1 and kept it after dropping the socket, so in attempt 2 its replacement connection already holds the event and answers with a duplicate: message.",
-        "The injected clock port fires each armed timer at exactly its delay; the injected random port returns the two values of randomValues in draw order, the first for the reconnection delay of the k-th consecutive lost connection, which is 0, and the second which is 4294967295 for the retry delay of attempt 1: delay(1, 4294967295) = floor(1000 / 2) + floor(4294967295 × 1000 / 2^33) = 500 + 499 = 999 ms for the reconnection and delay(1, 4294967295) = 500 + 499 = 999 ms for the retry, so the draw order matters and is exercised."
+        "The injected clock port fires each armed timer at exactly its delay; the injected random port returns the two values of randomValues in draw order, the first for the reconnection delay of the k-th consecutive lost connection, which is 0, and the second which is 4294967295 for the retry delay of attempt 1: delay(1, 0) = floor(1000 / 2) + floor(0 × 1000 / 2^33) = 500 + 0 = 500 ms for the reconnection (first draw) and delay(1, 4294967295) = 500 + 499 = 999 ms for the retry (second draw), so the draw order matters and is exercised."
       ],
       "clauses": [
         "C-SDK §2",

@@ -222,7 +222,7 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
           "at": 20000,
           "actor": "sender",
           "event": "shutdown()",
-          "detail": "the orderly shutdown of C-DLV §4.6 runs in its fixed order: it records the stopped state and refuses further start, send, cancel and shutdown calls; it stops the supervision timer; and it clears every timer handle the client still holds, which at this instant are two deadline timers (one per item of C-DLV §4.2 step 4), two attempt timers (one per item, armed at 12000 when the item entered IN_FLIGHT) and the supervision timer of C-DLV §5.2 — five handles in all (expectedPortCalls), each passed to clearTimer a single time; the listeners of C-SDK §4.2 are removed",
+          "detail": "the orderly shutdown of C-DLV §4.6 runs in its fixed order: it records the stopped state and refuses further start, send, cancel and shutdown calls; it stops the supervision timer; and it clears every timer handle the client still holds, which at this instant are two deadline timers (one per item of C-DLV §4.2 step 4), two attempt timers (one per item, armed at 12000 when the item entered IN_FLIGHT) and the supervision timer of C-DLV §5.2 — five handles in all (expectedPortCalls), each passed to clearTimer a single time; no callback of a fired or cleared timer runs at or after 20000. The listeners of C-SDK §4.2 are removed",
           "timing": {
             "kind": "portCall",
             "valueMs": 6000
@@ -320,17 +320,14 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
           "at": 36010,
           "actor": "sender",
           "event": "getDelivery({ deliveryId: d1 }) again, 12010 ms after the instant at which the attempt timeout of attempt 1 would have elapsed (12000 + perRelayTimeoutMs = 24000)",
-          "detail": "the orderly shutdown of C-DLV §4.6 runs in its fixed order: it records the stopped state and refuses further start, send, cancel and shutdown calls; it stops the supervision timer; and it clears every timer handle the client still holds, which at this instant are two deadline timers (one per item of C-DLV §4.2 step 4), two attempt timers (one per item, armed at 12000 when the item entered IN_FLIGHT) and the supervision timer of C-DLV §5.2 — five handles in all (expectedPortCalls), each passed to clearTimer a single time; the listeners of C-SDK §4.2 are removed",
+          "detail": "the read of the stopped client: it returns the frozen snapshot of d1 — state LOST_ON_SHUTDOWN, terminal true, one attempt, createdAt 12000, deadlineAt 132000, lastCode null — and both of its relay outcomes are still PENDING, because C-DLV §5.3 freezes every relay outcome synchronously at the shutdown call and entries of an attempt still in progress at the call keep PENDING; the stop cleared every timer handle the client held, so no timer of the stopped client fires at 24000 and the outcome never becomes TIMED_OUT",
           "timing": {
             "kind": "deltaFromPrevious",
             "valueMs": 3900
           },
           "checks": [
-            "C-DLV §4.2",
-            "C-DLV §4.3",
-            "C-DLV §4.5",
             "C-DLV §4.6",
-            "C-DLV §5.2",
+            "C-DLV §5.3",
             "C-SDK §4.2",
             "C-SDK §6.2"
           ]
@@ -453,6 +450,11 @@ client with a fresh empty store does not see the items an orderly `shutdown()` r
           "at": 36020,
           "call": "send({ recipient, payload }) on the stopped client",
           "result": "{ ok: false, code: 'E_SDK_CLIENT_STOPPED' }"
+        },
+        {
+          "at": 36010,
+          "call": "getDelivery({ deliveryId: 'd1' }) again",
+          "result": "{ ok: true, value: { deliveryId: 'd1', recipient: '<recipient public key>', state: 'LOST_ON_SHUTDOWN', terminal: true, attempts: 1, createdAt: 12000, deadlineAt: 132000, lastCode: null, relayOutcomes: [ { relayIndex: 0, outcome: 'PENDING' }, { relayIndex: 1, outcome: 'PENDING' } ] }"
         }
       ],
       "expectedEvents": [
