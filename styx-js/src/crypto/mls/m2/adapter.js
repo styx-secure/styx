@@ -430,29 +430,38 @@ function readClosed(value, allowed) {
   // Null-prototype maps: an own `__proto__` member is kept as a member, never taken as a prototype.
   const descriptors = Object.create(null);
   let unreadable = false;
+  // The allowed members that are not a readable own data property: absent, accessor, non-enumerable, or
+  // whose descriptor read threw. Reported with the error so a caller can tell which members failed.
+  const bad = [];
   for (const key of keys) {
     if (typeof key !== 'string') continue;
     try {
       descriptors[key] = Reflect.getOwnPropertyDescriptor(value, key);
     } catch {
       unreadable = true;
+      if (allowed.includes(key)) bad.push(key);
     }
   }
   const partial = Object.create(null);
   for (const key of Object.keys(descriptors)) {
     const descriptor = descriptors[key];
-    if (descriptor && Object.hasOwn(descriptor, 'value') && descriptor.enumerable === true) partial[key] = descriptor.value;
+    if (descriptor && Object.hasOwn(descriptor, 'value')) partial[key] = descriptor.value;
   }
-  if (unknown) return { error: 'UNKNOWN_FIELD', values: null, partial };
-  if (unreadable) return { error: 'INVALID_REQUEST', values: null, partial };
+  for (const key of allowed) {
+    if (bad.includes(key)) continue;
+    const descriptor = Object.hasOwn(descriptors, key) ? descriptors[key] : undefined;
+    if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) bad.push(key);
+  }
+  if (unknown) return { error: 'UNKNOWN_FIELD', values: null, partial, bad };
+  if (unreadable) return { error: 'INVALID_REQUEST', values: null, partial, bad };
   for (const key of keys) {
     const descriptor = descriptors[key];
     if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) {
-      return { error: 'INVALID_REQUEST', values: null, partial };
+      return { error: 'INVALID_REQUEST', values: null, partial, bad };
     }
   }
   for (const key of allowed) {
-    if (!Object.hasOwn(descriptors, key)) return { error: 'INVALID_REQUEST', values: null, partial };
+    if (!Object.hasOwn(descriptors, key)) return { error: 'INVALID_REQUEST', values: null, partial, bad };
   }
   const values = {};
   for (const key of allowed) values[key] = descriptors[key].value;
@@ -818,19 +827,43 @@ function nestedObservationDefects(operation, partial) {
 }
 
 /**
+ * The post-request evidence members of an observation (C-API `/rules/rsTriState`,
+ * `/rules/internalFailureBoundary`; C-MUT §§3, 6). Once the commit request may have reached RS, an RS
+ * outcome, emission fact or escrow the owning layer cannot state is evidence that failed, not a malformed
+ * request: it is read as absent (`ABSENT_MEMBER`) and decided by the same ambiguity and retention rules as
+ * an absent or unknown value (cycle 5i review). Every other member keeps the closed-record P01 rejection.
+ */
+const EVIDENCE_MEMBERS = Object.freeze({
+  SELF_UPDATE: Object.freeze(['commitOutcome', 'stagedOutput']),
+  RECONCILE_INDETERMINATE: Object.freeze(['commitOutcome', 'responseEmission', 'heldOutput']),
+});
+const ABSENT_MEMBER = Object.freeze({ absent: true });
+
+/**
  * Read the closed observation of one integrated operation, at P01: an unknown member is
  * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
  * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }` or the decoded observation.
  */
 function readObservation(operation, observation) {
   const shape = readClosed(observation, OBSERVATION_KEYS[operation]);
+  let value = shape.values;
   if (shape.error) {
-    // C-API `/withinLevelErrorOrder/P01`: a malformed observation still lets the P01 defect of a readable
-    // nested record (the staged or held escrow, the restore facts) compete, so an unknown member there
-    // preempts a malformed member of the outer record whatever the order (cycle 5f review).
-    return { error: worst([shape.error, ...nestedObservationDefects(operation, shape.partial)]) };
+    const evidence = Object.hasOwn(EVIDENCE_MEMBERS, operation) ? EVIDENCE_MEMBERS[operation] : null;
+    if (shape.error === 'INVALID_REQUEST' && evidence !== null && Array.isArray(shape.bad) && shape.bad.length > 0
+      && shape.bad.every((key) => evidence.includes(key))) {
+      // Only post-request evidence members failed: every other member was read once, as a plain data
+      // member, into `partial`; the failed ones are read as absent and decided below.
+      value = {};
+      for (const key of OBSERVATION_KEYS[operation]) {
+        value[key] = shape.bad.includes(key) ? ABSENT_MEMBER : shape.partial[key];
+      }
+    } else {
+      // C-API `/withinLevelErrorOrder/P01`: a malformed observation still lets the P01 defect of a readable
+      // nested record (the staged or held escrow, the restore facts) compete, so an unknown member there
+      // preempts a malformed member of the outer record whatever the order (cycle 5f review).
+      return { error: worst([shape.error, ...nestedObservationDefects(operation, shape.partial)]) };
+    }
   }
-  const value = shape.values;
 
   if (operation === 'RESTORE') {
     const inner = readClosed(value.restoreObservation, RESTORE_OBSERVATION_KEYS);
@@ -888,7 +921,9 @@ function readObservation(operation, observation) {
     // P01 framing, exactly where it was.
     let heldOutput = null;
     let heldOutputError = null;
-    if (value.heldOutput !== null) {
+    if (value.heldOutput === ABSENT_MEMBER) {
+      heldOutputError = 'INVALID_REQUEST';
+    } else if (value.heldOutput !== null) {
       const held = readHeldOutput(value.heldOutput);
       if (held.error) heldOutputError = held.error;
       else heldOutput = held.heldOutput;
@@ -939,7 +974,8 @@ function readObservation(operation, observation) {
     let staged = null;
     if ((operation === 'CREATE' || operation === 'SELF_UPDATE') && value.stagedOutput !== null) {
       const member = operation === 'CREATE' ? STAGED_OUTPUT_BY_CODE.CREATED : STAGED_OUTPUT_BY_CODE.SELF_UPDATED;
-      const stagedShape = readStagedOutput(value.stagedOutput, member);
+      const stagedShape = value.stagedOutput === ABSENT_MEMBER ? { error: 'INVALID_REQUEST' }
+        : readStagedOutput(value.stagedOutput, member);
       if (stagedShape.error) {
         // C-API `/rules/internalFailureBoundary`: after COMMITTED the adapter emits success or retains
         // reconciliation evidence and never emits REJECTED. A `SELF_UPDATE` escrow the owning layer cannot
@@ -963,7 +999,8 @@ function readObservation(operation, observation) {
   if (value.commitOutcome !== null || value.operationIdentity !== null) defects.push('INVALID_REQUEST');
   if (operation === 'CREATE' && value.stagedOutput !== null) defects.push('INVALID_REQUEST');
   if (selfUpdate && value.stagedOutput !== null) {
-    const unsupportedStaged = readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
+    const unsupportedStaged = value.stagedOutput === ABSENT_MEMBER ? { error: 'INVALID_REQUEST' }
+      : readStagedOutput(value.stagedOutput, STAGED_OUTPUT_BY_CODE.SELF_UPDATED);
     if (unsupportedStaged.error) defects.push(unsupportedStaged.error);
   }
   if (defects.length > 0) return { error: worst(defects) };

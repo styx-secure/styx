@@ -778,13 +778,13 @@ describe('I-UPD fail-closed request validation', () => {
     ['non-string reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: 7 }), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
     ['non-closed observation', request('SELF_UPDATE', {}), active(), { ...okUpdate, extra: 1 }, 'UNKNOWN_FIELD'],
     ['reconciliation with no hold and no proof at all', request('RECONCILE_INDETERMINATE', { reconciliationRef: 'I-SM-HOLD:none' }), active(), noProofReconcile, 'NO_RECONCILIATION_PENDING'],
-    ['missing observation member', request('SELF_UPDATE', {}), active(), withoutMember(okUpdate, 'stagedOutput'), 'INVALID_REQUEST'],
+    ['missing observation member', request('SELF_UPDATE', {}), active(), withoutMember(okUpdate, 'operationIdentity'), 'INVALID_REQUEST'],
     ['out-of-set update form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'PROPOSAL_FREE', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'UNKNOWN_VALUE'],
     ['out-of-set update form with a commit proof supplied', request('SELF_UPDATE', {}), active(), { ...okUpdate, updateForm: 'PROPOSAL_FREE' }, 'INVALID_REQUEST'],
     ['malformed staged output with an unsupported form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: 'x' } }, 'INVALID_REQUEST'],
     ['non-closed reconciliation observation', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), { ...reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), extra: 1 }, 'UNKNOWN_FIELD'],
-    ['missing reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withoutMember(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'responseEmission'), 'INVALID_REQUEST'],
-    ['accessor reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), withAccessor(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'heldOutput'), 'INVALID_REQUEST'],
+    ['missing reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-other') }), heldUpdate(), withoutMember(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'responseEmission'), 'INVALID_REQUEST'],
+    ['accessor reconciliation observation member', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-other') }), heldUpdate(), withAccessor(reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), 'heldOutput'), 'INVALID_REQUEST'],
     ['held escrow withheld from a reconciliation with no proof', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null }), 'INVALID_REQUEST'],
     ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
@@ -874,10 +874,19 @@ describe('I-UPD fail-closed request validation', () => {
     const result = invokeAdapter({
       request: request('SELF_UPDATE', {}),
       snapshot: active(),
-      observation: withAccessor(okUpdate, 'commitOutcome', reads),
+      observation: withAccessor(okUpdate, 'operationIdentity', reads),
     });
     expect(code(result)).toBe('INVALID_REQUEST');
     expect(reads.count).toBe(0);
+    // An accessor evidence member is read as absent, never invoked: the issued update is held.
+    const evidenceReads = { count: 0 };
+    const held = invokeAdapter({
+      request: request('SELF_UPDATE', {}),
+      snapshot: active(),
+      observation: withAccessor(okUpdate, 'commitOutcome', evidenceReads),
+    });
+    expect(held.kind).toBe('INDETERMINATE');
+    expect(evidenceReads.count).toBe(0);
     const requestReads = { count: 0 };
     let thrown = null;
     try {
@@ -1969,6 +1978,76 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     }
     // An emission fact on a non-COMMITTED readback stays a P01 defect even with the matching reference.
     expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: 'SUCCEEDED', heldOutput: null }), reference).result)).toBe('INVALID_REQUEST');
+  });
+
+  test('a COMMITTED proof survives an omitted, accessor or unreadable evidence member (cycle 5i review)', () => {
+    const id = 'held-evidence';
+    const reference = heldRef(id);
+    const committed = reconcileWith(SLOT.slice(), heldUpdate(id), reconcileObservation({ responseEmission: 'INTERRUPTED' }), reference).snapshot;
+    const throwing = (record, key) => new Proxy(record, {
+      getOwnPropertyDescriptor(object, member) {
+        if (member === key) throw new Error('unreadable');
+        return Reflect.getOwnPropertyDescriptor(object, member);
+      },
+    });
+    const nonEnumerable = (record, key) => {
+      const copy = { ...record };
+      Object.defineProperty(copy, key, { enumerable: false });
+      return copy;
+    };
+    const base = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } });
+    const variants = [];
+    for (const key of ['responseEmission', 'heldOutput']) {
+      variants.push(withoutMember(base, key), withAccessor(base, key, { count: 0, value: null }), throwing(base, key), nonEnumerable(base, key));
+    }
+    for (const observation of variants) {
+      const first = reconcileWith(SLOT.slice(), heldUpdate(id), observation, reference);
+      expect(first.result.kind).toBe('INDETERMINATE');
+      expect(first.result.output).toBe(undefined);
+      expect(first.snapshot).toEqual(committed);
+      const later = reconcileWith(SLOT.slice(), first.snapshot, reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), reference);
+      expect(later.result.kind).toBe('INDETERMINATE');
+      expect(later.snapshot).toEqual(committed);
+      // With a reference that does not name the hold the shape defect stays the P01 rejection.
+      expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), observation, heldRef('other')).result)).toBe('INVALID_REQUEST');
+    }
+    // An omitted RS outcome is the still-ambiguous readback: the PENDING hold is kept unchanged.
+    const pending = heldUpdate(id);
+    const omitted = reconcileWith(SLOT.slice(), pending, withoutMember(reconcileObservation({ responseEmission: null, heldOutput: { protectedCommitBytes: STAGED } }), 'commitOutcome'), reference);
+    expect(omitted.result.kind).toBe('INDETERMINATE');
+    expect(omitted.snapshot).toEqual(pending);
+    // An emission fact beside an omitted outcome is an emission on a non-COMMITTED readback: P01.
+    expect(code(reconcileWith(SLOT.slice(), pending, withoutMember(base, 'commitOutcome'), reference).result)).toBe('INVALID_REQUEST');
+    // A non-evidence member keeps its P01 rejection whatever the outcome.
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), withoutMember(base, 'slotContext'), reference).result)).toBe('INVALID_REQUEST');
+    // Without a COMMITTED proof an omitted escrow stays the P01 rejection.
+    expect(code(reconcileWith(SLOT.slice(), heldUpdate(id), withoutMember(reconcileObservation({ commitOutcome: 'NOT_COMMITTED', responseEmission: null }), 'heldOutput'), reference).result)).toBe('INVALID_REQUEST');
+  });
+
+  test('an issued SELF_UPDATE with an omitted RS outcome or escrow is held, never rejected (cycle 5i review)', () => {
+    const issued = { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', operationIdentity: 'issued', commitOutcome: 'INDETERMINATE', stagedOutput: { protectedCommitBytes: STAGED } };
+    const reference = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: issued });
+    for (const observation of [withoutMember(issued, 'commitOutcome'), withAccessor(issued, 'commitOutcome', { count: 0, value: 'COMMITTED' })]) {
+      const answer = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation });
+      expect(answer.result.kind).toBe('INDETERMINATE');
+      expect(answer.snapshot).toEqual(reference.snapshot);
+    }
+    const committedNoEscrow = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: withoutMember({ ...issued, commitOutcome: 'COMMITTED' }, 'stagedOutput') });
+    expect(committedNoEscrow.result.kind).toBe('INDETERMINATE');
+    expect(committedNoEscrow.result.output).toBe(undefined);
+    expect(committedNoEscrow.snapshot.held.terminalEvidenceStatus).toBe('COMMITTED');
+    // With no operation identity no request was issued: the omitted outcome stays the P01 defect.
+    const unissued = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: withoutMember({ ...issued, operationIdentity: null }, 'commitOutcome') });
+    expect(code(unissued.result)).toBe('INVALID_REQUEST');
+    // An unknown member still preempts at P01.
+    const unknown = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: { ...withoutMember(issued, 'commitOutcome'), extra: 1 } });
+    expect(code(unknown.result)).toBe('UNKNOWN_FIELD');
+  });
+
+  test('a readable non-enumerable data member still lets its nested P01 defect compete (cycle 5i review)', () => {
+    const value = request('SELF_UPDATE', { extra: 1 });
+    Object.defineProperty(value, 'input', { enumerable: false });
+    expect(validateAdapterRequest(value).code).toBe('UNKNOWN_FIELD');
   });
 
   test('integration decides on one decoded request: a Proxy cannot validate one operation and dispatch another (cycle 5f review)', () => {
