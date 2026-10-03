@@ -544,8 +544,8 @@ function requestBoundCodes(value, inputShape = null) {
   return candidates;
 }
 
-function validateRequestRecord(request, inputShape = null) {
-  const shape = readClosed(request, REQUEST_FIELDS);
+function validateRequestRecord(request, inputShape = null, decoded = null) {
+  const shape = decoded ?? readClosed(request, REQUEST_FIELDS);
   if (shape.error) return { code: shape.error, values: null };
   const levelCode = requestLevelCode(shape.values, inputShape);
   return { code: levelCode, values: shape.values };
@@ -601,11 +601,33 @@ function snapshotStateOf(snapshot) {
 }
 
 /**
+ * The closed member sets of an I-SM snapshot and of its hold, as the merged I-SM core defines them
+ * (`state-machine.js`, not exported there and not modified by this card). They are used only to put
+ * UNKNOWN_FIELD ahead of descriptor-shape defects; every other snapshot check stays the core's own.
+ */
+const SNAPSHOT_KEYS = Object.freeze(['state', 'held']);
+const SNAPSHOT_HOLD_KEYS = Object.freeze(['originalStateBefore', 'scenario', 'mutationPlanIdentity', 'operationIdentity',
+  'expectedSuccessCode', 'expectedStateAfter', 'outputKind', 'reconciliationRef', 'selectedCandidateRef', 'terminalEvidenceStatus']);
+
+/**
  * The P01 code of a snapshot that is not a closed I-SM snapshot (exactly `state` and `held`, with a
  * valid hold), or `null`. The check is the merged I-SM core's own: an invalid snapshot is the one for
  * which `transitionAdapter` returns no next snapshot.
  */
 function snapshotShapeCode(snapshot) {
+  // C-API `/withinLevelErrorOrder/P01`: an unknown member of the snapshot, or of a plain hold inside
+  // it, is UNKNOWN_FIELD whatever the member order, ahead of any descriptor-shape defect the merged
+  // core would meet first while walking the members in order. The snapshot here is always the
+  // adapter's own data copy (`snapshotOnce`), so these reads run no caller code.
+  if (isPlainObject(snapshot)) {
+    const keys = Reflect.ownKeys(snapshot);
+    if (keys.some((key) => typeof key !== 'string' || !SNAPSHOT_KEYS.includes(key))) return 'UNKNOWN_FIELD';
+    const held = Object.getOwnPropertyDescriptor(snapshot, 'held');
+    if (held && Object.hasOwn(held, 'value') && isPlainObject(held.value)
+      && Reflect.ownKeys(held.value).some((key) => typeof key !== 'string' || !SNAPSHOT_HOLD_KEYS.includes(key))) {
+      return 'UNKNOWN_FIELD';
+    }
+  }
   let decision;
   try {
     decision = transitionAdapter(snapshot, { operation: 'RESTORE', applicableErrors: [], facts: 'NO_STORED_SESSION' });
@@ -1076,9 +1098,13 @@ function run(input) {
   // chosen, so a P01 defect of any of the three preempts every P02 to P04 defect.
   // The `input` record is decoded exactly once per call and the decoded members are reused below: a proxy
   // or accessor-bearing `input` cannot present one value to validation and another to the event (F14).
-  const decodedInput = Object.hasOwn(INPUT_BY_OPERATION, operation)
-    ? readClosed(request.input, INPUT_BY_OPERATION[operation]) : { error: null, values: {} };
-  const checked = validateRequestRecord(request, decodedInput);
+  // The request itself is decoded through its descriptors first and `input` is taken from that decoded
+  // record, never through a property get, so an accessor `input` is never invoked and stays a P01 defect.
+  const requestShape = readClosed(request, REQUEST_FIELDS);
+  const decodedInput = !Object.hasOwn(INPUT_BY_OPERATION, operation) ? { error: null, values: {} }
+    : requestShape.error ? { error: requestShape.error, values: null }
+      : readClosed(requestShape.values.input, INPUT_BY_OPERATION[operation]);
+  const checked = validateRequestRecord(request, decodedInput, requestShape);
   const framing = [];
   if (checked.code !== null) framing.push(checked.code);
   const snapshotCode = copied.failed ? 'FAIL_CLOSED_INTERNAL' : snapshotShapeCode(snapshot);

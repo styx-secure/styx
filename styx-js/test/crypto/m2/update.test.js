@@ -883,6 +883,24 @@ describe('I-UPD fail-closed request validation', () => {
     expect(thrown.code).toBe('INVALID_REQUEST');
     expect(requestReads.count).toBe(0);
   });
+
+  test('an accessor input is never invoked: it is a P01 defect, and an unknown member still preempts it (cycle 5d review)', () => {
+    for (const value of [() => ({}), () => { throw new Error('caller code'); }]) {
+      const inputReads = { count: 0, value };
+      const withInput = withAccessor(request('SELF_UPDATE', {}), 'input', inputReads);
+      const malformed = invokeAdapter({ request: withInput, snapshot: active(), observation: okUpdate });
+      expect(code(malformed)).toBe('INVALID_REQUEST');
+      const unknownFirst = { extra: 1 };
+      for (const key of Reflect.ownKeys(withInput)) {
+        Object.defineProperty(unknownFirst, key, Object.getOwnPropertyDescriptor(withInput, key));
+      }
+      const unknownLast = withAccessor(request('SELF_UPDATE', {}, { extra: 1 }), 'input', inputReads);
+      for (const record of [unknownFirst, unknownLast]) {
+        expect(code(invokeAdapter({ request: record, snapshot: active(), observation: okUpdate }))).toBe('UNKNOWN_FIELD');
+      }
+      expect(inputReads.count).toBe(0);
+    }
+  });
 });
 describe('I-UPD total precedence and the internal failure boundary', () => {
   test('the lowest precedence level present decides, whatever its order in the request', () => {
@@ -1742,5 +1760,36 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
       reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } }), heldRef(id));
     expect(code(reconciled.result)).toBe('UNKNOWN_FIELD');
     expect(reconciled.snapshot).toBe(null);
+  });
+
+  test('an unknown snapshot or hold member preempts a malformed one whatever the member order (cycle 5d review)', () => {
+    const data = (value) => ({ value, enumerable: true, writable: true, configurable: true });
+    const accessor = { enumerable: true, configurable: true, get() { throw new Error('never invoked'); } };
+    const build = (entries) => {
+      const value = {};
+      for (const [key, descriptor] of entries) Object.defineProperty(value, key, descriptor);
+      return value;
+    };
+    for (const entries of [
+      [['state', data('ACTIVE')], ['held', accessor], ['extra', data(1)]],
+      [['extra', data(1)], ['state', data('ACTIVE')], ['held', accessor]],
+    ]) {
+      const result = selfUpdate(SLOT.slice(), updateObservation({ stagedOutput: { protectedCommitBytes: STAGED } }), build(entries));
+      expect(code(result.result)).toBe('UNKNOWN_FIELD');
+      expect(result.snapshot).toBe(null);
+    }
+    const id = 'held-order';
+    const pending = heldUpdate(id);
+    const members = Object.entries(pending.held).filter(([key]) => key !== 'scenario').map(([key, value]) => [key, data(value)]);
+    const observation = reconcileObservation({ heldOutput: { protectedCommitBytes: STAGED } });
+    for (const entries of [
+      [...members, ['scenario', accessor], ['extra', data(1)]],
+      [['extra', data(1)], ['scenario', accessor], ...members],
+    ]) {
+      const snapshot = build([['state', data(pending.state)], ['held', data(build(entries))]]);
+      const result = reconcileWith(SLOT.slice(), snapshot, observation, heldRef(id));
+      expect(code(result.result)).toBe('UNKNOWN_FIELD');
+      expect(result.snapshot).toBe(null);
+    }
   });
 });
