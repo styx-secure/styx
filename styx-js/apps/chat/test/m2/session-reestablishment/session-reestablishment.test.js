@@ -64,6 +64,20 @@ const CREC_DISPATCH_FIXTURES = [
   { id: 'NEG-UNKNOWN-RESULT', input: { result: 'UNKNOWN', legacyPresent: false }, expected: { reject: 'UNKNOWN_RESULT', agreement: { disposition: 'REJECT', authorityIdentity: 'NONE', markerState: 'UNCHANGED', firstFailingPhase: 'C_REST_CLASSIFIED' } } },
   { id: 'NEG-INCOMPLETE-DISPATCH', input: { result: 'RESTORED_ACTIVE' }, expected: { reject: 'MISSING_DISPATCH_INPUT', agreement: { disposition: 'REJECT', authorityIdentity: 'NONE', markerState: 'UNCHANGED', firstFailingPhase: 'C_REST_CLASSIFIED' } } },
   { id: 'NEG-NO-M2-LEGACY', input: { result: 'NO_M2_STATE', legacyPresent: true }, expected: { reject: 'UNREACHABLE_CONDITION_PAIR', agreement: { disposition: 'REJECT', authorityIdentity: 'NONE', markerState: 'UNCHANGED', firstFailingPhase: 'C_REST_CLASSIFIED' } } },
+  { id: 'NEG-LOCKED-LEGACY', input: { result: 'LOCKED_ELSEWHERE', legacyPresent: true }, expected: { reject: 'UNREACHABLE_CONDITION_PAIR', agreement: { disposition: 'REJECT', authorityIdentity: 'NONE', markerState: 'UNCHANGED', firstFailingPhase: 'C_REST_CLASSIFIED' } } },
+  { id: 'NEG-BUILD-LEGACY', input: { result: 'INCOMPATIBLE_BUILD', legacyPresent: true }, expected: { reject: 'UNREACHABLE_CONDITION_PAIR', agreement: { disposition: 'REJECT', authorityIdentity: 'NONE', markerState: 'UNCHANGED', firstFailingPhase: 'C_REST_CLASSIFIED' } } },
+];
+/** C-REC `/reachableConditionRows` as `result:legacyPresent` pairs, verbatim and in order (32 rows). */
+const CREC_REACHABLE_PAIRS = [
+  'NO_M2_STATE:false', 'LEGACY_ONLY:true', 'RESTORED_EMPTY:false', 'RESTORED_EMPTY:true', 'RESTORED_ACTIVE:false',
+  'RESTORED_ACTIVE:true', 'RESTORED_RECONCILIATION_REQUIRED:false', 'RESTORED_RECONCILIATION_REQUIRED:true',
+  'LOCKED_ELSEWHERE:false', 'WRAPPER_AUTH_FAILED:false', 'WRAPPER_AUTH_FAILED:true', 'INCOMPATIBLE_BUILD:false',
+  'INCOMPATIBLE_FORMAT:false', 'INCOMPATIBLE_FORMAT:true', 'UNSUPPORTED_VERSION:false', 'UNSUPPORTED_VERSION:true',
+  'SELECTOR_INVALID:false', 'SELECTOR_INVALID:true', 'AUTHENTICATION_FAILED:false', 'AUTHENTICATION_FAILED:true',
+  'MANIFEST_INVALID:false', 'MANIFEST_INVALID:true', 'RECORD_SET_INCOMPLETE:false', 'RECORD_SET_INCOMPLETE:true',
+  'RECORD_INVALID:false', 'RECORD_INVALID:true', 'REFERENCE_INCONSISTENT:false', 'REFERENCE_INCONSISTENT:true',
+  'PARTIAL_GENERATION:false', 'PARTIAL_GENERATION:true', 'INTERNAL_VALIDATION_FAILED:false',
+  'INTERNAL_VALIDATION_FAILED:true',
 ];
 const CREC_MARKER_FIXTURES = [
   { id: 'MARKER-START', input: { committed: false, distinct: false, event: EV.START, lockHeld: true, restoreResult: 'LEGACY_ONLY', state: ABSENT }, expected: { accepted: true, state: PENDING, agreement: { disposition: 'MARKER_TRANSITION', firstFailingPhase: 'NONE', markerState: PENDING } } },
@@ -324,12 +338,26 @@ describe('C-REC SHOW_REESTABLISHMENT / SHOW_CREATE dispatch rows', () => {
   });
 
   test('every other C-REST result is not a re-establishment result, and malformed inputs reject closed', () => {
-    for (const result of CREC_RESTORE_RESULTS.filter((r) => r !== 'NO_M2_STATE' && r !== 'LEGACY_ONLY')) {
+    // C-REC /reachableConditionRows decide reachability for every result: an unreachable pair is
+    // UNREACHABLE_CONDITION_PAIR; any other reachable result outside the two owned rows is
+    // NOT_REESTABLISHMENT_RESULT (r2 DeepSeek LOW-1: NEG-LOCKED-LEGACY, NEG-BUILD-LEGACY).
+    expect(CREC_REACHABLE_PAIRS).toHaveLength(32);
+    let unreachable = 0;
+    for (const result of CREC_RESTORE_RESULTS) {
       for (const legacyPresent of [false, true]) {
         const g = guidanceFor({ result, legacyPresent });
-        expect(`${result}:${g.disposition}:${g.reject}`).toBe(`${result}:REJECT:NOT_REESTABLISHMENT_RESULT`);
+        const pair = `${result}:${legacyPresent}`;
+        let want = 'NOT_REESTABLISHMENT_RESULT';
+        if (!CREC_REACHABLE_PAIRS.includes(pair)) {
+          want = 'UNREACHABLE_CONDITION_PAIR';
+          unreachable += 1;
+        } else if (pair === 'NO_M2_STATE:false' || pair === 'LEGACY_ONLY:true') {
+          want = null;
+        }
+        expect(`${pair}:${g.reject}`).toBe(`${pair}:${want}`);
       }
     }
+    expect(unreachable).toBe(4);
     expect(guidanceFor({ result: 'LEGACY_ONLY', legacyPresent: false }).reject).toBe('UNREACHABLE_CONDITION_PAIR');
     expect(guidanceFor(null).reject).toBe('MISSING_DISPATCH_INPUT');
     expect(guidanceFor({ legacyPresent: true }).reject).toBe('MISSING_DISPATCH_INPUT');

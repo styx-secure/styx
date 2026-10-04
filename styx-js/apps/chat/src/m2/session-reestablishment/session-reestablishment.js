@@ -66,6 +66,14 @@ const MARKER_RESTORE_RESULTS = Object.freeze([
 ]);
 
 /**
+ * The (result, legacyPresent) pairs absent from C-REC `/reachableConditionRows` (32 rows over the 18
+ * results): these four, and no other, reject `UNREACHABLE_CONDITION_PAIR`.
+ */
+const UNREACHABLE_PAIRS = Object.freeze([
+  'NO_M2_STATE:true', 'LEGACY_ONLY:false', 'LOCKED_ELSEWHERE:true', 'INCOMPATIBLE_BUILD:true',
+]);
+
+/**
  * The two C-REC `/dispatchRows` this card owns, transcribed verbatim, plus the one `legacyPresent`
  * value C-REC `/reachableConditionRows` pairs with each of them.
  */
@@ -324,7 +332,8 @@ function passiveSnapshot(value, depth = 0) {
     if (!d.enumerable) return SNAPSHOT_REFUSED;
     const v = passiveSnapshot(d.value, depth + 1);
     if (v === SNAPSHOT_REFUSED) return SNAPSHOT_REFUSED;
-    out[key] = v;
+    // Define, never assign: an own `__proto__` member stays an own data member (r2 DeepSeek LOW-3).
+    Object.defineProperty(out, key, { value: v, enumerable: true, writable: true, configurable: true });
   }
   return Object.freeze(out);
 }
@@ -554,6 +563,9 @@ export function guidanceFor(input) {
   });
   if (typeof result !== 'string' || typeof legacyPresent !== 'boolean') return reject('MISSING_DISPATCH_INPUT');
   if (!RESTORE_RESULTS.includes(result)) return reject('UNKNOWN_RESULT');
+  // C-REC /reachableConditionRows: these four (result, legacyPresent) pairs are unreachable; the
+  // pair check precedes the owned-row check (C-REC NEG-NO-M2-LEGACY, NEG-LOCKED-LEGACY, NEG-BUILD-LEGACY).
+  if (UNREACHABLE_PAIRS.includes(`${result}:${legacyPresent}`)) return reject('UNREACHABLE_CONDITION_PAIR');
   const row = Object.hasOwn(OWNED_DISPATCH_ROWS, result) ? OWNED_DISPATCH_ROWS[result] : null;
   if (row === null) return reject('NOT_REESTABLISHMENT_RESULT');
   if (legacyPresent !== row.legacyPresent) return reject('UNREACHABLE_CONDITION_PAIR');
