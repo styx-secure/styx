@@ -6,12 +6,13 @@
 // mutation and one more restart, and evaluates the invariants of IMPACT.md §3 on what the integrated
 // modules returned and wrote.
 
-import { Device, ROOT_KEY, deepCopy, errCode, loadProcess, makePort, sealMessage } from './harness.js';
+import { Device, OUTPUT_MEMBER, ROOT_KEY, deepCopy, errCode, loadProcess, makePort, sealMessage } from './harness.js';
+import { startCutover, confirmAfterRecovery, markerAfterRestart } from './marker.js';
 
 export const OPERATIONS = Object.freeze(['CREATE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION', 'SELF_UPDATE']);
 export const OUTCOMES = Object.freeze(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
 export const FAULTS_ORIGINAL = Object.freeze(['EXC_RETAINED', 'EXC_LOST', 'KILL']);
-export const FAULTS_RECONCILIATION = Object.freeze(['EXC_RETAINED', 'EXC_LOST']);
+export const FAULTS_RECONCILIATION = Object.freeze(['EXC_RETAINED', 'EXC_LOST', 'KILL']);
 export const SEEDS = Object.freeze([11, 23, 37]);
 const MEMORY_ONLY = new Set([
   'VALIDATE_ENVELOPE', 'COMPUTE_CANDIDATE', 'STAGE_LOCAL', 'OPEN_RS_REQUEST', 'CONFIRM_AUTHORITY', 'REPORT_RESULT',
@@ -40,6 +41,33 @@ export const ALLOWED = Object.freeze({
   AFTER_OUTPUT_RESPONSE_LOSS: { RETAINED: [NEW], LOST: [NEW] },
 });
 
+/**
+ * C-MUT `/crashBoundaries` (mutation-table.md:366-378) verbatim, hold dimension included: the stored
+ * readback values each boundary admits per memory condition. OLD_PLUS_ONE_IMMUTABLE_HOLD is
+ * COMPLETE_OLD with exactly one hold retained (durable selector hold, or the SS memory hold).
+ */
+const HOLD = 'OLD_PLUS_ONE_IMMUTABLE_HOLD';
+export const READBACK = Object.freeze({
+  BEFORE_STAGING: { RETAINED: [OLD], LOST: [OLD] },
+  AFTER_CANDIDATE_COMPUTATION: { RETAINED: [OLD], LOST: [OLD] },
+  AFTER_LOCAL_STAGING: { RETAINED: [OLD], LOST: [OLD] },
+  BEFORE_RS_REQUEST: { RETAINED: [OLD], LOST: [OLD] },
+  DURING_RS_WORK: { RETAINED: [OLD, NEW, HOLD], LOST: [OLD, NEW] },
+  AFTER_DURABLE_COMMIT_BEFORE_RESPONSE: { RETAINED: [NEW], LOST: [NEW] },
+  AFTER_NOT_COMMITTED: { RETAINED: [OLD], LOST: [OLD] },
+  AFTER_INDETERMINATE: { RETAINED: [HOLD], LOST: [OLD, NEW] },
+  DURING_RECONCILIATION: { RETAINED: [OLD, NEW, HOLD], LOST: [OLD, NEW] },
+  AFTER_AUTHORITY_SELECTION_BEFORE_OUTPUT_RESPONSE: { RETAINED: [NEW], LOST: [NEW] },
+  DURING_ESCROW_OUTPUT_RESPONSE: { RETAINED: [NEW], LOST: [NEW] },
+  AFTER_OUTPUT_RESPONSE_LOSS: { RETAINED: [NEW], LOST: [NEW] },
+});
+
+/** The C-MUT readback value of an authenticated readback plus the SS memory hold. */
+function readbackValue(rb) {
+  if (rb.authority === OLD && (rb.held === true || rb.memoryHold)) return HOLD;
+  return rb.authority;
+}
+
 /** The known divergences of the card (IMPACT.md §5). Fix: PR #435, contract #436. */
 export const KNOWN = Object.freeze({
   'T-COMPOSE-R1': 'memory lost, durable RECONCILIATION_REQUIRED selector, reconcile HOLD_UNAVAILABLE, new mutation BLIND_RETRY',
@@ -64,6 +92,9 @@ async function sharedProcess() {
 
 async function setup(op, seed) {
   const d = await Device.boot(null, seed, await sharedProcess());
+  // CREATE is the distinct post-start session of the L-MARK cutover (C-REC §6): START precedes it,
+  // and CONFIRM is attempted once the interrupted CREATE is recovered.
+  if (op === 'CREATE') startCutover(d);
   if (op !== 'CREATE' && op !== 'JOIN_WELCOME') {
     const r = await d.runClean(d.prepCreate('COMMITTED'), 'setup-create');
     if (r.kind !== 'SUCCESS') throw new Error(`setup CREATE did not succeed: ${r.kind}`);
@@ -163,6 +194,16 @@ function bytesIn(value, out = []) {
 }
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 
+/** True when `bytes` sits under a member named `member` somewhere in the released output. */
+function releasedUnder(value, member, bytes) {
+  if (value === null || typeof value !== 'object' || value instanceof Uint8Array) return false;
+  for (const [k, v] of Object.entries(value)) {
+    if (k === member && v === bytes) return true;
+    if (releasedUnder(v, member, bytes)) return true;
+  }
+  return false;
+}
+
 /** Run one cell and return its frontier record (plain JSON-safe data; no bytes). */
 export async function runCell(cell) {
   let d = await setup(cell.op, cell.seed);
@@ -228,14 +269,14 @@ export async function runCell(cell) {
     // Nothing held anywhere: the authenticated readback is terminal; the SS reports it (C-MUT §5 l.57).
     path = 'TERMINAL_READBACK';
     const rs = rb.authority === NEW ? 'COMMITTED' : 'NOT_COMMITTED';
-    const r = d.decidePending(rs, true, 'readback-report');
+    const r = await d.decidePending(rs, true, 'readback-report');
     adapterResults.push(resultCode(r));
     d.emit(r, 'interrupted');
   } else {
     path = 'RECONCILE';
     if (cell.phase === 'ORIGINAL') {
       // The response to the original request is lost: to the SS its outcome is unknown (C-MUT §5 l.53).
-      const r = d.decidePending('INDETERMINATE', false, 'lost-response');
+      const r = await d.decidePending('INDETERMINATE', false, 'lost-response');
       adapterResults.push(resultCode(r));
     }
     for (let i = 0; i < RECONCILE_ATTEMPTS && d.disk.pending !== null; i += 1) {
@@ -258,6 +299,24 @@ export async function runCell(cell) {
     error: settled.error,
   };
   const interruptedOutputs = d.emitted.filter((e) => e.requestOp === 'interrupted').map((e) => e.output);
+  // The selected generation's durable escrow, read back before the follow-up can supersede it.
+  const finalEscrow = await d.durableEscrowOutput(p.generation);
+  // SELF_UPDATE retention (C-RET PAST_EPOCHS_ONCE_AVAILABLE): the session state the SS reads back from
+  // the selected authority is the one I-TXN selected (candidate for COMPLETE_NEW, parent for
+  // COMPLETE_OLD), and its past-epoch window does not exceed the retention bound.
+  let retention = null;
+  if (cell.op === 'SELF_UPDATE' && settled.error === null && !settled.held) {
+    const cur = d.current();
+    const window = d.P.adapter.M2_ADAPTER.RETENTION.PAST_EPOCHS_ONCE_AVAILABLE;
+    const epochs = Object.keys(cur.state.epochKeys).map(Number);
+    const wantGen = settled.authority === NEW ? p.generation : p.parentGeneration;
+    retention = {
+      selected: cur.generation === wantGen,
+      oldest: Math.min(...epochs), epoch: cur.state.epoch, window,
+    };
+  }
+  // L-MARK × CREATE: CONFIRM from the recovered state, before the follow-up.
+  const cutover = cell.op === 'CREATE' ? await confirmAfterRecovery(d, p.parentGeneration, p.generation) : null;
 
   const follow = await d.followUp();
   const followUp = { accepted: follow.accepted, code: follow.code };
@@ -278,6 +337,15 @@ export async function runCell(cell) {
   else if (!ALLOWED[cell.boundary][memory].includes(readback.authority)) {
     violations.push(`I1:READBACK_NOT_ALLOWED:${readback.authority}@${cell.boundary}/${memory}`);
   }
+  // I1 with the hold dimension: the C-MUT readback value, hold included, is one the boundary admits.
+  // Only where the boundary names a hold (or must not have one) can this differ from the projection;
+  // where the run never interrupted the original request before the RS call there is nothing held.
+  else if (!preRs) {
+    const value = readbackValue(readback);
+    if (!READBACK[cell.boundary][memory].includes(value)) {
+      violations.push(`I1:HOLD_NOT_ALLOWED:${value}@${cell.boundary}/${memory}`);
+    }
+  }
   if (final.error !== null) violations.push(`I1:MIXTURE_AFTER_RECOVERY:${final.error}`);
   // I2 no REJECTED after COMMITTED/INDETERMINATE for the interrupted request.
   const interruptedOutcome = cell.phase === 'RECONCILIATION' ? 'INDETERMINATE' : cell.rs;
@@ -296,15 +364,35 @@ export async function runCell(cell) {
     if (final.authority !== want) violations.push(`I3:AUTHORITY_DISAGREES_WITH_RS_TRUTH:${final.authority}!=${want}`);
   }
   // I4 output only for a committed authority, and byte-equal to the staged escrow (no regeneration).
+  // `escrowOutput` is the pending request's own copy: an expected value only. The SS released what it
+  // read back from durable storage (or what I-TXN returned from it), so a lost or altered escrow
+  // shows up here as a missing or different output.
   const escrow = p.escrowOutput;
   if (final.authority === OLD && interruptedOutputs.length > 0) violations.push('I4:OUTPUT_FOR_UNCOMMITTED_REQUEST');
   for (const out of interruptedOutputs) {
     const bytes = bytesIn(out);
-    // An operation with no escrow (JOIN_WELCOME: outputKind NONE) may release no bytes at all.
-    const ok = escrow === null ? bytes.length === 0 : bytes.some((b) => sameBytes(b, escrow));
+    // An operation with no escrow (JOIN_WELCOME: outputKind NONE) may release no bytes at all; one
+    // with an escrow releases exactly that escrow, once, under its own output member.
+    const ok = escrow === null ? bytes.length === 0
+      : bytes.length === 1 && sameBytes(bytes[0], escrow) && releasedUnder(out, OUTPUT_MEMBER[p.outputKind], bytes[0]);
     if (!ok) violations.push('I4:OUTPUT_NOT_THE_STAGED_ESCROW');
   }
+  // I4 a committed request with an escrow that was answered SUCCESS released exactly that escrow.
+  const succeeded = adapterResults.some((c) => c.startsWith('SUCCESS/'));
+  if (final.authority === NEW && escrow !== null && succeeded
+    && !interruptedOutputs.some((out) => bytesIn(out).some((b) => sameBytes(b, escrow)))) {
+    violations.push('I4:COMMITTED_OUTPUT_NOT_RELEASED');
+  }
+  // I4 the selected generation still holds the staged escrow, byte for byte (C-MUT /crashBoundaries:
+  // the escrow is retained until the response is released, and the release never rewrites it).
+  if (final.authority === NEW && escrow !== null) {
+    if (finalEscrow === null || !sameBytes(finalEscrow, escrow)) violations.push('I4:DURABLE_ESCROW_LOST_OR_ALTERED');
+  }
   // I4 no resurrection after the follow-up and one more restart.
+  if (retention !== null) {
+    if (!retention.selected) violations.push('I4:SESSION_STATE_NOT_FROM_SELECTED_AUTHORITY');
+    if (retention.epoch - retention.oldest > retention.window) violations.push(`I4:RETENTION_WINDOW_EXCEEDED:${retention.epoch - retention.oldest}>${retention.window}`);
+  }
   if (follow.accepted) {
     if (after.error !== null || after.authority !== NEW || !after.generationIsFollowUp) violations.push(`I4:FOLLOW_UP_NOT_DURABLE:${after.authority}/${after.error}`);
     if (after.held || after.memoryHold) violations.push('I4:HOLD_RESURRECTED');
@@ -312,21 +400,62 @@ export async function runCell(cell) {
 
   // I5 every adapter result is encodable by the integrated worker wire codec (C-API response grammar).
   for (const w of d.wireRefusals) violations.push(`I5:WIRE_REFUSED:${w.operation}/${w.kind}/${w.successCode}/${w.code}`);
+  // M5 L-MARK × CREATE: CONFIRM decided from the recovered authority; the marker survives the final restart.
+  let marker = null;
+  if (cutover !== null) {
+    const again = markerAfterRestart(d, cutover.state);
+    violations.push(...cutover.violations, ...again.violations);
+    marker = { confirmed: cutover.confirmed, state: cutover.state, afterRestart: again.state };
+  }
 
   const record = {
     id: cell.id, seed: cell.seed, phase: cell.phase, op: cell.op, rs: cell.rs, truth: cell.truth,
     step: cell.step, kind: cell.kind, when: cell.when, boundary: cell.boundary, memory, fault: cell.fault,
-    readback, path, adapterResults, txnErrors, final, followUp, after, wireRefusals: d.wireRefusals, violations,
+    readback, path, adapterResults, txnErrors, final, followUp, after, marker, wireRefusals: d.wireRefusals, violations,
   };
   record.classification = classify(record);
   return record;
 }
 
-/** EXPLAINED:<id> by exact signature, PASS when no invariant is violated, UNEXPLAINED otherwise. */
+/**
+ * The exact violation set each explained wedge produces. An explanation applies only when the cell's
+ * violations are exactly this set: any additional violation (a mixture, a wrong output, a resurrected
+ * hold, ...) is a new defect on top of the wedge and makes the cell UNEXPLAINED.
+ */
+const WEDGE_DURABLE = ['I3:ADAPTER_STILL_RECONCILIATION_REQUIRED', 'I3:DURABLE_HOLD_UNRESOLVED', 'I3:FOLLOW_UP_REFUSED:BLIND_RETRY'];
+const WEDGE_MEMORY = ['I3:ADAPTER_STILL_RECONCILIATION_REQUIRED', 'I3:MEMORY_HOLD_UNRESOLVED', 'I3:FOLLOW_UP_REFUSED:BLIND_RETRY'];
+const exact = (s) => new RegExp(`^${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+// R1 is a durable hold that survives memory loss: C-MUT admits no hold in a LOST readback, so the same
+// fact also shows as the I1 hold violation at the interrupted boundary (whichever boundary that was).
+const R1_LOST_HOLD = /^I1:HOLD_NOT_ALLOWED:OLD_PLUS_ONE_IMMUTABLE_HOLD@[A-Z_]+\/LOST$/;
+export const EXPLAINED_VIOLATIONS = Object.freeze({
+  'EXPLAINED:T-COMPOSE-R1': [...WEDGE_DURABLE.map(exact), R1_LOST_HOLD],
+  'EXPLAINED:T-COMPOSE-R2': WEDGE_MEMORY.map(exact),
+  'EXPLAINED:T-COMPOSE-R3': WEDGE_MEMORY.map(exact),
+  'EXPLAINED:r2-recovery-faults': WEDGE_MEMORY.map(exact),
+});
+
+/** True when `violations` is exactly the explanation's set: one violation per pattern, nothing else. */
+export function matchesExplanation(id, violations) {
+  const patterns = EXPLAINED_VIOLATIONS[id];
+  if (patterns === undefined || patterns.length !== violations.length) return false;
+  const used = new Set();
+  return violations.every((v) => {
+    const i = patterns.findIndex((re, k) => !used.has(k) && re.test(v));
+    if (i < 0) return false;
+    used.add(i);
+    return true;
+  });
+}
+
+/** EXPLAINED:<id> by exact signature and exact violation set, PASS when none, UNEXPLAINED otherwise. */
 export function classify(r) {
   if (r.violations.length === 0) return 'PASS';
-  // A wire refusal is not part of any explained wedge: it is always UNEXPLAINED on its own.
-  if (r.violations.some((v) => v.startsWith('I5:'))) return 'UNEXPLAINED';
+  const c = explain(r);
+  return c !== null && matchesExplanation(c, r.violations) ? c : 'UNEXPLAINED';
+}
+
+function explain(r) {
   const wedge = r.followUp.code === 'BLIND_RETRY';
   if (wedge && r.memory === 'LOST' && r.readback.held === true && r.txnErrors.includes('HOLD_UNAVAILABLE')) {
     return 'EXPLAINED:T-COMPOSE-R1';
@@ -352,7 +481,7 @@ export function classify(r) {
     && r.after.memoryHold === false && r.after.authority === OLD) {
     return 'EXPLAINED:r2-recovery-faults';
   }
-  return 'UNEXPLAINED';
+  return null;
 }
 
 export { deepCopy, errCode };

@@ -149,6 +149,51 @@ function probeOneWay(d) {
 
 let SHARED = null;
 
+/**
+ * Composition with the transaction matrix (engine.js, CREATE cells): START the cutover on a fresh
+ * device before the CREATE that will be interrupted. The marker is a durable disk cell, so it
+ * survives every crash/restart of the cell.
+ */
+export function startCutover(d) {
+  d.disk.marker = d.P.marker.encodeMarker({ state: 'ABSENT', bindingToken: zeroToken() });
+  d.disk.startToken = Uint8Array.from({ length: 32 }, () => 1 + Math.floor(d.rand() * 255));
+  const log = [];
+  apply(d, EVENTS.START, { restoreResult: 'LEGACY_ONLY' }, null, 'START', log);
+  if (!log[0].accepted) throw new Error(`START refused: ${log[0].reject}`);
+}
+
+/**
+ * After the interrupted CREATE was recovered: attempt CONFIRM from what the SS can observe (I-TXN
+ * readback of the CREATE's parent/candidate pair and the persisted adapter state). Returns the
+ * marker violations (C-REC §6 l.39, l.892-901): CONFIRM accepted iff the readback is a settled
+ * COMPLETE_NEW and the adapter is ACTIVE; a refused CONFIRM leaves PENDING_NEW_SESSION (legacy
+ * still eligible); an accepted one leaves NEW_SESSION_CONFIRMED (legacy ineligible).
+ */
+export async function confirmAfterRecovery(d, parentGeneration, generation) {
+  const a = await d.authority(parentGeneration, generation);
+  const committed = a.error === null && a.held === false && a.authority === 'COMPLETE_NEW';
+  const restoreResult = RESTORE_BY_ADAPTER_STATE[d.disk.snapshot.state];
+  const log = [];
+  apply(d, EVENTS.CONFIRM, { restoreResult, committed, authorityToken: Uint8Array.from(d.disk.startToken) }, null, 'CONFIRM', log);
+  const m = markerState(d);
+  const want = committed && restoreResult === 'RESTORED_ACTIVE';
+  const violations = [];
+  if (log[0].accepted !== want) violations.push(`M5:CONFIRM_${log[0].accepted ? 'ACCEPTED' : 'REFUSED'}:${a.authority}/${restoreResult}`);
+  const wantState = want ? 'NEW_SESSION_CONFIRMED' : 'PENDING_NEW_SESSION';
+  if (m.state !== wantState) violations.push(`M5:MARKER_STATE:${m.state}!=${wantState}`);
+  if (m.legacyEligible !== !want) violations.push(`M5:LEGACY_ELIGIBLE:${m.legacyEligible}`);
+  return { confirmed: log[0].accepted, state: m.state, legacyEligible: m.legacyEligible, violations };
+}
+
+/** The marker state after a restart; `expected` is the state CONFIRM left. */
+export function markerAfterRestart(d, expected) {
+  const m = markerState(d);
+  const violations = [];
+  if (m.state !== expected) violations.push(`M5:MARKER_CHANGED_ON_RESTART:${m.state}!=${expected}`);
+  if (ONE_WAY.has(m.state) && m.legacyEligible !== false) violations.push('M5:LEGACY_ELIGIBLE_AFTER_RESTART');
+  return { state: m.state, violations };
+}
+
 export async function runMarkerCell(cell) {
   if (SHARED === null) SHARED = await loadProcess();
   let d = await Device.boot(null, 0x4d41524b, SHARED);
@@ -220,12 +265,26 @@ export async function runMarkerCell(cell) {
   };
 }
 
+/** A canonical dump of the disk that includes Map entries, bigints and bytes (JSON drops Maps). */
+function dumpDisk(disk) {
+  const canon = (v) => {
+    if (typeof v === 'bigint') return `${v}n`;
+    if (v instanceof Uint8Array) return `hex:${Buffer.from(v).toString('hex')}`;
+    if (v instanceof Map) return { $map: [...v].map(([k, x]) => [canon(k), canon(x)]).sort((a, b) => (String(a[0]) < String(b[0]) ? -1 : 1)) };
+    if (Array.isArray(v)) return v.map(canon);
+    if (v !== null && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]));
+    return v;
+  };
+  return JSON.stringify(canon(disk));
+}
+
 /** APPLY_PEER_UPDATE is not integrated at the base: closed refusal, no snapshot, no storage change. */
 export async function runPeerUpdateGuard() {
   if (SHARED === null) SHARED = await loadProcess();
   const d = await Device.boot(null, 0x50454552, SHARED);
   await d.runClean(d.prepCreate('COMMITTED'), 'guard-create');
-  const before = JSON.stringify(deepCopy(d.disk), (k, v) => (typeof v === 'bigint' ? `${v}n` : (v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v)));
+  const before = dumpDisk(d.disk);
+  if (!before.includes('$map') || d.disk.generations.size === 0) throw new Error('guard: the disk dump does not cover the generations');
   const req = d.request('APPLY_PEER_UPDATE', { protectedCommitBytes: new Uint8Array([1, 2, 3, 4]) });
   let result;
   let snapshot;
@@ -236,7 +295,7 @@ export async function runPeerUpdateGuard() {
   } catch (e) {
     result = { thrown: errCode(e) };
   }
-  const after = JSON.stringify(deepCopy(d.disk), (k, v) => (typeof v === 'bigint' ? `${v}n` : (v instanceof Uint8Array ? Buffer.from(v).toString('hex') : v)));
+  const after = dumpDisk(d.disk);
   const violations = [];
   if (result.kind !== 'REJECTED' || result.error?.code !== 'UNSUPPORTED_OPERATION') violations.push(`G1:NOT_UNSUPPORTED:${JSON.stringify(result)}`);
   if (snapshot !== null && snapshot !== undefined) violations.push('G2:SNAPSHOT_RETURNED');

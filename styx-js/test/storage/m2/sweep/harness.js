@@ -535,21 +535,35 @@ export class Device {
     return { txnResult, port };
   }
 
-  /** The adapter observation for the pending request with commit outcome `rs` and the given escrow. */
-  observationFor(p, rs, withEscrow) {
+  /**
+   * The output bytes durably escrowed in `generation`, read back through the storage port; null when
+   * the generation or its escrow is absent. The SS releases only these bytes: the pending request's
+   * own copy (`escrowOutput`) is kept solely as the independent expected value the oracle compares
+   * against, so a lost or altered durable escrow surfaces as an I4 violation instead of being masked.
+   */
+  async durableEscrowOutput(generation) {
+    const g = await makePort(this.disk).readGeneration(generation);
+    if (g === null || g.escrow === null || g.escrow === undefined) return null;
+    const out = g.escrow.output;
+    return out === null || out === undefined ? null : Uint8Array.prototype.slice.call(out);
+  }
+
+  /** The adapter observation for the pending request with commit outcome `rs` and the escrow `output`. */
+  observationFor(p, rs, output) {
     const obs = { ...deepCopy(p.obsBase), commitOutcome: rs, operationIdentity: p.operationIdentity };
     if (p.operation !== 'JOIN_WELCOME') {
-      obs.stagedOutput = withEscrow && rs === 'COMMITTED' && p.escrowOutput !== null
-        ? { [OUTPUT_MEMBER[p.outputKind]]: deepCopy(p.escrowOutput) } : null;
+      obs.stagedOutput = rs === 'COMMITTED' && output !== null && p.outputKind !== 'NONE'
+        ? { [OUTPUT_MEMBER[p.outputKind]]: output } : null;
     }
     return obs;
   }
 
   /** Ask the adapter to decide the pending request from the outcome the SS observed. */
-  decidePending(rs, withEscrow, tag) {
+  async decidePending(rs, withEscrow, tag) {
     const p = this.disk.pending;
     const req = this.request(p.operation, deepCopy(p.requestInput));
-    const result = this.decide(req, this.observationFor(p, rs, withEscrow), tag);
+    const output = withEscrow && rs === 'COMMITTED' ? await this.durableEscrowOutput(p.generation) : null;
+    const result = this.decide(req, this.observationFor(p, rs, output), tag);
     if (rs !== 'INDETERMINATE' && result.kind !== 'INDETERMINATE') this.disk.pending = null;
     return result;
   }
@@ -595,11 +609,22 @@ export class Device {
     }
     const committed = reported === 'COMMITTED';
     const member = OUTPUT_MEMBER[p.outputKind] ?? null;
+    // A COMMITTED report releases the held output: it is what I-TXN read back from the selected
+    // generation's durable escrow when it reconciled, or, on a terminal readback with nothing held,
+    // what the SS reads from that escrow itself, never the pending request's own copy. Any other
+    // report releases nothing; the adapter still checks the shape of the escrow the hold names, so the
+    // SS presents the escrow it retained for the request.
+    let held = null;
+    if (member !== null) {
+      if (!committed) held = p.escrowOutput === null ? null : deepCopy(p.escrowOutput);
+      else if (txnOutcome !== null) held = txnOutcome.output === null || txnOutcome.output === undefined ? null : Uint8Array.prototype.slice.call(txnOutcome.output);
+      else held = await this.durableEscrowOutput(p.generation);
+    }
     const result = this.decide(req, {
       slotContext: SLOT.slice(),
       commitOutcome: reported,
       responseEmission: committed ? 'SUCCEEDED' : null,
-      heldOutput: p.escrowOutput === null || member === null ? null : { [member]: deepCopy(p.escrowOutput) },
+      heldOutput: held === null ? null : { [member]: held },
     }, `reconcile-${rs}`);
     if (result.kind !== 'INDETERMINATE' && result.kind !== 'REJECTED') this.disk.pending = null;
     return { result, txnOutcome, txnError: errCode(txnError), reported, readback: before };
@@ -654,7 +679,7 @@ export class Device {
   async runClean(prep, tag) {
     const { txnResult } = await this.runTxn(prep);
     const rs = txnResult.commitOutcome;
-    const result = this.decidePending(rs, true, tag);
+    const result = await this.decidePending(rs, true, tag);
     this.emit(result, prep.envelope.operation);
     return result;
   }
@@ -674,7 +699,7 @@ export class Device {
       this.disk.pending = null; // the SS drops a request I-TXN refused before any write
       return { accepted: false, code: errCode(e), result: null, generation: prep.generation, parent: prep.parentGeneration };
     }
-    const result = this.decidePending('COMMITTED', true, 'follow-up');
+    const result = await this.decidePending('COMMITTED', true, 'follow-up');
     this.emit(result, prep.envelope.operation);
     return {
       accepted: result.kind === 'SUCCESS', code: result.successCode ?? result.error?.code ?? result.kind,

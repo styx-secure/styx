@@ -5,19 +5,22 @@
 // registry, and one Jest process does not reclaim those. The outcome of every cell is compared with
 // the committed frontier `frontier.json`:
 //   - every cell recorded PASS must still hold every invariant;
-//   - no cell may produce a hit the frontier does not record (a recorded hit may only become PASS);
+//   - no cell may produce a hit the frontier does not record: a recorded hit keeps its exact
+//     classification and violation list, or becomes PASS;
+//   - an EXPLAINED class applies only to its exact violation set (`EXPLAINED_VIOLATIONS`), so a new
+//     defect on top of a known wedge is UNEXPLAINED;
 //   - each EXPLAINED group is a `test.failing` that flips when its fix lands (#435 for T-COMPOSE R1-R3);
 //   - UNEXPLAINED cells are excluded by recorded id and asserted nowhere.
 //
 // `TSWEEP_UPDATE_FRONTIER=1` rewrites `frontier.json` from the current run instead of comparing.
 
-import { describe, expect, test, beforeAll } from '@jest/globals';
+import { describe, expect, test, beforeAll, afterAll } from '@jest/globals';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { enumerateCells, runCell } from './engine.js';
+import { enumerateCells, runCell, matchesExplanation } from './engine.js';
 import { enumerateMarkerCells, runMarkerCell, runPeerUpdateGuard } from './marker.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -30,9 +33,18 @@ const SHARD_SIZE = 150;
 const PARALLEL = Math.max(1, Math.min(4, availableParallelism() - 1));
 const UPDATE = process.env.TSWEEP_UPDATE_FRONTIER === '1';
 
-function runShard(from, to, dir) {
+const SHARD_DEADLINE_MS = 900_000; // one shard: ~150 cells, well under a minute on CI; generous bound
+const MATRIX_DEADLINE_MS = 1_500_000; // below the beforeAll timeout, so children are reaped first
+const children = new Set();
+
+function killAll() {
+  for (const c of children) if (c.exitCode === null && c.signalCode === null) c.kill('SIGKILL');
+}
+
+function runShard(from, to, dir, signal) {
   const out = join(dir, `shard-${from}.json`);
   return new Promise((resolveShard, reject) => {
+    if (signal.aborted) { reject(new Error(`shard ${from}-${to} not started: matrix aborted`)); return; }
     const child = spawn(process.execPath, [
       '--experimental-vm-modules', JEST, '--ci', '--runInBand', '--rootDir', STYX_JS,
       '--testMatch', '**/test/storage/m2/sweep/shard.runner.js',
@@ -41,11 +53,18 @@ function runShard(from, to, dir) {
       env: { ...process.env, TSWEEP_FROM: String(from), TSWEEP_TO: String(to), TSWEEP_OUT: out },
       stdio: ['ignore', 'ignore', 'pipe'],
     });
+    children.add(child);
+    const timer = setTimeout(() => child.kill('SIGKILL'), SHARD_DEADLINE_MS);
+    const onAbort = () => child.kill('SIGKILL');
+    signal.addEventListener('abort', onAbort, { once: true });
     let stderr = '';
     child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8000); });
     child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) { reject(new Error(`shard ${from}-${to} exited ${code}\n${stderr}`)); return; }
+    child.on('close', (code, sig) => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      children.delete(child);
+      if (code !== 0) { reject(new Error(`shard ${from}-${to} exited ${code ?? sig}\n${stderr}`)); return; }
       resolveShard(JSON.parse(readFileSync(out, 'utf8')).records);
     });
   });
@@ -53,24 +72,36 @@ function runShard(from, to, dir) {
 
 async function runMatrix(total) {
   const dir = mkdtempSync(join(tmpdir(), 'tsweep-'));
+  const abort = new AbortController();
+  const deadline = setTimeout(() => abort.abort(), MATRIX_DEADLINE_MS);
+  const workers = [];
   try {
     const ranges = [];
     for (let from = 0; from < total; from += SHARD_SIZE) ranges.push([from, Math.min(total, from + SHARD_SIZE)]);
     const results = new Array(ranges.length);
     let next = 0;
     const worker = async () => {
-      while (next < ranges.length) {
+      while (next < ranges.length && !abort.signal.aborted) {
         const i = next;
         next += 1;
-        results[i] = await runShard(ranges[i][0], ranges[i][1], dir);
+        results[i] = await runShard(ranges[i][0], ranges[i][1], dir, abort.signal);
       }
     };
-    await Promise.all(Array.from({ length: PARALLEL }, worker));
+    for (let k = 0; k < PARALLEL; k += 1) workers.push(worker());
+    // The first failure cancels every sibling; wait until all children have exited before cleanup.
+    const settled = await Promise.allSettled(workers.map((w) => w.catch((e) => { abort.abort(); throw e; })));
+    const failed = settled.find((s) => s.status === 'rejected');
+    if (failed) throw failed.reason;
+    if (abort.signal.aborted) throw new Error(`matrix exceeded ${MATRIX_DEADLINE_MS} ms`);
     return results.flat();
   } finally {
+    clearTimeout(deadline);
+    killAll();
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+afterAll(killAll);
 
 const compact = (r) => [r.id, r.classification, r.violations];
 
@@ -164,12 +195,24 @@ describe('T-SWEEP invariants against the recorded frontier', () => {
     expect(regressed).toEqual([]);
   });
 
-  test('no hit outside the recorded frontier (a recorded hit may only become PASS)', () => {
-    const recordedClass = new Map(recorded.frontier.map(([id, c]) => [id, c]));
+  test('no hit outside the recorded frontier (a recorded hit keeps its exact violations or becomes PASS)', () => {
+    const recordedRow = new Map(recorded.frontier.map(([id, c, v]) => [id, { c, v: JSON.stringify(v) }]));
     const fresh = records
-      .filter((r) => r.classification !== 'PASS' && r.classification !== recordedClass.get(r.id))
+      .filter((r) => r.classification !== 'PASS')
+      .filter((r) => {
+        const want = recordedRow.get(r.id);
+        return want === undefined || r.classification !== want.c || JSON.stringify(r.violations) !== want.v;
+      })
       .map((r) => `${r.id}: ${r.classification} ${r.violations.join(' ')}`);
     expect(fresh).toEqual([]);
+  });
+
+  test('every recorded EXPLAINED cell carries exactly its explanation\'s violation set', () => {
+    const wrong = recorded.frontier
+      .filter(([, c]) => c.startsWith('EXPLAINED:'))
+      .filter(([, c, v]) => !matchesExplanation(c, v))
+      .map(([id]) => id);
+    expect(wrong).toEqual([]);
   });
 
   test('the recorded UNEXPLAINED cells are excluded by id and listed in the frontier', () => {
