@@ -167,6 +167,20 @@ const RESULT_CODES = new Set(Object.values(SdkResultCode));
  */
 const STORED_LAST_CODES = new Set([null, ...Object.values(SdkResultCode)]);
 
+/**
+ * C-DLV section 4.5: the `lastCode` values a `FAIL` decision and an item's
+ * failure carry — the `null` of exhaustion or of the deadline, and the four
+ * codes the document fixes. A decision carrying anything else violates the
+ * closed slot and is `E_SDK_UNKNOWN_CODE`.
+ */
+const LAST_CODES = new Set([
+  null,
+  SdkResultCode.E_SDK_STORAGE_FAILED,
+  SdkResultCode.E_SDK_IDENTITY_FAILED,
+  SdkResultCode.E_SDK_INTERNAL,
+  SdkResultCode.E_SDK_UNKNOWN_CODE,
+]);
+
 /** C-SDK section 4.1: the closed receipt-mode set. */
 const RECEIPT_MODES = new Set([RECEIPT_MODE_ACCEPTANCE_ONLY, RECEIPT_MODE_RECIPIENT_RECEIPT]);
 
@@ -252,24 +266,31 @@ function isThenable(value) {
  * Every property read is guarded: a getter that throws is reported as a
  * violation of the slot it guards, never allowed to escape.
  *
- * @param {unknown} value
- * @param {number} [depth]
+ * @param {unknown} value the port return or stored element
+ * @param {'return'|'record'} [mode] which closed-slot list applies
  * @returns {string|null} the offending slot name, or null
  */
-function closedSlotViolation(value, mode = 'return', depth = 0) {
-  if (!isPlainObject(value) || depth > 2) return null;
+function closedSlotViolation(value, mode = 'return') {
+  if (!isPlainObject(value)) return null;
   // C-DLV section 5.2: the closed slots of a STORED record are exactly the
   // state, the outcome of any relayOutcomes entry, the lastCode (null or a
-  // result code) and the receiptMode; a port return additionally carries the
-  // `code` slot of C-SDK section 5.3. Checking `code` on a stored record would
-  // widen E_SDK_UNKNOWN_CODE beyond section 5.2, so the two lists differ.
-  const storedSlots = [
-    ['state', DELIVERY_STATES],
-    ['outcome', RELAY_OUTCOMES],
-    ['lastCode', STORED_LAST_CODES],
-    ['receiptMode', RECEIPT_MODES],
-  ];
-  const slots = mode === 'record' ? storedSlots : [['code', RESULT_CODES], ...storedSlots];
+  // result code) and the receiptMode; a port return or a lane decision
+  // additionally carries the `code` slot of C-SDK section 5.3 and its
+  // `lastCode` is one of the values C-DLV section 4.5 fixes.
+  const slots = mode === 'record'
+    ? [
+        ['state', DELIVERY_STATES],
+        ['outcome', RELAY_OUTCOMES],
+        ['lastCode', STORED_LAST_CODES],
+        ['receiptMode', RECEIPT_MODES],
+      ]
+    : [
+        ['code', RESULT_CODES],
+        ['state', DELIVERY_STATES],
+        ['outcome', RELAY_OUTCOMES],
+        ['lastCode', LAST_CODES],
+        ['receiptMode', RECEIPT_MODES],
+      ];
   for (const [name, allowed] of slots) {
     let present;
     try {
@@ -295,6 +316,16 @@ function closedSlotViolation(value, mode = 'return', depth = 0) {
   if (Array.isArray(outcomes)) {
     for (const entry of outcomes) {
       if (!isPlainObject(entry)) continue;
+      // C-DLV section 5.2 checks the closed slots an element CARRIES: an entry
+      // without an `outcome` key carries none, and the shape check of the same
+      // section is what refuses it.
+      let carries;
+      try {
+        carries = Object.prototype.hasOwnProperty.call(entry, 'outcome');
+      } catch {
+        return 'outcome';
+      }
+      if (!carries) continue;
       let outcome;
       try {
         outcome = entry.outcome;
@@ -381,7 +412,8 @@ function settleWithin(value, timeoutMs) {
     const armed = armHostTimer(() => finish({ settled: false }), timeoutMs);
     if (!armed.ok) {
       // The call cannot be bounded at all, so it is a host fault: refusing it
-      // is the safe side and C-DLV section 4.5 maps it to E_SDK_INTERNAL.
+      // is the safe side, and the caller maps it to the code C-DLV section 4.5
+      // fixes for that port.
       finish({ settled: false });
       return;
     }
@@ -485,8 +517,8 @@ function callSyncPort(port, name, args = []) {
  * recorded transition, and whose faults C-SDK section 7 ignores.
  *
  * This function never throws, for any `options`: a fault while reading them is
- * remembered as an internal fault and every method then answers
- * `E_SDK_INTERNAL`.
+ * remembered as an internal fault, and the operations that depend on the
+ * configuration then fail closed with `E_SDK_INTERNAL`.
  *
  * @param {object} options
  * @returns {{ send: Function, cancel: Function, getDelivery: Function,
@@ -513,11 +545,22 @@ export function createOutbox(options) {
   }
   const creationFault = read === null || read.delivery === null || read.delivery === undefined;
 
-  /** The effective delivery configuration of C-SDK section 4.1. */
+  /**
+   * The effective delivery configuration of C-SDK section 4.1: its four values
+   * are taken once, at creation, so a caller that mutates the options object
+   * afterwards cannot change the attempt bound, the deadline, the per-relay
+   * timeout or the receipt mode while an item is in flight.
+   */
   const delivery = (() => {
     if (creationFault) return Object.create(null);
     try {
-      return read.delivery;
+      const source = read.delivery;
+      return Object.freeze({
+        maxAttempts: source.maxAttempts,
+        deadlineMs: source.deadlineMs,
+        perRelayTimeoutMs: source.perRelayTimeoutMs,
+        receiptMode: source.receiptMode,
+      });
     } catch {
       return Object.create(null);
     }
@@ -1291,21 +1334,26 @@ export function createOutbox(options) {
       // A failed `put`: the SDK calls `remove` once. A `remove` that undoes the
       // failed admission succeeds when it returns `true` or `false`.
       const removed = await boundedCall(read.storage, 'remove', [item.deliveryId], portCall.value);
+      // C-DLV section 4.5 and C-SDK section 5.3: an unknown closed slot in a
+      // port return is E_SDK_UNKNOWN_CODE and takes precedence, also here and
+      // also over the code of the failed `put` that preceded it.
+      const removeUnknown = removed.ok && closedSlotViolation(removed.value) !== null;
       const cleaned = removed.ok && (removed.value === true || removed.value === false);
-      if (!cleaned) {
+      if (removeUnknown || !cleaned) {
         // The residual-item rule of C-DLV section 4.2 and C-SDK section 5.2:
         // the item is recorded in the in-memory view directly as
-        // FAILED_NOT_ACCEPTED with lastCode E_SDK_STORAGE_FAILED, one terminal
-        // event, never published, and it takes precedence over `shutdown()`.
+        // FAILED_NOT_ACCEPTED, one terminal event, never published, and it
+        // takes precedence over `shutdown()`.
+        const residualCode = removeUnknown ? SdkResultCode.E_SDK_UNKNOWN_CODE : putCode;
         clearItemTimers(item);
         item.state = STATE_FAILED_NOT_ACCEPTED;
-        item.lastCode = SdkResultCode.E_SDK_STORAGE_FAILED;
+        item.lastCode = residualCode;
         item.ciphertext = null;
         item.event = null;
         items.set(item.deliveryId, item);
         item.admitted = true;
         emitTransition(item);
-        return failure(SdkResultCode.E_SDK_STORAGE_FAILED);
+        return failure(residualCode);
       }
       clearItemTimers(item);
       return failure(putCode);
@@ -1553,13 +1601,11 @@ export function createOutbox(options) {
    * @param {string} outcome
    */
   function onRelayOutcome(item, attempt, relayIndex, outcome) {
-    // The outcome of the latest attempt for a relay is mirrored even after the
-    // item became terminal, because a PENDING entry settles at the attempt
-    // timeout although the attempt is over (C-DLV section 5.3); an outcome of
-    // and section 4.6: only shutdown freezes the outcomes entirely, while an
-    // `OK` frame no longer acts once the item is FAILED_NOT_ACCEPTED, CANCELLED
-    // or LOST_ON_SHUTDOWN, and an attempt timeout settles a PENDING entry
-    // whatever the item's state.
+    // C-DLV sections 5.3 and 4.6: the outcome of the latest attempt for a relay
+    // is mirrored even after the item became terminal, because a PENDING entry
+    // settles at the attempt timeout although the attempt is over; only
+    // `shutdown()` freezes the outcomes entirely, and the settle window of the
+    // two states that ignore acknowledgements admits that timeout alone.
     if (attempt !== item.attempt && attempt !== item.lastAttempt) return;
     if (!RELAY_OUTCOMES.has(outcome)) {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_UNKNOWN_CODE);

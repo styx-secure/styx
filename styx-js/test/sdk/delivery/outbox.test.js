@@ -1000,7 +1000,7 @@ describe('the O-SCEN3 timelines', () => {
       'RELAY_ACCEPTED_AWAITING_RECEIPT',
     );
     // Exactly at the deadline the receipt is refused and the item fails with
-    // E_SDK_FAILED_NO_RECEIPT, which is the deadline transition of section 4.4.
+    // its deadline transition of section 4.4 and `lastCode: null`.
     clock.state.now = 30000;
     expect(await outbox.acceptReceipt({ eventId, recipient: RECIPIENT })).toEqual({
       ok: true,
@@ -1438,9 +1438,11 @@ describe('port faults and unknown values (C-DLV section 4.5)', () => {
     expect(snapshot.value.state).toBe('FAILED_NOT_ACCEPTED');
     expect(snapshot.value.terminal).toBe(true);
     expect(snapshot.value.lastCode).toBe(null);
-    // The backstop is armed at deadlineMs + 1000 ms of host time; the
-    // tolerance below is the polling granularity of this check alone.
-    expect(elapsed).toBeGreaterThanOrEqual(30000);
+    // The backstop is armed at deadlineMs + 1000 ms of host time, so the elapsed
+    // host time is about 31000: the two bounds below are discriminating (a
+    // backstop at deadlineMs itself would land near 30000) and tolerate the
+    // millisecond rounding of a host timer and the polling granularity.
+    expect(elapsed).toBeGreaterThanOrEqual(30900);
     expect(elapsed).toBeLessThan(31300);
     expect(events[events.length - 1].state).toBe('FAILED_NOT_ACCEPTED');
     await outbox.shutdown();
@@ -1803,6 +1805,27 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       code: 'E_SDK_UNKNOWN_DELIVERY',
     });
     await cleaned.outbox.shutdown();
+
+    // A `remove` return carrying an unknown closed slot is E_SDK_UNKNOWN_CODE
+    // and takes precedence over the code of the failed `put` (C-DLV 4.5,
+    // C-SDK 5.3), with the residual item too.
+    const fourth = makeStorage({
+      putResult: false,
+      removeResult: () => ({ code: 'E_SDK_NOT_A_CODE' }),
+    });
+    const precedence = makeHarness({ storage: fourth });
+    expect(await precedence.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD })).toEqual({
+      ok: false,
+      code: 'E_SDK_UNKNOWN_CODE',
+    });
+    expect(precedence.events.map((event) => event.state)).toEqual(['FAILED_NOT_ACCEPTED']);
+    expect((await precedence.outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      lastCode: 'E_SDK_UNKNOWN_CODE',
+      terminal: true,
+    });
+    expect(precedence.relaySet.attempts.length).toBe(0);
+    await precedence.outbox.shutdown();
 
     // A failed put whose remove also fails: the residual item wins over the stop.
     const second = makeStorage();
