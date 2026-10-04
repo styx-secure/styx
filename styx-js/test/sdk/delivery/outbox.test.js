@@ -324,6 +324,50 @@ describe('the module and its public surface', () => {
     expect(typeof module.createOutbox).toBe('function');
   });
 
+  test('the outbound message event of section 6.2: seven frozen fields, kind 4741, the tag order and the id the signature covers (C-DLV 6.2)', async () => {
+    const { outbox, clock, relaySet, identity, session } = makeHarness({
+      delivery: { ...DELIVERY, receiptMode: 'RECIPIENT_RECEIPT' },
+    });
+    clock.state.now = 12050;
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    const event = relaySet.attempts[0].event;
+    expect(Object.isFrozen(event)).toBe(true);
+    expect(Object.keys(event)).toEqual([
+      'id',
+      'pubkey',
+      'created_at',
+      'kind',
+      'tags',
+      'content',
+      'sig',
+    ]);
+    expect(event.kind).toBe(4741);
+    expect(event.pubkey).toBe(PUBKEY);
+    expect(event.created_at).toBe(Math.floor(12050 / 1000));
+    // The tag list and its order: the recipient, the version, the 32-hex nonce
+    // and, in RECIPIENT_RECEIPT mode only, the receipt tag.
+    expect(event.tags.map((tag) => tag[0])).toEqual(['p', 'v', 'n', 'r']);
+    expect(event.tags[0]).toEqual(['p', RECIPIENT]);
+    expect(event.tags[1][1]).toMatch(/^\S+$/);
+    expect(event.tags[2][1]).toMatch(/^[0-9a-f]{32}$/);
+    expect(event.tags[3]).toEqual(['r', '1']);
+    // The sealed bytes are the session port's return and the content is their
+    // base64; the signature is the identity port's 64-byte return.
+    expect(session.sealCalls.length).toBe(1);
+    expect(event.content).toBe(Buffer.from(PAYLOAD).toString('base64'));
+    expect(identity.signCalls.length).toBe(1);
+    expect(identity.signCalls[0]).toEqual(Uint8Array.from(Buffer.from(event.id, 'hex')));
+    expect(identity.signCalls[0].length).toBe(32);
+    // The seam double of this file signs by filling 64 bytes with the first
+    // byte of the digest, so the event's `sig` is that value in hex.
+    const signedByte = identity.signCalls[0][0].toString(16).padStart(2, '0');
+    expect(event.sig).toBe(signedByte.repeat(64));
+    // The id is a 64-hex value and no relay saw the event before the signature.
+    expect(event.id).toMatch(/^[0-9a-f]{64}$/);
+    await outbox.shutdown();
+  });
+
   test('the object it returns carries exactly the six members of the contract, and is frozen', () => {
     const { outbox } = makeHarness();
     expect(Object.isFrozen(outbox)).toBe(true);
@@ -1149,9 +1193,12 @@ describe('the O-SCEN3 timelines', () => {
     await unknownCode.outbox.shutdown();
 
     // A different shape, an element that is not a plain object, a non-array and
-    // a fault are all E_SDK_STORAGE_FAILED.
+    // a fault are all E_SDK_STORAGE_FAILED. A stored record carries no `code`
+    // slot (C-DLV section 6.4 has eleven fields), so one is a shape failure and
+    // not the E_SDK_UNKNOWN_CODE of a closed slot.
     for (const listResult of [
       () => [record({ extra: 1 })],
+      () => [record({ code: 'E_SDK_NOT_A_CODE' })],
       () => ['d1'],
       () => 'not-an-array',
       () => null,
@@ -1610,6 +1657,14 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       relayOutcomes: [{ relayIndex: 0, outcome: 'TIMED_OUT' }, { relayIndex: 1, outcome: 'TIMED_OUT' }],
     });
     relaySet.attempts[0].force(1, 'ACCEPTED');
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'TIMED_OUT' }, { relayIndex: 1, outcome: 'TIMED_OUT' }],
+    });
+    // C-DLV section 5.3: the settle window of this item admits only the attempt
+    // timeout, so a supervision loss reported afterwards is not mirrored.
+    relaySet.attempts[0].force(1, 'UNREACHABLE');
     await flush();
     expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
       state: 'FAILED_NOT_ACCEPTED',

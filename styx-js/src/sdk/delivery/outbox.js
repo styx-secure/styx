@@ -175,6 +175,19 @@ const RECEIPT_MODES = new Set([RECEIPT_MODE_ACCEPTANCE_ONLY, RECEIPT_MODE_RECIPI
  * ------------------------------------------------------------------------- */
 
 /**
+ * C-DLV section 6.4 requires a copy of the sealed bytes: the parent class method
+ * is used rather than `value.slice()`, because a Node `Buffer` passes
+ * `instanceof Uint8Array` while its own `slice` returns a view on the same
+ * memory. `Uint8Array.prototype.slice` always returns a fresh `Uint8Array`.
+ *
+ * @param {Uint8Array} value
+ * @returns {Uint8Array}
+ */
+function copyBytes(value) {
+  return Uint8Array.prototype.slice.call(value);
+}
+
+/**
  * A plain object is one whose prototype is `Object.prototype` or `null`, as
  * C-DLV section 5.2 and C-SDK section 8 read every structure they receive.
  *
@@ -243,15 +256,20 @@ function isThenable(value) {
  * @param {number} [depth]
  * @returns {string|null} the offending slot name, or null
  */
-function closedSlotViolation(value, depth = 0) {
+function closedSlotViolation(value, mode = 'return', depth = 0) {
   if (!isPlainObject(value) || depth > 2) return null;
-  const slots = [
-    ['code', RESULT_CODES],
+  // C-DLV section 5.2: the closed slots of a STORED record are exactly the
+  // state, the outcome of any relayOutcomes entry, the lastCode (null or a
+  // result code) and the receiptMode; a port return additionally carries the
+  // `code` slot of C-SDK section 5.3. Checking `code` on a stored record would
+  // widen E_SDK_UNKNOWN_CODE beyond section 5.2, so the two lists differ.
+  const storedSlots = [
     ['state', DELIVERY_STATES],
     ['outcome', RELAY_OUTCOMES],
     ['lastCode', STORED_LAST_CODES],
     ['receiptMode', RECEIPT_MODES],
   ];
+  const slots = mode === 'record' ? storedSlots : [['code', RESULT_CODES], ...storedSlots];
   for (const [name, allowed] of slots) {
     let present;
     try {
@@ -653,7 +671,7 @@ export function createOutbox(options) {
       deadlineAt: item.deadlineAt,
       lastCode: item.lastCode,
       relayOutcomes: frozenOutcomes(item),
-      ciphertext: item.ciphertext === null ? null : item.ciphertext.slice(),
+      ciphertext: item.ciphertext === null ? null : copyBytes(item.ciphertext),
       event: item.event,
     });
   }
@@ -1032,6 +1050,12 @@ export function createOutbox(options) {
     if (item.ciphertext === null) return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
     const key = await identityPublicKey();
     if (!key.ok) return { ok: false, code: key.code };
+    // C-DLV section 4.6: a terminal item never calls a port again and an orderly
+    // shutdown calls no further port, so this attempt re-checks both once the
+    // shared key reading has settled and before it reaches the `sign` call. The
+    // caller discards the failure after its own re-checks.
+    if (stopped) return { ok: false, code: SdkResultCode.E_SDK_CLIENT_STOPPED };
+    if (item.state !== STATE_IN_FLIGHT) return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
 
     const reading = callSyncPort(read.clock, 'now');
     if (!reading.ok) return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
@@ -1214,7 +1238,7 @@ export function createOutbox(options) {
         deadlineAt: reading.value + deadlineMs.value,
         lastCode: null,
         outcomes: new Array(relayCount.value).fill(OUTCOME_PENDING),
-        ciphertext: ciphertext.slice(),
+        ciphertext: copyBytes(ciphertext),
         event: null,
         attempt: null,
         lastAttempt: null,
@@ -1541,7 +1565,14 @@ export function createOutbox(options) {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_UNKNOWN_CODE);
       return;
     }
-    const mirrorable = !stopped && !(ACK_OUTCOMES.has(outcome) && ACK_IGNORED_STATES.has(item.state));
+    // C-DLV section 5.3: the settle window of an item that is
+    // FAILED_NOT_ACCEPTED or CANCELLED admits exactly the attempt timeout, which
+    // turns its PENDING entries into TIMED_OUT; a supervision loss, a rejection
+    // or an acknowledgement reported for such an item is ignored there, while
+    // every other state mirrors the outcome of its latest attempt.
+    let mirrorable = !stopped;
+    if (ACK_IGNORED_STATES.has(item.state)) mirrorable = outcome === OUTCOME_TIMED_OUT;
+    else if (ACK_OUTCOMES.has(outcome)) mirrorable = true;
     if (mirrorable && Number.isInteger(relayIndex) && relayIndex >= 0 && relayIndex < item.outcomes.length) {
       item.outcomes[relayIndex] = outcome;
     }
@@ -1685,7 +1716,14 @@ export function createOutbox(options) {
       // From the call on, no new attempt of the item starts: `cancel` writes
       // the item's record in state CANCELLED and only then commits, and a
       // retry that falls due while the write is in progress waits for it.
-      const written = Object.freeze({ ...buildRecord(item), state: STATE_CANCELLED });
+      // C-DLV section 6.4: a terminal record drops the sealed bytes and the
+      // signed event, so the CANCELLED record handed to storage carries neither.
+      const written = Object.freeze({
+        ...buildRecord(item),
+        state: STATE_CANCELLED,
+        ciphertext: null,
+        event: null,
+      });
       const result = await boundedCall(
         read.storage,
         'update',
@@ -1847,7 +1885,7 @@ export function createOutbox(options) {
       // is E_SDK_UNKNOWN_CODE, whatever else the element holds.
       for (const element of listed.value) {
         if (!isPlainObject(element)) continue;
-        if (closedSlotViolation(element) !== null) {
+        if (closedSlotViolation(element, 'record') !== null) {
           return failure(SdkResultCode.E_SDK_UNKNOWN_CODE);
         }
       }
