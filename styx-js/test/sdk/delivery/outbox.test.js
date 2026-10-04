@@ -1900,6 +1900,88 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     await outbox.shutdown();
   });
 
+  test('an ordinary write not yet issued is dropped by shutdown, while a write in progress is awaited (C-DLV 4.6)', async () => {
+    const storage = makeStorage();
+    let releaseUpdate = null;
+    let held = 0;
+    storage.updateResult = (deliveryId, record) => {
+      if (record.state !== 'IN_FLIGHT' || held > 0) return true;
+      held += 1;
+      return new Promise((resolve) => {
+        releaseUpdate = () => resolve(true);
+      });
+    };
+    const { outbox, clock } = makeHarness({
+      storage,
+      delivery: { ...DELIVERY, maxAttempts: 1 },
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    // The attempt timeout exhausts the single attempt: the item becomes
+    // FAILED_NOT_ACCEPTED and its record write queues behind the held one.
+    await clock.advance(12000);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe(
+      'FAILED_NOT_ACCEPTED',
+    );
+    const stopping = outbox.shutdown();
+    await flush();
+    releaseUpdate();
+    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
+    // The held write settled; the record of the transition that was only
+    // queued when shutdown() was called was never issued.
+    await flush();
+    expect(storage.calls.update.map((record) => record.state)).toEqual(['IN_FLIGHT']);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe(
+      'FAILED_NOT_ACCEPTED',
+    );
+  });
+
+  test('a clock fault at the acceptance gate fails the item with E_SDK_INTERNAL, not with the deadline transition (C-DLV 4.4, 4.5)', async () => {
+    const { outbox, clock, relaySet } = makeHarness();
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    // The seam reports an acceptance although the clock port faults, so the
+    // gate refuses it: the item takes its applicable failed state with
+    // E_SDK_INTERNAL instead of the deadline transition.
+    clock.state.nowThrows = true;
+    relaySet.attempts[0].force(1, 'ACCEPTED');
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      lastCode: 'E_SDK_INTERNAL',
+      terminal: true,
+    });
+    clock.state.nowThrows = false;
+    await outbox.shutdown();
+  });
+
+  test('a signature that carries an unknown closed slot is E_SDK_UNKNOWN_CODE although it is a Uint8Array (C-SDK 5.3, C-DLV 4.5)', async () => {
+    const signed = new Uint8Array(64).fill(7);
+    Object.defineProperty(signed, 'code', { value: 'E_SDK_NOT_A_CODE', enumerable: true });
+    const { outbox, relaySet } = makeHarness({
+      identity: {
+        keyCalls: 0,
+        signCalls: [],
+        getPublicKey() {
+          return PUBKEY;
+        },
+        sign({ digest }) {
+          this.signCalls.push(digest);
+          return signed;
+        },
+      },
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      lastCode: 'E_SDK_UNKNOWN_CODE',
+      terminal: true,
+    });
+    expect(relaySet.attempts.length).toBe(0);
+    await outbox.shutdown();
+  });
+
   test('shutdown drains a port call still in progress and the ordered write chain before the lost writes (C-DLV 4.6 step 4)', async () => {
     const storage = makeStorage();
     let releaseUpdate = null;

@@ -271,6 +271,27 @@ function isThenable(value) {
  * @returns {string|null} the offending slot name, or null
  */
 function closedSlotViolation(value, mode = 'return') {
+  if (value === null || typeof value !== 'object') return null;
+  if (mode !== 'record') {
+    // The `code` slot of a port return is checked on ANY object, plain or not:
+    // a `Uint8Array` signature that carries one is outside the closed set of
+    // C-SDK section 5.2 exactly as a plain return is (C-SDK section 5.3).
+    let carriesCode;
+    try {
+      carriesCode = Object.prototype.hasOwnProperty.call(value, 'code');
+    } catch {
+      return 'code';
+    }
+    if (carriesCode) {
+      let code;
+      try {
+        code = value.code;
+      } catch {
+        return 'code';
+      }
+      if (!RESULT_CODES.has(code)) return 'code';
+    }
+  }
   if (!isPlainObject(value)) return null;
   // C-DLV section 5.2: the closed slots of a STORED record are exactly the
   // state, the outcome of any relayOutcomes entry, the lastCode (null or a
@@ -906,6 +927,10 @@ export function createOutbox(options) {
       return;
     }
     const write = async () => {
+      // C-DLV section 4.6: after `shutdown()` no ordinary write that had not
+      // been issued yet starts; only the `LOST_ON_SHUTDOWN` records of step (4)
+      // are written then, and a write already in progress is still awaited.
+      if (stopped) return;
       const result = await boundedCall(read.storage, 'update', [item.deliveryId, record], portCall.value);
       if (result.ok) {
         const violation = closedSlotViolation(result.value);
@@ -1565,7 +1590,7 @@ export function createOutbox(options) {
       } catch {
         outcome = undefined;
       }
-      if (outcome === OUTCOME_PENDING || outcome === undefined) continue;
+      if (outcome === OUTCOME_PENDING) continue;
       onRelayOutcome(item, attempt, index, outcome);
     }
   }
@@ -1626,9 +1651,18 @@ export function createOutbox(options) {
     if (item.attempt !== attempt) return;
     if (item.state !== STATE_IN_FLIGHT) return;
     if (!isPublishable(item, attempt)) {
-      // The deadline check before a success (C-DLV section 4.4): at or after
-      // the deadline the deadline transition applies instead.
-      if (!stopped && !TERMINAL_STATES.has(item.state)) applyDeadline(item);
+      // C-DLV sections 4.4 and 4.5: an acceptance is refused when the item is no
+      // longer `IN_FLIGHT` in this attempt or its reading is at or after the
+      // deadline. The state and attempt cases returned above, so the only cause
+      // left is the clock: an invalid reading is an internal fault of the item,
+      // and an expired one applies the deadline transition.
+      if (stopped || TERMINAL_STATES.has(item.state)) return;
+      const reading = callSyncPort(read.clock, 'now');
+      if (!reading.ok || !isValidClockValue(reading.value)) {
+        applyTerminalFromFault(item, SdkResultCode.E_SDK_INTERNAL);
+        return;
+      }
+      if (reading.value >= item.deadlineAt) applyDeadline(item);
       return;
     }
     if (item.receiptMode === RECEIPT_MODE_RECIPIENT_RECEIPT) {
