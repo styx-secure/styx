@@ -32,6 +32,17 @@ beforeAll(async () => {
 }, 10000);
 const skipIfNoRelay = () => !relayAvailable;
 
+// Condition wait: poll until `fn()` is satisfied instead of sleeping a fixed
+// number of milliseconds, so the suite does not flake on a slow relay.
+async function waitUntil(fn, { timeout = 8000, step = 25 } = {}) {
+  const t0 = Date.now();
+  for (;;) {
+    if (await fn()) return true;
+    if (Date.now() - t0 > timeout) throw new Error('waitUntil timeout');
+    await new Promise((r) => setTimeout(r, step));
+  }
+}
+
 function newPeer() {
   const sk = schnorr.utils.randomPrivateKey();
   const pk = bytesToHex(schnorr.getPublicKey(sk));
@@ -132,20 +143,34 @@ describe('NostrChatTransport (real strfry relay)', () => {
     bt.onMessage((_from, bytes) => got.push(new TextDecoder().decode(bytes)));
     await bt.connect();
     await at.connect();
-    await new Promise((r) => setTimeout(r, 200));
 
     await at.send(bob.pk, new TextEncoder().encode('m1'));
-    await new Promise((r) => setTimeout(r, 400));
+    await waitUntil(() => got.length >= 1);
     expect(got).toEqual(['m1']);
+
+    // Everything the relay pushes at this transport before dedupe. White-box
+    // access to the pool emitter matches the existing style of the transport
+    // tests (see test/transport/nostr-chat-transport-verify.test.js, which reads
+    // _pk/_seen/_rejected directly).
+    let rawRelayMessages = 0;
+    bt._pool.messages.on('message', () => { rawRelayMessages += 1; });
 
     // Simulate returning to the foreground: force reconnect (relay replays m1).
     await bt.reconnect();
-    await new Promise((r) => setTimeout(r, 400));
+
+    // The relay replays the already-stored 'm1' at the new subscription. Wait for
+    // the replay to actually reach the transport (an observable condition: the
+    // raw count rises above its pre-reconnect value) before asserting that the
+    // transport dropped the duplicate — no settlement sleep.
+    const rawBeforeReplay = rawRelayMessages;
+    await waitUntil(() => rawRelayMessages > rawBeforeReplay);
     expect(got).toEqual(['m1']); // replayed m1 is deduped, not delivered twice
 
-    // A new message after reconnect still arrives.
+    // A new message after reconnect still arrives; the relay sends it after the
+    // replayed 'm1' on the same subscription, so this closing assertion is an
+    // independent duplicate check.
     await at.send(bob.pk, new TextEncoder().encode('m2'));
-    await new Promise((r) => setTimeout(r, 500));
-    expect(got).toEqual(['m1', 'm2']);
+    await waitUntil(() => got.includes('m2'));
+    expect(got).toEqual(['m1', 'm2']); // replayed m1 is deduped, not delivered twice
   }, 20000);
 });
