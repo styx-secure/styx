@@ -106,6 +106,108 @@ const SDK_RESULT_CODES = new Set([
   'E_SDK_UNKNOWN_CODE',
 ]);
 
+/**
+ * C-SDK section 6.1: the closed delivery-state enumeration, read only as a
+ * slot of a port return this module inspects.
+ */
+const DELIVERY_STATES = new Set([
+  'QUEUED',
+  'IN_FLIGHT',
+  'RELAY_ACCEPTED_AWAITING_RECEIPT',
+  'RELAY_ACCEPTED',
+  'RECIPIENT_RECEIPT_RECEIVED',
+  'FAILED_NOT_ACCEPTED',
+  'FAILED_NO_RECEIPT',
+  'CANCELLED',
+  'LOST_ON_SHUTDOWN',
+]);
+
+/** C-SDK section 6.1: the closed relay-outcome enumeration. */
+const RELAY_OUTCOMES = new Set(['PENDING', 'ACCEPTED', 'REJECTED', 'TIMED_OUT', 'UNREACHABLE']);
+
+/** C-SDK section 4.1: the closed receipt-mode set. */
+const RECEIPT_MODES = new Set(['RELAY_ACCEPTANCE_ONLY', 'RECIPIENT_RECEIPT']);
+
+/**
+ * C-DLV section 4.5: the `lastCode` values a lane decision or an item failure
+ * carries — the `null` of exhaustion or of the deadline, and the four codes the
+ * document fixes.
+ */
+const ITEM_LAST_CODES = new Set([
+  null,
+  'E_SDK_STORAGE_FAILED',
+  'E_SDK_IDENTITY_FAILED',
+  'E_SDK_INTERNAL',
+  'E_SDK_UNKNOWN_CODE',
+]);
+
+/**
+ * C-DLV section 4.5 and C-SDK section 5.3: the closed slots of a PORT RETURN.
+ * A return that carries one of them outside its closed set is an unknown value
+ * and is `E_SDK_UNKNOWN_CODE`, ahead of every other code the caller could fix
+ * for the same call. The `code` slot is checked on ANY object, plain or not: a
+ * `Uint8Array` signature that carries one violates the closed slot exactly as a
+ * plain return does. Card I-QUEUE's `closedSlotViolation` is the model.
+ *
+ * @param {unknown} value
+ * @returns {string|null} the name of the violated slot, or null
+ */
+function closedSlotViolation(value) {
+  if (value === null || typeof value !== 'object') return null;
+  let carriesCode;
+  try {
+    carriesCode = Object.prototype.hasOwnProperty.call(value, 'code');
+  } catch {
+    return 'code';
+  }
+  if (carriesCode) {
+    let code;
+    try {
+      code = value.code;
+    } catch {
+      return 'code';
+    }
+    if (!SDK_RESULT_CODES.has(code)) return 'code';
+  }
+  if (!isPlainObject(value)) return null;
+  for (const [name, allowed] of [
+    ['code', SDK_RESULT_CODES],
+    ['state', DELIVERY_STATES],
+    ['outcome', RELAY_OUTCOMES],
+    ['lastCode', ITEM_LAST_CODES],
+    ['receiptMode', RECEIPT_MODES],
+  ]) {
+    let present;
+    try {
+      present = Object.prototype.hasOwnProperty.call(value, name);
+    } catch {
+      return name;
+    }
+    if (!present) continue;
+    let slot;
+    try {
+      slot = value[name];
+    } catch {
+      return name;
+    }
+    if (!allowed.has(slot)) return name;
+  }
+  return null;
+}
+
+/**
+ * C-SDK section 7: a promise returned by a sink or a seam that rejects is
+ * caught and ignored exactly as a thrown exception is, so the rejection is
+ * consumed instead of surfacing as an unhandled rejection.
+ *
+ * @param {Promise<unknown>} returned
+ */
+function consume(returned) {
+  returned.then(undefined, () => {
+    // The rejection is caught and ignored (C-SDK section 7).
+  });
+}
+
 /** C-SDK section 5.2: the one code a second `shutdown()` returns. */
 const CODE_CLIENT_STOPPED = 'E_SDK_CLIENT_STOPPED';
 
@@ -391,7 +493,8 @@ export function createReceipts(options) {
     }
     if (typeof sink !== 'function') return;
     try {
-      sink(Object.freeze(event));
+      const returned = sink(Object.freeze(event));
+      if (isThenable(returned)) consume(returned);
     } catch {
       // C-SDK section 7: a listener fault is caught and ignored.
     }
@@ -566,23 +669,37 @@ export function createReceipts(options) {
    */
   async function buildAndSignReceipt(message, own) {
     const reading = callSyncPort(read === null ? null : read.clock, 'now');
-    if (!reading.ok || typeof reading.value !== 'number' || !Number.isFinite(reading.value)) return null;
+    if (!reading.ok || typeof reading.value !== 'number' || !Number.isFinite(reading.value)) return { ok: false };
+    /* C-SDK section 8.4: `now()` reads milliseconds and may be fractional. */
     const createdAt = Math.floor(reading.value / 1000);
-    if (!Number.isSafeInteger(createdAt) || createdAt < 0) return null;
+    if (!Number.isSafeInteger(createdAt) || createdAt < 0) return { ok: false };
+
+    let nonce;
+    try {
+      nonce = bytesToHex(randomBytes(16));
+    } catch {
+      return { ok: false };
+    }
+    if (!HEX32.test(nonce)) return { ok: false };
 
     const tags = Object.freeze([
       Object.freeze([TAG_P, message.sender]),
       Object.freeze([TAG_E, message.eventId]),
       Object.freeze([TAG_V, INTERFACE_VERSION]),
-      Object.freeze([TAG_N, bytesToHex(randomBytes(16))]),
+      Object.freeze([TAG_N, nonce]),
     ]);
     const content = '';
     const id = recomputeId(own, createdAt, EVENT_KIND_RECEIPT, tags, content);
-    if (id === null) return null;
+    if (id === null) return { ok: false };
     const signed = await callPort(read === null ? null : read.identity, 'sign',
       [{ digest: hexToBytes(id) }], portCallTimeoutMs);
-    if (!signed.ok || !(signed.value instanceof Uint8Array) || signed.value.length !== 64) return null;
-    return Object.freeze({
+    if (!signed.ok) return { ok: false };
+    /* C-DLV section 4.5 ahead of every other code: a signature return that
+     * carries a closed slot outside its closed set is an unknown value, not a
+     * bad signature (C-SDK section 5.3). */
+    if (closedSlotViolation(signed.value) !== null) return { ok: false, unknown: true };
+    if (!(signed.value instanceof Uint8Array) || signed.value.length !== 64) return { ok: false };
+    return { ok: true, receipt: Object.freeze({
       id,
       pubkey: own,
       created_at: createdAt,
@@ -590,7 +707,7 @@ export function createReceipts(options) {
       tags,
       content,
       sig: bytesToHex(signed.value),
-    });
+    }) };
   }
 
   /**
@@ -608,7 +725,8 @@ export function createReceipts(options) {
     }
     if (typeof seam !== 'function') return;
     try {
-      seam(receipt);
+      const returned = seam(receipt);
+      if (isThenable(returned)) consume(returned);
     } catch {
       // Receipt publication is best effort (C-DLV section 7.2).
     }
@@ -651,15 +769,37 @@ export function createReceipts(options) {
     }
     const opened = await callPort(read === null ? null : read.session, 'open',
       [{ sender: event.pubkey, ciphertext }], portCallTimeoutMs);
-    if (!opened.ok || !isPlainObject(opened.value)) {
+    if (!opened.ok) {
+      discard(DISCARD_SESSION_FAILED);
+      return null;
+    }
+    /* C-DLV section 4.5, as C-DLV section 7.2's "(subject to section 4.5)"
+     * requires: the unknown-value rule runs first and takes precedence over
+     * every other code this module could fix for the same frame. */
+    if (closedSlotViolation(opened.value) !== null) {
+      discard(DISCARD_UNKNOWN_CODE);
+      return null;
+    }
+    /* C-SDK section 8: the exact success shape is the single key `plaintext`. */
+    let owned;
+    try {
+      owned = isPlainObject(opened.value) ? Object.keys(opened.value) : null;
+    } catch {
+      owned = null;
+    }
+    if (owned === null || owned.length !== 1) {
       discard(DISCARD_SESSION_FAILED);
       return null;
     }
     const plaintext = readField(opened.value, 'plaintext');
+    /* C-SDK section 8 gives `open` a `Uint8Array` and no non-empty rule
+     * of the kind it gives `seal`, so the empty one is a success. */
     if (!plaintext.ok || !(plaintext.value instanceof Uint8Array)) {
       discard(DISCARD_SESSION_FAILED);
       return null;
     }
+    /* C-DLV section 4.6 step (1): no event begins after the stop. */
+    if (stopped) return null;
     emit({
       kind: EVENT_KIND_MESSAGE_RECEIVED,
       sender: event.pubkey,
@@ -693,23 +833,42 @@ export function createReceipts(options) {
     }
     const called = await callPort({ acceptReceipt: seam }, 'acceptReceipt',
       [{ eventId: event.tags[1][1], recipient: event.pubkey }], portCallTimeoutMs);
-    if (!called.ok || !isPlainObject(called.value)) {
+    /* C-DLV section 4.6 step (1): no event begins after the stop. */
+    if (stopped) return;
+    if (!called.ok) {
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
     const envelope = called.value;
-    const okField = readField(envelope, 'ok');
+    /* C-SDK section 5.1: two envelopes, and exactly their own keys — the
+     * acceptance `{ ok: true, value }` and the refusal `{ ok: false, code }`. */
+    let keys;
+    try {
+      keys = isPlainObject(envelope) ? Object.keys(envelope).slice().sort().join(',') : null;
+    } catch {
+      keys = null;
+    }
+    const okField = keys === null ? { ok: false } : readField(envelope, 'ok');
     if (!okField.ok || typeof okField.value !== 'boolean') {
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
-    if (okField.value === true) return;
-    const codeField = readField(envelope, 'code');
-    if (!codeField.ok) {
+    if (okField.value === true) {
+      if (keys !== 'ok,value') {
+        discard(DISCARD_UNKNOWN_CODE);
+        return;
+      }
+      /* An acceptance envelope that also carries a closed slot outside its
+       * closed set is an unknown value (C-DLV section 4.5). */
+      if (closedSlotViolation(envelope) !== null) discard(DISCARD_UNKNOWN_CODE);
+      return;
+    }
+    if (keys !== 'code,ok') {
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
-    if (typeof codeField.value !== 'string' || !SDK_RESULT_CODES.has(codeField.value)) {
+    const codeField = readField(envelope, 'code');
+    if (!codeField.ok || typeof codeField.value !== 'string' || !SDK_RESULT_CODES.has(codeField.value)) {
       discard(DISCARD_UNKNOWN_CODE);
     }
   }
@@ -757,10 +916,17 @@ export function createReceipts(options) {
     if (stopped) return;
     const own = publicKey;
     if (own === null) return;
-    const receipt = await buildAndSignReceipt({ sender, eventId: validated.event.id }, own);
-    if (receipt === null) return;
+    const built = await buildAndSignReceipt({ sender, eventId: validated.event.id }, own);
+    if (built.unknown === true) {
+      /* C-DLV section 4.5: an unknown closed slot in the signature return is
+       * `E_SDK_UNKNOWN_CODE`; the message event emitted above stands, because
+       * section 7.2 emits the message before the receipt is built. */
+      discard(DISCARD_UNKNOWN_CODE);
+      return;
+    }
+    if (built.ok !== true) return;
     if (stopped) return;
-    publishReceipt(receipt);
+    publishReceipt(built.receipt);
   }
 
   /* --- the per-client queue of C-DLV section 7.1 ------------------------ */
@@ -772,7 +938,11 @@ export function createReceipts(options) {
     try {
       while (queue.length > 0 && !stopped) {
         const frame = queue.shift();
-        await processFrame(frame);
+        try {
+          await processFrame(frame);
+        } catch {
+          // A fault of one frame never stalls the queue (C-DLV section 7.1).
+        }
       }
     } finally {
       processing = false;

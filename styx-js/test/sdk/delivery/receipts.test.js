@@ -1275,7 +1275,6 @@ describe('section 7.3 -- the acknowledgement seam', () => {
     for (const value of [
       { ok: true, value: { accepted: true, deliveryId: 'd1' } },
       { ok: true, value: { accepted: false, deliveryId: null } },
-      { ok: true },
     ]) {
       const harness = makeHarness({ acceptReceipt: () => value });
       harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
@@ -1343,7 +1342,9 @@ describe('the stop', () => {
     harness.module.shutdown();
     release();
     await flush(8);
-    expect(harness.events).toHaveLength(1);
+    /* C-DLV section 4.6 step (1): the stop is terminal, so the message event
+     * of the frame that was waiting on the port call is not emitted either. */
+    expect(harness.events).toHaveLength(0);
     expect(harness.published).toHaveLength(0);
   });
 
@@ -1509,4 +1510,232 @@ describe('generative invariants over a deterministic draw stream', () => {
       freshHarness.module.shutdown();
     }
   }, 240000);
+});
+
+/* ------------------------------------------------------------------------- *
+ * Round-1 counterexamples. Each test replays a counterexample of the first
+ * review round: the closed-slot precedence of C-DLV section 4.5, the exact
+ * success shapes of C-SDK section 8, the exact acknowledgement envelopes of
+ * C-SDK section 5.1, the fractional clock of C-SDK section 8.4, the terminal
+ * stop of C-DLV section 4.6 and the eviction of section 8's window.
+ * ------------------------------------------------------------------------- */
+describe('round-1 counterexamples', () => {
+  test('a session return carrying a closed slot outside its set is E_SDK_UNKNOWN_CODE', async () => {
+    const extras = [
+      { code: 'E_FUTURE_RESULT' },
+      { state: 'FUTURE_STATE' },
+      { outcome: 'FUTURE_OUTCOME' },
+      { lastCode: 'E_FUTURE_RESULT' },
+      { receiptMode: 'FUTURE_MODE' },
+    ];
+    for (const extra of extras) {
+      const harness = makeHarness({
+        session: { open: () => ({ plaintext: new Uint8Array([1]), ...extra }) },
+      });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+      expect(harness.published).toHaveLength(0);
+    }
+  });
+
+  test('a closed slot value does not take precedence: the success shape decides', async () => {
+    const extras = [
+      { lastCode: null },
+      { code: 'E_SDK_SESSION_FAILED' },
+      { code: 'E_SDK_UNKNOWN_CODE' },
+      { state: 'IN_FLIGHT' },
+      { outcome: 'ACCEPTED' },
+      { receiptMode: 'RECIPIENT_RECEIPT' },
+    ];
+    for (const extra of extras) {
+      const harness = makeHarness({
+        session: { open: () => ({ plaintext: new Uint8Array([1]), ...extra }) },
+      });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_SESSION_FAILED' }]);
+    }
+  });
+
+  test('the session success shape is exactly the one key plaintext', async () => {
+    const values = [
+      { plaintext: new Uint8Array([1]), extra: 1 },
+      {},
+      { ciphertext: new Uint8Array([1]) },
+      { plaintext: 'AA==' },
+      [],
+      new Uint8Array([1]),
+      'plaintext',
+      null,
+    ];
+    for (const value of values) {
+      const harness = makeHarness({ session: { open: () => value } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_SESSION_FAILED' }]);
+      expect(harness.published).toHaveLength(0);
+    }
+  });
+
+  test('a signature return carrying an unknown closed slot is E_SDK_UNKNOWN_CODE after the message', async () => {
+    const harness = makeHarness();
+    harness.options.identity.sign = () => Object.assign(new Uint8Array(64), { code: 'E_FUTURE_RESULT' });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush();
+    expect(harness.events).toEqual([
+      { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) },
+      { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
+    ]);
+    expect(harness.published).toHaveLength(0);
+  });
+
+  test('a signature return carrying a closed code keeps the 64-byte rule', async () => {
+    const harness = makeHarness();
+    harness.options.identity.sign = () => Object.assign(new Uint8Array(63), { code: 'E_SDK_IDENTITY_FAILED' });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush();
+    expect(harness.events).toHaveLength(1);
+    expect(harness.events[0].kind).toBe('MESSAGE_RECEIVED');
+    expect(harness.published).toHaveLength(0);
+  });
+
+  test('a fractional millisecond clock reading is accepted and floored', async () => {
+    for (const [reading, second] of [[12000.75, 12], [999.999, 0], [0.5, 0]]) {
+      const harness = makeHarness({ clock: { now: () => reading } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.published).toHaveLength(1);
+      expect(harness.published[0].created_at).toBe(second);
+    }
+  });
+
+  test('a clock reading that is not finite still gives no receipt', async () => {
+    for (const reading of [Infinity, -Infinity, NaN]) {
+      const harness = makeHarness({ clock: { now: () => reading } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.published).toHaveLength(0);
+      expect(harness.events).toHaveLength(1);
+    }
+  });
+
+  test('the acknowledgement envelope is exactly { ok: true, value } or { ok: false, code }', async () => {
+    const malformed = [
+      { ok: true },
+      { ok: true, code: 'E_FUTURE_RESULT' },
+      { ok: true, state: 'FUTURE_STATE' },
+      { ok: true, extra: 1 },
+      { ok: false },
+      { ok: false, value: 1 },
+      { ok: false, code: 'E_FUTURE_RESULT' },
+      { ok: false, code: 42 },
+      { ok: 1, value: 1 },
+      { ok: 'true', value: 1 },
+      { value: 1 },
+      { code: 'E_SDK_SESSION_FAILED' },
+      [],
+      new Uint8Array([1]),
+      'ok',
+      null,
+    ];
+    for (const value of malformed) {
+      const harness = makeHarness({ acceptReceipt: () => value });
+      harness.module.ingest(eventFrame(receiptEvent({
+        recipient: harness.other, owner: harness.owner.pub, eventId: 'a'.repeat(64),
+      })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+    }
+  });
+
+  test('a well-formed refusal with a closed code is silent, and so is a well-formed acceptance', async () => {
+    const silent = [
+      { ok: true, value: { accepted: true, deliveryId: 'd1' } },
+      { ok: true, value: null },
+      { ok: false, code: 'E_SDK_QUEUE_FULL' },
+      { ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' },
+      { ok: false, code: 'E_SDK_DELIVERY_TERMINAL' },
+    ];
+    for (const value of silent) {
+      const harness = makeHarness({ acceptReceipt: () => value });
+      harness.module.ingest(eventFrame(receiptEvent({
+        recipient: harness.other, owner: harness.owner.pub, eventId: 'b'.repeat(64),
+      })));
+      await flush();
+      expect(harness.events).toEqual([]);
+    }
+  });
+
+  test('a rejected promise from the sink or from a seam does not surface', async () => {
+    const rejections = [];
+    const onUnhandled = (reason) => rejections.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const harness = makeHarness({
+        onEvent: () => Promise.reject(new Error('sink')),
+        publishReceipt: () => Promise.reject(new Error('seam')),
+        acceptReceipt: () => Promise.reject(new Error('ack seam')),
+      });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      harness.module.ingest(eventFrame(receiptEvent({
+        recipient: harness.other, owner: harness.owner.pub, eventId: 'c'.repeat(64),
+      })));
+      await flush(8);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(rejections).toHaveLength(0);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  test('the oldest id leaves the window only at the 4 097th distinct insertion', async () => {
+    const harness = makeHarness();
+    const first = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '0'.repeat(32) });
+    harness.module.ingest(eventFrame(first));
+    for (let index = 1; index <= 4095; index += 1) {
+      harness.module.ingest(eventFrame(messageEvent({
+        sender: harness.other, owner: harness.owner.pub, n: index.toString(16).padStart(32, '0'),
+      })));
+      if (index % 512 === 0) {
+        expect(await waitFor(() => harness.events.length === index + 1, 60000)).toBe(true);
+      }
+    }
+    expect(await waitFor(() => harness.events.length === 4096, 60000)).toBe(true);
+    /* 4 096 ids are retained, so the first is still a duplicate. */
+    harness.module.ingest(eventFrame(first));
+    await flush();
+    expect(harness.events).toHaveLength(4096);
+    /* The 4 097th distinct id evicts the first, which is then processed again. */
+    harness.module.ingest(eventFrame(messageEvent({
+      sender: harness.other, owner: harness.owner.pub, n: 'f'.repeat(32),
+    })));
+    expect(await waitFor(() => harness.events.length === 4097, 60000)).toBe(true);
+    harness.module.ingest(eventFrame(first));
+    expect(await waitFor(() => harness.events.length === 4098, 60000)).toBe(true);
+  }, 300000);
+
+  test('no event follows the terminal state of the pipeline', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const opens = [];
+    const harness = makeHarness({
+      session: {
+        open: ({ sender, ciphertext }) => {
+          opens.push({ sender, ciphertext });
+          return gate.then(() => ({ plaintext: new Uint8Array([1]) }));
+        },
+      },
+    });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(2);
+    harness.module.shutdown();
+    release();
+    await flush(8);
+    expect(harness.events).toEqual([]);
+    expect(harness.published).toHaveLength(0);
+    expect(opens).toHaveLength(1);
+  });
 });
