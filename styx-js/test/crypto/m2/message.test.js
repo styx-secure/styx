@@ -244,6 +244,7 @@ describe('I-MSG module surface (#411)', () => {
     expect(Object.isFrozen(M2_ADAPTER)).toBe(true);
     expect([...M2_ADAPTER.INTEGRATED_OPERATIONS]).toEqual([
       'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
+      'SELF_UPDATE', 'RECONCILE_INDETERMINATE',
     ]);
     expect(Object.isFrozen(M2_ADAPTER.RETENTION)).toBe(true);
     expect(Object.isFrozen(M2_ADAPTER.OBSERVATION_KEYS)).toBe(true);
@@ -289,9 +290,7 @@ describe('I-MSG module surface (#411)', () => {
 
   test('the operations this card does not integrate stay unsupported', () => {
     const inputs = {
-      SELF_UPDATE: {},
       APPLY_PEER_UPDATE: { protectedCommitBytes: bytes(4) },
-      RECONCILE_INDETERMINATE: { reconciliationRef: 'ref-1' },
       ADD_MEMBER: {},
     };
     for (const [operation, input] of Object.entries(inputs)) {
