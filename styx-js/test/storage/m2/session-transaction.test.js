@@ -203,7 +203,11 @@ function candidateInput(scenario, outcome, overrides = {}) {
     manifestCipherDigest: NEW.manifestCipherDigest,
     keyedRoot: NEW.keyedRoot,
     sessionBindingDigest: NEW.sessionBindingDigest,
-    escrow: row.outputKind === 'NONE' ? null : { ...ESCROW, output: Uint8Array.prototype.slice.call(ESCROW.output) },
+    // The escrow is the row's held output: its kind, digest and reference are the envelope's heldOutput.
+    escrow: row.outputKind === 'NONE' ? null : {
+      ...ESCROW, kind: row.outputKind, digest: envelope.heldOutput.digest, reference: envelope.heldOutput.reference,
+      output: Uint8Array.prototype.slice.call(ESCROW.output),
+    },
     resultEvidence: evidenceFor(envelope, outcome),
     selectorBytes: COMMIT_SELECTOR,
     holdSelectorBytes: HOLD_SELECTOR,
@@ -1406,6 +1410,99 @@ describe('reconcileIndeterminate', () => {
       evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED, { terminal: true }),
       reference: buildMutationEnvelope(envelopeInput('CAPI-S001')).reconciliationIdentity.reference,
     })).rejects.toThrow(/no reconciliation is pending/);
+  });
+
+  // A durable hold, or an interrupted local emission, is reconciled only for the mutation the bound
+  // generation's own stored COMMIT_RESULT and escrow identify (C-FMT /generationCommit/
+  // originalAuthorityMatch, §9; C-MUT /escrow sameMutationAsCandidate).
+  const SUBSTITUTE = Object.freeze({
+    operationIdentity: bytesOf(32, 0xde), originalAuthorityReference: bytesOf(32, 0xdf),
+    candidateDigest: bytesOf(32, 0xe0), candidateReference: bytesOf(32, 0xe1),
+  });
+
+  test('a substituted durable hold with matching substituted evidence selects nothing', async () => {
+    const { store, envelope } = await pendingHold('CAPI-S014');
+    const held = { ...store.memoryHold, ...SUBSTITUTE };
+    store.generations.get(NEW_GENERATION).mutationHold = held;
+    store.memoryHold = null;
+    const selector = hex(store.selector);
+    const applied = store.applied.length;
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      evidence: { ...evidenceFor(envelope, M2_OUTCOME.COMMITTED), ...SUBSTITUTE },
+      reference: held.reconciliationReference,
+    })).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(hex(store.selector)).toBe(selector);
+    expect((await classify(store)).held).toBe(true);
+    // The same substitution answered by terminal NOT_COMMITTED discards nothing either.
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      evidence: { ...evidenceFor(envelope, M2_OUTCOME.NOT_COMMITTED), ...SUBSTITUTE },
+      reference: held.reconciliationReference,
+    })).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(await store.readGeneration(NEW_GENERATION)).not.toBeNull();
+  });
+
+  async function interruptedEmission(scenario = 'CAPI-S014') {
+    const pending = await pendingHold(scenario);
+    const input = {
+      storage: pending.store, manifestRootKey: ROOT_KEY, hold: pending.store.memoryHold,
+      evidence: evidenceFor(pending.envelope, M2_OUTCOME.COMMITTED),
+      reference: pending.store.memoryHold.reconciliationReference,
+    };
+    pending.store.faults = [{ boundary: 'DURING_ESCROW_OUTPUT_RESPONSE', kind: 'RELEASE_ESCROW', mode: 'BEFORE', remaining: 1 }];
+    await expect(reconcileIndeterminate(input)).rejects.toThrow();
+    expect((await classify(pending.store)).authority).toBe('COMPLETE_NEW');
+    expect(pending.store.memoryHold).not.toBeNull();
+    return { ...pending, input };
+  }
+
+  test('an interrupted emission repeats once with the same escrow and clears the hold', async () => {
+    const { store, input } = await interruptedEmission();
+    const applied = store.applied.length;
+    const outcome = await reconcileIndeterminate(input);
+    expect(outcome).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', authority: 'COMPLETE_NEW', holds: 0 });
+    expect(hex(outcome.output)).toBe(hex(ESCROW.output));
+    expect(store.applied.slice(applied).map((a) => a.kind)).toEqual(['RELEASE_ESCROW']);
+    expect(store.memoryHold).toBeNull();
+  });
+
+  test('an interrupted emission never releases a substituted escrow', async () => {
+    const { store, input } = await interruptedEmission();
+    store.generations.get(NEW_GENERATION).escrow = {
+      kind: 'APPLICATION_BYTES', digest: bytesOf(32, 0x58), reference: bytesOf(32, 0x59), output: new Uint8Array([99, 100]),
+    };
+    const applied = store.applied.length;
+    await expect(reconcileIndeterminate(input)).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(store.memoryHold).not.toBeNull();
+  });
+
+  test('a COMMITTED selection never releases a substituted escrow', async () => {
+    const { store, envelope } = await pendingHold('CAPI-S014');
+    store.generations.get(NEW_GENERATION).escrow = { ...store.generations.get(NEW_GENERATION).escrow, digest: bytesOf(32, 0x58) };
+    const selector = hex(store.selector);
+    const applied = store.applied.length;
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: store.memoryHold,
+      evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED), reference: store.memoryHold.reconciliationReference,
+    })).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(hex(store.selector)).toBe(selector);
+    expect(store.memoryHold).not.toBeNull();
+  });
+
+  test('non-COMMITTED evidence, INDETERMINATE included, contradicts an interrupted emission', async () => {
+    const { store, envelope, input } = await interruptedEmission();
+    const applied = store.applied.length;
+    for (const [outcome, overrides] of [[M2_OUTCOME.INDETERMINATE, { terminal: false }], [M2_OUTCOME.NOT_COMMITTED, {}]]) {
+      await expect(reconcileIndeterminate({ ...input, evidence: evidenceFor(envelope, outcome, overrides) }))
+        .rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    }
+    expect(store.applied.length).toBe(applied);
+    expect(store.memoryHold).not.toBeNull();
   });
 });
 

@@ -1202,6 +1202,40 @@ async function durableHeldEnvelope(storage, manifestRootKey, selectorBytes) {
   return record;
 }
 
+// The stored COMMIT_RESULT of the generation a reconciliation acts on must identify the held mutation
+// (C-FMT /generationCommit/originalAuthorityMatch, C-MUT /escrow sameMutationAsCandidate): the same
+// operation, original authority, candidate, mutation set, binding and profile. Physical selector
+// consistency alone does not establish that relationship.
+const RESULT_HOLD_PAIRS = Object.freeze([
+  ['operationIdentity', 'operationIdentity'], ['originalAuthorityDigest', 'originalAuthorityDigest'],
+  ['originalAuthorityReference', 'originalAuthorityReference'], ['candidateDigest', 'candidateDigest'],
+  ['candidateReference', 'candidateReference'], ['mutationSetDigest', 'componentSetDigest'],
+  ['mutationSetReference', 'componentSetReference'], ['bindingRef', 'bindingRef'], ['profile', 'profileDigest'],
+]);
+
+function storedResultMatchesHold(resultEvidence, held) {
+  let stored;
+  try { stored = evidenceFacts(resultEvidence, 'stored result evidence'); } catch { return false; }
+  return RESULT_HOLD_PAIRS.every(([e, h]) => equal(stored[e], held[h]));
+}
+
+// The stored escrow released by a reconciliation must be the held output (C-FMT §9: a mismatched
+// result/escrow association rejects): a row with no output stores none; otherwise its kind, digest and
+// reference equal the held envelope's held output.
+function storedEscrowMatchesHold(escrow, held) {
+  const kind = OUTPUT_KINDS[held.heldOutputKind - 1];
+  if (kind === 'NONE') return escrow === null;
+  if (escrow === null || typeof escrow !== 'object' || Array.isArray(escrow)) return false;
+  try {
+    return escrow.kind === kind
+      && equal(bytes(escrow.digest, 32, 'stored escrow.digest'), held.heldOutputDigest)
+      && equal(bytes(escrow.reference, 32, 'stored escrow.reference'), held.heldOutputReference)
+      && (escrow.output === null || escrow.output === undefined || escrow.output instanceof Uint8Array);
+  } catch {
+    return false;
+  }
+}
+
 // CAPI-S020/S022 repeat: the committed candidate is already the authority and only the local emission
 // call is outstanding. The stored generation must be the held mutation's committed candidate, proven
 // by its own stored result evidence; only RELEASE_ESCROW is applied, with the same escrow bytes.
@@ -1219,22 +1253,18 @@ async function repeatCommittedEmission(storage, manifestRootKey, held, evidence,
     partial(`the stored selector is not consistent with the generation it names: ${e.message}`);
   }
   if (selected.mutationHold !== null && selected.mutationHold.presence !== 0) notPending();
-  let stored;
-  try { stored = evidenceFacts(selected.resultEvidence, 'stored result evidence'); } catch { notPending(); }
-  const pairs = [
-    ['operationIdentity', 'operationIdentity'], ['originalAuthorityDigest', 'originalAuthorityDigest'],
-    ['originalAuthorityReference', 'originalAuthorityReference'], ['candidateDigest', 'candidateDigest'],
-    ['candidateReference', 'candidateReference'], ['mutationSetDigest', 'componentSetDigest'],
-    ['mutationSetReference', 'componentSetReference'], ['bindingRef', 'bindingRef'], ['profile', 'profileDigest'],
-  ];
-  for (const [e, h] of pairs) if (!equal(stored[e], held[h])) notPending();
+  if (!storedResultMatchesHold(selected.resultEvidence, held)) notPending();
   if (evidence.outcome !== M2_OUTCOME.COMMITTED) {
     fail(CODE.EVIDENCE_MISMATCH,
       'the held mutation is already the committed authority; non-COMMITTED evidence contradicts it and '
       + 'the hold is left unchanged');
   }
   const escrow = selected.escrow === null || selected.escrow === undefined ? null : selected.escrow;
-  if (row.outputKind !== 'NONE' && escrow === null) notPending();
+  if (!storedEscrowMatchesHold(escrow, held)) {
+    fail(CODE.EVIDENCE_MISMATCH,
+      'the stored escrow is not the held output of this mutation; nothing is emitted and the hold is '
+      + 'left unchanged');
+  }
   const steps = mutationSteps({
     envelope,
     candidate: {
@@ -1326,6 +1356,21 @@ export async function reconcileIndeterminate(input) {
   const reconciliationEnvelope = envelopeFromHold(held);
   const row = ROW_BY_SCENARIO.get(reconciliationEnvelope.scenario);
 
+  const storedSelector = await storage.readSelector();
+  const selector = storedSelector === null || storedSelector === undefined ? null : selectorFacts(storedSelector);
+  // CAPI-S020/S022 repeat after an interrupted local emission (C-MUT §5/§6, /crashBoundaries
+  // DURING_ESCROW_OUTPUT_RESPONSE POST_INDETERMINATE): the selector already names the committed
+  // candidate as authority, but the hold is still retained because the local emission call did not
+  // return success. Matching COMMITTED evidence repeats only that emission with the same escrow bytes;
+  // nothing is re-selected, re-staged or regenerated. Any other evidence, INDETERMINATE included,
+  // contradicts the committed authority and is EVIDENCE_MISMATCH with the hold unchanged.
+  if (!durableHold && selector !== null
+    && selector.state !== SELECTOR_STATE.RECONCILIATION_REQUIRED
+    && selector.candidateGeneration === selector.generation
+    && selector.generation !== held.parentGeneration) {
+    return repeatCommittedEmission(storage, manifestRootKey, held, evidence, selector, reconciliationEnvelope, row);
+  }
+
   if (evidence.outcome === M2_OUTCOME.INDETERMINATE) {
     return freezeDeep({
       reconciliation: 'INDETERMINATE', resultKind: 'INDETERMINATE', state: 'RECONCILIATION_REQUIRED',
@@ -1333,21 +1378,8 @@ export async function reconcileIndeterminate(input) {
     });
   }
 
-  const storedSelector = await storage.readSelector();
-  if (storedSelector === null || storedSelector === undefined) {
+  if (selector === null) {
     partial('no stored selector exists although one hold is pending');
-  }
-  const selector = selectorFacts(storedSelector);
-  // CAPI-S020/S022 repeat after an interrupted local emission (C-MUT §5/§6, /crashBoundaries
-  // DURING_ESCROW_OUTPUT_RESPONSE POST_INDETERMINATE): the selector already names the committed
-  // candidate as authority, but the hold is still retained because the local emission call did not
-  // return success. Matching COMMITTED evidence repeats only that emission with the same escrow bytes;
-  // nothing is re-selected, re-staged or regenerated.
-  if (!durableHold
-    && selector.state !== SELECTOR_STATE.RECONCILIATION_REQUIRED
-    && selector.candidateGeneration === selector.generation
-    && selector.generation !== held.parentGeneration) {
-    return repeatCommittedEmission(storage, manifestRootKey, held, evidence, selector, reconciliationEnvelope, row);
   }
   // The generation this reconciliation may clear or select is the candidate the STORED hold selector
   // binds, never whatever candidateGeneration some other selector state happens to carry. A selector
@@ -1359,6 +1391,20 @@ export async function reconcileIndeterminate(input) {
     fail(CODE.NO_RECONCILIATION_PENDING,
       'the stored selector does not bind an unresolved candidate to the held parent generation; the '
       + 'hold is not reconcilable from this stored state');
+  }
+
+  // The bound candidate's stored COMMIT_RESULT must identify the held mutation (C-FMT
+  // /generationCommit/originalAuthorityMatch) before evidence for that mutation selects it, and before
+  // a durable hold - read from storage rather than SS memory - is terminally resolved either way.
+  if (durableHold || evidence.outcome === M2_OUTCOME.COMMITTED) {
+    const bound = generationFactsFromStorage(
+      await storage.readGeneration(selector.candidateGeneration), selector.candidateGeneration, manifestRootKey,
+    );
+    if (!storedResultMatchesHold(bound.resultEvidence, held)) {
+      fail(CODE.EVIDENCE_MISMATCH,
+        'the bound candidate\'s stored commit result does not identify the held mutation; nothing is '
+        + 'selected or discarded and the hold is left unchanged');
+    }
   }
 
   if (evidence.outcome === M2_OUTCOME.NOT_COMMITTED) {
@@ -1393,6 +1439,11 @@ export async function reconcileIndeterminate(input) {
   const selectorBytes = encodePlaintext(M2_KIND.GENERATION_SELECTOR,
     sameTupleSelector(candidate, SELECTOR_STATE.ACTIVE));
   const escrow = candidate.escrow === null || candidate.escrow === undefined ? null : candidate.escrow;
+  if (!storedEscrowMatchesHold(escrow, held)) {
+    fail(CODE.EVIDENCE_MISMATCH,
+      'the bound candidate\'s stored escrow is not the held output of this mutation; nothing is selected '
+      + 'and the hold is left unchanged');
+  }
   const steps = mutationSteps({
     envelope: reconciliationEnvelope,
     candidate: {
