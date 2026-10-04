@@ -1652,7 +1652,10 @@ export function createOutbox(options) {
   /**
    * One per-relay outcome of the latest attempt (C-DLV section 5.3). A
    * per-relay outcome never changes the item's state except the first
-   * `ACCEPTED` of an item in `IN_FLIGHT`.
+   * `ACCEPTED` of an item in `IN_FLIGHT`; and an `ACCEPTED` of an item in
+   * `IN_FLIGHT` is recorded only after the acceptance check of section 4.4, so
+   * no item ever shows a relay `ACCEPTED` it did not record before its terminal
+   * state.
    *
    * @param {object} item
    * @param {object} attempt
@@ -1662,9 +1665,12 @@ export function createOutbox(options) {
   function onRelayOutcome(item, attempt, relayIndex, outcome) {
     // C-DLV sections 5.3 and 4.6: the outcome of the latest attempt for a relay
     // is mirrored even after the item became terminal, because a PENDING entry
-    // settles at the attempt timeout although the attempt is over; only
-    // `shutdown()` freezes the outcomes entirely, and the settle window of the
-    // two states that ignore acknowledgements admits that timeout alone.
+    // settles at the attempt timeout although the attempt is over. `shutdown()`
+    // is the single exception: its step (1) freezes every relay outcome
+    // synchronously at the call and every delivery timer callback that runs
+    // afterwards does nothing, so an outcome reported after the stop is dropped
+    // here and neither mirrored nor recorded.
+    if (stopped) return;
     if (attempt !== item.attempt && attempt !== item.lastAttempt) return;
     if (!RELAY_OUTCOMES.has(outcome)) {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_UNKNOWN_CODE);
@@ -1675,40 +1681,43 @@ export function createOutbox(options) {
     // turns its PENDING entries into TIMED_OUT; a supervision loss, a rejection
     // or an acknowledgement reported for such an item is ignored there, while
     // every other state mirrors the outcome of its latest attempt.
-    let mirrorable = !stopped;
+    let mirrorable = true;
     if (ACK_IGNORED_STATES.has(item.state)) mirrorable = outcome === OUTCOME_TIMED_OUT;
     else if (ACK_OUTCOMES.has(outcome)) mirrorable = true;
-    if (mirrorable && Number.isInteger(relayIndex) && relayIndex >= 0 && relayIndex < item.outcomes.length) {
-      item.outcomes[relayIndex] = outcome;
-    }
-    if (outcome !== OUTCOME_ACCEPTED) return;
-    if (item.attempt !== attempt) return;
-    if (item.state !== STATE_IN_FLIGHT) return;
-    if (!isPublishable(item, attempt)) {
-      // C-DLV sections 4.4 and 4.5: an acceptance is refused when the item is no
-      // longer `IN_FLIGHT` in this attempt or its reading is at or after the
-      // deadline. The state and attempt cases returned above, so the only cause
-      // left is the clock: an invalid reading is an internal fault of the item,
-      // and an expired one applies the deadline transition.
-      if (stopped || TERMINAL_STATES.has(item.state)) return;
-      const reading = callSyncPort(read.clock, 'now');
-      if (!reading.ok || !isValidClockValue(reading.value)) {
-        applyTerminalFromFault(item, SdkResultCode.E_SDK_INTERNAL);
+    const mirrored =
+      mirrorable && Number.isInteger(relayIndex) && relayIndex >= 0 && relayIndex < item.outcomes.length;
+    if (outcome === OUTCOME_ACCEPTED && item.attempt === attempt && item.state === STATE_IN_FLIGHT) {
+      // C-DLV sections 4.4 and 5.3: the acceptance is checked before it is
+      // recorded, so an item that takes the deadline transition or fails on the
+      // clock never shows a relay `ACCEPTED`. The attempt and state cases
+      // returned above, so the only cause left is the clock: an invalid reading
+      // is an internal fault of the item, and an expired one applies the
+      // deadline transition.
+      if (!isPublishable(item, attempt)) {
+        const reading = callSyncPort(read.clock, 'now');
+        if (!reading.ok || !isValidClockValue(reading.value)) {
+          applyTerminalFromFault(item, SdkResultCode.E_SDK_INTERNAL);
+          return;
+        }
+        if (reading.value >= item.deadlineAt) applyDeadline(item);
         return;
       }
-      if (reading.value >= item.deadlineAt) applyDeadline(item);
-      return;
-    }
-    if (item.receiptMode === RECEIPT_MODE_RECIPIENT_RECEIPT) {
-      recordTransition(item, STATE_AWAITING_RECEIPT, null);
-      if (item.receipt !== null && !TERMINAL_STATES.has(item.state)) {
-        // A held receipt (C-DLV section 7.3): the item moves at once, two
-        // transitions with two events.
-        recordTransition(item, STATE_RECEIPT_RECEIVED, null);
+      if (mirrored) item.outcomes[relayIndex] = outcome;
+      if (item.receiptMode === RECEIPT_MODE_RECIPIENT_RECEIPT) {
+        recordTransition(item, STATE_AWAITING_RECEIPT, null);
+        if (item.receipt !== null && !TERMINAL_STATES.has(item.state)) {
+          // A held receipt (C-DLV section 7.3): the item moves at once, two
+          // transitions with two events.
+          recordTransition(item, STATE_RECEIPT_RECEIVED, null);
+        }
+        return;
       }
+      recordTransition(item, STATE_RELAY_ACCEPTED, null);
       return;
     }
-    recordTransition(item, STATE_RELAY_ACCEPTED, null);
+    // C-DLV section 4.6: an acknowledgement that arrives once the item left
+    // `IN_FLIGHT` still settles its own entry and changes no state.
+    if (mirrored) item.outcomes[relayIndex] = outcome;
   }
 
   /**

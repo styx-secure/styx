@@ -1106,9 +1106,25 @@ describe('the O-SCEN3 timelines', () => {
     expect(clock.state.clearCalls.length).toBe(2);
     expect(new Set(clock.state.clearCalls.map((handle) => handle.timer)).size).toBe(2);
     // No attempt timeout, no retry and no acceptance is recorded afterwards.
-    await clock.advance(60000);
+    await clock.advance(16010);
+    expect(clock.state.now).toBe(36010);
     expect(events.length).toBe(4);
     expect(relaySet.attempts.length).toBe(2);
+    // C-DLV sections 4.6 step (1) and 5.3: the attempt timeout of each item
+    // fires at 24000, 12010 ms before this read, and 36010 is the read the
+    // ratified timeline fixes. The outcomes are frozen at their admission
+    // values, so an entry in PENDING stays PENDING and the item never shows a
+    // TIMED_OUT that the stopped client did not record.
+    for (const deliveryId of ['d1', 'd2']) {
+      expect((await outbox.getDelivery({ deliveryId })).value).toMatchObject({
+        state: 'LOST_ON_SHUTDOWN',
+        terminal: true,
+        relayOutcomes: [
+          { relayIndex: 0, outcome: 'PENDING' },
+          { relayIndex: 1, outcome: 'PENDING' },
+        ],
+      });
+    }
     // A stopped client serves no further state-changing call.
     expect(await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD })).toEqual({
       ok: false,
@@ -1985,8 +2001,52 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       lastCode: 'E_SDK_INTERNAL',
       terminal: true,
     });
+    // C-DLV section 5.3: the acceptance is checked before it is recorded, so the
+    // entry stays PENDING and the item never shows a relay ACCEPTED it did not
+    // record before its terminal state.
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.relayOutcomes).toEqual([
+      { relayIndex: 0, outcome: 'PENDING' },
+      { relayIndex: 1, outcome: 'PENDING' },
+    ]);
     clock.state.nowThrows = false;
     await outbox.shutdown();
+  });
+
+  test('an outcome reported after shutdown is dropped: the frozen relay outcomes never change (C-DLV 4.6 step 1, 5.3)', async () => {
+    const { outbox, clock, relaySet } = makeHarness({
+      delivery: { ...DELIVERY, receiptMode: 'RELAY_ACCEPTANCE_ONLY' },
+      relayCount: 2,
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(relaySet.attempts[0].answer(0, 'ACCEPTED')).toBe(true);
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED',
+      relayOutcomes: [
+        { relayIndex: 0, outcome: 'ACCEPTED' },
+        { relayIndex: 1, outcome: 'PENDING' },
+      ],
+    });
+    expect((await outbox.shutdown()).ok).toBe(true);
+    // The seam reports three outcomes after the stop: a rejection for the relay
+    // still PENDING, a timeout for the attempt in progress and a rejection of
+    // the relay that already accepted. C-DLV section 4.6 step (1) freezes every
+    // relay outcome synchronously at the call, so none of them is mirrored and
+    // the state does not move.
+    relaySet.attempts[0].force(1, 'REJECTED');
+    relaySet.attempts[0].force(0, 'REJECTED');
+    relaySet.attempts[0].force(1, 'TIMED_OUT');
+    await flush();
+    await clock.advance(60000);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED',
+      terminal: true,
+      relayOutcomes: [
+        { relayIndex: 0, outcome: 'ACCEPTED' },
+        { relayIndex: 1, outcome: 'PENDING' },
+      ],
+    });
   });
 
   test('a signature that carries an unknown closed slot is E_SDK_UNKNOWN_CODE although it is a Uint8Array (C-SDK 5.3, C-DLV 4.5)', async () => {
