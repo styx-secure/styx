@@ -594,7 +594,7 @@ describe('admission (C-DLV section 4.2)', () => {
     storage.putResult = () => {
       throw new Error('put');
     };
-    storage.removeResult = false === true ? false : () => {
+    storage.removeResult = () => {
       throw new Error('remove');
     };
     const { outbox, clock, events, relaySet } = makeHarness({ storage });
@@ -772,7 +772,9 @@ describe('the O-SCEN3 timelines', () => {
 
   test('relayLoss / relayLossAndReplacement: a loss, a replacement, and the acceptance of the republished event', async () => {
     const { outbox, clock, relaySet, storage, random } = makeHarness({
-      randomValues: [0, 0],
+      // The recorded draw of the ratified O-SCEN3 relayLoss record: the retry
+      // delay is 500 + floor(u * 1000 / 2^33) = 999 ms.
+      randomValues: [4294967295],
     });
     clock.state.now = 12000;
     await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
@@ -793,6 +795,11 @@ describe('the O-SCEN3 timelines', () => {
       { sliceMs: 50 },
     );
     expect(relaySet.attempts.length).toBe(2);
+    // The retry is armed at the recorded draw: delay(1, 4294967295) = 999 ms
+    // after the attempt timeout at 24000, so the second attempt begins at 24999
+    // (`advanceUntil` checks its predicate between 50 ms slices, hence 25000).
+    expect(clock.state.setCalls.map((call) => call.delayMs)).toContain(999);
+    expect(clock.state.now).toBe(25000);
     // The retransmission republishes exactly the signed bytes of attempt 1.
     expect(relaySet.attempts[1].event).toBe(relaySet.attempts[0].event);
     // Attempt 2: the replacement connection answers the republished event.
@@ -1723,6 +1730,24 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       code: 'E_SDK_UNKNOWN_DELIVERY',
     });
     expect(first.relaySet.attempts.length).toBe(0);
+
+    // A failed put whose one remove returns false is a successful cleanup too.
+    const third = makeStorage({ removeResult: false });
+    let releaseThird = null;
+    third.putResult = () => new Promise((resolve) => {
+      releaseThird = () => resolve(false);
+    });
+    const cleaned = makeHarness({ storage: third });
+    const pendingThird = cleaned.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    releaseThird();
+    expect(await pendingThird).toEqual({ ok: false, code: 'E_SDK_STORAGE_FAILED' });
+    expect(third.calls.remove).toEqual(['d1']);
+    expect(await cleaned.outbox.getDelivery({ deliveryId: 'd1' })).toEqual({
+      ok: false,
+      code: 'E_SDK_UNKNOWN_DELIVERY',
+    });
+    await cleaned.outbox.shutdown();
 
     // A failed put whose remove also fails: the residual item wins over the stop.
     const second = makeStorage();
