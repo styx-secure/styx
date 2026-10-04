@@ -1631,17 +1631,51 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       state: 'RELAY_ACCEPTED',
       relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'PENDING' }],
     });
-    // C-DLV section 4.6: an `OK` frame still acts on the outcomes of its
-    // attempt after the item left IN_FLIGHT (`RELAY_ACCEPTED` is not one of the
-    // three states that ignore it), but it changes the item's state only while
-    // the item is IN_FLIGHT in that same attempt, so no state and no event.
-    relaySet.attempts[0].force(1, 'ACCEPTED');
+    // C-DLV sections 4.6 and 5.3: an `OK true` still acts on the outcomes of
+    // its attempt after the item left IN_FLIGHT (`RELAY_ACCEPTED` is not one of
+    // the three states that ignore it), so the acceptance gate admits it — it
+    // refuses only a reading at or after the deadline while the item is still
+    // IN_FLIGHT — and it changes the item's state only while the item is
+    // IN_FLIGHT in that same attempt, so no state and no event.
+    expect(relaySet.attempts[0].answer(1, 'ACCEPTED')).toBe(true);
     await flush();
     expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
       state: 'RELAY_ACCEPTED',
       relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'ACCEPTED' }],
     });
     expect(events.map((event) => event.state)).toEqual(['IN_FLIGHT', 'RELAY_ACCEPTED']);
+    await outbox.shutdown();
+  });
+
+  test('the acceptance gate of section 4.6 admits a later relay once the item left IN_FLIGHT, also at or after the deadline, and refuses while it is still IN_FLIGHT', async () => {
+    const { outbox, clock, relaySet } = makeHarness({
+      delivery: { ...DELIVERY, deadlineMs: 30000, perRelayTimeoutMs: 12000, receiptMode: 'RECIPIENT_RECEIPT' },
+      relayCount: 2,
+    });
+    clock.state.now = 0;
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    const attempt = relaySet.attempts[0];
+    // Still IN_FLIGHT and before the deadline: the gate admits the answer.
+    clock.state.now = 29999;
+    expect(attempt.acceptGate(0, attempt)).toBe(true);
+    expect(attempt.answer(0, 'ACCEPTED')).toBe(true);
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe(
+      'RELAY_ACCEPTED_AWAITING_RECEIPT',
+    );
+    // The item has left IN_FLIGHT, so its only deadline condition does not
+    // apply: the second relay's `OK true` keeps settling its own entry, even at
+    // or after the deadline (C-DLV sections 4.6 and 5.3). The gate that refused
+    // every state but IN_FLIGHT would drop this answer instead.
+    clock.state.now = 30000;
+    expect(attempt.acceptGate(1, attempt)).toBe(true);
+    expect(attempt.answer(1, 'ACCEPTED')).toBe(true);
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED_AWAITING_RECEIPT',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'ACCEPTED' }],
+    });
     await outbox.shutdown();
   });
 

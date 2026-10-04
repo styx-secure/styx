@@ -1498,10 +1498,14 @@ export function createOutbox(options) {
   /**
    * Publish one attempt through the injected seam and mirror its per-relay
    * outcomes (C-DLV section 5.3). The two gates are the whole of the boundary
-   * with the relay set: they answer whether the item is still `IN_FLIGHT` in
-   * this same attempt with an unexpired deadline, which is exactly the
-   * condition section 5.3 conditions a late publication on and section 4.4
-   * conditions an acceptance on.
+   * with the relay set (C-DLV section 4.6): `latePublishGate` answers whether
+   * the item is still `IN_FLIGHT` in this same attempt with an unexpired
+   * deadline, which is exactly the condition section 5.3 conditions a late
+   * publication on; `acceptGate` is the acknowledgement boundary and refuses
+   * only an attempt that is not the item's own, the three states that ignore
+   * acknowledgements and a reading at or after the deadline while the item is
+   * still `IN_FLIGHT`, so a later relay's `OK true` keeps settling its own
+   * entry after the first acceptance (sections 4.6 and 5.3).
    *
    * @param {object} item
    */
@@ -1553,7 +1557,7 @@ export function createOutbox(options) {
     item.attempt = attempt;
     item.lastAttempt = attempt;
     try {
-      attempt.acceptGate = () => isPublishable(item, attempt);
+      attempt.acceptGate = () => acceptanceAllowed(item, attempt);
     } catch {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_INTERNAL);
       return;
@@ -1596,11 +1600,41 @@ export function createOutbox(options) {
   }
 
   /**
-   * The condition of C-DLV section 5.3 for a publication and of section 4.4
-   * for an acceptance: the item is still `IN_FLIGHT` in this same attempt and
-   * its deadline has not passed. At an orderly `shutdown()` every non-terminal
-   * item is terminal synchronously at the call (section 4.6), so the client's
-   * `RUNNING` condition of section 5.3 is subsumed. A clock fault refuses.
+   * The acknowledgement boundary of C-DLV sections 4.6 and 5.3: an `OK true` is
+   * refused for an attempt that is not the item's own (neither its current nor
+   * its latest attempt), for the three states that ignore acknowledgements
+   * (section 4.6), and — the only deadline condition here — for a valid reading
+   * at or after the deadline while the item is still `IN_FLIGHT` in this same
+   * attempt; a reading that faults or is invalid refuses too. Because that
+   * deadline condition applies only while the item is still `IN_FLIGHT`, a
+   * later relay's `OK true` keeps settling its own entry after the first
+   * acceptance, as section 4.6 and section 5.3 require. The client's `RUNNING`
+   * conjunct is subsumed because section 4.6 step (1) makes every non-terminal
+   * item terminal synchronously at the `shutdown()` call.
+   *
+   * @param {object} item
+   * @param {object} attempt
+   * @returns {boolean}
+   */
+  function acceptanceAllowed(item, attempt) {
+    if (stopped) return false;
+    if (ACK_IGNORED_STATES.has(item.state)) return false;
+    if (item.attempt !== attempt && item.lastAttempt !== attempt) return false;
+    if (item.state !== STATE_IN_FLIGHT) return true;
+    const reading = callSyncPort(read.clock, 'now');
+    if (!reading.ok || !isValidClockValue(reading.value)) return false;
+    return reading.value < item.deadlineAt;
+  }
+
+  /**
+   * The late-publication condition of C-DLV section 5.3: the item is still
+   * `IN_FLIGHT` in this same attempt and its deadline has not passed. This is
+   * `latePublishGate`, and the acceptance path of section 4.4 re-checks it once
+   * the item is known to be `IN_FLIGHT` in this attempt, where it reduces to a
+   * valid reading before the deadline. At an orderly `shutdown()` every
+   * non-terminal item is terminal synchronously at the call (section 4.6), so
+   * the client's `RUNNING` condition of section 5.3 is subsumed. A clock fault
+   * refuses.
    *
    * @param {object} item
    * @param {object} attempt
