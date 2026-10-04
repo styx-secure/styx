@@ -691,6 +691,8 @@ export function createReceipts(options) {
     const content = '';
     const id = recomputeId(own, createdAt, EVENT_KIND_RECEIPT, tags, content);
     if (id === null) return { ok: false };
+    /* C-DLV section 4.6 step (1): no port call starts after the stop. */
+    if (stopped) return { ok: false };
     const signed = await callPort(read === null ? null : read.identity, 'sign',
       [{ digest: hexToBytes(id) }], portCallTimeoutMs);
     if (!signed.ok) return { ok: false };
@@ -767,8 +769,12 @@ export function createReceipts(options) {
       discard(DISCARD_INVALID);
       return null;
     }
+    /* C-DLV section 4.6 step (1): no port call starts after the stop. */
+    if (stopped) return null;
     const opened = await callPort(read === null ? null : read.session, 'open',
       [{ sender: event.pubkey, ciphertext }], portCallTimeoutMs);
+    /* ... and no event follows it either. */
+    if (stopped) return null;
     if (!opened.ok) {
       discard(DISCARD_SESSION_FAILED);
       return null;
@@ -831,9 +837,11 @@ export function createReceipts(options) {
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
+    /* C-DLV section 4.6 step (1): no seam call starts after the stop. */
+    if (stopped) return;
     const called = await callPort({ acceptReceipt: seam }, 'acceptReceipt',
       [{ eventId: event.tags[1][1], recipient: event.pubkey }], portCallTimeoutMs);
-    /* C-DLV section 4.6 step (1): no event begins after the stop. */
+    /* ... and no event follows it either. */
     if (stopped) return;
     if (!called.ok) {
       discard(DISCARD_UNKNOWN_CODE);
@@ -892,6 +900,9 @@ export function createReceipts(options) {
     if (data[0] !== FRAME_KIND_EVENT || data.length < 3) return;
 
     const validated = await validateEvent(data[2]);
+    /* C-DLV section 4.6 step (1): a stop that landed while `validateEvent`
+     * awaited the identity-key reading ends this frame here. */
+    if (stopped) return;
     if (!validated.ok) {
       discard(DISCARD_INVALID);
       return;
@@ -917,6 +928,7 @@ export function createReceipts(options) {
     const own = publicKey;
     if (own === null) return;
     const built = await buildAndSignReceipt({ sender, eventId: validated.event.id }, own);
+    if (stopped) return;
     if (built.unknown === true) {
       /* C-DLV section 4.5: an unknown closed slot in the signature return is
        * `E_SDK_UNKNOWN_CODE`; the message event emitted above stands, because

@@ -1739,3 +1739,101 @@ describe('round-1 counterexamples', () => {
     expect(opens).toHaveLength(1);
   });
 });
+
+/* ------------------------------------------------------------------------- *
+ * The terminal stop of C-DLV section 4.6 step (1). No port call, seam call,
+ * emission or signature may begin once `shutdown()` has returned, whatever
+ * awaited boundary the pipeline is parked on.
+ * ------------------------------------------------------------------------- */
+describe('the terminal stop at every awaited boundary', () => {
+  test('a stop while the identity key is pending starts no port call and emits nothing', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = makeHarness();
+    harness.options.identity.getPublicKey = () => gate.then(() => harness.owner.pub);
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    harness.module.ingest(eventFrame(receiptEvent({
+      recipient: harness.other, owner: harness.owner.pub, eventId: 'a'.repeat(64),
+    })));
+    await flush(2);
+    harness.module.shutdown();
+    release();
+    await flush(16);
+    expect(harness.events).toEqual([]);
+    expect(harness.opens).toEqual([]);
+    expect(harness.acks).toEqual([]);
+    expect(harness.published).toEqual([]);
+  });
+
+  test('a stop during an open that then rejects emits nothing', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = makeHarness();
+    harness.options.session.open = () => gate.then(() => {
+      throw new Error('open rejects after the stop');
+    });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(2);
+    harness.module.shutdown();
+    release();
+    await flush(16);
+    expect(harness.events).toEqual([]);
+  });
+
+  test('a stop during an open that then times out emits nothing', async () => {
+    const harness = makeHarness({ perRelayTimeoutMs: 400 });
+    harness.options.session.open = () => new Promise(() => {});
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(2);
+    harness.module.shutdown();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(harness.events).toEqual([]);
+  });
+
+  test('a stop during the signature leaves the message event that preceded it and no discard', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = makeHarness();
+    harness.options.identity.sign = () => gate.then(
+      () => Object.assign(new Uint8Array(64), { code: 'E_FUTURE_RESULT' }),
+    );
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(2);
+    /* The message event was emitted before the stop; the signature is pending. */
+    expect(harness.events).toHaveLength(1);
+    expect(harness.events[0].kind).toBe('MESSAGE_RECEIVED');
+    harness.module.shutdown();
+    release();
+    await flush(16);
+    expect(harness.events).toHaveLength(1);
+    expect(harness.published).toEqual([]);
+  });
+
+  test('a stop during an open starts no signature afterwards', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const harness = makeHarness();
+    let signs = 0;
+    harness.options.identity.sign = ({ digest }) => {
+      signs += 1;
+      return schnorr.sign(digest, harness.owner.priv);
+    };
+    harness.options.session.open = () => gate.then(() => ({ plaintext: new Uint8Array([1]) }));
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(2);
+    harness.module.shutdown();
+    release();
+    await flush(16);
+    expect(signs).toBe(0);
+    expect(harness.events).toEqual([]);
+    expect(harness.published).toEqual([]);
+  });
+});
