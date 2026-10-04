@@ -685,9 +685,11 @@ describe('the O-SCEN3 timelines', () => {
       value: {
         createdAt: 12000,
         deadlineAt: 132000,
-        attempts: 0,
+        // C-DLV section 4.3: the attempt start moved the item to IN_FLIGHT and
+        // incremented its count before the first publication phase.
+        attempts: 1,
         lastCode: null,
-        state: 'QUEUED',
+        state: 'IN_FLIGHT',
         relayOutcomes: [
           { relayIndex: 0, outcome: 'PENDING' },
           { relayIndex: 1, outcome: 'PENDING' },
@@ -878,7 +880,7 @@ describe('the O-SCEN3 timelines', () => {
     await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
     await flush();
     // A receipt that arrives while the item is still IN_FLIGHT is held.
-    const eventId = storage.records.get('d1') === undefined ? null : storage.records.get('d1').event.id;
+    const eventId = relaySet.attempts[0].event.id;
     expect(typeof eventId).toBe('string');
     const held = await outbox.acceptReceipt({ eventId, recipient: RECIPIENT });
     expect(held).toEqual({ ok: true, value: { accepted: true, deliveryId: 'd1' } });
@@ -906,7 +908,7 @@ describe('the O-SCEN3 timelines', () => {
     clock.state.now = 0;
     await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
     await flush();
-    const eventId = storage.records.get('d1').event.id;
+    const eventId = relaySet.attempts[0].event.id;
     expect(await outbox.acceptReceipt({ eventId, recipient: OTHER })).toEqual({
       ok: true,
       value: { accepted: false, deliveryId: 'd1' },
@@ -1191,7 +1193,9 @@ describe('port faults and unknown values (C-DLV section 4.5)', () => {
       value: {
         state: 'FAILED_NOT_ACCEPTED',
         lastCode: 'E_SDK_IDENTITY_FAILED',
-        attempts: 0,
+        // C-DLV section 4.3: the attempt started (QUEUED -> IN_FLIGHT and the
+        // count) before the first signature, and a failed signing is terminal.
+        attempts: 1,
         relayOutcomes: [
           { relayIndex: 0, outcome: 'PENDING' },
           { relayIndex: 1, outcome: 'PENDING' },
@@ -1473,8 +1477,10 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
     await flush();
     let release = null;
+    let held = 0;
     storage.updateResult = (deliveryId, record) => {
-      if (record.state !== 'CANCELLED') return true;
+      if (record.state !== 'CANCELLED' || held > 0) return true;
+      held += 1;
       return new Promise((resolve) => {
         release = () => resolve(true);
       });
@@ -1556,7 +1562,7 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     await outbox.shutdown();
   });
 
-  test('an acknowledgement that arrives once the item is terminal is a no-op (C-DLV 4.1, 4.5)', async () => {
+  test('an acknowledgement that arrives once the item is terminal is recorded in relayOutcomes and moves no state (C-DLV 4.1, 4.6)', async () => {
     const { outbox, relaySet, events } = makeHarness({
       delivery: { ...DELIVERY, receiptMode: 'RELAY_ACCEPTANCE_ONLY' },
       relayCount: 2,
@@ -1569,15 +1575,39 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       state: 'RELAY_ACCEPTED',
       relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'PENDING' }],
     });
-    // The seam reports an acknowledgement of the other lane although the item
-    // is terminal: the entry stays PENDING and no event is emitted.
+    // C-DLV section 4.6: an `OK` frame still acts on the outcomes of its
+    // attempt after the item left IN_FLIGHT (`RELAY_ACCEPTED` is not one of the
+    // three states that ignore it), but it changes the item's state only while
+    // the item is IN_FLIGHT in that same attempt, so no state and no event.
     relaySet.attempts[0].force(1, 'ACCEPTED');
     await flush();
     expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
       state: 'RELAY_ACCEPTED',
-      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'PENDING' }],
+      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'ACCEPTED' }],
     });
     expect(events.map((event) => event.state)).toEqual(['IN_FLIGHT', 'RELAY_ACCEPTED']);
+    await outbox.shutdown();
+  });
+
+  test('an OK frame that arrives after FAILED_NOT_ACCEPTED, CANCELLED or LOST_ON_SHUTDOWN is ignored (C-DLV 4.6)', async () => {
+    const { outbox, clock, relaySet } = makeHarness({
+      delivery: { ...DELIVERY, receiptMode: 'RELAY_ACCEPTANCE_ONLY', maxAttempts: 1 },
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    // With maxAttempts 1, the attempt timeout settles both lanes and exhausts
+    // the attempts: FAILED_NOT_ACCEPTED with lastCode null.
+    await clock.advance(12000);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'TIMED_OUT' }, { relayIndex: 1, outcome: 'TIMED_OUT' }],
+    });
+    relaySet.attempts[0].force(1, 'ACCEPTED');
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'TIMED_OUT' }, { relayIndex: 1, outcome: 'TIMED_OUT' }],
+    });
     await outbox.shutdown();
   });
 
@@ -1630,10 +1660,15 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
       state: 'FAILED_NOT_ACCEPTED',
       terminal: true,
-      attempts: 0,
+      attempts: 1,
       lastCode: null,
     });
-    expect(storage.calls.update.map((record) => record.state)).toEqual(['FAILED_NOT_ACCEPTED']);
+    // C-DLV section 4.3: the attempt moved the item to IN_FLIGHT before the
+    // signature, so the IN_FLIGHT record precedes the deadline transition.
+    expect(storage.calls.update.map((record) => record.state)).toEqual([
+      'IN_FLIGHT',
+      'FAILED_NOT_ACCEPTED',
+    ]);
     await outbox.shutdown();
   });
 
@@ -1665,6 +1700,138 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
     expect(relaySet.attempts.length).toBe(0);
     void clock;
+  });
+
+  test('a put that fails after shutdown still takes the one remove, and the residual rule takes precedence over the stop (C-DLV 4.2, 4.6 step 2)', async () => {
+    // A failed put whose remove succeeds: no item is left and nothing is kept.
+    const storage = makeStorage();
+    let releasePut = null;
+    storage.putResult = () => new Promise((resolve) => {
+      releasePut = () => resolve(false);
+    });
+    const first = makeHarness({ storage });
+    const pending = first.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    const stopping = first.outbox.shutdown();
+    await flush();
+    releasePut();
+    expect(await pending).toEqual({ ok: false, code: 'E_SDK_STORAGE_FAILED' });
+    expect(storage.calls.remove).toEqual(['d1']);
+    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
+    expect(await first.outbox.getDelivery({ deliveryId: 'd1' })).toEqual({
+      ok: false,
+      code: 'E_SDK_UNKNOWN_DELIVERY',
+    });
+    expect(first.relaySet.attempts.length).toBe(0);
+
+    // A failed put whose remove also fails: the residual item wins over the stop.
+    const second = makeStorage();
+    let releaseSecond = null;
+    second.putResult = () => new Promise((resolve) => {
+      releaseSecond = () => resolve(false);
+    });
+    second.removeResult = () => {
+      throw new Error('remove');
+    };
+    const residual = makeHarness({ storage: second });
+    const pendingSecond = residual.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    const stoppingSecond = residual.outbox.shutdown();
+    await flush();
+    releaseSecond();
+    expect(await pendingSecond).toEqual({ ok: false, code: 'E_SDK_STORAGE_FAILED' });
+    // C-DLV section 4.2: the residual item is reported only as a
+    // FAILED_NOT_ACCEPTED item, so it is not counted among the lost ones.
+    expect(await stoppingSecond).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
+    expect(residual.events.map((event) => event.state)).toEqual(['FAILED_NOT_ACCEPTED']);
+    await flush();
+    expect((await residual.outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      lastCode: 'E_SDK_STORAGE_FAILED',
+      terminal: true,
+    });
+    expect(residual.relaySet.attempts.length).toBe(0);
+  });
+
+  test('a deadline that fires while put is pending only latches, and no event precedes admission (C-DLV 4.2)', async () => {
+    const storage = makeStorage();
+    let releasePut = null;
+    storage.putResult = () => new Promise((resolve) => {
+      releasePut = () => resolve(true);
+    });
+    const { outbox, clock, events } = makeHarness({ storage });
+    const pending = outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    // The deadline callback runs while the item has not been admitted by `put`.
+    await clock.advance(120000);
+    expect(events).toEqual([]);
+    releasePut();
+    expect(await pending).toEqual({ ok: true, value: { deliveryId: 'd1', state: 'QUEUED' } });
+    await flush();
+    expect(events.map((event) => event.state)).toEqual(['FAILED_NOT_ACCEPTED']);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      attempts: 0,
+      lastCode: null,
+      terminal: true,
+    });
+    await outbox.shutdown();
+  });
+
+  test('a cancel whose update return carries an unknown code is E_SDK_UNKNOWN_CODE with the applicable failed state (C-SDK 5.3, C-DLV 4.5)', async () => {
+    const storage = makeStorage();
+    storage.updateResult = (deliveryId, record) =>
+      record.state === 'CANCELLED' ? { code: 'E_SDK_NOT_A_CODE' } : true;
+    const { outbox } = makeHarness({ storage });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(await outbox.cancel({ deliveryId: 'd1' })).toEqual({
+      ok: false,
+      code: 'E_SDK_UNKNOWN_CODE',
+    });
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      lastCode: 'E_SDK_UNKNOWN_CODE',
+      terminal: true,
+    });
+    await outbox.shutdown();
+  });
+
+  test('shutdown drains a port call still in progress and the ordered write chain before the lost writes (C-DLV 4.6 step 4)', async () => {
+    const storage = makeStorage();
+    let releaseUpdate = null;
+    let held = 0;
+    storage.updateResult = (deliveryId, record) => {
+      if (record.state !== 'RELAY_ACCEPTED_AWAITING_RECEIPT' || held > 0) return true;
+      held += 1;
+      return new Promise((resolve) => {
+        releaseUpdate = () => resolve(true);
+      });
+    };
+    const { outbox, relaySet } = makeHarness({
+      storage,
+      delivery: { ...DELIVERY, receiptMode: 'RECIPIENT_RECEIPT' },
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    relaySet.attempts[0].answer(0, 'ACCEPTED');
+    await flush();
+    const stopping = outbox.shutdown();
+    await flush();
+    // The held write of the accepted item is still in progress, so no
+    // LOST_ON_SHUTDOWN record has been written yet.
+    expect(storage.calls.update.map((record) => record.state)).toEqual([
+      'IN_FLIGHT',
+      'RELAY_ACCEPTED_AWAITING_RECEIPT',
+    ]);
+    releaseUpdate();
+    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 1 } });
+    expect(storage.calls.update.map((record) => record.state)).toEqual([
+      'IN_FLIGHT',
+      'RELAY_ACCEPTED_AWAITING_RECEIPT',
+      'LOST_ON_SHUTDOWN',
+    ]);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('LOST_ON_SHUTDOWN');
   });
 });
 

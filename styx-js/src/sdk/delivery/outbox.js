@@ -106,7 +106,21 @@ const RELAY_OUTCOMES = new Set(['PENDING', 'ACCEPTED', 'REJECTED', 'TIMED_OUT', 
 
 const OUTCOME_PENDING = 'PENDING';
 const OUTCOME_ACCEPTED = 'ACCEPTED';
+const OUTCOME_REJECTED = 'REJECTED';
 const OUTCOME_TIMED_OUT = 'TIMED_OUT';
+
+/**
+ * C-DLV section 4.6: an `OK` frame acts on the relay outcomes of its attempt
+ * except once the item is `FAILED_NOT_ACCEPTED`, `CANCELLED` or
+ * `LOST_ON_SHUTDOWN`; an attempt-timeout callback acts on them whatever the
+ * item's state, and only `shutdown()` freezes the outcomes entirely.
+ */
+const ACK_OUTCOMES = new Set([OUTCOME_ACCEPTED, OUTCOME_REJECTED]);
+const ACK_IGNORED_STATES = new Set([
+  STATE_FAILED_NOT_ACCEPTED,
+  STATE_CANCELLED,
+  STATE_LOST_ON_SHUTDOWN,
+]);
 
 /** C-DLV section 6.4: the exact field names of the item record. */
 const RECORD_FIELDS = Object.freeze([
@@ -146,14 +160,12 @@ const SdkResultCode = Object.freeze({
 });
 const RESULT_CODES = new Set(Object.values(SdkResultCode));
 
-/** C-DLV section 4.5: the `lastCode` values, the `null` of exhaustion and deadline included. */
-const LAST_CODES = new Set([
-  null,
-  SdkResultCode.E_SDK_STORAGE_FAILED,
-  SdkResultCode.E_SDK_IDENTITY_FAILED,
-  SdkResultCode.E_SDK_INTERNAL,
-  SdkResultCode.E_SDK_UNKNOWN_CODE,
-]);
+/**
+ * C-DLV section 5.2: a stored `lastCode` is `null` or a result code of C-SDK
+ * section 5.2 — the closed slot of a stored record is wider than the set of
+ * `lastCode` values this module itself assigns.
+ */
+const STORED_LAST_CODES = new Set([null, ...Object.values(SdkResultCode)]);
 
 /** C-SDK section 4.1: the closed receipt-mode set. */
 const RECEIPT_MODES = new Set([RECEIPT_MODE_ACCEPTANCE_ONLY, RECEIPT_MODE_RECIPIENT_RECEIPT]);
@@ -237,7 +249,7 @@ function closedSlotViolation(value, depth = 0) {
     ['code', RESULT_CODES],
     ['state', DELIVERY_STATES],
     ['outcome', RELAY_OUTCOMES],
-    ['lastCode', LAST_CODES],
+    ['lastCode', STORED_LAST_CODES],
     ['receiptMode', RECEIPT_MODES],
   ];
   for (const [name, allowed] of slots) {
@@ -254,7 +266,6 @@ function closedSlotViolation(value, depth = 0) {
     } catch {
       return name;
     }
-    if (name === 'code' && slot === undefined) continue;
     if (!allowed.has(slot)) return name;
   }
   let outcomes;
@@ -502,8 +513,28 @@ export function createOutbox(options) {
   let deliveryCounter = 0;
   let stopped = false;
   let cachedPublicKey = null;
+  let publicKeyCall = null;
+  const inFlightCalls = new Set();
 
   const failure = (code) => Object.freeze({ ok: false, code });
+
+  /**
+   * One bounded port call of this module, registered while it is in progress so
+   * that `shutdown()` step (4) can wait until every port call still in progress
+   * has settled or timed out (C-DLV section 4.6).
+   *
+   * @param {unknown} port
+   * @param {string} name
+   * @param {unknown[]} args
+   * @param {number} timeoutMs
+   * @returns {Promise<object>}
+   */
+  function boundedCall(port, name, args, timeoutMs) {
+    const promise = callPort(port, name, args, timeoutMs);
+    const tracked = promise.finally(() => inFlightCalls.delete(tracked));
+    inFlightCalls.add(tracked);
+    return tracked;
+  }
 
   /* --- guarded reads of the configuration ------------------------------ */
 
@@ -738,6 +769,10 @@ export function createOutbox(options) {
       clearItemTimer(item, 'deadline');
       item.deadlineFired = true;
       if (stopped) return;
+      // C-DLV section 4.2 defers this transition until the item is admitted:
+      // while `put` is pending the callback only latches the expiry, and
+      // `finishAdmission` applies it once `put` succeeded.
+      if (item.admitted !== true) return;
       if (TERMINAL_STATES.has(item.state)) return;
       applyDeadline(item);
     };
@@ -810,7 +845,7 @@ export function createOutbox(options) {
       return;
     }
     const write = async () => {
-      const result = await callPort(read.storage, 'update', [item.deliveryId, record], portCall.value);
+      const result = await boundedCall(read.storage, 'update', [item.deliveryId, record], portCall.value);
       if (result.ok) {
         const violation = closedSlotViolation(result.value);
         if (violation !== null) {
@@ -964,17 +999,25 @@ export function createOutbox(options) {
    */
   async function identityPublicKey() {
     if (cachedPublicKey !== null) return { ok: true, value: cachedPublicKey };
-    const portCall = readPortCallTimeout();
-    if (!portCall.ok) return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
-    const result = await callPort(read.identity, 'getPublicKey', [], portCall.value);
-    if (!result.ok) return { ok: false, code: SdkResultCode.E_SDK_IDENTITY_FAILED };
-    const violation = closedSlotViolation(result.value);
-    if (violation !== null) return { ok: false, code: SdkResultCode.E_SDK_UNKNOWN_CODE };
-    if (!isLowerHexOfLength(result.value, 64)) {
-      return { ok: false, code: SdkResultCode.E_SDK_IDENTITY_FAILED };
-    }
-    cachedPublicKey = result.value;
-    return { ok: true, value: cachedPublicKey };
+    // C-SDK section 8.3: the key is read once for the client's lifetime, so
+    // concurrent first attempts share the one call instead of repeating it.
+    if (publicKeyCall !== null) return publicKeyCall;
+    publicKeyCall = (async () => {
+      const portCall = readPortCallTimeout();
+      if (!portCall.ok) return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
+      const result = await boundedCall(read.identity, 'getPublicKey', [], portCall.value);
+      if (!result.ok) return { ok: false, code: SdkResultCode.E_SDK_IDENTITY_FAILED };
+      const violation = closedSlotViolation(result.value);
+      if (violation !== null) return { ok: false, code: SdkResultCode.E_SDK_UNKNOWN_CODE };
+      if (!isLowerHexOfLength(result.value, 64)) {
+        return { ok: false, code: SdkResultCode.E_SDK_IDENTITY_FAILED };
+      }
+      cachedPublicKey = result.value;
+      return { ok: true, value: cachedPublicKey };
+    })();
+    const result = await publicKeyCall;
+    if (!result.ok) publicKeyCall = null;
+    return result;
   }
 
   /**
@@ -1042,6 +1085,9 @@ export function createOutbox(options) {
       eventId = null;
     }
     if (eventId === null) return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
+    // C-DLV section 6.2: the id is reserved synchronously, before the awaited
+    // signature, so two concurrent builds cannot be assigned the same id.
+    assignedEventIds.add(eventId);
 
     let digest;
     try {
@@ -1049,7 +1095,7 @@ export function createOutbox(options) {
     } catch {
       return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
     }
-    const signed = await callPort(read.identity, 'sign', [{ digest }], portCall.value);
+    const signed = await boundedCall(read.identity, 'sign', [{ digest }], portCall.value);
     if (!signed.ok) return { ok: false, code: SdkResultCode.E_SDK_IDENTITY_FAILED };
     const violation = closedSlotViolation(signed.value);
     if (violation !== null) return { ok: false, code: SdkResultCode.E_SDK_UNKNOWN_CODE };
@@ -1062,7 +1108,6 @@ export function createOutbox(options) {
     } catch {
       return { ok: false, code: SdkResultCode.E_SDK_INTERNAL };
     }
-    assignedEventIds.add(eventId);
     return {
       ok: true,
       value: Object.freeze({
@@ -1135,7 +1180,7 @@ export function createOutbox(options) {
       if (!portCall.ok) return failure(SdkResultCode.E_SDK_INTERNAL);
 
       // Step 3: session.seal, bounded by the port-call timeout.
-      const sealed = await callPort(read.session, 'seal', [{ recipient, plaintext }], portCall.value);
+      const sealed = await boundedCall(read.session, 'seal', [{ recipient, plaintext }], portCall.value);
       if (stopped) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
       if (!sealed.ok) return failure(SdkResultCode.E_SDK_SESSION_FAILED);
       let violation = closedSlotViolation(sealed.value);
@@ -1174,6 +1219,7 @@ export function createOutbox(options) {
         attempt: null,
         lastAttempt: null,
         receipt: null,
+        admitted: false,
         deadlineFired: false,
         cancelInProgress: false,
         cancelPromise: null,
@@ -1189,59 +1235,55 @@ export function createOutbox(options) {
       // Step 5: storage.put with the record of section 6.4.
       deliveryCounter += 1;
       item.deliveryId = `d${deliveryCounter}`;
-      const put = await callPort(read.storage, 'put', [buildRecord(item)], portCall.value);
-      if (stopped) {
-        // A `send` past `put` completes it; an item it admits takes
-        // QUEUED -> LOST_ON_SHUTDOWN at once (C-DLV section 4.6).
-        if (put.ok && put.value === true) {
-          items.set(item.deliveryId, item);
+      const put = await boundedCall(read.storage, 'put', [buildRecord(item)], portCall.value);
+      // C-DLV section 4.2 step 5: a `put` that returned `true` admits the item;
+      // every other return is a failure at step 5 and takes the one `remove`
+      // and the residual-item rule, whatever `shutdown()` did meanwhile ("the
+      // residual-item rule takes precedence over `shutdown()`"). The timers of
+      // step 4 are cleared on every failure at step 5.
+      const unknownCode = put.ok && closedSlotViolation(put.value) !== null;
+      if (put.ok && !unknownCode && put.value === true) {
+        items.set(item.deliveryId, item);
+        item.admitted = true;
+        if (stopped) {
+          // A `send` past `put` completes it; an item it admits takes
+          // QUEUED -> LOST_ON_SHUTDOWN at once (C-DLV section 4.6).
           takeLostOnShutdown(item);
           return Object.freeze({
             ok: true,
             value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
           });
         }
-        return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
+        finishAdmission(item);
+        return Object.freeze({
+          ok: true,
+          value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
+        });
       }
-      if (put.ok) {
-        violation = closedSlotViolation(put.value);
-        if (violation !== null) {
-          clearItemTimers(item);
-          return failure(SdkResultCode.E_SDK_UNKNOWN_CODE);
-        }
-        if (put.value === true) {
-          items.set(item.deliveryId, item);
-          finishAdmission(item);
-          return Object.freeze({
-            ok: true,
-            value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
-          });
-        }
-      }
-      const putCode =
-        put.ok && closedSlotViolation(put.value) !== null
-          ? SdkResultCode.E_SDK_UNKNOWN_CODE
-          : SdkResultCode.E_SDK_STORAGE_FAILED;
+      const putCode = unknownCode
+        ? SdkResultCode.E_SDK_UNKNOWN_CODE
+        : SdkResultCode.E_SDK_STORAGE_FAILED;
 
       // A failed `put`: the SDK calls `remove` once. A `remove` that undoes the
       // failed admission succeeds when it returns `true` or `false`.
-      const removed = await callPort(read.storage, 'remove', [item.deliveryId], portCall.value);
+      const removed = await boundedCall(read.storage, 'remove', [item.deliveryId], portCall.value);
       const cleaned = removed.ok && (removed.value === true || removed.value === false);
       if (!cleaned) {
         // The residual-item rule of C-DLV section 4.2 and C-SDK section 5.2:
         // the item is recorded in the in-memory view directly as
         // FAILED_NOT_ACCEPTED with lastCode E_SDK_STORAGE_FAILED, one terminal
-        // event, and it is never published.
+        // event, never published, and it takes precedence over `shutdown()`.
         clearItemTimers(item);
         item.state = STATE_FAILED_NOT_ACCEPTED;
         item.lastCode = SdkResultCode.E_SDK_STORAGE_FAILED;
         item.ciphertext = null;
         item.event = null;
         items.set(item.deliveryId, item);
+        item.admitted = true;
         emitTransition(item);
-      } else {
-        clearItemTimers(item);
+        return failure(SdkResultCode.E_SDK_STORAGE_FAILED);
       }
+      clearItemTimers(item);
       return failure(putCode);
     } finally {
       releaseAdmission();
@@ -1282,6 +1324,13 @@ export function createOutbox(options) {
     try {
       if (stopped) return;
       if (item.state !== STATE_QUEUED) return;
+      // C-DLV section 4.6: from the `cancel` call on no new attempt of the item
+      // starts, so a retry that falls due while the cancel write is in progress
+      // waits for it instead of starting work.
+      if (item.cancelInProgress) {
+        item.retryDeferred = true;
+        return;
+      }
 
       const maxAttempts = readNumber('maxAttempts');
       if (!maxAttempts.ok) {
@@ -1306,13 +1355,22 @@ export function createOutbox(options) {
         return;
       }
 
+      // C-DLV section 4.3: the attempt starts by moving `QUEUED` -> `IN_FLIGHT`
+      // and incrementing `attempts`; the attempt timeout is armed only when the
+      // attempt starts publishing, after the first signature.
+      item.attempts += 1;
+      if (!recordTransition(item, STATE_IN_FLIGHT, null)) return;
+
       if (item.event === null) {
         const built = await buildMessageEvent(item);
+        // C-DLV section 4.3: if the deadline, `cancel` or `shutdown()` made the
+        // item terminal while signing was in progress, the signing continuation
+        // does nothing further and its signature is discarded. A failed signing
+        // is terminal, and no relay was published to and no attempt timeout was
+        // armed (C-DLV section 4.3), so no relay outcome of this attempt is set.
         if (stopped) return;
-        if (item.state !== STATE_QUEUED) return;
+        if (item.state !== STATE_IN_FLIGHT) return;
         if (!built.ok) {
-          // No relay was published to and no attempt timeout was armed, so no
-          // relay outcome of this attempt is set (C-DLV section 4.3).
           const to = applicableFailedState(item);
           if (to !== null) recordTransition(item, to, built.code);
           return;
@@ -1331,10 +1389,9 @@ export function createOutbox(options) {
           applyDeadline(item);
           return;
         }
+        if (item.state !== STATE_IN_FLIGHT) return;
       }
 
-      item.attempts += 1;
-      if (!recordTransition(item, STATE_IN_FLIGHT, null)) return;
       await publishAttempt(item);
     } catch {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_INTERNAL);
@@ -1475,20 +1532,16 @@ export function createOutbox(options) {
     // The outcome of the latest attempt for a relay is mirrored even after the
     // item became terminal, because a PENDING entry settles at the attempt
     // timeout although the attempt is over (C-DLV section 5.3); an outcome of
-    // any earlier attempt is not. Two limits follow from the documents and are
-    // applied before the mirror: C-DLV section 4.6 step (1) freezes every relay
-    // outcome at the shutdown call, and section 4.5 makes an acknowledgement
-    // that arrives once the item is terminal a no-op, so a terminal item only
-    // ever settles a PENDING entry to TIMED_OUT.
+    // and section 4.6: only shutdown freezes the outcomes entirely, while an
+    // `OK` frame no longer acts once the item is FAILED_NOT_ACCEPTED, CANCELLED
+    // or LOST_ON_SHUTDOWN, and an attempt timeout settles a PENDING entry
+    // whatever the item's state.
     if (attempt !== item.attempt && attempt !== item.lastAttempt) return;
     if (!RELAY_OUTCOMES.has(outcome)) {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_UNKNOWN_CODE);
       return;
     }
-    const mirrorable = stopped
-      ? false
-      : !TERMINAL_STATES.has(item.state)
-        || (outcome === OUTCOME_TIMED_OUT && item.outcomes[relayIndex] === OUTCOME_PENDING);
+    const mirrorable = !stopped && !(ACK_OUTCOMES.has(outcome) && ACK_IGNORED_STATES.has(item.state));
     if (mirrorable && Number.isInteger(relayIndex) && relayIndex >= 0 && relayIndex < item.outcomes.length) {
       item.outcomes[relayIndex] = outcome;
     }
@@ -1618,8 +1671,11 @@ export function createOutbox(options) {
     if (typeof deliveryId !== 'string') return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
     const item = items.get(deliveryId);
     if (item === undefined) return failure(SdkResultCode.E_SDK_UNKNOWN_DELIVERY);
-    if (TERMINAL_STATES.has(item.state)) return failure(SdkResultCode.E_SDK_DELIVERY_TERMINAL);
+    // A `cancel` for an item whose cancel write is still in progress resolves
+    // with that write's result (C-DLV section 4.6), so the outstanding write is
+    // shared before any state the item reached meanwhile is reported.
     if (item.cancelInProgress && item.cancelPromise !== null) return item.cancelPromise;
+    if (TERMINAL_STATES.has(item.state)) return failure(SdkResultCode.E_SDK_DELIVERY_TERMINAL);
 
     const portCall = readPortCallTimeout();
     if (!portCall.ok) return failure(SdkResultCode.E_SDK_INTERNAL);
@@ -1630,7 +1686,7 @@ export function createOutbox(options) {
       // the item's record in state CANCELLED and only then commits, and a
       // retry that falls due while the write is in progress waits for it.
       const written = Object.freeze({ ...buildRecord(item), state: STATE_CANCELLED });
-      const result = await callPort(
+      const result = await boundedCall(
         read.storage,
         'update',
         [item.deliveryId, written],
@@ -1638,12 +1694,22 @@ export function createOutbox(options) {
       );
       item.cancelInProgress = false;
       if (stopped) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      // C-SDK section 5.3 and C-DLV section 4.5: an unknown closed slot in the
+      // port's return takes precedence over the ordinary failure and moves the
+      // item to its applicable failed state.
+      if (result.ok && closedSlotViolation(result.value) !== null) {
+        const to = applicableFailedState(item);
+        if (to !== null) recordTransition(item, to, SdkResultCode.E_SDK_UNKNOWN_CODE);
+        return failure(SdkResultCode.E_SDK_UNKNOWN_CODE);
+      }
       const committed = result.ok && result.value === true;
       if (!committed) {
         // The failed cancel changes nothing. A retry that fell due meanwhile
         // starts at once, unless the deadline rule of section 4.3 applies.
-        item.retryDeferred = false;
-        if (item.state === STATE_QUEUED) startAttempt(item);
+        if (item.retryDeferred === true) {
+          item.retryDeferred = false;
+          if (item.state === STATE_QUEUED) startAttempt(item);
+        }
         return failure(SdkResultCode.E_SDK_STORAGE_FAILED);
       }
       if (TERMINAL_STATES.has(item.state)) {
@@ -1773,7 +1839,7 @@ export function createOutbox(options) {
     try {
       const portCall = readPortCallTimeout();
       if (!portCall.ok) return failure(SdkResultCode.E_SDK_INTERNAL);
-      const listed = await callPort(read.storage, 'list', [], portCall.value);
+      const listed = await boundedCall(read.storage, 'list', [], portCall.value);
       if (!listed.ok) return failure(SdkResultCode.E_SDK_STORAGE_FAILED);
       if (!Array.isArray(listed.value)) return failure(SdkResultCode.E_SDK_STORAGE_FAILED);
       // The closed-slot check runs before the shape check and before the
@@ -1846,15 +1912,20 @@ export function createOutbox(options) {
       // Step (3): deliver the LOST_ON_SHUTDOWN events.
       for (const item of lostItems) emitTransition(item);
 
-      // Step (4): issue the storage writes of the LOST_ON_SHUTDOWN records in
-      // parallel (failures ignored, each bounded by the port-call timeout) and
-      // clear every timer this module armed.
+      // Step (4): wait until every port call still in progress has settled or
+      // timed out, and drain the ordered write chain of every item, before
+      // issuing the LOST_ON_SHUTDOWN records in parallel (failures ignored,
+      // each bounded by the port-call timeout).
+      await Promise.all([...inFlightCalls].map((call) => call.catch(() => undefined)));
+      await Promise.all(
+        [...items.values()].map((item) => Promise.resolve(item.writes).catch(() => undefined)),
+      );
       const portCall = readPortCallTimeout();
       const writes = [];
       if (portCall.ok) {
         for (const item of lostItems) {
           writes.push(
-            callPort(read.storage, 'update', [item.deliveryId, buildRecord(item)], portCall.value),
+            boundedCall(read.storage, 'update', [item.deliveryId, buildRecord(item)], portCall.value),
           );
         }
       }
