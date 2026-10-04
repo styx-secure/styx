@@ -1555,6 +1555,117 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('RELAY_ACCEPTED');
     await outbox.shutdown();
   });
+
+  test('an acknowledgement that arrives once the item is terminal is a no-op (C-DLV 4.1, 4.5)', async () => {
+    const { outbox, relaySet, events } = makeHarness({
+      delivery: { ...DELIVERY, receiptMode: 'RELAY_ACCEPTANCE_ONLY' },
+      relayCount: 2,
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(relaySet.attempts[0].answer(0, 'ACCEPTED')).toBe(true);
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'PENDING' }],
+    });
+    // The seam reports an acknowledgement of the other lane although the item
+    // is terminal: the entry stays PENDING and no event is emitted.
+    relaySet.attempts[0].force(1, 'ACCEPTED');
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'PENDING' }],
+    });
+    expect(events.map((event) => event.state)).toEqual(['IN_FLIGHT', 'RELAY_ACCEPTED']);
+    await outbox.shutdown();
+  });
+
+  test('the attempt timeout still settles a PENDING entry after the item left IN_FLIGHT (C-DLV 4.1, 5.3)', async () => {
+    const { outbox, clock, relaySet, events } = makeHarness({
+      delivery: { ...DELIVERY, receiptMode: 'RELAY_ACCEPTANCE_ONLY' },
+      relayCount: 2,
+    });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    relaySet.attempts[0].answer(0, 'ACCEPTED');
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'PENDING' }],
+    });
+    // The attempt timeout settles the lane that never answered, although the
+    // item is no longer IN_FLIGHT, and emits no further event.
+    await clock.advance(12000);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'RELAY_ACCEPTED',
+      relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }, { relayIndex: 1, outcome: 'TIMED_OUT' }],
+    });
+    expect(events.map((event) => event.state)).toEqual(['IN_FLIGHT', 'RELAY_ACCEPTED']);
+    await outbox.shutdown();
+  });
+
+  test('an event signed at or after the deadline is never published: the deadline transition applies instead (C-DLV 4.4)', async () => {
+    const clock = makeClock();
+    const session = makeSession();
+    // The signature completes at exactly deadlineAt.
+    const identity = makeIdentity({
+      sign() {
+        clock.state.now = 30000;
+        return new Uint8Array(64);
+      },
+    });
+    const { outbox, relaySet, storage } = makeHarness({
+      clockPort: clock.port,
+      session,
+      identity,
+      delivery: { ...DELIVERY, deadlineMs: 30000 },
+    });
+    expect(await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD })).toEqual({
+      ok: true,
+      value: { deliveryId: 'd1', state: 'QUEUED' },
+    });
+    await flush();
+    expect(relaySet.attempts.length).toBe(0);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NOT_ACCEPTED',
+      terminal: true,
+      attempts: 0,
+      lastCode: null,
+    });
+    expect(storage.calls.update.map((record) => record.state)).toEqual(['FAILED_NOT_ACCEPTED']);
+    await outbox.shutdown();
+  });
+
+  test('shutdown waits for every admission in progress before step (2) ends (C-DLV 4.6 step 2)', async () => {
+    const gates = [];
+    const session = makeSession({
+      seal: () => new Promise((resolve) => {
+        gates.push(() => resolve({ ciphertext: new Uint8Array([1, 2, 3]) }));
+      }),
+    });
+    const { outbox, clock, relaySet } = makeHarness({ session: session });
+    const first = outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    const second = outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(gates.length).toBe(2);
+    let resolved = false;
+    const stopping = outbox.shutdown().then((result) => {
+      resolved = true;
+      return result;
+    });
+    await flush();
+    expect(resolved).toBe(false);
+    gates[0]();
+    await flush();
+    expect(resolved).toBe(false);
+    gates[1]();
+    expect(await first).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+    expect(await second).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
+    expect(relaySet.attempts.length).toBe(0);
+    void clock;
+  });
 });
 
 /* ------------------------------------------------------------------------- *

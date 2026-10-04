@@ -106,6 +106,7 @@ const RELAY_OUTCOMES = new Set(['PENDING', 'ACCEPTED', 'REJECTED', 'TIMED_OUT', 
 
 const OUTCOME_PENDING = 'PENDING';
 const OUTCOME_ACCEPTED = 'ACCEPTED';
+const OUTCOME_TIMED_OUT = 'TIMED_OUT';
 
 /** C-DLV section 6.4: the exact field names of the item record. */
 const RECORD_FIELDS = Object.freeze([
@@ -938,6 +939,9 @@ export function createOutbox(options) {
   /** Release one admission reservation. */
   function releaseAdmission() {
     admissionsInProgress -= 1;
+    // C-DLV section 4.6 step (2): the wait is over only when no admission is
+    // still in progress, so a settlement wakes the waiters only at zero.
+    if (admissionsInProgress !== 0) return;
     while (admissionWaiters.length > 0) {
       const waiter = admissionWaiters.shift();
       waiter();
@@ -1314,6 +1318,19 @@ export function createOutbox(options) {
           return;
         }
         item.event = built.value;
+
+        // C-DLV section 4.4: the reading is taken again once the signature
+        // completed, so that an event signed at or after the deadline is never
+        // published and the deadline transition applies instead.
+        reading = callSyncPort(read.clock, 'now');
+        if (!reading.ok || !isValidClockValue(reading.value)) {
+          applyTerminalFromFault(item, SdkResultCode.E_SDK_INTERNAL);
+          return;
+        }
+        if (reading.value >= item.deadlineAt) {
+          applyDeadline(item);
+          return;
+        }
       }
 
       item.attempts += 1;
@@ -1458,13 +1475,21 @@ export function createOutbox(options) {
     // The outcome of the latest attempt for a relay is mirrored even after the
     // item became terminal, because a PENDING entry settles at the attempt
     // timeout although the attempt is over (C-DLV section 5.3); an outcome of
-    // any earlier attempt is not.
+    // any earlier attempt is not. Two limits follow from the documents and are
+    // applied before the mirror: C-DLV section 4.6 step (1) freezes every relay
+    // outcome at the shutdown call, and section 4.5 makes an acknowledgement
+    // that arrives once the item is terminal a no-op, so a terminal item only
+    // ever settles a PENDING entry to TIMED_OUT.
     if (attempt !== item.attempt && attempt !== item.lastAttempt) return;
     if (!RELAY_OUTCOMES.has(outcome)) {
       applyTerminalFromFault(item, SdkResultCode.E_SDK_UNKNOWN_CODE);
       return;
     }
-    if (Number.isInteger(relayIndex) && relayIndex >= 0 && relayIndex < item.outcomes.length) {
+    const mirrorable = stopped
+      ? false
+      : !TERMINAL_STATES.has(item.state)
+        || (outcome === OUTCOME_TIMED_OUT && item.outcomes[relayIndex] === OUTCOME_PENDING);
+    if (mirrorable && Number.isInteger(relayIndex) && relayIndex >= 0 && relayIndex < item.outcomes.length) {
       item.outcomes[relayIndex] = outcome;
     }
     if (outcome !== OUTCOME_ACCEPTED) return;
