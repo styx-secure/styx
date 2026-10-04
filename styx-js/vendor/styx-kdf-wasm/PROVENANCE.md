@@ -44,8 +44,10 @@ MLS state, and an OpenMLS update cannot change this artifact.
 |---|---|
 | Docker image (same as the canonical `openmls-wasm` build) | `rust:1.96.1@sha256:1f0dbad1df66647807e6952d1db85d0b2bda7606cb2139d82517e4f009967376` |
 | wasm-pack | `0.15.0`, release tarball sha256 `c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a` (verified by `build.sh`) |
+| wasm-bindgen-cli | `0.2.126` (must equal the `Cargo.lock` `wasm-bindgen`), release tarball `wasm-bindgen-0.2.126-x86_64-unknown-linux-musl.tar.gz` sha256 `064948d58e2d6c0a745216477a639ba696216d6309aaa902939d1b865b1d869d` (verified by `build.sh`) |
+| binaryen / wasm-opt | `version_117`, release tarball `binaryen-version_117-x86_64-linux.tar.gz` sha256 `3dc677006555b355ea2da5e82602065a161d5e83eaefd3f759afa00b96e83212` (verified by `build.sh`) |
 | Dependency graph | `./Cargo.lock`, `cargo … --locked`, post-build drift guard (`cmp`) |
-| Build command | `./build.sh` (host); inside the container: `wasm-pack build --target web -- --locked` |
+| Build command | `./build.sh` (host); inside the container: `wasm-pack build --mode no-install --target web -- --locked` — wasm-pack uses only the two verified tools and can neither download a tool nor fall back to `cargo install` |
 
 ## Artifact
 
