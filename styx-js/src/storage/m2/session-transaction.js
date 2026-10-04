@@ -529,6 +529,17 @@ function holdFacts(value, name = 'hold') {
   if (!presence || !Object.hasOwn(presence, 'value')) malformed(`${name} must be a plain value`);
   if (presence.value === 0) return Object.freeze({ presence: 0 });
   if (presence.value !== 1) unsupported(`${name} has an invalid presence`);
+  // A conformant port stores the complete C-FMT kind-13 record in the candidate generation; its
+  // authority facts are the same four fields, so the complete record is projected onto them.
+  if (Reflect.ownKeys(value).length === HOLD_RECORD_KEYS.length) {
+    const record = holdRecordFacts(value, name);
+    return Object.freeze({
+      presence: 1,
+      resultStatus: record.resultStatus,
+      parentGeneration: record.parentGeneration,
+      parentKeyedRoot: record.parentKeyedRoot,
+    });
+  }
   const h = strictObject(value, HOLD_KEYS, name);
   const resultStatus = safeInt(h.resultStatus, 255, `${name}.resultStatus`);
   if (resultStatus !== M2_OUTCOME.COMMITTED && resultStatus !== M2_OUTCOME.NOT_COMMITTED
@@ -857,9 +868,17 @@ function resultFor(envelope, candidate, outcome, row) {
 }
 
 // After any fault the stored state must be exactly the complete old or exactly the complete new
-// generation. When the authority did not move, SS retains exactly one immutable hold as internal
-// reconciliation evidence. The module never guesses an outcome from SS memory.
-async function establishRecoveryEvidence(storage, manifestRootKey, envelope, candidate) {
+// generation (C-MUT /crashBoundaries). When the authority did not move, the outcome of the fault is
+// one of exactly two closed states, never an unbound in-memory hold that no path can reconcile:
+// - OLD_PLUS_ONE_IMMUTABLE_HOLD: the candidate is completely staged, so SS writes the one immutable
+//   hold and performs the single selector replacement that binds the retained candidate and sets
+//   RECONCILIATION_REQUIRED (C-FMT §6/§7, the INDETERMINATE plan), which reconciliation then resolves;
+// - COMPLETE_OLD with no hold: the request is terminal NOT_COMMITTED (which retains no hold or escrow,
+//   C-MUT §5), or the candidate is not completely staged and so can never be bound (C-FMT partial
+//   generation rejects); the unbound candidate is discarded best-effort.
+// Every write here is best-effort: the caller rethrows the original fault and storage is re-read.
+// The module never guesses an outcome from SS memory and never reports a result.
+async function establishRecoveryEvidence(storage, manifestRootKey, envelope, candidate, outcome, row) {
   let classification;
   try {
     classification = await classifyAuthority({
@@ -871,15 +890,72 @@ async function establishRecoveryEvidence(storage, manifestRootKey, envelope, can
   } catch {
     return; // A mixture: leave the bytes untouched; the caller re-reads and fails closed.
   }
-  if (classification.authority === 'COMPLETE_NEW') return;
+  if (classification.authority !== 'COMPLETE_OLD' || classification.held) return;
+
+  const discard = async () => {
+    try {
+      await storage.apply(freezeDeep({
+        index: -1, boundary: 'DURING_RS_WORK', kind: 'CLEAR_CANDIDATE', payload: { generation: candidate.generation },
+      }));
+    } catch { /* best-effort: an unbound candidate is never authority */ }
+  };
+  if (outcome === M2_OUTCOME.NOT_COMMITTED) { await discard(); return; }
+
+  const hold = buildHold(envelope, candidate);
+  let bindable = false;
   try {
+    const parent = generationFactsFromStorage(
+      await storage.readGeneration(candidate.parentGeneration), candidate.parentGeneration, manifestRootKey,
+    );
+    const staged = generationFactsFromStorage(
+      await storage.readGeneration(candidate.generation), candidate.generation, manifestRootKey,
+    );
+    const complete = staged.resultEvidence !== null
+      && (row.outputKind === 'NONE' || staged.escrow !== null)
+      && equal(staged.keyedRoot, candidate.keyedRoot)
+      && equal(staged.manifestCipherDigest, candidate.manifestCipherDigest)
+      && equal(parent.keyedRoot, candidate.parentKeyedRoot);
+    if (complete) {
+      // The bind is checked as a pure decision before any byte is written: the hold selector the
+      // candidate supplies must validate against the stored parent and the candidate-with-hold.
+      validateAuthority({
+        selector: candidate.holdSelectorBytes,
+        manifestRootKey,
+        selected: authorityTuple(parent),
+        candidate: authorityTuple({ ...staged, mutationHold: holdFacts(hold) }),
+      });
+      const held = selectorFacts(candidate.holdSelectorBytes);
+      bindable = held.state === SELECTOR_STATE.RECONCILIATION_REQUIRED
+        && held.generation === candidate.parentGeneration
+        && held.candidateGeneration === candidate.generation;
+    }
+  } catch {
+    bindable = false;
+  }
+  if (!bindable) { await discard(); return; }
+
+  try {
+    // The one immutable hold for this envelope: rewriting it is idempotent (same bytes), and it makes
+    // the candidate generation's MUTATION_HOLD present before the selector binds it.
+    await storage.apply(freezeDeep({
+      index: -1, boundary: 'DURING_RS_WORK', kind: 'WRITE_HOLD', payload: { generation: candidate.generation, hold },
+    }));
     await storage.apply(freezeDeep({
       index: -1,
       boundary: 'AFTER_INDETERMINATE',
-      kind: 'WRITE_HOLD',
-      payload: { generation: candidate.generation, hold: buildHold(envelope, candidate) },
+      kind: 'REPLACE_SELECTOR',
+      payload: { selectorBytes: candidate.holdSelectorBytes, resolveHoldGeneration: null },
     }));
-  } catch { /* the hold is best-effort here; the caller re-reads storage and fails closed */ }
+  } catch {
+    // The bind did not land. If the selector still names the old authority with no bound candidate,
+    // the hold is not reconcilable: drop it with the unbound candidate rather than wedge the profile.
+    try {
+      const after = await classifyAuthority({
+        storage, manifestRootKey, oldGeneration: candidate.parentGeneration, newGeneration: candidate.generation,
+      });
+      if (after.authority === 'COMPLETE_OLD' && !after.held) await discard();
+    } catch { /* a mixture: leave the bytes untouched */ }
+  }
 }
 
 /**
@@ -955,7 +1031,7 @@ export async function runMutation(input) {
       await storage.apply(step);
     }
   } catch (cause) {
-    await establishRecoveryEvidence(storage, manifestRootKey, envelope, candidate);
+    await establishRecoveryEvidence(storage, manifestRootKey, envelope, candidate, outcome, row);
     throw cause;
   }
   return resultFor(envelope, candidate, outcome, row);
@@ -999,7 +1075,18 @@ function generationFactsFromStorage(value, generation, manifestRootKey) {
       ? null : bytes(value.sessionBindingDigest, 32, 'stored sessionBindingDigest'),
     escrow: value.escrow === null || value.escrow === undefined ? null : value.escrow,
     resultEvidence: value.resultEvidence === null || value.resultEvidence === undefined ? null : value.resultEvidence,
+    // The complete kind-13 record when the port stores it (C-FMT /recordKinds[13]); otherwise null.
+    holdRecord: durableHoldRecord(value.mutationHold),
   };
+}
+
+// The complete C-FMT kind-13 MUTATION_HOLD record a stored generation carries, or null when the port
+// stores only the four authority facts or a tombstone. A malformed complete record fails closed.
+function durableHoldRecord(value) {
+  if (value === null || value === undefined || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (Reflect.ownKeys(value).length !== HOLD_RECORD_KEYS.length) return null;
+  const record = holdRecordFacts(value, 'stored mutationHold');
+  return record !== null && record.presence === 1 ? record : null;
 }
 
 function authorityTuple(facts) {
@@ -1087,6 +1174,88 @@ function sameTupleSelector(facts, state) {
   };
 }
 
+// After SS memory loss: the held envelope is the complete kind-13 record stored in the candidate
+// generation a RECONCILIATION_REQUIRED selector binds. The selected and candidate generations must
+// validate as one consistent authority (C-FMT §6) and the record must be the unresolved INDETERMINATE
+// hold whose parent is the selector's physical authority. Anything else yields null (fail closed).
+async function durableHeldEnvelope(storage, manifestRootKey, selectorBytes) {
+  const selector = selectorFacts(selectorBytes);
+  if (selector.candidateGeneration === selector.generation) return null;
+  const selected = generationFactsFromStorage(
+    await storage.readGeneration(selector.generation), selector.generation, manifestRootKey,
+  );
+  const candidate = generationFactsFromStorage(
+    await storage.readGeneration(selector.candidateGeneration), selector.candidateGeneration, manifestRootKey,
+  );
+  try {
+    validateAuthority({
+      selector: selectorBytes, manifestRootKey, selected: authorityTuple(selected), candidate: authorityTuple(candidate),
+    });
+  } catch (e) {
+    partial(`the stored selector is not consistent with the generations it binds: ${e.message}`);
+  }
+  const record = candidate.holdRecord;
+  if (record === null || record.resultStatus !== M2_OUTCOME.INDETERMINATE
+    || record.parentGeneration !== selector.generation || !equal(record.parentKeyedRoot, selector.keyedRoot)) {
+    return null;
+  }
+  return record;
+}
+
+// CAPI-S020/S022 repeat: the committed candidate is already the authority and only the local emission
+// call is outstanding. The stored generation must be the held mutation's committed candidate, proven
+// by its own stored result evidence; only RELEASE_ESCROW is applied, with the same escrow bytes.
+async function repeatCommittedEmission(storage, manifestRootKey, held, evidence, selector, envelope, row) {
+  const notPending = () => fail(CODE.NO_RECONCILIATION_PENDING,
+    'the stored selector does not bind an unresolved candidate to the held parent generation; the '
+    + 'hold is not reconcilable from this stored state');
+  const storedSelector = await storage.readSelector();
+  const selected = generationFactsFromStorage(
+    await storage.readGeneration(selector.generation), selector.generation, manifestRootKey,
+  );
+  try {
+    validateAuthority({ selector: storedSelector, manifestRootKey, selected: authorityTuple(selected), candidate: null });
+  } catch (e) {
+    partial(`the stored selector is not consistent with the generation it names: ${e.message}`);
+  }
+  if (selected.mutationHold !== null && selected.mutationHold.presence !== 0) notPending();
+  let stored;
+  try { stored = evidenceFacts(selected.resultEvidence, 'stored result evidence'); } catch { notPending(); }
+  const pairs = [
+    ['operationIdentity', 'operationIdentity'], ['originalAuthorityDigest', 'originalAuthorityDigest'],
+    ['originalAuthorityReference', 'originalAuthorityReference'], ['candidateDigest', 'candidateDigest'],
+    ['candidateReference', 'candidateReference'], ['mutationSetDigest', 'componentSetDigest'],
+    ['mutationSetReference', 'componentSetReference'], ['bindingRef', 'bindingRef'], ['profile', 'profileDigest'],
+  ];
+  for (const [e, h] of pairs) if (!equal(stored[e], held[h])) notPending();
+  if (evidence.outcome !== M2_OUTCOME.COMMITTED) {
+    fail(CODE.EVIDENCE_MISMATCH,
+      'the held mutation is already the committed authority; non-COMMITTED evidence contradicts it and '
+      + 'the hold is left unchanged');
+  }
+  const escrow = selected.escrow === null || selected.escrow === undefined ? null : selected.escrow;
+  if (row.outputKind !== 'NONE' && escrow === null) notPending();
+  const steps = mutationSteps({
+    envelope,
+    candidate: {
+      generation: selector.generation, parentGeneration: held.parentGeneration, records: [],
+      manifestKey: null, manifestBytes: null, manifestCipherDigest: null, selectorBytes: storedSelector,
+      holdSelectorBytes: null, parentSelectorBytes: null, resultEvidence: null, escrow,
+      keyedRoot: null, sessionBindingDigest: null, mutationHold: null,
+    },
+    outcome: M2_OUTCOME.COMMITTED, phase: 'RECONCILIATION',
+  });
+  for (const step of steps) {
+    if (step.kind !== 'RELEASE_ESCROW') continue; // the selection already happened exactly once
+    await storage.apply(step);
+  }
+  return freezeDeep({
+    reconciliation: 'RECONCILED_COMMITTED', resultKind: 'SUCCESS',
+    state: row.stateAfterCommitted, authority: 'COMPLETE_NEW',
+    output: escrow === null ? null : escrow.output, holds: 0,
+  });
+}
+
 /**
  * Reconcile one unresolved hold from authenticated evidence. The module selects an already-staged
  * candidate once, never replays the transition, never regenerates a security-sensitive byte, and
@@ -1098,19 +1267,29 @@ export async function reconcileIndeterminate(input) {
   const storage = storagePort(s.storage);
   const manifestRootKey = bytes(s.manifestRootKey, 32, 'manifestRootKey');
   const reference = nonzero(s.reference, 'reference');
-  const held = holdRecordFacts(await storage.readMemoryHold());
+  let held = holdRecordFacts(await storage.readMemoryHold());
+  let durableHold = false;
   if (held === null) {
-    // Without a hold only the durable selector can say whether anything is pending.
+    // Without a memory hold only the durable selector can say whether anything is pending. After an
+    // SS memory loss the held envelope is the complete kind-13 record stored in the candidate
+    // generation the RECONCILIATION_REQUIRED selector binds (C-FMT §6, /recordKinds[13]); authenticated
+    // RS evidence then terminally classifies the profile (C-MUT §8). A port that does not persist the
+    // complete record cannot be reconciled from here and fails closed.
     const durable = await storage.readSelector();
     if (durable !== null && durable !== undefined
       && selectorFacts(durable).state === SELECTOR_STATE.RECONCILIATION_REQUIRED) {
-      fail(CODE.HOLD_UNAVAILABLE,
-        'the stored selector is in RECONCILIATION_REQUIRED although no hold is available to this '
-        + 'profile; the unresolved mutation cannot be reconciled from here');
+      held = await durableHeldEnvelope(storage, manifestRootKey, durable);
+      if (held === null) {
+        fail(CODE.HOLD_UNAVAILABLE,
+          'the stored selector is in RECONCILIATION_REQUIRED although no hold is available to this '
+          + 'profile; the unresolved mutation cannot be reconciled from here');
+      }
+      durableHold = true;
+    } else {
+      fail(CODE.NO_RECONCILIATION_PENDING, 'no reconciliation is pending for this profile');
     }
-    fail(CODE.NO_RECONCILIATION_PENDING, 'no reconciliation is pending for this profile');
   }
-  const supplied = holdRecordFacts(s.hold);
+  const supplied = durableHold && (s.hold === null || s.hold === undefined) ? held : holdRecordFacts(s.hold);
   if (supplied === null || supplied.presence !== 1) malformed('the supplied hold must be present');
   if (!equal(supplied.reconciliationReference, reference)) {
     fail(CODE.REFERENCE_MISMATCH, 'the supplied reconciliation reference is not the held reference');
@@ -1159,6 +1338,17 @@ export async function reconcileIndeterminate(input) {
     partial('no stored selector exists although one hold is pending');
   }
   const selector = selectorFacts(storedSelector);
+  // CAPI-S020/S022 repeat after an interrupted local emission (C-MUT §5/§6, /crashBoundaries
+  // DURING_ESCROW_OUTPUT_RESPONSE POST_INDETERMINATE): the selector already names the committed
+  // candidate as authority, but the hold is still retained because the local emission call did not
+  // return success. Matching COMMITTED evidence repeats only that emission with the same escrow bytes;
+  // nothing is re-selected, re-staged or regenerated.
+  if (!durableHold
+    && selector.state !== SELECTOR_STATE.RECONCILIATION_REQUIRED
+    && selector.candidateGeneration === selector.generation
+    && selector.generation !== held.parentGeneration) {
+    return repeatCommittedEmission(storage, manifestRootKey, held, evidence, selector, reconciliationEnvelope, row);
+  }
   // The generation this reconciliation may clear or select is the candidate the STORED hold selector
   // binds, never whatever candidateGeneration some other selector state happens to carry. A selector
   // that names its own generation as candidate, or that is not in RECONCILIATION_REQUIRED, is not a

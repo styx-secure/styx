@@ -338,14 +338,8 @@ function makeStore() {
       if (g !== undefined) g.escrow = payload.escrow;
     } else if (step.kind === 'WRITE_HOLD') {
       const g = store.generations.get(payload.generation);
-      if (g !== undefined) {
-        g.mutationHold = {
-          presence: 1,
-          resultStatus: payload.hold.resultStatus,
-          parentGeneration: payload.hold.parentGeneration,
-          parentKeyedRoot: payload.hold.parentKeyedRoot,
-        };
-      }
+      // A conformant port stores the complete C-FMT kind-13 record in the candidate generation.
+      if (g !== undefined) g.mutationHold = { ...payload.hold };
       store.memoryHold = payload.hold;
     } else if (step.kind === 'CLEAR_CANDIDATE') {
       store.generations.delete(payload.generation);
@@ -966,7 +960,7 @@ describe('acceptance sweep over every plan step', () => {
         expect(durable.length).toBeGreaterThan(0);
         for (const step of durable) {
           for (const mode of ['BEFORE', 'AFTER']) {
-            const { store, result, error } = await runCase(scenario, outcome, {}, {
+            const { store, result, error, envelope } = await runCase(scenario, outcome, {}, {
               faults: [{ boundary: step.boundary, kind: step.kind, mode, remaining: 1 }],
             });
             SWEEP.cases += 1;
@@ -986,10 +980,28 @@ describe('acceptance sweep over every plan step', () => {
             expect(classification.generation).toBe(named);
 
             if (classification.authority === 'COMPLETE_OLD') {
-              // SS retains exactly one immutable hold as internal reconciliation evidence.
-              expect(store.memoryHold).not.toBeNull();
-              expect(store.memoryHold.presence).toBe(1);
-              expect(store.memoryHold.resultStatus).toBe(M2_OUTCOME.INDETERMINATE);
+              // C-MUT /crashBoundaries: exactly COMPLETE_OLD with no hold, or OLD_PLUS_ONE_IMMUTABLE_HOLD
+              // bound durably by a RECONCILIATION_REQUIRED selector. Never an unbound memory-only hold.
+              if (classification.held) {
+                expect(hex(store.selector)).toBe(hex(HOLD_SELECTOR));
+                expect(store.memoryHold).not.toBeNull();
+                expect(store.memoryHold.resultStatus).toBe(M2_OUTCOME.INDETERMINATE);
+                // After an SS restart (memory lost) the durable hold alone is reconcilable.
+                store.memoryHold = null;
+                const evidence = evidenceFor(envelope, M2_OUTCOME.NOT_COMMITTED, { terminal: true });
+                const r = await reconcileIndeterminate({
+                  storage: store, manifestRootKey: ROOT_KEY, hold: null, evidence,
+                  reference: holdRecordFor(scenario).reconciliationReference,
+                });
+                expect(r.reconciliation).toBe('NOT_COMMITTED');
+                expect(store.memoryHold).toBeNull();
+                const after = await classify(store);
+                expect(after.authority).toBe('COMPLETE_OLD');
+                expect(after.held).toBe(false);
+              } else {
+                expect(hex(store.selector)).toBe(hex(PARENT_SELECTOR));
+                expect(store.memoryHold).toBeNull();
+              }
             } else {
               // A complete new authority is selected: the committed evidence is present.
               const generation = await store.readGeneration(NEW_GENERATION);
