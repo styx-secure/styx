@@ -868,6 +868,28 @@ describe('I-UPD fail-closed request validation', () => {
     expect(code(gated)).toBe('RECONCILIATION_REQUIRED');
   });
 
+  test('the identity bound leaves the I-MSG operations unchanged (contract R2 step 5, final review)', () => {
+    // R2 scopes the P06 identity bound to CREATE, JOIN_WELCOME and SELF_UPDATE. A PROTECT_APPLICATION
+    // whose RS identity is one character past it keeps its integrated tri-state answer and its hold.
+    const longIdentity = 'i'.repeat(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS + 1);
+    const protect = (commitOutcome) => invokeAdapterTransition({
+      request: request('PROTECT_APPLICATION', { applicationBytes: bytes(0x01) }),
+      snapshot: active(),
+      observation: {
+        commitOutcome, operationIdentity: longIdentity,
+        stagedOutput: { protectedApplicationBytes: bytes(0x02) },
+      },
+    });
+    const committed = protect('COMMITTED');
+    expect(committed.result.kind).toBe('SUCCESS');
+    expect(committed.result.successCode).toBe('APPLICATION_PROTECTED');
+    expect(protect('NOT_COMMITTED').result.kind).toBe('NOT_COMMITTED');
+    const held = protect('INDETERMINATE');
+    expect(held.result.kind).toBe('INDETERMINATE');
+    expect(held.snapshot.state).toBe('RECONCILIATION_REQUIRED');
+    expect(held.result.reconciliationRef).toBe(`I-SM-HOLD:${longIdentity}`);
+  });
+
   test('no accessor of any injected record is ever invoked', () => {
     const reads = { count: 0 };
     const result = invokeAdapter({

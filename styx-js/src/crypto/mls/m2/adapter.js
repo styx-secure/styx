@@ -357,6 +357,13 @@ const OBSERVATION_KEYS = Object.freeze({
 const BINDING_CONTEXT_BYTES = 32;
 const SLOT_BOUND_OPERATIONS = Object.freeze(['SELF_UPDATE', 'RECONCILE_INDETERMINATE']);
 
+/**
+ * The operations whose observed RS `operationIdentity` is bounded at P06 by
+ * `MAX_OPERATION_IDENTITY_CHARS` (contract R2 step 5, C-API `CAPI-E014`, C-MUT §3). The I-MSG operations
+ * are not in this set: R2 keeps their integrated behaviour unchanged.
+ */
+const IDENTITY_BOUND_OPERATIONS = Object.freeze(['CREATE', 'JOIN_WELCOME', 'SELF_UPDATE']);
+
 /** The two closed `responseEmission` values of the merged I-SM reconciliation rows. */
 const RESPONSE_EMISSIONS = Object.freeze(['SUCCEEDED', 'INTERRUPTED']);
 
@@ -1701,7 +1708,10 @@ function run(input) {
   const bounds = [
     ...requestBoundCodes(checked.values, decodedInput), ...(observed.bounds ?? []), ...(observed.extraCodes ?? []),
   ];
-  const identityOverBound = typeof observed.operationIdentity === 'string'
+  // Contract R2 step 5 scopes this bound to `CREATE`, `JOIN_WELCOME` and `SELF_UPDATE`; the I-MSG
+  // operations keep their integrated behaviour unchanged (final review, confirmed on AI395).
+  const identityOverBound = IDENTITY_BOUND_OPERATIONS.includes(operation)
+    && typeof observed.operationIdentity === 'string'
     && observed.operationIdentity.length > BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
 
   if (operation === 'RESTORE') {
