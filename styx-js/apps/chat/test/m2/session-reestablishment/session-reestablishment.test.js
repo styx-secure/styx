@@ -540,13 +540,21 @@ describe('visible consent is required', () => {
       expect(hex(m)).toBe(before);
     });
     test(`CREATE_SESSION refuses ${name} with CONSENT_REQUIRED and never reaches the adapter`, () => {
-      // The operation input is instrumented: reaching the adapter would read its members.
+      // The operation input is a Proxy that counts every inspection, traps included: the passive copy
+      // and the merged adapter both inspect it, so reaching either before the consent gate would count
+      // (r3 GPT-6.1 Sol M3: plain getters are never invoked by either, so they cannot show this).
       let operationReads = 0;
-      const op = createOp();
-      const watched = {};
-      for (const key of Object.keys(op)) {
-        Object.defineProperty(watched, key, { enumerable: true, get() { operationReads += 1; return op[key]; } });
-      }
+      const count = (fn) => (...args) => {
+        operationReads += 1;
+        return fn(...args);
+      };
+      const watched = new Proxy(createOp(), {
+        get: count(Reflect.get),
+        getPrototypeOf: count(Reflect.getPrototypeOf),
+        ownKeys: count(Reflect.ownKeys),
+        getOwnPropertyDescriptor: count(Reflect.getOwnPropertyDescriptor),
+        has: count(Reflect.has),
+      });
       const d = createNewSession({ lockHeld: true, marker: marker(PENDING), consent, operation: watched });
       expect([d.disposition, d.reject, d.firstFailingPhase]).toEqual(['REJECT', 'CONSENT_REQUIRED', 'CONSENT_GATE']);
       expect(d.adapterResult).toBeNull();
@@ -590,6 +598,44 @@ describe('the one-writer lock', () => {
     })).disposition).toBe('LOCK_RETRY');
     expect(reads).toBe(0);
   });
+
+  const inputs = {
+    START: () => ({ marker: marker(ABSENT), consent: CONSENT(), restore: restore('LEGACY_ONLY'), startToken: START_TOKEN }),
+    CANCEL: () => ({ marker: marker(PENDING), restore: restore('LEGACY_ONLY') }),
+    CREATE_SESSION: () => ({ marker: marker(PENDING), consent: CONSENT(), operation: createOp() }),
+    CONFIRM: () => ({ marker: marker(PENDING), createResult: committedCreate(), authorityToken: START_TOKEN, restore: restore('RESTORED_ACTIVE') }),
+    COMPLETE: () => ({ marker: marker(CONFIRMED), restore: restore('RESTORED_ACTIVE') }),
+  };
+  const fns = {
+    START: startReestablishment, CANCEL: cancelReestablishment, CREATE_SESSION: createNewSession,
+    CONFIRM: confirmReestablishment, COMPLETE: completeReestablishment,
+  };
+  for (const step of Object.keys(inputs)) {
+    test(`${step}: a lock flag that reads true and then false is LOCK_RETRY, never accepted`, () => {
+      // r3 GPT-6.1 Sol H3: the flag flips between the lock gate and the closed read; the closed copy decides.
+      const real = { lockHeld: true, ...inputs[step]() };
+      const reads = [];
+      const flipping = new Proxy(real, {
+        ownKeys(target) {
+          target.lockHeld = false;
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, key) {
+          const d = Reflect.getOwnPropertyDescriptor(target, key);
+          if (key === 'lockHeld') reads.push(d.value);
+          return d;
+        },
+      });
+      const d = fns[step](flipping);
+      expect(reads).toEqual([true, false]);
+      expect([d.step, d.disposition, d.reject, d.firstFailingPhase, d.accepted])
+        .toEqual([step, 'LOCK_RETRY', 'LOCKED_ELSEWHERE', 'LOCK', false]);
+      expect([d.stateBefore, d.stateAfter, d.legacyEligible, d.marker, d.adapterResult, d.committed])
+        .toEqual([null, null, null, null, null, null]);
+      // Control: the same input with a stable true flag is accepted.
+      expect(fns[step]({ lockHeld: true, ...inputs[step]() }).accepted).toBe(true);
+    });
+  }
 
   test('a non-boolean lockHeld is INVALID_INPUT', () => {
     for (const lockHeld of [undefined, 1, 'true', null]) {

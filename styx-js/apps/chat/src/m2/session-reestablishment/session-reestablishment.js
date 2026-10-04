@@ -641,6 +641,7 @@ export function legacyActionDecision(input) {
 export function startReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('START');
   const v = readClosed(input, ['lockHeld', 'marker', 'consent', 'restore', 'startToken']);
+  if (v.lockHeld !== true) return lockRetry('START');
   const marker = markerOf(v.marker);
   const startToken = snapshotBytes(v.startToken);
   if (startToken === null || startToken.length !== MARKER.BINDING_TOKEN_BYTES || startToken.every((b) => b === 0)) {
@@ -657,6 +658,7 @@ export function startReestablishment(input) {
 export function cancelReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('CANCEL');
   const v = readClosed(input, ['lockHeld', 'marker', 'restore']);
+  if (v.lockHeld !== true) return lockRetry('CANCEL');
   const marker = markerOf(v.marker);
   const evidence = restoreEvidence(v.restore);
   const refused = restoreGate('CANCEL', marker, evidence, 'RESTORE_PRECONDITION_FAILED');
@@ -673,6 +675,7 @@ export function cancelReestablishment(input) {
 export function createNewSession(input) {
   if (!lockHeldOf(input)) return lockRetry('CREATE_SESSION');
   const v = readClosed(input, ['lockHeld', 'marker', 'consent', 'operation']);
+  if (v.lockHeld !== true) return lockRetry('CREATE_SESSION');
   const marker = markerOf(v.marker);
   if (!consentGiven(v.consent)) return gateReject('CREATE_SESSION', marker, 'CONSENT_REQUIRED', 'CONSENT_GATE');
   if (marker.state !== PENDING) return gateReject('CREATE_SESSION', marker, 'MARKER_NOT_PENDING', 'MARKER_GATE');
@@ -760,6 +763,7 @@ function isCommittedSession(result) {
 export function confirmReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('CONFIRM');
   const v = readClosed(input, ['lockHeld', 'marker', 'createResult', 'authorityToken', 'restore']);
+  if (v.lockHeld !== true) return lockRetry('CONFIRM');
   const marker = markerOf(v.marker);
   const evidence = restoreEvidence(v.restore);
   const refused = restoreGate('CONFIRM', marker, evidence, 'CONFIRMATION_PRECONDITION_FAILED');
@@ -776,6 +780,7 @@ export function confirmReestablishment(input) {
 export function completeReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('COMPLETE');
   const v = readClosed(input, ['lockHeld', 'marker', 'restore']);
+  if (v.lockHeld !== true) return lockRetry('COMPLETE');
   const marker = markerOf(v.marker);
   const evidence = restoreEvidence(v.restore);
   const refused = restoreGate('COMPLETE', marker, evidence, 'RESTORE_PRECONDITION_FAILED');
