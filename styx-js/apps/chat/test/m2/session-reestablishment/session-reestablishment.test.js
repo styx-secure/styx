@@ -163,6 +163,8 @@ const ending = (fn) => {
   }
 };
 const hex = (b) => Buffer.from(b).toString('hex');
+const STEP_RECORD_KEYS = ['step', 'disposition', 'accepted', 'stateBefore', 'stateAfter', 'legacyEligible', 'reject',
+  'firstFailingPhase', 'committed', 'adapterResult', 'marker', 'diagnostics'].join(',');
 
 /** Replay one C-REC `MARKER` fixture through the public step function its event belongs to. */
 function replayMarkerFixture(row) {
@@ -337,6 +339,19 @@ describe('C-REC SHOW_REESTABLISHMENT / SHOW_CREATE dispatch rows', () => {
     const accessor = { get result() { read += 1; return 'LEGACY_ONLY'; }, legacyPresent: true };
     expect(guidanceFor(accessor).reject).toBe('MISSING_DISPATCH_INPUT');
     expect(read).toBe(0);
+    // The input is exactly { result, legacyPresent }: an extra or symbol member, or another prototype,
+    // rejects closed and never reaches an owned row (r1 GPT-6.1 Sol M2, Muse N1).
+    const closedInputs = [
+      { result: 'LEGACY_ONLY', legacyPresent: true, extra: 1 },
+      { result: 'LEGACY_ONLY', legacyPresent: true, [Symbol('s')]: 1 },
+      Object.assign(Object.create(null), { result: 'LEGACY_ONLY', legacyPresent: true }),
+      Object.defineProperty({ result: 'LEGACY_ONLY', legacyPresent: true }, 'other', { get() { read += 1; return 1; }, enumerable: false }),
+    ];
+    for (const [i, input] of closedInputs.entries()) {
+      const g = guidanceFor(input);
+      expect(`${i}:${g.disposition}:${g.reject}:${g.copy}`).toBe(`${i}:REJECT:MISSING_DISPATCH_INPUT:null`);
+    }
+    expect(read).toBe(0);
   });
 
   test('the guidance diagnostics carry only the six allowlisted value-free fields', () => {
@@ -497,9 +512,17 @@ describe('visible consent is required', () => {
       expect(hex(m)).toBe(before);
     });
     test(`CREATE_SESSION refuses ${name} with CONSENT_REQUIRED and never reaches the adapter`, () => {
-      const d = createNewSession({ lockHeld: true, marker: marker(PENDING), consent, operation: createOp() });
+      // The operation input is instrumented: reaching the adapter would read its members.
+      let operationReads = 0;
+      const op = createOp();
+      const watched = {};
+      for (const key of Object.keys(op)) {
+        Object.defineProperty(watched, key, { enumerable: true, get() { operationReads += 1; return op[key]; } });
+      }
+      const d = createNewSession({ lockHeld: true, marker: marker(PENDING), consent, operation: watched });
       expect([d.disposition, d.reject, d.firstFailingPhase]).toEqual(['REJECT', 'CONSENT_REQUIRED', 'CONSENT_GATE']);
       expect(d.adapterResult).toBeNull();
+      expect(operationReads).toBe(0);
     });
   }
 
@@ -593,6 +616,41 @@ describe('confirmation requires a distinct COMMITTED post-start authority later 
     expect(confirm({ createResult: good }).accepted).toBe(true);
   });
 
+  test('the creation result must be the complete closed C-API record, not only its four deciding members', () => {
+    const good = committedCreate();
+    const without = (key) => {
+      const copy = { ...good };
+      delete copy[key];
+      return copy;
+    };
+    const forged = [
+      // r1 GPT-6.1 Sol H1: the four deciding members alone, with no adapter call behind them.
+      { operation: 'CREATE', kind: 'SUCCESS', successCode: 'CREATED', commitOutcome: 'COMMITTED' },
+      ...['api', 'requestId', 'operation', 'kind', 'stateBefore', 'stateAfter', 'successCode', 'commitOutcome', 'output']
+        .map(without),
+      { ...good, extra: 1 },
+      Object.assign({ ...good }, { [Symbol('s')]: 1 }),
+      Object.defineProperty({ ...good }, 'api', { get() { return M2_ADAPTER.API; }, enumerable: true }),
+      { ...good, api: 'styx-m2-session-adapter/v0' },
+      { ...good, requestId: '' },
+      { ...good, requestId: 7 },
+      { ...good, stateBefore: 'ACTIVE' },
+      { ...good, stateAfter: 'EMPTY' },
+      { ...good, stateAfter: 'RECONCILIATION_REQUIRED' },
+      { ...good, output: {} },
+      { ...good, output: { embeddedTreeWelcome: new Uint8Array(0) } },
+      { ...good, output: { embeddedTreeWelcome: [1, 2] } },
+      { ...good, output: { embeddedTreeWelcome: new Uint8Array([1]), extra: 1 } },
+      { ...good, operation: 'JOIN_WELCOME', successCode: 'JOINED' },
+      Object.setPrototypeOf({ ...good }, null),
+    ];
+    for (const [i, createResult] of forged.entries()) {
+      const d = confirm({ createResult });
+      expect(`${i}:${d.reject}:${d.stateAfter}`).toBe(`${i}:CONFIRMATION_PRECONDITION_FAILED:${PENDING}`);
+    }
+    expect(confirm({ createResult: { ...good } }).accepted).toBe(true);
+  });
+
   test('the binding is checked before the restore precondition, which is checked before committed', () => {
     expect(confirm({ authorityToken: token(77), restore: restore('RESTORED_EMPTY'), createResult: null }).reject).toBe('TOKEN_MISMATCH');
     expect(confirm({ restore: restore('RESTORED_EMPTY'), createResult: null }).reject).toBe('CONFIRMATION_PRECONDITION_FAILED');
@@ -639,6 +697,55 @@ describe('restore evidence is double-checked', () => {
   test('a non-RESTORE adapter input is INVALID_INPUT', () => {
     expect(ending(() => completeReestablishment({ lockHeld: true, marker: marker(CONFIRMED), restore: createOp() })))
       .toBe('M2ReestablishmentError:INVALID_INPUT');
+  });
+
+  test('no caller code runs while the restore evidence is read, so the two readers cannot be split', () => {
+    // r1 GPT-6.1 Sol H2: an accessor fault that empties the array after its first read.
+    let getterCalls = 0;
+    const faults = [];
+    Object.defineProperty(faults, '0', {
+      enumerable: true, configurable: true,
+      get() { getterCalls += 1; faults.length = 0; return 'buildNotListed'; },
+    });
+    const r = restore('LEGACY_ONLY');
+    r.observation.restoreObservation.faults = faults;
+    const start = (restoreInput) => startReestablishment({
+      lockHeld: true, marker: marker(ABSENT), consent: CONSENT(), restore: restoreInput, startToken: START_TOKEN,
+    });
+    expect(ending(() => start(r))).toBe('M2ReestablishmentError:INVALID_INPUT');
+    expect(getterCalls).toBe(0);
+
+    // A custom iterator (symbol key), a hole and a subclassed array are refused too.
+    let iteratorCalls = 0;
+    const iterated = ['lockUnavailable'];
+    iterated[Symbol.iterator] = function* it() { iteratorCalls += 1; yield* []; };
+    class Faults extends Array {}
+    const hostile = [
+      iterated,
+      [, 'lockUnavailable'],
+      Faults.from(['lockUnavailable']),
+    ];
+    for (const [i, bad] of hostile.entries()) {
+      const input = restore('LEGACY_ONLY');
+      input.observation.restoreObservation.faults = bad;
+      expect(`${i}:${ending(() => start(input))}`).toBe(`${i}:M2ReestablishmentError:INVALID_INPUT`);
+    }
+    expect(iteratorCalls).toBe(0);
+
+    // The passive copy is what both merged readers saw: a plain faults array still decides.
+    const control = restore('LEGACY_ONLY');
+    control.observation.restoreObservation.faults = ['buildNotListed'];
+    const refused = start(control);
+    expect([refused.accepted, refused.diagnostics.restoreResult]).toEqual([false, 'INCOMPATIBLE_BUILD']);
+  });
+
+  test('the session operation input is read passively as well: its accessors never run', () => {
+    let reads = 0;
+    const op = createOp();
+    Object.defineProperty(op.observation, 'commitOutcome', { enumerable: true, get() { reads += 1; return 'COMMITTED'; } });
+    expect(ending(() => createNewSession({ lockHeld: true, marker: marker(PENDING), consent: CONSENT(), operation: op })))
+      .toBe('M2ReestablishmentError:INVALID_INPUT');
+    expect(reads).toBe(0);
   });
 
   test('START from a NO_M2_STATE restore is refused (NEG-NO-M2-MARKER-START) and from M2 failures at the restore gate', () => {
@@ -822,23 +929,50 @@ describe('totality: malformed input writes nothing and throws only M2Reestablish
       const text = JSON.stringify({ ...r, marker: null });
       expect(text).not.toContain(hex(START_TOKEN));
       expect(text).not.toContain(hex(token(5)));
+      // A token carried as a typed array would serialize as indexed decimals, not hex: walk the record
+      // and require that the only byte arrays are the marker and the adapter's own output member.
+      const bytesAt = [];
+      const walk = (v, path) => {
+        if (v instanceof Uint8Array) bytesAt.push(path);
+        else if (v !== null && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+      };
+      walk(r, '');
+      expect(bytesAt.every((p) => p === '.marker' || p === '.adapterResult.output.embeddedTreeWelcome')).toBe(true);
+      // The marker carries the start token by design (L-MARK encoding); it must be the 44-byte marker.
+      if (r.marker !== null) expect(r.marker.length).toBe(M2_LEGACY_INVALIDATION.MARKER_LENGTH);
     }
   });
 
   test('seeded property: arbitrary inputs end in a closed record or M2ReestablishmentError, never a foreign exception', () => {
+    const hostileRestore = () => {
+      const r = restore('LEGACY_ONLY');
+      Object.defineProperty(r.observation.restoreObservation.faults, '0', {
+        enumerable: true, configurable: true, get() { throw new Error('getter ran'); },
+      });
+      return r;
+    };
     const anyValue = fc.oneof(
       fc.constant(null), fc.boolean(), fc.string(), fc.integer(), fc.uint8Array({ maxLength: 50 }),
       fc.constantFrom(marker(ABSENT), marker(PENDING), marker(CONFIRMED), marker(INVALIDATED), START_TOKEN),
       fc.constantFrom(restore('LEGACY_ONLY'), restore('RESTORED_ACTIVE'), CONSENT(), createOp()),
+      fc.constant(null).map(hostileRestore),
     );
     const fns = [startReestablishment, cancelReestablishment, createNewSession, confirmReestablishment, completeReestablishment];
     const keys = ['lockHeld', 'marker', 'consent', 'restore', 'startToken', 'operation', 'createResult', 'authorityToken'];
     const run = (seed) => {
       const outcomes = [];
       fc.assert(fc.property(fc.integer({ min: 0, max: 4 }), fc.dictionary(fc.constantFrom(...keys), anyValue), (f, input) => {
-        const e = ending(() => fns[f](input));
+        let record;
+        const e = ending(() => { record = fns[f](input); });
         outcomes.push(e);
-        return e === 'ok' || e.startsWith('M2ReestablishmentError:');
+        if (e !== 'ok') return e.startsWith('M2ReestablishmentError:');
+        // A non-throwing return must be a closed, frozen step record of this step.
+        return Object.isFrozen(record)
+          && Object.keys(record).join(',') === STEP_RECORD_KEYS
+          && record.step === M2_REESTABLISHMENT.STEPS[f]
+          && M2_REESTABLISHMENT.DISPOSITIONS.includes(record.disposition)
+          && typeof record.accepted === 'boolean'
+          && Object.keys(record.diagnostics).join(',') === CREC_DIAGNOSTICS_ALLOWED.join(',');
       }), { seed, numRuns: 400 });
       return outcomes;
     };

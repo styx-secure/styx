@@ -255,6 +255,80 @@ function snapshotBytes(value) {
   }
 }
 
+/** Bounds of the passive snapshot of a caller-supplied adapter input (depth and members per level). */
+const SNAPSHOT_MAX_DEPTH = 6;
+const SNAPSHOT_MAX_MEMBERS = 64;
+const SNAPSHOT_REFUSED = Symbol('refused');
+
+/**
+ * A passive, frozen deep copy of a caller-supplied adapter input, or `SNAPSHOT_REFUSED`.
+ *
+ * Only plain objects, plain arrays, `Uint8Array`s (copied through the internal slot) and primitives
+ * are copied. Every member is read through its own data descriptor and every array element by index
+ * through its own data descriptor: no getter, no `Symbol.iterator`, no `toJSON` and no species is ever
+ * invoked, so the copy cannot change between two readers. A symbol key, an accessor, a hole, a
+ * non-enumerable member, a function or any other object kind refuses the whole input. The same frozen
+ * copy is handed to every merged reader, so the merged adapter and the merged classifier see identical
+ * values.
+ */
+function passiveSnapshot(value, depth = 0) {
+  if (value === null || typeof value !== 'object') {
+    return typeof value === 'function' || typeof value === 'symbol' ? SNAPSHOT_REFUSED : value;
+  }
+  if (depth >= SNAPSHOT_MAX_DEPTH) return SNAPSHOT_REFUSED;
+  if (ArrayBuffer.isView(value)) {
+    const bytes = snapshotBytes(value);
+    return bytes === null ? SNAPSHOT_REFUSED : bytes;
+  }
+  let isArray;
+  let proto;
+  let own;
+  try {
+    isArray = Array.isArray(value);
+    proto = Object.getPrototypeOf(value);
+    own = Reflect.ownKeys(value);
+  } catch {
+    return SNAPSHOT_REFUSED;
+  }
+  if (isArray ? proto !== Array.prototype : proto !== Object.prototype) return SNAPSHOT_REFUSED;
+  if (own.length > SNAPSHOT_MAX_MEMBERS + (isArray ? 1 : 0)) return SNAPSHOT_REFUSED;
+  const descriptors = new Map();
+  for (const key of own) {
+    if (typeof key !== 'string') return SNAPSHOT_REFUSED;
+    let d;
+    try {
+      d = Object.getOwnPropertyDescriptor(value, key);
+    } catch {
+      return SNAPSHOT_REFUSED;
+    }
+    if (d === undefined || !Object.hasOwn(d, 'value')) return SNAPSHOT_REFUSED;
+    descriptors.set(key, d);
+  }
+  if (isArray) {
+    const lengthD = descriptors.get('length');
+    if (lengthD === undefined || typeof lengthD.value !== 'number') return SNAPSHOT_REFUSED;
+    const length = lengthD.value;
+    if (own.length !== length + 1) return SNAPSHOT_REFUSED;
+    const out = [];
+    for (let i = 0; i < length; i += 1) {
+      const d = descriptors.get(String(i));
+      if (d === undefined || !d.enumerable) return SNAPSHOT_REFUSED;
+      const v = passiveSnapshot(d.value, depth + 1);
+      if (v === SNAPSHOT_REFUSED) return SNAPSHOT_REFUSED;
+      out.push(v);
+    }
+    return Object.freeze(out);
+  }
+  const out = {};
+  for (const [key, d] of descriptors) {
+    if (!d.enumerable) return SNAPSHOT_REFUSED;
+    const v = passiveSnapshot(d.value, depth + 1);
+    if (v === SNAPSHOT_REFUSED) return SNAPSHOT_REFUSED;
+    out[key] = v;
+  }
+  return Object.freeze(out);
+}
+
 // ------------------------------------------------------------------------------------------------
 // Records.
 // ------------------------------------------------------------------------------------------------
@@ -344,19 +418,22 @@ function resultCode(result) {
 
 /**
  * Run one restore through the merged adapter and the merged C-REST classifier and require that they
- * agree. Returns `{ restoreResult, condition, adapterResult }`, or `{ inconsistent: true }`.
+ * agree. Both read the same passive frozen snapshot of the caller's input (`passiveSnapshot`), so no
+ * caller code runs and the two readers cannot be shown different evidence. Returns
+ * `{ restoreResult, condition, adapterResult }`, or `{ inconsistent: true }`.
  */
 function restoreEvidence(restore) {
-  if (!isPlainObject(restore)) fail('INVALID_INPUT');
-  const request = dataMember(restore, 'request');
+  const snapshot = passiveSnapshot(restore);
+  if (snapshot === SNAPSHOT_REFUSED || !isPlainObject(snapshot)) fail('INVALID_INPUT');
+  const request = dataMember(snapshot, 'request');
   if (dataMember(request, 'operation') !== 'RESTORE') fail('INVALID_INPUT');
   let adapterResult;
   try {
-    adapterResult = invokeAdapter(restore);
+    adapterResult = invokeAdapter(snapshot);
   } catch {
     fail('INVALID_INPUT');
   }
-  const observation = dataMember(dataMember(restore, 'observation'), 'restoreObservation');
+  const observation = dataMember(dataMember(snapshot, 'observation'), 'restoreObservation');
   let classified = null;
   try {
     classified = classifyRestore(observation);
@@ -451,8 +528,15 @@ function restoreGate(step, marker, evidence, failureCode) {
  * `DISPATCH` fixture input `{ result, legacyPresent }`. Returns one frozen record; never throws.
  */
 export function guidanceFor(input) {
-  const result = dataMember(input, 'result');
-  const legacyPresent = dataMember(input, 'legacyPresent');
+  let own = null;
+  try {
+    own = isPlainObject(input) ? Reflect.ownKeys(input) : null;
+  } catch {
+    own = null;
+  }
+  const closed = own !== null && own.length === 2 && own.every((k) => k === 'result' || k === 'legacyPresent');
+  const result = closed ? dataMember(input, 'result') : undefined;
+  const legacyPresent = closed ? dataMember(input, 'legacyPresent') : undefined;
   const reject = (code) => Object.freeze({
     disposition: 'REJECT',
     authority: 'NONE',
@@ -580,11 +664,13 @@ export function createNewSession(input) {
   const marker = markerOf(v.marker);
   if (!consentGiven(v.consent)) return gateReject('CREATE_SESSION', marker, 'CONSENT_REQUIRED', 'CONSENT_GATE');
   if (marker.state !== PENDING) return gateReject('CREATE_SESSION', marker, 'MARKER_NOT_PENDING', 'MARKER_GATE');
-  const operation = dataMember(dataMember(v.operation, 'request'), 'operation');
+  const snapshot = passiveSnapshot(v.operation);
+  if (snapshot === SNAPSHOT_REFUSED) fail('INVALID_INPUT');
+  const operation = dataMember(dataMember(snapshot, 'request'), 'operation');
   if (!SESSION_OPERATIONS.includes(operation)) fail('INVALID_INPUT');
   let adapterResult;
   try {
-    adapterResult = invokeAdapter(v.operation);
+    adapterResult = invokeAdapter(snapshot);
   } catch {
     fail('INVALID_INPUT');
   }
@@ -600,13 +686,57 @@ export function createNewSession(input) {
   });
 }
 
-/** A C-FMT `COMMITTED` new-session result of the merged adapter, read without invoking an accessor. */
+/**
+ * The exact own-key set of a committed new-session C-API result (`/response/commonRequired`, then
+ * `successCode`, `commitOutcome`, and the `/response/outputBySuccessCode` member when there is one).
+ */
+const COMMITTED_SESSION_KEYS = Object.freeze({
+  CREATE: Object.freeze(['api', 'requestId', 'operation', 'kind', 'stateBefore', 'stateAfter', 'successCode',
+    'commitOutcome', 'output']),
+  JOIN_WELCOME: Object.freeze(['api', 'requestId', 'operation', 'kind', 'stateBefore', 'stateAfter', 'successCode',
+    'commitOutcome']),
+});
+
+/**
+ * A C-FMT `COMMITTED` new-session result of the merged adapter, read without invoking an accessor.
+ *
+ * The whole closed record is checked, not only the four deciding members: a plain object with exactly
+ * the C-API key set of the operation, `api` the adapter's, a non-empty `requestId`, `kind` `SUCCESS`, the
+ * operation's success code, `commitOutcome` `COMMITTED`, the session transition `EMPTY` -> `ACTIVE`,
+ * and for `CREATE` an `output` that is exactly `{ embeddedTreeWelcome }` with non-empty bytes.
+ */
 function isCommittedSession(result) {
   const operation = dataMember(result, 'operation');
-  return SESSION_OPERATIONS.includes(operation)
-    && dataMember(result, 'kind') === 'SUCCESS'
-    && dataMember(result, 'successCode') === SESSION_SUCCESS[operation]
-    && dataMember(result, 'commitOutcome') === 'COMMITTED';
+  if (!SESSION_OPERATIONS.includes(operation)) return false;
+  const keys = COMMITTED_SESSION_KEYS[operation];
+  let own;
+  try {
+    own = Reflect.ownKeys(result);
+  } catch {
+    return false;
+  }
+  if (own.length !== keys.length || !own.every((k) => typeof k === 'string' && keys.includes(k))) return false;
+  const requestId = dataMember(result, 'requestId');
+  if (dataMember(result, 'api') !== M2_ADAPTER.API
+      || typeof requestId !== 'string' || requestId.length === 0
+      || dataMember(result, 'kind') !== 'SUCCESS'
+      || dataMember(result, 'successCode') !== SESSION_SUCCESS[operation]
+      || dataMember(result, 'commitOutcome') !== 'COMMITTED'
+      || dataMember(result, 'stateBefore') !== 'EMPTY'
+      || dataMember(result, 'stateAfter') !== 'ACTIVE') {
+    return false;
+  }
+  if (operation !== 'CREATE') return true;
+  const output = dataMember(result, 'output');
+  let outputKeys;
+  try {
+    outputKeys = isPlainObject(output) ? Reflect.ownKeys(output) : null;
+  } catch {
+    outputKeys = null;
+  }
+  if (outputKeys === null || outputKeys.length !== 1 || outputKeys[0] !== 'embeddedTreeWelcome') return false;
+  const welcome = snapshotBytes(dataMember(output, 'embeddedTreeWelcome'));
+  return welcome !== null && welcome.length > 0;
 }
 
 /**
