@@ -8,7 +8,7 @@
 // `validateWorkerResult`). Nothing is mocked.
 
 import { describe, expect, test } from '@jest/globals';
-import { M2_ADAPTER, M2AdapterError, invokeAdapter } from '../../../src/crypto/mls/m2/adapter.js';
+import { M2_ADAPTER, invokeAdapter, invokeAdapterTransition } from '../../../src/crypto/mls/m2/adapter.js';
 import {
   MUTATION_PLANS,
   createAdapterSnapshot,
@@ -61,14 +61,12 @@ const expectWireRoundTrip = (result, originalSuccessCode) => {
   expect(Object.keys(decoded.output.originalOutput)).toEqual([]);
 };
 
-// Every RS_TRI_STATE mutation plan whose original success code lists no output member, with the merged
-// core facts that select it. A plan missing here fails the coverage test below.
-const HELD_EMPTY_OUTPUT = {
-  'CAPI-S006': { operation: 'JOIN_WELCOME', state: 'EMPTY', facts: 'SUPPORTED', viaAdapter: true },
-  // APPLY_PEER_UPDATE is not an integrated adapter operation at this base (I-FORK), so its hold is
-  // produced by the merged core only; RECONCILE_INDETERMINATE is integrated and resolves it.
-  'CAPI-S016': { operation: 'APPLY_PEER_UPDATE', state: 'ACTIVE', facts: { kind: 'CURRENT_PARENT' }, viaAdapter: false },
-};
+// Every RS_TRI_STATE mutation plan whose original success code lists no output member. A plan missing
+// here fails the coverage test below.
+// - CAPI-S006 (JOIN_WELCOME) is integrated: its hold comes from the adapter itself.
+// - CAPI-S016 (APPLY_PEER_UPDATE) is not integrated at this base (I-FORK), so its hold comes from the
+//   merged core only. RECONCILE_INDETERMINATE is integrated and resolves it.
+const HELD_EMPTY_OUTPUT = ['CAPI-S006', 'CAPI-S016'];
 
 describe('U1: RECONCILED_COMMITTED with an empty original output crosses the worker boundary', () => {
   test('the empty-output success codes are exactly the four C-API lists', () => {
@@ -80,15 +78,31 @@ describe('U1: RECONCILED_COMMITTED with an empty original output crosses the wor
       .filter((plan) => EMPTY_OUTPUT_CODES.includes(plan.successCode))
       .map((plan) => plan.scenario)
       .sort();
-    expect(holdable).toEqual(Object.keys(HELD_EMPTY_OUTPUT).sort());
+    expect(holdable).toEqual(HELD_EMPTY_OUTPUT);
     for (const scenario of holdable) expect(MUTATION_PLANS[scenario].outputKind).toBe('NONE');
   });
 
   test('a committed JOIN_WELCOME (CAPI-S006) reconciles to originalOutput {} and round-trips the wire', () => {
-    const held = holdOf('JOIN_WELCOME', 'EMPTY', 'SUPPORTED', 'u1-join-1');
+    // The whole integrated path: JOIN_WELCOME through the adapter ends INDETERMINATE with the hold, and
+    // RECONCILE_INDETERMINATE through the adapter resolves it COMMITTED.
+    expect(M2_ADAPTER.INTEGRATED_OPERATIONS).toContain('JOIN_WELCOME');
+    const join = invokeAdapterTransition({
+      request: {
+        api: M2_ADAPTER.API,
+        operation: 'JOIN_WELCOME',
+        requestId: 'u1-join',
+        profile: { ...M2_ADAPTER.PROFILE },
+        bindingRef: SLOT.slice(),
+        input: { embeddedTreeWelcome: new Uint8Array([0x02]) },
+      },
+      snapshot: createAdapterSnapshot('EMPTY'),
+      observation: { keyPackage: 'MATCHED', commitOutcome: 'INDETERMINATE', operationIdentity: 'u1-join-1' },
+    });
+    expect(join.result.kind).toBe('INDETERMINATE');
+    expect(join.result.reconciliationRef).toBe('I-SM-HOLD:u1-join-1');
+    const held = join.snapshot;
     expect(held.state).toBe('RECONCILIATION_REQUIRED');
     expect(held.held.scenario).toBe('CAPI-S006');
-    expect(M2_ADAPTER.INTEGRATED_OPERATIONS).toContain('JOIN_WELCOME');
     expectWireRoundTrip(reconcile(held, 'u1-r-join'), 'JOINED');
   });
 
@@ -131,13 +145,10 @@ describe('U1: RECONCILED_COMMITTED with an empty original output crosses the wor
           terminalEvidenceStatus: 'PENDING',
         },
       };
-      let result = null;
-      try {
-        result = reconcile(snapshot, `u1-r-forged-${index}`);
-      } catch (error) {
-        expect(error).toBeInstanceOf(M2AdapterError);
-      }
-      if (result !== null) expect(result.kind).not.toBe('SUCCESS');
+      const result = reconcile(snapshot, `u1-r-forged-${index}`);
+      expect(result.kind).toBe('REJECTED');
+      expect(result.error.code).toBe('UNKNOWN_VALUE');
+      expect(result.output).toBeUndefined();
     }
   });
 });
