@@ -529,6 +529,13 @@ describe('visible consent is required', () => {
     ['extra member', { prompt: 'SHOW_REESTABLISHMENT', accepted: true, silent: true }],
     ['accessor', { prompt: 'SHOW_REESTABLISHMENT', get accepted() { return true; } }],
     ['array', ['SHOW_REESTABLISHMENT', true]],
+    // r4 GPT-6.1 Sol H4: two keys, but not `prompt` and `accepted`; a trap synthesizes the missing `prompt`.
+    ['key set without prompt', new Proxy({ accepted: true, extra: true }, {
+      getOwnPropertyDescriptor(target, key) {
+        if (key === 'prompt') return { value: 'SHOW_REESTABLISHMENT', enumerable: true, configurable: true, writable: true };
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    })],
   ];
   for (const [name, consent] of bad) {
     test(`START refuses ${name} with CONSENT_REQUIRED and changes nothing`, () => {
@@ -634,6 +641,71 @@ describe('the one-writer lock', () => {
         .toEqual([null, null, null, null, null, null]);
       // Control: the same input with a stable true flag is accepted.
       expect(fns[step]({ lockHeld: true, ...inputs[step]() }).accepted).toBe(true);
+    });
+
+    test(`${step}: an inherited lockHeld accessor cannot turn the captured false into true`, () => {
+      // r4 GPT-6.1 Sol H3-R: a trap installs Object.prototype.lockHeld between the two lock reads; the
+      // closed copy defines its members, so the inherited setter and getter are never used.
+      const previous = Object.getOwnPropertyDescriptor(Object.prototype, 'lockHeld');
+      const real = { lockHeld: true, ...inputs[step]() };
+      const reads = [];
+      let inherited = 0;
+      const flipping = new Proxy(real, {
+        ownKeys(target) {
+          target.lockHeld = false;
+          Object.defineProperty(Object.prototype, 'lockHeld', {
+            configurable: true,
+            get() { inherited += 1; return true; },
+            set() { inherited += 1; },
+          });
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, key) {
+          const d = Reflect.getOwnPropertyDescriptor(target, key);
+          if (key === 'lockHeld') reads.push(d.value);
+          return d;
+        },
+      });
+      let d;
+      try {
+        d = fns[step](flipping);
+      } finally {
+        if (previous) Object.defineProperty(Object.prototype, 'lockHeld', previous);
+        else delete Object.prototype.lockHeld;
+      }
+      expect(reads).toEqual([true, false]);
+      expect(inherited).toBe(0);
+      expect([d.step, d.disposition, d.reject, d.firstFailingPhase, d.accepted])
+        .toEqual([step, 'LOCK_RETRY', 'LOCKED_ELSEWHERE', 'LOCK', false]);
+      expect([d.stateBefore, d.stateAfter, d.legacyEligible, d.marker, d.adapterResult, d.committed])
+        .toEqual([null, null, null, null, null, null]);
+    });
+
+    test(`${step}: a captured false lock is LOCK_RETRY before any later member is inspected`, () => {
+      // r4 GPT-6.1 Sol M4: a later descriptor that fails cannot preempt the lock refusal.
+      const real = { lockHeld: true, ...inputs[step]() };
+      const reads = [];
+      const later = [];
+      const flipping = new Proxy(real, {
+        ownKeys(target) {
+          target.lockHeld = false;
+          return Reflect.ownKeys(target);
+        },
+        getOwnPropertyDescriptor(target, key) {
+          if (key !== 'lockHeld') {
+            later.push(key);
+            throw new Error('later member inspected');
+          }
+          const d = Reflect.getOwnPropertyDescriptor(target, key);
+          reads.push(d.value);
+          return d;
+        },
+      });
+      const d = fns[step](flipping);
+      expect(reads).toEqual([true, false]);
+      expect(later).toEqual([]);
+      expect([d.step, d.disposition, d.reject, d.firstFailingPhase, d.accepted])
+        .toEqual([step, 'LOCK_RETRY', 'LOCKED_ELSEWHERE', 'LOCK', false]);
     });
   }
 

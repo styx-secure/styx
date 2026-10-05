@@ -141,6 +141,7 @@ const DIAGNOSTIC_FIELDS = Object.freeze([
 ]);
 /** The closed consent record: the user saw exactly this guidance and accepted it. */
 const CONSENT_PROMPT = 'SHOW_REESTABLISHMENT';
+const CONSENT_KEYS = Object.freeze(['prompt', 'accepted']);
 const SESSION_OPERATIONS = Object.freeze(['CREATE', 'JOIN_WELCOME']);
 const SESSION_SUCCESS = Object.freeze({ CREATE: 'CREATED', JOIN_WELCOME: 'JOINED' });
 
@@ -208,9 +209,29 @@ function isPlainObject(value) {
   }
 }
 
+/** `readClosed` result when the lock flag captured in the closed copy is not `true`. */
+const LOCK_NOT_HELD = Symbol('lockNotHeld');
+
+/** One own enumerable data descriptor of `value`, or `undefined`; never invokes an accessor. */
+function ownDataDescriptor(value, key) {
+  let d;
+  try {
+    d = Object.getOwnPropertyDescriptor(value, key);
+  } catch {
+    return undefined;
+  }
+  return d && d.enumerable && Object.hasOwn(d, 'value') ? d : undefined;
+}
+
 /**
  * Read exactly `members` (all required) from a plain object without invoking an accessor. Any other
  * own key, a symbol key, a missing member or an accessor member is `INVALID_INPUT`.
+ *
+ * The result is one frozen null-prototype record whose members are *defined* as own data properties,
+ * so no inherited accessor can intercept a copied value or supply a different one when it is read back
+ * (r4 GPT-6.1 Sol H3-R). When `members` starts with `lockHeld`, the flag is captured first and, unless
+ * the captured value is `true`, `LOCK_NOT_HELD` is returned before any later member is inspected, so
+ * no later validation can preempt the lock refusal (r4 GPT-6.1 Sol M4).
  */
 function readClosed(value, members) {
   if (!isPlainObject(value)) fail('INVALID_INPUT');
@@ -224,18 +245,14 @@ function readClosed(value, members) {
   if (own.length !== members.length || own.some((k) => typeof k !== 'string' || !members.includes(k))) {
     fail('INVALID_INPUT');
   }
-  const out = {};
+  const out = Object.create(null);
   for (const key of members) {
-    let d;
-    try {
-      d = Object.getOwnPropertyDescriptor(value, key);
-    } catch {
-      d = undefined;
-    }
-    if (!d || !d.enumerable || !Object.hasOwn(d, 'value')) fail('INVALID_INPUT');
-    out[key] = d.value;
+    const d = ownDataDescriptor(value, key);
+    if (d === undefined) fail('INVALID_INPUT');
+    if (key === 'lockHeld' && d.value !== true) return LOCK_NOT_HELD;
+    Object.defineProperty(out, key, { value: d.value, enumerable: true, writable: false, configurable: false });
   }
-  return out;
+  return Object.freeze(out);
 }
 
 /** One own data member, or `undefined` for a missing or accessor member; never invokes a getter. */
@@ -404,7 +421,11 @@ function markerOf(value) {
   return { bytes, state };
 }
 
-/** Whether a consent record is exactly the visible acceptance of the re-establishment guidance. */
+/**
+ * Whether a consent record is exactly the visible acceptance of the re-establishment guidance: a plain
+ * object whose own keys are exactly `prompt` and `accepted`, each an own data member, decided on one
+ * copy of the two values (r4 GPT-6.1 Sol H4: the key count alone admitted a set missing `prompt`).
+ */
 function consentGiven(consent) {
   if (!isPlainObject(consent)) return false;
   let own;
@@ -413,8 +434,12 @@ function consentGiven(consent) {
   } catch {
     return false;
   }
-  if (own.length !== 2) return false;
-  return dataMember(consent, 'prompt') === CONSENT_PROMPT && dataMember(consent, 'accepted') === true;
+  if (own.length !== CONSENT_KEYS.length || !CONSENT_KEYS.every((k) => own.includes(k))) return false;
+  const prompt = ownDataDescriptor(consent, 'prompt');
+  const accepted = ownDataDescriptor(consent, 'accepted');
+  if (prompt === undefined || accepted === undefined) return false;
+  const copy = Object.freeze({ prompt: prompt.value, accepted: accepted.value });
+  return copy.prompt === CONSENT_PROMPT && copy.accepted === true;
 }
 
 /** One closed C-API result's code: the success code, or the error code. `null` when malformed. */
@@ -641,7 +666,7 @@ export function legacyActionDecision(input) {
 export function startReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('START');
   const v = readClosed(input, ['lockHeld', 'marker', 'consent', 'restore', 'startToken']);
-  if (v.lockHeld !== true) return lockRetry('START');
+  if (v === LOCK_NOT_HELD) return lockRetry('START');
   const marker = markerOf(v.marker);
   const startToken = snapshotBytes(v.startToken);
   if (startToken === null || startToken.length !== MARKER.BINDING_TOKEN_BYTES || startToken.every((b) => b === 0)) {
@@ -658,7 +683,7 @@ export function startReestablishment(input) {
 export function cancelReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('CANCEL');
   const v = readClosed(input, ['lockHeld', 'marker', 'restore']);
-  if (v.lockHeld !== true) return lockRetry('CANCEL');
+  if (v === LOCK_NOT_HELD) return lockRetry('CANCEL');
   const marker = markerOf(v.marker);
   const evidence = restoreEvidence(v.restore);
   const refused = restoreGate('CANCEL', marker, evidence, 'RESTORE_PRECONDITION_FAILED');
@@ -675,7 +700,7 @@ export function cancelReestablishment(input) {
 export function createNewSession(input) {
   if (!lockHeldOf(input)) return lockRetry('CREATE_SESSION');
   const v = readClosed(input, ['lockHeld', 'marker', 'consent', 'operation']);
-  if (v.lockHeld !== true) return lockRetry('CREATE_SESSION');
+  if (v === LOCK_NOT_HELD) return lockRetry('CREATE_SESSION');
   const marker = markerOf(v.marker);
   if (!consentGiven(v.consent)) return gateReject('CREATE_SESSION', marker, 'CONSENT_REQUIRED', 'CONSENT_GATE');
   if (marker.state !== PENDING) return gateReject('CREATE_SESSION', marker, 'MARKER_NOT_PENDING', 'MARKER_GATE');
@@ -763,7 +788,7 @@ function isCommittedSession(result) {
 export function confirmReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('CONFIRM');
   const v = readClosed(input, ['lockHeld', 'marker', 'createResult', 'authorityToken', 'restore']);
-  if (v.lockHeld !== true) return lockRetry('CONFIRM');
+  if (v === LOCK_NOT_HELD) return lockRetry('CONFIRM');
   const marker = markerOf(v.marker);
   const evidence = restoreEvidence(v.restore);
   const refused = restoreGate('CONFIRM', marker, evidence, 'CONFIRMATION_PRECONDITION_FAILED');
@@ -780,7 +805,7 @@ export function confirmReestablishment(input) {
 export function completeReestablishment(input) {
   if (!lockHeldOf(input)) return lockRetry('COMPLETE');
   const v = readClosed(input, ['lockHeld', 'marker', 'restore']);
-  if (v.lockHeld !== true) return lockRetry('COMPLETE');
+  if (v === LOCK_NOT_HELD) return lockRetry('COMPLETE');
   const marker = markerOf(v.marker);
   const evidence = restoreEvidence(v.restore);
   const refused = restoreGate('COMPLETE', marker, evidence, 'RESTORE_PRECONDITION_FAILED');
