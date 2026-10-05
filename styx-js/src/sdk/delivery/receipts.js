@@ -143,33 +143,19 @@ const ITEM_LAST_CODES = new Set([
 
 /**
  * C-DLV section 4.5 and C-SDK section 5.3: the closed slots of a PORT RETURN.
- * A return that carries one of them outside its closed set is an unknown value
- * and is `E_SDK_UNKNOWN_CODE`, ahead of every other code the caller could fix
- * for the same call. The `code` slot is checked on ANY object, plain or not: a
- * `Uint8Array` signature that carries one violates the closed slot exactly as a
- * plain return does. Card I-QUEUE's `closedSlotViolation` is the model.
+ * The five slots the card's contract names -- `code`, `state`, `outcome`,
+ * `lastCode` and `receiptMode` -- are each read on ANY object return, plain or
+ * not: a `Uint8Array` signature that carries one violates its closed slot
+ * exactly as a plain return does. A return that carries one of them outside its
+ * closed set is an unknown value and is `E_SDK_UNKNOWN_CODE`, ahead of every
+ * other code the caller could fix for the same call. Card I-QUEUE's
+ * `closedSlotViolation` is the model.
  *
  * @param {unknown} value
  * @returns {string|null} the name of the violated slot, or null
  */
 function closedSlotViolation(value) {
   if (value === null || typeof value !== 'object') return null;
-  let carriesCode;
-  try {
-    carriesCode = Object.prototype.hasOwnProperty.call(value, 'code');
-  } catch {
-    return 'code';
-  }
-  if (carriesCode) {
-    let code;
-    try {
-      code = value.code;
-    } catch {
-      return 'code';
-    }
-    if (!SDK_RESULT_CODES.has(code)) return 'code';
-  }
-  if (!isPlainObject(value)) return null;
   for (const [name, allowed] of [
     ['code', SDK_RESULT_CODES],
     ['state', DELIVERY_STATES],
@@ -286,15 +272,20 @@ function settleWithin(value, timeoutMs) {
  * @param {string} name
  * @param {unknown[]} args
  * @param {number} timeoutMs
- * @returns {Promise<{ ok: true, value: unknown } | { ok: false }>}
+ * @param {() => boolean} [isStopped] the terminal-stop predicate of C-DLV
+ *   section 4.6 step (1)
+ * @returns {Promise<{ ok: true, value: unknown } | { ok: false, stopped?: boolean }>}
  */
-async function callPort(port, name, args, timeoutMs) {
+async function callPort(port, name, args, timeoutMs, isStopped) {
   let method;
   try {
     method = port === null || port === undefined ? undefined : port[name];
   } catch {
     return { ok: false };
   }
+  /* C-DLV section 4.6 step (1): the lookup is itself untrusted -- a getter
+   * may have called `shutdown()` -- so no invocation begins after the stop. */
+  if (typeof isStopped === 'function' && isStopped() === true) return { ok: false, stopped: true };
   if (typeof method !== 'function') return { ok: false };
   let returned;
   try {
@@ -337,7 +328,17 @@ function callSyncPort(port, name, args = []) {
   } catch {
     return { ok: false };
   }
-  if (thenable) return { ok: false };
+  if (thenable) {
+    /* C-SDK section 8.4: a promise from a synchronous port is an invalid
+     * value, and the rejection it carries is consumed, never left
+     * unhandled (C-SDK section 7). */
+    try {
+      consume(Promise.resolve(value));
+    } catch {
+      // The invalid return is a failure; its rejection never surfaces.
+    }
+    return { ok: false };
+  }
   return { ok: true, value };
 }
 
@@ -472,6 +473,7 @@ export function createReceipts(options) {
   let stopped = false;
   let publicKeyRead = false;
   let publicKey = null;
+  let publicKeyUnknown = false;
 
   const failure = (code) => Object.freeze({ ok: false, code });
   const success = (value) => Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -512,22 +514,40 @@ export function createReceipts(options) {
    * The reading is taken at most once for this module's lifetime and shared
    * across concurrent validations, exactly as card I-QUEUE R1 (c) fixes it;
    * card I-SDK replaces it with the value `start()` caches for the client's
-   * lifetime (C-SDK section 8.3). A reading that faults, never settles or is
-   * not a lowercase 64-hex string is remembered as an absent key, so no `p`
-   * tag can equal it and every frame fails step 3.
+   * lifetime (C-SDK section 8.3). A return carrying a closed slot outside its
+   * closed set is `E_SDK_UNKNOWN_CODE` ahead of every other code (C-DLV
+   * section 4.5); a reading that faults, never settles or is a well-formed
+   * value that is not a lowercase 64-hex string is remembered as an absent
+   * key, so no `p` tag can equal it and every frame fails step 3.
    *
-   * @returns {Promise<string|null>}
+   * @returns {Promise<{ key: string|null, unknown: boolean }>}
    */
   async function ownPublicKey() {
-    if (publicKeyRead) return publicKey;
+    if (publicKeyRead) return { key: publicKey, unknown: publicKeyUnknown };
     publicKeyRead = true;
-    const called = await callPort(read === null ? null : read.identity, 'getPublicKey', [], portCallTimeoutMs);
-    if (!called.ok || typeof called.value !== 'string' || !HEX64.test(called.value)) {
+    const called = await callPort(read === null ? null : read.identity, 'getPublicKey', [],
+      portCallTimeoutMs, () => stopped);
+    if (!called.ok) {
       publicKey = null;
-      return null;
+      publicKeyUnknown = false;
+      return { key: null, unknown: false };
+    }
+    /* C-DLV section 4.5, ahead of every other code: a return that carries a
+     * closed slot outside its closed set is an unknown value, not a malformed
+     * key (C-SDK section 5.3). */
+    if (closedSlotViolation(called.value) !== null) {
+      publicKey = null;
+      publicKeyUnknown = true;
+      return { key: null, unknown: true };
+    }
+    if (typeof called.value !== 'string' || !HEX64.test(called.value)) {
+      publicKey = null;
+      publicKeyUnknown = false;
+      return { key: null, unknown: false };
     }
     publicKey = called.value;
-    return publicKey;
+    publicKeyUnknown = false;
+    return { key: publicKey, unknown: false };
   }
 
   /* --- C-DLV section 7.1: validation ----------------------------------- */
@@ -537,7 +557,9 @@ export function createReceipts(options) {
    * their order. The first failure is `E_SDK_INBOUND_INVALID`.
    *
    * @param {unknown} data the decoded frame array
-   * @returns {Promise<{ ok: true, kind: number, event: object } | { ok: false }>}
+   * @returns {Promise<{ ok: true, kind: number, event: object }
+   *   | { ok: false, unknown?: boolean }>} `unknown: true` when the failure is
+   *   an unknown closed slot of C-DLV section 4.5 rather than a bad structure
    */
   async function validateEvent(data) {
     /* Step 1: a plain object with exactly the seven keys of section 6.1. */
@@ -563,13 +585,25 @@ export function createReceipts(options) {
     /* Step 2: `kind` is 4741 or 4742 (C-DLV section 7.1 step 2). */
     if (kind.value !== EVENT_KIND_MESSAGE && kind.value !== EVENT_KIND_RECEIPT) return { ok: false };
 
+    /* C-DLV section 7.1 step 3 reads the tags several times across awaited
+     * boundaries, and section 7.3 hands `eventId` on afterwards, so the inbound
+     * array is copied once, here, and never read again: a caller that mutates
+     * its frame after `ingest` cannot move a value this module decides on. */
+    let safeTags;
+    try {
+      safeTags = tagsField.value.map((tag) => Object.freeze(tag.slice()));
+    } catch {
+      return { ok: false };
+    }
+
     /* Step 3: the tags are exactly the closed tag list of section 6.2 or 6.3,
      * with every value in the form given there, the `p` tag equal to the
      * client's own public key, the `v` tag equal to the version string, and,
      * for kind 4742, `content` the empty string. */
-    const own = await ownPublicKey();
-    const tags = tagsField.value;
-    if (own === null) return { ok: false };
+    const reading = await ownPublicKey();
+    const own = reading.key;
+    const tags = safeTags;
+    if (own === null) return { ok: false, unknown: reading.unknown };
     if (kind.value === EVENT_KIND_MESSAGE) {
       if (tags.length !== 3 && tags.length !== 4) return { ok: false };
       if (!tagIs(tags[0], TAG_P, own)) return { ok: false };
@@ -670,6 +704,9 @@ export function createReceipts(options) {
   async function buildAndSignReceipt(message, own) {
     const reading = callSyncPort(read === null ? null : read.clock, 'now');
     if (!reading.ok || typeof reading.value !== 'number' || !Number.isFinite(reading.value)) return { ok: false };
+    /* C-DLV section 6.1: a negative reading builds no structure, whatever the
+     * division of C-SDK section 8.4 would make of it. */
+    if (reading.value < 0) return { ok: false };
     /* C-SDK section 8.4: `now()` reads milliseconds and may be fractional. */
     const createdAt = Math.floor(reading.value / 1000);
     if (!Number.isSafeInteger(createdAt) || createdAt < 0) return { ok: false };
@@ -694,7 +731,7 @@ export function createReceipts(options) {
     /* C-DLV section 4.6 step (1): no port call starts after the stop. */
     if (stopped) return { ok: false };
     const signed = await callPort(read === null ? null : read.identity, 'sign',
-      [{ digest: hexToBytes(id) }], portCallTimeoutMs);
+      [{ digest: hexToBytes(id) }], portCallTimeoutMs, () => stopped);
     if (!signed.ok) return { ok: false };
     /* C-DLV section 4.5 ahead of every other code: a signature return that
      * carries a closed slot outside its closed set is an unknown value, not a
@@ -772,7 +809,7 @@ export function createReceipts(options) {
     /* C-DLV section 4.6 step (1): no port call starts after the stop. */
     if (stopped) return null;
     const opened = await callPort(read === null ? null : read.session, 'open',
-      [{ sender: event.pubkey, ciphertext }], portCallTimeoutMs);
+      [{ sender: event.pubkey, ciphertext }], portCallTimeoutMs, () => stopped);
     /* ... and no event follows it either. */
     if (stopped) return null;
     if (!opened.ok) {
@@ -783,6 +820,9 @@ export function createReceipts(options) {
      * requires: the unknown-value rule runs first and takes precedence over
      * every other code this module could fix for the same frame. */
     if (closedSlotViolation(opened.value) !== null) {
+      /* C-DLV section 4.6 step (1): the read above is untrusted, so the stop
+       * is re-checked before the event of this structure is emitted. */
+      if (stopped) return null;
       discard(DISCARD_UNKNOWN_CODE);
       return null;
     }
@@ -794,6 +834,7 @@ export function createReceipts(options) {
       owned = null;
     }
     if (owned === null || owned.length !== 1) {
+      if (stopped) return null;
       discard(DISCARD_SESSION_FAILED);
       return null;
     }
@@ -840,7 +881,7 @@ export function createReceipts(options) {
     /* C-DLV section 4.6 step (1): no seam call starts after the stop. */
     if (stopped) return;
     const called = await callPort({ acceptReceipt: seam }, 'acceptReceipt',
-      [{ eventId: event.tags[1][1], recipient: event.pubkey }], portCallTimeoutMs);
+      [{ eventId: event.tags[1][1], recipient: event.pubkey }], portCallTimeoutMs, () => stopped);
     /* ... and no event follows it either. */
     if (stopped) return;
     if (!called.ok) {
@@ -849,7 +890,20 @@ export function createReceipts(options) {
     }
     const envelope = called.value;
     /* C-SDK section 5.1: two envelopes, and exactly their own keys — the
-     * acceptance `{ ok: true, value }` and the refusal `{ ok: false, code }`. */
+     * acceptance `{ ok: true, value }` and the refusal `{ ok: false, code }`
+     * — and C-DLV section 4.5 makes a return that is not that exact shape a
+     * malformed value, so the freeze C-SDK section 5.1 requires is read. */
+    let frozen;
+    try {
+      frozen = Object.isFrozen(envelope) === true;
+    } catch {
+      frozen = false;
+    }
+    if (!frozen) {
+      if (stopped) return;
+      discard(DISCARD_UNKNOWN_CODE);
+      return;
+    }
     let keys;
     try {
       keys = isPlainObject(envelope) ? Object.keys(envelope).slice().sort().join(',') : null;
@@ -858,25 +912,31 @@ export function createReceipts(options) {
     }
     const okField = keys === null ? { ok: false } : readField(envelope, 'ok');
     if (!okField.ok || typeof okField.value !== 'boolean') {
+      if (stopped) return;
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
     if (okField.value === true) {
       if (keys !== 'ok,value') {
+        if (stopped) return;
         discard(DISCARD_UNKNOWN_CODE);
         return;
       }
       /* An acceptance envelope that also carries a closed slot outside its
        * closed set is an unknown value (C-DLV section 4.5). */
-      if (closedSlotViolation(envelope) !== null) discard(DISCARD_UNKNOWN_CODE);
+      const violation = closedSlotViolation(envelope);
+      if (stopped) return;
+      if (violation !== null) discard(DISCARD_UNKNOWN_CODE);
       return;
     }
     if (keys !== 'code,ok') {
+      if (stopped) return;
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
     const codeField = readField(envelope, 'code');
     if (!codeField.ok || typeof codeField.value !== 'string' || !SDK_RESULT_CODES.has(codeField.value)) {
+      if (stopped) return;
       discard(DISCARD_UNKNOWN_CODE);
     }
   }
@@ -896,15 +956,32 @@ export function createReceipts(options) {
     } catch {
       return;
     }
-    if (!Array.isArray(data) || data.length < 1) return;
-    if (data[0] !== FRAME_KIND_EVENT || data.length < 3) return;
+    /* The array accesses below are themselves untrusted (a proxy may throw on
+     * `length` or on an index), so they are read guarded: a frame that cannot
+     * be read is not queued and not validated. */
+    let bar;
+    try {
+      bar = Array.isArray(data) && data.length >= 3 ? data[0] : null;
+    } catch {
+      return;
+    }
+    if (bar !== FRAME_KIND_EVENT) return;
+    let event;
+    try {
+      event = data[2];
+    } catch {
+      return;
+    }
 
-    const validated = await validateEvent(data[2]);
+    const validated = await validateEvent(event);
     /* C-DLV section 4.6 step (1): a stop that landed while `validateEvent`
      * awaited the identity-key reading ends this frame here. */
     if (stopped) return;
     if (!validated.ok) {
-      discard(DISCARD_INVALID);
+      /* C-DLV section 4.5: an unknown closed slot of the identity-key return
+       * keeps its own code ahead of the step-3 failure. */
+      if (stopped) return;
+      discard(validated.unknown === true ? DISCARD_UNKNOWN_CODE : DISCARD_INVALID);
       return;
     }
     /* C-DLV section 8: the duplicate check runs after the checks of 7.1, and
@@ -932,7 +1009,8 @@ export function createReceipts(options) {
     if (built.unknown === true) {
       /* C-DLV section 4.5: an unknown closed slot in the signature return is
        * `E_SDK_UNKNOWN_CODE`; the message event emitted above stands, because
-       * section 7.2 emits the message before the receipt is built. */
+       * section 7.2 emits the message before the receipt is built, and this is
+       * the structure's one terminal event, never a second. */
       discard(DISCARD_UNKNOWN_CODE);
       return;
     }
@@ -981,7 +1059,16 @@ export function createReceipts(options) {
     } catch {
       return success({ queued: false });
     }
-    if (!Array.isArray(data) || data.length < 3 || data[0] !== FRAME_KIND_EVENT) {
+    /* C-DLV section 7.1: a frame that is not a decoded `EVENT` array of this
+     * module's shape is not queued. The reads are guarded, so an array whose
+     * `length` getter or index getter throws never escapes `ingest`. */
+    let bar;
+    try {
+      bar = Array.isArray(data) && data.length >= 3 ? data[0] : null;
+    } catch {
+      return success({ queued: false });
+    }
+    if (bar !== FRAME_KIND_EVENT) {
       return success({ queued: false });
     }
     if (queue.length >= INBOUND_PENDING_BOUND) return success({ queued: false });

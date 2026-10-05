@@ -114,7 +114,10 @@ function eventFrame(event, relayIndex = 0) {
 }
 
 function makeHarness(overrides = {}) {
-  const owner = makeKey();
+  /* A caller may hand in the key it built its frames for, so that a frame whose
+   * `p` tag names that key still passes step 3 in this client (owner decision
+   * H2: one owner key across both harnesses, or the property is vacuous). */
+  const owner = overrides.owner ?? makeKey();
   const other = makeKey();
   const published = [];
   const events = [];
@@ -138,13 +141,16 @@ function makeHarness(overrides = {}) {
     },
     acceptReceipt: ({ eventId, recipient }) => {
       acks.push({ eventId, recipient });
-      return { ok: true, value: { accepted: true, deliveryId: 'd1' } };
+      /* C-SDK section 5.1 and C-DLV section 4.5: only the exact frozen envelope
+       * of the interface leaves the module silent. */
+      return Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) });
     },
     onEvent: (event) => {
       events.push(event);
     },
   };
   for (const key of Object.keys(overrides)) {
+    if (key === 'owner') continue;
     if (overrides[key] === undefined) delete defaults[key];
     else defaults[key] = overrides[key];
   }
@@ -1218,7 +1224,7 @@ describe('section 7.3 -- the acknowledgement seam', () => {
 
   test('a refusal whose code is inside the closed set of C-SDK section 5.2 is ignored without an event', async () => {
     for (const code of ['E_SDK_STORAGE_FAILED', 'E_SDK_INTERNAL', 'E_SDK_UNKNOWN_DELIVERY', 'E_SDK_DELIVERY_TERMINAL', 'E_SDK_UNKNOWN_CODE']) {
-      const harness = makeHarness({ acceptReceipt: () => ({ ok: false, code }) });
+      const harness = makeHarness({ acceptReceipt: () => Object.freeze({ ok: false, code }) });
       harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
         recipient: harness.other, owner: harness.owner.pub, eventId: 'a'.repeat(64),
       })]));
@@ -1273,8 +1279,8 @@ describe('section 7.3 -- the acknowledgement seam', () => {
 
   test('an accepting seam leaves the module silent', async () => {
     for (const value of [
-      { ok: true, value: { accepted: true, deliveryId: 'd1' } },
-      { ok: true, value: { accepted: false, deliveryId: null } },
+      Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      Object.freeze({ ok: true, value: Object.freeze({ accepted: false, deliveryId: null }) }),
     ]) {
       const harness = makeHarness({ acceptReceipt: () => value });
       harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
@@ -1287,7 +1293,7 @@ describe('section 7.3 -- the acknowledgement seam', () => {
 
   test('a receipt for an item no seam recognises is ignored without an event', async () => {
     const harness = makeHarness({
-      acceptReceipt: () => ({ ok: true, value: { accepted: false, deliveryId: null } }),
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: false, deliveryId: null }) }),
     });
     harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
       recipient: harness.other, owner: harness.owner.pub, eventId: 'e'.repeat(64),
@@ -1444,12 +1450,17 @@ function makeGenerator(seed) {
 }
 
 describe('generative invariants over a deterministic draw stream', () => {
-  test('300 timelines: a valid event is processed exactly once and every single-field mutation is discarded', async () => {
+  test('300 timelines: a valid event is processed exactly once, mutations are discarded, and the window and stop invariants hold', async () => {
+    let accepted = 0;
     for (let seed = 1; seed <= 300; seed += 1) {
       const generator = makeGenerator(seed);
+      /* H2: the timeout is drawn, not fixed, and the frames of a timeline are
+       * addressed to the key the client of that timeline reads, so a well-formed
+       * frame passes step 3 and the mutations below reach steps 4 and 5. */
+      const timeoutMs = 40 * (1 + generator.below(4));
       const harness = makeHarness({
         clock: { now: () => generator.below(100000) },
-        perRelayTimeoutMs: PORT_CALL_TIMEOUT_MS * 2,
+        perRelayTimeoutMs: timeoutMs,
       });
       const sender = makeKey();
       const askReceipt = generator.below(2) === 0;
@@ -1475,6 +1486,7 @@ describe('generative invariants over a deterministic draw stream', () => {
         expect(harness.events[before].kind).toBe('MESSAGE_RECEIVED');
         expect(harness.events[before].sender).toBe(sender.pub);
         expect(harness.published.length).toBe(askReceipt ? 1 : 0);
+        accepted += 1;
       } else {
         expect(harness.acks).toHaveLength(1);
       }
@@ -1486,7 +1498,8 @@ describe('generative invariants over a deterministic draw stream', () => {
       expect(harness.events.length - before).toBe(kind === 4741 ? 1 : 0);
       expect(harness.published.length).toBe(kind === 4741 && askReceipt ? 1 : 0);
 
-      // Every single-field mutation of the event is discarded.
+      // Every single-field mutation of the event is discarded, in a client that
+      // reads the same owner key, so that the control below is a real one.
       const mutations = [
         { id: 'f'.repeat(64) },
         { sig: 'f'.repeat(128) },
@@ -1497,18 +1510,38 @@ describe('generative invariants over a deterministic draw stream', () => {
         { content: null },
         { tags: null },
       ];
-      const freshHarness = makeHarness({ clock: { now: () => 12000 } });
+      const freshHarness = makeHarness({ owner: harness.owner, clock: { now: () => 12000 } });
       const seen = freshHarness.events.length;
+      /* The positive control: the untouched frame of this timeline is accepted
+       * here, so the window and the eight discards below cannot be vacuous. */
+      freshHarness.module.ingest(frame(['EVENT', 'sub', event]));
+      await flush(3);
+      expect(freshHarness.events.length - seen).toBe(kind === 4741 ? 1 : 0);
+      const control = freshHarness.events.length;
       for (const patch of mutations) {
         freshHarness.module.ingest(frame(['EVENT', 'sub', { ...event, ...patch }]));
       }
       await flush(12);
-      expect(freshHarness.events.length - seen).toBe(8);
-      for (const entry of freshHarness.events.slice(seen)) {
+      expect(freshHarness.events.length - control).toBe(8);
+      for (const entry of freshHarness.events.slice(control)) {
         expect(entry.code).toBe('E_SDK_INBOUND_INVALID');
       }
+      /* The window invariant: the id accepted by the control is held, so the
+       * same frame again changes nothing. */
+      freshHarness.module.ingest(frame(['EVENT', 'sub', event]));
+      await flush(3);
+      expect(freshHarness.events.length - control).toBe(8);
+      /* The terminal invariant: nothing is emitted after the stop of C-DLV
+       * section 4.6 step (1). */
       freshHarness.module.shutdown();
+      freshHarness.module.ingest(frame(['EVENT', 'sub', event]));
+      await flush(3);
+      expect(freshHarness.events.length - control).toBe(8);
     }
+    /* The property is non-vacuous: a nonzero number of the generated well-formed
+     * frames was accepted and processed. */
+    expect(accepted).toBeGreaterThan(0);
+    console.log(`generative: ${accepted} of 300 drawn timelines were accepted and processed`);
   }, 240000);
 });
 
@@ -1651,11 +1684,11 @@ describe('round-1 counterexamples', () => {
 
   test('a well-formed refusal with a closed code is silent, and so is a well-formed acceptance', async () => {
     const silent = [
-      { ok: true, value: { accepted: true, deliveryId: 'd1' } },
-      { ok: true, value: null },
-      { ok: false, code: 'E_SDK_QUEUE_FULL' },
-      { ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' },
-      { ok: false, code: 'E_SDK_DELIVERY_TERMINAL' },
+      Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      Object.freeze({ ok: true, value: null }),
+      Object.freeze({ ok: false, code: 'E_SDK_QUEUE_FULL' }),
+      Object.freeze({ ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' }),
+      Object.freeze({ ok: false, code: 'E_SDK_DELIVERY_TERMINAL' }),
     ];
     for (const value of silent) {
       const harness = makeHarness({ acceptReceipt: () => value });
@@ -1676,6 +1709,9 @@ describe('round-1 counterexamples', () => {
         onEvent: () => Promise.reject(new Error('sink')),
         publishReceipt: () => Promise.reject(new Error('seam')),
         acceptReceipt: () => Promise.reject(new Error('ack seam')),
+        /* C-SDK section 8.4: a promise from the synchronous clock port is an
+         * invalid return, and its rejection is consumed, not left unhandled. */
+        clock: { now: () => Promise.reject(new Error('clock')) },
       });
       harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
       harness.module.ingest(eventFrame(receiptEvent({
@@ -1835,5 +1871,291 @@ describe('the terminal stop at every awaited boundary', () => {
     expect(signs).toBe(0);
     expect(harness.events).toEqual([]);
     expect(harness.published).toEqual([]);
+  });
+});
+
+
+/* ------------------------------------------------------------------------- *
+ * Owner decision R2 -- the round-3 corrections.
+ *
+ * A1: C-DLV section 4.5 runs first on the return of `getPublicKey()`, so an
+ * unknown closed slot there is `E_SDK_UNKNOWN_CODE` and only a well-formed but
+ * non-64-hex key is the step-3 failure of `E_SDK_INBOUND_INVALID`. (c)1: the
+ * five closed slots the contract names are read on any object return. (c)4: the
+ * acknowledgement envelope is checked with `Object.isFrozen`. H1: one replay
+ * per cited O-SCEN3 purpose item -- `offlineRecipient`, `relayLoss`,
+ * `hungRelay` -- at the arrival instant the record fixes. The remaining tests
+ * are the MEDIUM findings of the round-3 review that are inside the two-file
+ * allowlist and change no contract text.
+ * ------------------------------------------------------------------------- */
+
+describe('A1 -- unknown-value precedence on the identity-key return', () => {
+  test('a getPublicKey return carrying a closed slot outside its set is E_SDK_UNKNOWN_CODE, ahead of the step-3 failure', async () => {
+    for (const reading of [
+      { code: 'E_FUTURE_RESULT' },
+      { state: 'FUTURE_STATE' },
+      { outcome: 'FUTURE_OUTCOME' },
+      { lastCode: 'E_FUTURE_RESULT' },
+      { receiptMode: 'FUTURE_MODE' },
+    ]) {
+      const harness = makeHarness({ identity: { getPublicKey: () => reading, sign: () => new Uint8Array(64) } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+      expect(harness.published).toHaveLength(0);
+      expect(harness.opens).toHaveLength(0);
+    }
+  });
+
+  test('a well-formed but non-64-hex key return is still the step-3 failure of E_SDK_INBOUND_INVALID', async () => {
+    for (const reading of ['', 'z'.repeat(64), 'A'.repeat(64), 12, true, { key: 'a'.repeat(64) }]) {
+      const harness = makeHarness({ identity: { getPublicKey: () => reading, sign: () => new Uint8Array(64) } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' }]);
+      expect(harness.published).toHaveLength(0);
+    }
+  });
+
+  test('a getPublicKey return carrying a closed slot that is INSIDE its set still fails step 3 the plain way', async () => {
+    for (const reading of [{ lastCode: null }, { state: 'IN_FLIGHT' }, { code: 'E_SDK_UNKNOWN_CODE' }]) {
+      const harness = makeHarness({ identity: { getPublicKey: () => reading, sign: () => new Uint8Array(64) } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' }]);
+    }
+  });
+});
+
+describe('(c)1 -- the five closed slots are read on any object return', () => {
+  test('a typed-array return that carries a closed slot outside its set is E_SDK_UNKNOWN_CODE', async () => {
+    const sign = makeHarness();
+    sign.options.identity.sign = () => Object.assign(new Uint8Array(64), { state: 'FUTURE_STATE' });
+    sign.module.ingest(eventFrame(messageEvent({ sender: sign.other, owner: sign.owner.pub })));
+    await flush();
+    expect(sign.events).toEqual([
+      { kind: 'MESSAGE_RECEIVED', sender: sign.other.pub, payload: new Uint8Array([7, 8, 9]) },
+      { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
+    ]);
+    expect(sign.published).toHaveLength(0);
+
+    const open = makeHarness({
+      session: { open: () => Object.assign(new Uint8Array(1), { outcome: 'FUTURE_OUTCOME' }) },
+    });
+    open.module.ingest(eventFrame(messageEvent({ sender: open.other, owner: open.owner.pub })));
+    await flush();
+    expect(open.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+  });
+});
+
+describe('(c)4 -- the acknowledgement envelope is checked with Object.isFrozen', () => {
+  test('an unfrozen acceptance or refusal is E_SDK_UNKNOWN_CODE, and the frozen envelope is silent', async () => {
+    const unfrozen = [
+      { ok: true, value: { accepted: true, deliveryId: 'd1' } },
+      { ok: false, code: 'E_SDK_QUEUE_FULL' },
+      { ok: true, value: null },
+    ];
+    for (const value of unfrozen) {
+      const harness = makeHarness({ acceptReceipt: () => value });
+      harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
+        recipient: harness.other, owner: harness.owner.pub, eventId: 'a'.repeat(64),
+      })]));
+      await flush();
+      expect(harness.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+    }
+    const frozen = makeHarness({
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true }) }),
+    });
+    frozen.module.ingest(frame(['EVENT', 'sub', receiptEvent({
+      recipient: frozen.other, owner: frozen.owner.pub, eventId: 'b'.repeat(64),
+    })]));
+    await flush();
+    expect(frozen.events).toEqual([]);
+  });
+});
+
+describe('O-SCEN3 offlineRecipient / receiptBeforeDeadline / receiptAfterDeadline', () => {
+  test('the replayed frame is processed at its arrival instant while the client is still CREATED, and its second copy is dropped', async () => {
+    /* O-SCEN3 `relayLoss`'s sibling record `offlineRecipient`, timeline
+     * `receiptBeforeDeadline`, precondition 4 and the events at 61 105 and
+     * 61 250: the recipient has not resolved its `start()` -- its state is still
+     * CREATED -- when relay0's stored match arrives, and C-DLV section 7.1
+     * holds no inbound frame for that state, so the frame is processed at its
+     * arrival instant: `MESSAGE_RECEIVED` with the sender key and a fresh copy
+     * of the payload, and one published receipt because the event carries the
+     * `r` tag. The copy relay1 delivers 50 ms later is already in the window. */
+    const harness = makeHarness();
+    harness.options.clock.now = () => 61105;
+    const incoming = messageEvent({ sender: harness.other, owner: harness.owner.pub });
+    harness.module.ingest(eventFrame(incoming, 0));
+    await flush(8);
+    expect(harness.events).toEqual([
+      { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) },
+    ]);
+    expect(harness.published).toHaveLength(1);
+    expect(harness.published[0].created_at).toBe(61);
+    expect(harness.published[0].tags[1][1]).toBe(incoming.id);
+
+    harness.options.clock.now = () => 61200;
+    harness.module.ingest(eventFrame(incoming, 1));
+    await flush(8);
+    expect(harness.events).toHaveLength(1);
+    expect(harness.published).toHaveLength(1);
+  });
+
+  test('the sender routes a receipt to the item-side seam before the deadline and at the deadline reading, and emits nothing', async () => {
+    /* O-SCEN3 `offlineRecipient`, timeline `receiptAfterDeadline`: the
+     * acknowledgement reaches the sender at 132 000, the clock reading of
+     * `deadlineAt`, and C-DLV section 7.3 leaves the deadline to the seam, so
+     * the module routes the structure exactly as section 7.3 states and emits
+     * no event of its own; the seam's refusal is ignored without an event. */
+    const harness = makeHarness({
+      acceptReceipt: ({ eventId, recipient }) => {
+        routed.push({ eventId, recipient });
+        return Object.freeze({ ok: false, code: 'E_SDK_DELIVERY_TERMINAL' });
+      },
+    });
+    const recipientKey = makeKey();
+    const routed = [];
+    harness.options.clock.now = () => 61200;
+    harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
+      recipient: recipientKey, owner: harness.owner.pub, eventId: 'a'.repeat(64),
+    })], 0));
+    await flush();
+    harness.options.clock.now = () => 132000;
+    harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
+      recipient: recipientKey, owner: harness.owner.pub, eventId: 'b'.repeat(64),
+    })], 1));
+    await flush();
+    expect(routed).toEqual([
+      { eventId: 'a'.repeat(64), recipient: recipientKey.pub },
+      { eventId: 'b'.repeat(64), recipient: recipientKey.pub },
+    ]);
+    expect(harness.events).toEqual([]);
+    expect(harness.published).toHaveLength(0);
+  });
+});
+
+describe('O-SCEN3 relayLoss / relayLossAndReplacement', () => {
+  test('a frame delivered while the client is not RUNNING is queued and processed at its arrival instant, in arrival order', async () => {
+    /* O-SCEN3 `relayLoss`: relay1 drops its connection after receiving the
+     * published EVENT frame and is retired and replaced, and the harness fixes
+     * the arrival instant of each frame it delivers. The inbound side of that
+     * timeline is C-DLV section 7.1: a frame relay1 delivers and a frame relay0
+     * delivers while the client has not resolved its `start()` -- state CREATED,
+     * not RUNNING -- are queued and processed one at a time in arrival order,
+     * and the receipt of each is published at that instant. */
+    const harness = makeHarness();
+    harness.options.clock.now = () => 30000;
+    const dropped = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '1'.repeat(32), payload: [1] });
+    const normal = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '2'.repeat(32), payload: [2] });
+    harness.module.ingest(eventFrame(dropped, 1));
+    harness.module.ingest(eventFrame(normal, 0));
+    await flush(8);
+    expect(harness.events.map((event) => event.kind)).toEqual(['MESSAGE_RECEIVED', 'MESSAGE_RECEIVED']);
+    expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual([dropped.id, normal.id]);
+    expect(harness.opens).toHaveLength(2);
+  });
+});
+
+describe('O-SCEN3 hungRelay / hungRelayAlongsideNormal', () => {
+  test("the normal relay's frame is processed at once and the hung relay's frame at its own arrival instant, in arrival order", async () => {
+    /* O-SCEN3 `hungRelay`, timeline `hungRelayAlongsideNormal`: relay1 never
+     * answers and is still open when relay0's acceptance moves the item at once,
+     * and the frame relay1 later delivers arrives after that instant. C-DLV
+     * section 7.1 holds neither frame for the other and waits on no per-relay
+     * timeout: each is processed at its arrival instant, in arrival order. */
+    const harness = makeHarness();
+    harness.options.clock.now = () => 45000;
+    const normal = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '3'.repeat(32), payload: [3] });
+    const hung = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '4'.repeat(32), payload: [4] });
+    harness.module.ingest(eventFrame(normal, 0));
+    await flush(8);
+    expect(harness.events).toHaveLength(1);
+    harness.module.ingest(eventFrame(hung, 1));
+    await flush(8);
+    expect(harness.events).toHaveLength(2);
+    expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual([normal.id, hung.id]);
+  });
+});
+
+describe('the remaining in-allowlist findings of the round-3 review', () => {
+  test('a negative clock reading builds no receipt and emits no event (B8)', async () => {
+    const harness = makeHarness({ clock: { now: () => -12000 } });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush();
+    expect(harness.events).toHaveLength(1);
+    expect(harness.events[0].kind).toBe('MESSAGE_RECEIVED');
+    expect(harness.published).toHaveLength(0);
+  });
+
+  test('a port getter that stops the client during the lookup starts no call and emits nothing (B3)', async () => {
+    const calls = [];
+    let module = null;
+    const harness = makeHarness({
+      session: {
+        get open() {
+          module.shutdown();
+          return () => {
+            calls.push('open');
+            return { plaintext: new Uint8Array([1]) };
+          };
+        },
+      },
+    });
+    module = harness.module;
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(8);
+    expect(calls).toEqual([]);
+    expect(harness.events).toEqual([]);
+    expect(harness.published).toEqual([]);
+  });
+
+  test('a closed-slot getter that stops the client emits no discard after the stop (B3)', async () => {
+    const calls = [];
+    let module = null;
+    const value = {};
+    Object.defineProperty(value, 'state', {
+      enumerable: true,
+      get() {
+        module.shutdown();
+        return 'FUTURE_STATE';
+      },
+    });
+    const harness = makeHarness({ session: { open: () => value } });
+    module = harness.module;
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush(8);
+    expect(calls).toEqual([]);
+    expect(harness.events).toEqual([]);
+    expect(harness.published).toEqual([]);
+  });
+
+  test('a frame array whose index getter throws is never queued, and never processed (B5)', async () => {
+    const hostileIngest = makeHarness();
+    const unreadable = ['EVENT', 'sub', null];
+    Object.defineProperty(unreadable, 0, {
+      get() {
+        throw new Error('hostile frame');
+      },
+    });
+    expect(hostileIngest.module.ingest({ relayIndex: 0, relay: 'relay-0', data: unreadable }))
+      .toEqual({ ok: true, value: { queued: false } });
+    await flush(4);
+    expect(hostileIngest.events).toEqual([]);
+    expect(hostileIngest.published).toEqual([]);
+
+    const hostileProcess = makeHarness();
+    const unreadableEvent = ['EVENT', 'sub', null];
+    Object.defineProperty(unreadableEvent, 2, {
+      get() {
+        throw new Error('hostile frame');
+      },
+    });
+    expect(hostileProcess.module.ingest({ relayIndex: 0, relay: 'relay-0', data: unreadableEvent }))
+      .toEqual({ ok: true, value: { queued: true } });
+    await flush(8);
+    expect(hostileProcess.events).toEqual([]);
+    expect(hostileProcess.published).toEqual([]);
   });
 });
