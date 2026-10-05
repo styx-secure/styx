@@ -1948,13 +1948,23 @@ describe('closed user-visible guidance (C-REC §9)', () => {
     expect(recoveryGuidance('RESET_NO_ERASURE')).toMatch(/non garantisce la cancellazione fisica/);
     expect(recoveryGuidance('SHOW_CREATE')).toMatch(/non attesta/);
   });
+
+  test('no guidance claims prior absence, recoverability, erasure or freshness (C-REC §9, §11)', () => {
+    const keys = [...CREC.dispositionEnum, 'PASSWORD_REWRAP', 'RESET', 'RESET_NO_ERASURE'];
+    for (const k of keys) {
+      const t = recoveryGuidance(k);
+      expect(t).not.toMatch(/nessun dato precedente|da recuperare|è stato cancellat|sono stati cancellat|aggiornat[oa] all'ultim/);
+    }
+    expect(recoveryGuidance('CONTINUE_EMPTY')).toBe('Archivio ripristinato senza sessione M2 attiva.');
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------
 // Vault methods over the storage double: best-effort reset and recovery re-wrap
 // ---------------------------------------------------------------------------------------------------
 
-// A VaultDb double that records every storage call made through it.
+// A VaultDb double that records every storage call made through it, including transaction entry and
+// every operation (read or write) performed inside a transaction callback.
 function tracedDb() {
   const db = new FakeVaultDb();
   const calls = [];
@@ -1962,11 +1972,16 @@ function tracedDb() {
     get version() { return db.version; },
     get: async (ns, key) => { calls.push(['get', ns, key]); return db.get(ns, key); },
     list: async (ns) => { calls.push(['list', ns]); return db.list(ns); },
-    transaction: async (namespaces, cb) => db.transaction(namespaces, (ops) => cb({
-      ...ops,
-      put: (ns, key, value) => { calls.push(['put', ns, key, value === null ? null : 'value']); return ops.put(ns, key, value); },
-      delete: (ns, key) => { calls.push(['delete', ns, key]); return ops.delete(ns, key); },
-    })),
+    transaction: async (namespaces, cb) => {
+      calls.push(['transaction', ...namespaces]);
+      return db.transaction(namespaces, (ops) => cb({
+        ...ops,
+        get: (ns, key) => { calls.push(['tx-get', ns, key]); return ops.get(ns, key); },
+        list: (ns) => { calls.push(['tx-list', ns]); return ops.list(ns); },
+        put: (ns, key, value) => { calls.push(['put', ns, key, value === null ? null : 'value']); return ops.put(ns, key, value); },
+        delete: (ns, key) => { calls.push(['delete', ns, key]); return ops.delete(ns, key); },
+      }));
+    },
     destroy: async () => { calls.push(['destroy']); return db.destroy(); },
   };
   return { db, traced, calls };
@@ -2015,7 +2030,7 @@ describe('best-effort destructive reset through the vault', () => {
       restoreResult: 'MANIFEST_INVALID', lockHeld: true, confirmed: true, disclosure: true, confirmation: begun.confirmation,
     });
     expect(done).toEqual({ ...CREC.fixtures.find((f) => f.id === 'RESET-CONFIRMED-ELIGIBLE').expected, state: VAULT_STATES.UNINITIALIZED });
-    expect(calls).toEqual([['put', 'meta', 'wrapper', null], ['destroy']]);
+    expect(calls).toEqual([['transaction', 'meta'], ['put', 'meta', 'wrapper', null], ['destroy']]);
     expect(db.destroyed).toBe(1);
     expect(outside.snap()).toEqual(before);
     assertValueFree(done);
@@ -2139,6 +2154,100 @@ describe('best-effort destructive reset through the vault', () => {
     }
     expect(calls).toEqual([]);
   });
+
+  test('every confirm call consumes the open handle, a malformed one included', async () => {
+    const { v, db, calls } = await unlockedVault();
+    for (const bad of [null, {}, { restoreResult: 'MANIFEST_INVALID', lockHeld: 'yes' }]) {
+      const begun = await v.beginRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: true });
+      await expect(v.confirmRecoveryReset(bad)).rejects.toThrow(TypeError);
+      const later = await v.confirmRecoveryReset({
+        restoreResult: 'MANIFEST_INVALID', lockHeld: true, confirmed: true, disclosure: true, confirmation: begun.confirmation,
+      });
+      expect(later.reject).toBe('FRESH_CONFIRMATION_REQUIRED');
+    }
+    expect(calls).toEqual([]);
+    expect(db.destroyed).toBe(0);
+  });
+
+  test('confirm on a vault locked after begin is RESET_INELIGIBLE and touches nothing', async () => {
+    const { v, db, calls } = await unlockedVault();
+    const begun = await v.beginRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: true });
+    await v.lock();
+    calls.length = 0;
+    const out = await v.confirmRecoveryReset({
+      restoreResult: 'MANIFEST_INVALID', lockHeld: true, confirmed: true, disclosure: true, confirmation: begun.confirmation,
+    });
+    expect(out.reject).toBe('RESET_INELIGIBLE');
+    expect(calls).toEqual([]);
+    expect(db.destroyed).toBe(0);
+  });
+
+  test('the reset paths never touch page storage (legacy envelope, marker) or open another database', async () => {
+    const touched = [];
+    const sentinel = (name) => new Proxy({}, { get: (_t, k) => { touched.push([name, String(k)]); return () => undefined; } });
+    const saved = ['localStorage', 'sessionStorage', 'indexedDB'].map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]);
+    for (const [k] of saved) Object.defineProperty(globalThis, k, { configurable: true, get: () => sentinel(k) });
+    try {
+      const { v, db } = await unlockedVault();
+      await v.beginRecoveryReset({ restoreResult: 'RESTORED_ACTIVE', lockHeld: true }); // refused
+      await v.beginRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: true });
+      await v.cancelRecoveryReset();
+      const begun = await v.beginRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: true });
+      await v.confirmRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: true, confirmed: true, disclosure: true, confirmation: begun.confirmation });
+      expect(db.destroyed).toBe(1);
+    } finally {
+      for (const [k, d] of saved) {
+        if (d === undefined) delete globalThis[k]; else Object.defineProperty(globalThis, k, d);
+      }
+    }
+    expect(touched).toEqual([]);
+  });
+});
+
+// A database that already holds a wrapper (optionally with an orphan `rewrapPending`, or corrupt),
+// opened by a vault instance that has never been loaded in this session.
+async function freshInstanceOver(kind) {
+  const seed = new FakeVaultDb();
+  await makeVault(seed).createVault(PW, { profile: TEST_PROFILE });
+  const wrapper = deepClone(seed.wrapper());
+  const t = tracedDb();
+  const stored = kind === 'corrupt' ? { corrupt: true }
+    : kind === 'pending' ? { ...deepClone(wrapper), rewrapPending: deepClone(wrapper) } : wrapper;
+  await t.db.transaction(['meta'], (ops) => ops.put('meta', 'wrapper', stored));
+  const before = snapshotStores(t.db);
+  return { ...t, v: makeVault(t.traced), before };
+}
+
+describe('the recovery methods never load the vault: a fresh instance refuses from memory', () => {
+  const CASES = [
+    ['beginRecoveryReset', { restoreResult: 'MANIFEST_INVALID', lockHeld: false }, 'LOCKED_ELSEWHERE'],
+    ['beginRecoveryReset', { restoreResult: 'MANIFEST_INVALID', lockHeld: true }, 'RESET_INELIGIBLE'],
+    ['beginRecoveryReset', { restoreResult: 'RESTORED_RECONCILIATION_REQUIRED', lockHeld: true }, 'RESET_INELIGIBLE'],
+    ['confirmRecoveryReset', { restoreResult: 'MANIFEST_INVALID', lockHeld: false, confirmed: true, disclosure: true, confirmation: {} }, 'LOCKED_ELSEWHERE'],
+    ['confirmRecoveryReset', { restoreResult: 'MANIFEST_INVALID', lockHeld: true, confirmed: true, disclosure: true, confirmation: {} }, 'RESET_INELIGIBLE'],
+    ['recoveryChangePassword', { restoreResult: 'RESTORED_ACTIVE', lockHeld: false, currentPassword: PW, newPassword: PW2 }, 'LOCKED_ELSEWHERE'],
+    ['recoveryChangePassword', { restoreResult: 'RESTORED_RECONCILIATION_REQUIRED', lockHeld: true, currentPassword: PW, newPassword: PW2 }, 'RESTORE_PRECONDITION_FAILED'],
+    ['recoveryChangePassword', { restoreResult: 'NO_M2_STATE', lockHeld: true, currentPassword: PW, newPassword: PW2 }, 'EXISTING_VAULT_FACILITY_UNCHANGED'],
+    ['recoveryChangePassword', { restoreResult: 'RESTORED_ACTIVE', lockHeld: true, currentPassword: PW, newPassword: PW2 }, 'WRAPPER_AUTH_FAILED'],
+  ];
+  const outcomeOf = (out) => out.reject ?? out.agreement?.disposition;
+  for (const kind of ['valid', 'pending', 'corrupt']) {
+    test.each(CASES)(`${kind} stored wrapper: %s %j → %s, no storage read or write`, async (method, input, expected) => {
+      const { v, db, calls, before } = await freshInstanceOver(kind);
+      const out = await v[method](input);
+      expect(outcomeOf(out)).toBe(expected);
+      expect(calls).toEqual([]);
+      expect(snapshotStores(db)).toEqual(before);
+      expect(db.destroyed).toBe(0);
+    });
+  }
+
+  test('an existing method still loads as before (and clears an orphan rewrapPending)', async () => {
+    const { v, db, calls } = await freshInstanceOver('pending');
+    expect((await v.status()).state).toBe(VAULT_STATES.LOCKED);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(db.wrapper().rewrapPending ?? null).toBeNull();
+  });
 });
 
 describe('recovery password re-wrap through the vault (C-REC §5)', () => {
@@ -2252,13 +2361,22 @@ describe('recovery password re-wrap through the vault (C-REC §5)', () => {
 describe('static boundaries of the recovery section', () => {
   const src = readFileSync(VAULT_SOURCE_URL, 'utf8');
   const section = src.slice(src.indexOf('// M2 recovery and reset actions (card R-UX'));
+  const methods = src.slice(src.indexOf('    async beginRecoveryReset('), src.indexOf('    /** State + non-sensitive markers.'));
 
   test('the recovery section performs no I/O, clock, randomness or legacy access of its own', () => {
     expect(section.length).toBeGreaterThan(1000);
+    expect(methods.length).toBeGreaterThan(1000);
     for (const forbidden of ['localStorage', 'sessionStorage', 'indexedDB', 'fetch(', 'Date', 'Math.random',
       'postMessage', 'navigator', 'import(', 'legacy-session-invalidation', 'legacy-session-inventory', 'console.']) {
       expect(section).not.toContain(forbidden);
+      expect(methods).not.toContain(forbidden);
     }
+  });
+
+  test('the four recovery methods never load the vault; the only storage access is the authenticated re-wrap read and destroy()', () => {
+    expect(methods).not.toContain('ensureLoaded');
+    expect(methods.match(/\bdb\.[a-zA-Z]+\(/g)).toEqual(['db.get(']);
+    expect(methods.match(/\bapi\.[a-zA-Z]+\(/g)).toEqual(['api.destroy(']);
   });
 
   test('vault.js imports nothing new (no legacy, marker, adapter or worker module)', () => {

@@ -866,9 +866,12 @@ export function createVault({
      * WRAPPER_AUTH, so any other vault state is ineligible). On acceptance it
      * returns the value-free disclosure and a fresh opaque confirmation handle,
      * bound to this result and this unlocked session; any earlier handle is void.
+     * It never loads the vault: an instance that has not reached UNLOCKED in this
+     * session (never loaded, LOCKED, ERROR) is decided from memory as ineligible,
+     * so a refusal reads and writes no byte. Every well-formed call voids any
+     * earlier handle (contract #447 rule 5: a second `begin` voids the first).
      */
     async beginRecoveryReset(input) {
-      await ensureLoaded();
       const s = snapshotRecoveryInput(input, ['restoreResult', 'lockHeld']);
       if (s === null || typeof s.lockHeld !== 'boolean') {
         throw new TypeError('recovery reset input is malformed');
@@ -893,16 +896,17 @@ export function createVault({
      * (keys, then wrapper, then database). It never reads or writes legacy bytes
      * or the L-MARK marker (neither lives in the vault database). A failure after
      * the gate is the closed INTERRUPTED outcome: it is classified only by the next
-     * complete C-REST run, with no automatic completion and no cleanup.
+     * complete C-REST run, with no automatic completion and no cleanup. Like
+     * beginRecoveryReset it never loads the vault, and every call — malformed
+     * included — consumes the open handle before anything else.
      */
     async confirmRecoveryReset(input) {
-      await ensureLoaded();
+      const pending = pendingReset;
+      pendingReset = null; // single-use, whatever the decision, before any validation
       const s = snapshotRecoveryInput(input, ['restoreResult', 'lockHeld', 'confirmed', 'disclosure', 'confirmation']);
       if (s === null || typeof s.lockHeld !== 'boolean') {
         throw new TypeError('recovery reset input is malformed');
       }
-      const pending = pendingReset;
-      pendingReset = null; // single-use, whatever the decision
       const fresh = pending !== null && s.confirmation === pending.handle
         && s.restoreResult === pending.result && pending.epoch === sessionEpoch;
       const gate = decideRecoveryAction({
@@ -938,10 +942,11 @@ export function createVault({
      * → wrapper authentication of `currentPassword` against the stored wrapper
      * (a wrong credential is WRAPPER_AUTH_FAILED: no re-wrap, no reset, no record
      * oracle). Only then the existing atomic re-wrap runs, unchanged: same Root
-     * Storage Key, no record touched.
+     * Storage Key, no record touched. It never loads the vault: every gate before
+     * wrapper authentication is decided from memory, and an instance that is not
+     * UNLOCKED in this session is WRAPPER_AUTH_FAILED with no storage access.
      */
     async recoveryChangePassword(input) {
-      await ensureLoaded();
       const s = snapshotRecoveryInput(input, ['restoreResult', 'lockHeld', 'currentPassword', 'newPassword', 'profile']);
       if (s === null || typeof s.lockHeld !== 'boolean' || typeof s.restoreResult !== 'string') {
         throw new TypeError('recovery re-wrap input is malformed');
@@ -1137,7 +1142,7 @@ const RECOVERY_REJECT_CODES = Object.freeze([
  */
 const RECOVERY_GUIDANCE = Object.freeze({
   CONTINUE_ACTIVE: 'Sessione ripristinata: continui a usare la sessione esistente.',
-  CONTINUE_EMPTY: 'Archivio ripristinato senza sessione attiva: nessun dato precedente da recuperare.',
+  CONTINUE_EMPTY: 'Archivio ripristinato senza sessione M2 attiva.',
   RECONCILE_ONLY: 'È in corso una riconciliazione: nessuna altra azione è disponibile finché non termina.',
   SHOW_CREATE: 'Nessuna sessione M2 trovata: può creare una nuova sessione. Questo non attesta che prima non ce ne fossero.',
   SHOW_REESTABLISHMENT: 'È presente solo una sessione precedente: può avviare, con il suo consenso, una nuova sessione. La sessione precedente non viene convertita né importata.',
