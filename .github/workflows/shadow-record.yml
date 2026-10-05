@@ -1,0 +1,46 @@
+# Data point shadow-mode (MUCC ADR-005, dev-methodology v0.49+):
+# su ogni PR di story MUCC (task/US-*) registra se le condizioni macchina
+# erano tutte verdi sullo SHA corrente. MISURA, mai gate (|| true): la
+# review umana che segue è il comparatore per la valutazione futura della
+# corsia veloce. Il tool arriva dal pin dichiarato in .mucc/upstream-lock.json
+# (stessa disciplina del resto: il pin governa, la CI lo legge).
+#
+# Prerequisito: secret MUCC_READ_TOKEN = fine-grained PAT read-only
+# (Contents) sul repo privato MaxGiu67/plugin-MUCC.
+name: shadow-record
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+jobs:
+  record:
+    if: startsWith(github.head_ref, 'task/US-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Leggi il pin MUCC dal lock
+        id: pin
+        run: echo "commit=$(python3 -c 'import json;print(json.load(open(".mucc/upstream-lock.json"))["commit"])')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: MaxGiu67/plugin-MUCC
+          ref: ${{ steps.pin.outputs.commit }}
+          token: ${{ secrets.MUCC_READ_TOKEN }}
+          path: .mucc-upstream
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: merge-conditions --record (data point shadow, mai gate)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SPRINT="$(gh api "repos/${{ github.repository }}/milestones?state=all&per_page=100" \
+            --jq '[.[].title | select(startswith("Sprint "))] | last // "Sprint 2"' \
+            | tr -d '"' | sed 's/^Sprint //')"
+          npx tsx .mucc-upstream/dev-methodology/scripts/coord/coordinator.ts \
+            merge-conditions ${{ github.event.pull_request.number }} \
+            --sprint "${SPRINT:-2}" --project . --record --json || true
