@@ -1532,8 +1532,12 @@ function shapeDecision(decision, requestId, operation, staged, heldOutput = null
     // Nothing else is ever released, and a released member is never the caller's own buffer.
     const expectedMember = typeof result.outputKind === 'string' ? OUTPUT_MEMBER_BY_KIND[result.outputKind] : null;
     if (result.code === 'RECONCILED_COMMITTED') {
+      // `originalOutput` is the closed output object of the original success code under C-API
+      // `/response/outputBySuccessCode`; a code whose member list is empty (`JOINED`,
+      // `PEER_UPDATE_APPLIED`) carries the empty closed object `{}`, never `null` (owner act on #317,
+      // binding interpretation of the ratified C-API "All objects are closed maps").
       if (expectedMember !== null && (heldOutput === null || heldOutput.member !== expectedMember)) return null;
-      const released = expectedMember === null ? null : releasedOutput(heldOutput);
+      const released = expectedMember === null ? {} : releasedOutput(heldOutput);
       if (expectedMember !== null && released === null) return null;
       extra.output = freezeData({
         originalSuccessCode: result.originalSuccessCode,

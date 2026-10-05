@@ -637,11 +637,16 @@ describe('I-UPD ambiguity reconciles through RECONCILE_INDETERMINATE', () => {
     expect(result.output.originalOutput.embeddedTreeWelcome).toEqual(WELCOME);
   });
 
-  test('a committed Welcome that holds no escrow reconciles with a null original output', () => {
+  test('a committed Welcome that holds no escrow reconciles with the empty closed original output', () => {
+    // Owner act on #317 (2026-10-05, U1): `originalOutput` is the closed output object of the original
+    // success code under C-API `/response/outputBySuccessCode`; `JOINED` lists no member, so it is `{}`.
     const result = reconcile(heldJoin(), reconcileObservation({ heldOutput: null }), heldRef('held-join-1'));
     assertEnvelope(result, 'SUCCESS', ['successCode', 'output']);
     expect(result.output.originalSuccessCode).toBe('JOINED');
-    expect(result.output.originalOutput).toBe(null);
+    expect(result.output.originalOutput).toEqual({});
+    expect(Object.getPrototypeOf(result.output.originalOutput)).toBe(Object.prototype);
+    expect(Object.keys(result.output.originalOutput)).toEqual([]);
+    expect(Object.isFrozen(result.output.originalOutput)).toBe(true);
   });
 
   test('a held mutation that can no longer commit returns to its original state and releases nothing', () => {
@@ -1220,7 +1225,7 @@ describe('I-UPD seeded property sweep', () => {
           expect(result.successCode).toBe('RECONCILED_COMMITTED');
           expect(held).not.toBe(null);
           expect(result.output.originalSuccessCode).toBe(held.expectedSuccessCode);
-          if (held.outputKind === 'NONE') expect(result.output.originalOutput).toBe(null);
+          if (held.outputKind === 'NONE') expect(Object.keys(result.output.originalOutput)).toEqual([]);
           else {
             expect(result.output.originalOutput).not.toBe(null);
             expect(Object.keys(result.output.originalOutput)).toEqual([M2_ADAPTER.OUTPUT_MEMBER_BY_KIND[held.outputKind]]);
