@@ -508,3 +508,86 @@ describe('Reconciled APPLY_PEER_UPDATE results cross the worker boundary (U1 `{}
     expect(fromWireBytes(toWireBytes(selected)).output).toEqual({ selectedCandidateRef: 'a' });
   });
 });
+
+// I-FORK review r1 (Sol R1-R4, DeepSeek F1-F2), each confirmed on AI395 at a39f3e5 before the fix.
+describe('I-FORK review r1 regressions', () => {
+  const bound = M2_ADAPTER.BOUNDS.MAX_CANDIDATE_REF_CHARS;
+
+  test('R1: the candidate subtree is read once; a descriptor that changes on re-read cannot swap the held winner', () => {
+    let reads = 0;
+    const current = new Proxy({ committerId: LOW.slice(), ref: 'validated' }, {
+      getOwnPropertyDescriptor(target, key) {
+        const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+        if (key !== 'ref') return descriptor;
+        reads += 1;
+        return { ...descriptor, value: reads === 1 ? 'validated' : 'swapped' };
+      },
+    });
+    const obs = observation({ candidate: eligible(current, candidate(HIGH, 'other')) });
+    Object.defineProperty(obs, 'commitOutcome', { enumerable: false });
+    const { result, snapshot } = transition(active(), obs);
+    expect(reads).toBe(1);
+    expect(result.kind).toBe('INDETERMINATE');
+    expect(snapshot.held.selectedCandidateRef).toBe('validated');
+    const reconcile = (ref) => invokeAdapter({
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: result.reconciliationRef }),
+      snapshot,
+      observation: { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { selectedCandidateRef: ref } },
+    });
+    expect(reconcile('swapped').kind).not.toBe('SUCCESS');
+    expect(reconcile('validated').output.originalOutput).toEqual({ selectedCandidateRef: 'validated' });
+  });
+
+  test('R2: a listed key whose descriptor is hidden is still an unknown member, never dropped', () => {
+    const hidden = new Proxy({ committerId: LOW.slice(), ref: 'lo', extra: 1 }, {
+      getOwnPropertyDescriptor: (target, key) => (key === 'extra' ? undefined : Reflect.getOwnPropertyDescriptor(target, key)),
+    });
+    const { result, snapshot } = transition(active(), observation({ candidate: eligible(hidden, candidate(HIGH, 'hi')) }));
+    expect(code(result)).toBe('UNKNOWN_FIELD');
+    expect(result.stateAfter).toBe('ACTIVE');
+    expect(snapshot).toBeNull();
+  });
+
+  test('R3/F1: an unknown nested candidate member is UNKNOWN_FIELD whatever else is malformed (P01)', () => {
+    const make = () => observation({
+      candidate: eligible({ committerId: LOW.slice(), ref: 'lo', extra: 1 }, candidate(HIGH, 'hi')),
+    });
+    const noAuth = make();
+    delete noAuth.authentication;
+    const noIncoming = make();
+    delete noIncoming.candidate.incoming;
+    const accessor = make();
+    Object.defineProperty(accessor, 'slotContext', { enumerable: true, configurable: true, get: () => SLOT.slice() });
+    for (const obs of [make(), noAuth, noIncoming, accessor]) expect(code(apply(active(), obs))).toBe('UNKNOWN_FIELD');
+  });
+
+  test('R4: a detached identity is CAPI-S019 and a revoked classification proxy is INVALID_REQUEST, never a throw', () => {
+    const identity = new Uint8Array(32);
+    structuredClone(identity.buffer, { transfer: [identity.buffer] });
+    const detached = apply(active(), rejectingObservation(eligible(candidate(identity, 'd'), candidate(HIGH, 'o'))));
+    expect(detached.kind).toBe('REJECTED');
+    expect(code(detached)).toBe('UNSUPPORTED_COMMIT_SHAPE');
+    const revoked = Proxy.revocable({}, {});
+    revoked.revoke();
+    const proxy = apply(active(), rejectingObservation(revoked.proxy));
+    expect(proxy.kind).toBe('REJECTED');
+    expect(code(proxy)).toBe('INVALID_REQUEST');
+  });
+
+  test('F2: a hold whose selected reference is over MAX_CANDIDATE_REF_CHARS never releases it', () => {
+    const longRef = 'r'.repeat(bound + 1);
+    const opIdentity = 'op-ifork-f2';
+    const held = {
+      originalStateBefore: 'ACTIVE', scenario: 'CAPI-S017', mutationPlanIdentity: 'CAPI-S017', operationIdentity: opIdentity,
+      expectedSuccessCode: 'CANDIDATE_SELECTED', expectedStateAfter: 'ACTIVE', outputKind: 'SELECTED_CANDIDATE_REF',
+      reconciliationRef: `I-SM-HOLD:${opIdentity}`, selectedCandidateRef: longRef, terminalEvidenceStatus: 'PENDING',
+    };
+    const result = invokeAdapter({
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: `I-SM-HOLD:${opIdentity}` }),
+      snapshot: { state: 'RECONCILIATION_REQUIRED', held },
+      observation: { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { selectedCandidateRef: longRef } },
+    });
+    expect(result.kind).not.toBe('SUCCESS');
+    expect(Object.hasOwn(result, 'output')).toBe(false);
+  });
+});

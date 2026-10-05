@@ -1,11 +1,13 @@
 // adapter.js — M2 session adapter integration: onboarding/re-establishment, opaque application
-// messages and the C-RET replay/retention window, staged self-update and reconciliation.
-// (cards I-JOIN, I-MSG and I-UPD of #317 G-SCOPE; contract Issues #402/#407, #411, and the I-UPD
-// contract of record, revision R2, which supersedes #412 and #415 in exactly the clauses it records.)
+// messages and the C-RET replay/retention window, staged self-update and reconciliation, and the bounded
+// two-candidate peer update.
+// (cards I-JOIN, I-MSG, I-UPD and I-FORK of #317 G-SCOPE; contract Issues #402/#407, #411, the I-UPD
+// contract of record, revision R2, which supersedes #412 and #415 in exactly the clauses it records, and
+// the I-FORK contract #450.)
 //
 // This is the semantic integration boundary of the M2 session adapter API. It accepts exactly the
-// closed C-API request record for the seven operations it integrates (`CREATE`, `RESTORE`,
-// `JOIN_WELCOME`, `PROTECT_APPLICATION`, `OPEN_APPLICATION`, `SELF_UPDATE`,
+// closed C-API request record for all eight C-API operations, which it integrates (`CREATE`, `RESTORE`,
+// `JOIN_WELCOME`, `PROTECT_APPLICATION`, `OPEN_APPLICATION`, `SELF_UPDATE`, `APPLY_PEER_UPDATE`,
 // `RECONCILE_INDETERMINATE`), reads the owning-layer facts from an INJECTED closed observation,
 // applies the C-RET current-plus-five-past-epoch replay/retention window to the declared framing epoch
 // of `OPEN_APPLICATION` before any key-dependent work, takes the decision with the merged I-SM decision
@@ -200,7 +202,8 @@ const OUTPUT_BY_SUCCESS_CODE = Object.freeze({
 
 /**
  * The decision rows the C-MUT section 4 mutation plans drive: the `RS_TRI_STATE` rows this module
- * consumes (I-JOIN `CAPI-S001`/`CAPI-S006`, I-MSG `CAPI-S009`/`CAPI-S010`, I-UPD `CAPI-S014`).
+ * consumes (I-JOIN `CAPI-S001`/`CAPI-S006`, I-MSG `CAPI-S009`/`CAPI-S010`, I-UPD `CAPI-S014`, I-FORK
+ * `CAPI-S016`/`CAPI-S017`).
  */
 const TRI_STATE_ROWS = Object.freeze([
   'CAPI-S001', 'CAPI-S006', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014', 'CAPI-S016', 'CAPI-S017',
@@ -365,8 +368,9 @@ const SLOT_BOUND_OPERATIONS = Object.freeze(['SELF_UPDATE', 'APPLY_PEER_UPDATE',
 
 /**
  * The operations whose observed RS `operationIdentity` is bounded at P06 by
- * `MAX_OPERATION_IDENTITY_CHARS` (contract R2 step 5, C-API `CAPI-E014`, C-MUT §3). The I-MSG operations
- * are not in this set: R2 keeps their integrated behaviour unchanged.
+ * `MAX_OPERATION_IDENTITY_CHARS` (contract R2 step 5, C-API `CAPI-E014`, C-MUT §3; I-FORK contract #450
+ * adds `APPLY_PEER_UPDATE`). The I-MSG operations are not in this set: R2 keeps their integrated behaviour
+ * unchanged.
  */
 const IDENTITY_BOUND_OPERATIONS = Object.freeze(['CREATE', 'JOIN_WELCOME', 'SELF_UPDATE', 'APPLY_PEER_UPDATE']);
 
@@ -925,7 +929,11 @@ function nestedObservationDefects(operation, partial) {
     if (unknownIn(partial.restoreObservation, RESTORE_OBSERVATION_KEYS)) defects.push('UNKNOWN_FIELD');
   }
   if (operation === 'APPLY_PEER_UPDATE' && Object.hasOwn(partial, 'candidate')) {
-    if (unknownIn(partial.candidate, CANDIDATE_MEMBER_UNION)) defects.push('UNKNOWN_FIELD');
+    // The classification subtree is decoded once (`decodeCandidateTree`), whatever its parent's own
+    // defect: an unknown member of the classification or of either candidate competes here (review r1 R3).
+    if (partial.candidate !== null && decodeCandidateTree(partial.candidate).defects.includes('UNKNOWN_FIELD')) {
+      defects.push('UNKNOWN_FIELD');
+    }
   }
   return defects;
 }
@@ -1212,13 +1220,25 @@ function readOpenObservation(value) {
  * object again (the single-read rule of review findings p13b and cycle 5f). Returns `{ error, copy }`.
  */
 function copyRecord(value) {
-  if (!isPlainObject(value)) return { error: 'INVALID_REQUEST', copy: null };
+  // A revoked proxy makes even the plain-record guard throw: a defect of the record, never an escape
+  // (I-FORK review r1 R4).
+  let plain;
+  try {
+    plain = isPlainObject(value);
+  } catch {
+    plain = false;
+  }
+  if (!plain) return { error: 'INVALID_REQUEST', copy: null };
   const descriptors = Object.create(null);
   try {
     for (const key of Reflect.ownKeys(value)) {
       if (typeof key !== 'string') return { error: 'UNKNOWN_FIELD', copy: null };
       const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
-      if (descriptor !== undefined) descriptors[key] = descriptor;
+      // A key the record lists but whose descriptor vanishes stays a member of the copy, as a
+      // non-enumerable placeholder: closure is decided from the listed keys, so the key still counts as
+      // unknown, or as a malformed member, and is never silently dropped (I-FORK review r1 R2).
+      descriptors[key] = descriptor !== undefined ? descriptor
+        : { value: undefined, writable: false, enumerable: false, configurable: true };
     }
   } catch {
     return { error: 'INVALID_REQUEST', copy: null };
@@ -1226,12 +1246,20 @@ function copyRecord(value) {
   return { error: null, copy: Object.defineProperties({}, descriptors) };
 }
 
+/** The value of a plain, enumerable own data member of a module-owned copy, read from its descriptor. */
+function copiedDataMember(copy, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(copy, key);
+  if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) return { ok: false };
+  return { ok: true, value: descriptor.value };
+}
+
 /**
  * Read one closed candidate of an `ELIGIBLE_TWO_CANDIDATE` classification: exactly `committerId` (the raw
  * authenticated committer identity, a `Uint8Array`) and `ref` (a non-empty opaque SS reference). The
  * identity bytes are copied once, so the comparison the merged core makes and the reference it selects
  * read bytes no caller can change afterwards. A committer identity that is a byte array of another
- * length is left to the merged core, which classifies it outside the exact profile (`CAPI-S019`).
+ * length (a detached buffer has length 0) is not copied: it is outside the exact profile and the merged
+ * core classifies it `CAPI-S019` from its length alone, so a fresh zero array of that length stands for it.
  */
 function readCandidate(value) {
   const copied = copyRecord(value);
@@ -1241,14 +1269,95 @@ function readCandidate(value) {
   const { committerId, ref } = shape.values;
   const defects = [];
   let identity = null;
-  if (!isUint8Array(committerId) || byteLengthOf(committerId) < 0) defects.push('INVALID_REQUEST');
+  const length = isUint8Array(committerId) ? byteLengthOf(committerId) : -1;
+  if (length < 0) defects.push('INVALID_REQUEST');
+  else if (length !== COMMITTER_ID_BYTES) identity = new Uint8Array(length);
   else {
-    identity = new Uint8Array(committerId);
-    if (identity.length !== byteLengthOf(committerId)) defects.push('INVALID_REQUEST');
+    try {
+      identity = new Uint8Array(committerId);
+    } catch {
+      identity = null;
+    }
+    if (identity === null || identity.length !== COMMITTER_ID_BYTES) defects.push('INVALID_REQUEST');
   }
   if (typeof ref !== 'string' || ref.length === 0) defects.push('INVALID_REQUEST');
   if (defects.length > 0) return { error: worst(defects), candidate: null };
   return { error: null, candidate: { committerId: identity, ref } };
+}
+
+/**
+ * The candidate classifications this module decoded itself. Membership is tested with `WeakSet#has`,
+ * which never consults a caller trap, so no caller value can pass for a decoded one.
+ */
+const DECODED_CANDIDATES = new WeakSet();
+
+/**
+ * Decode the `APPLY_PEER_UPDATE` candidate classification subtree exactly once per call (I-FORK review r1
+ * R1, R3). Every record of the subtree is read once, through `copyRecord`; the decoded result is a
+ * module-owned record that every later check and the decision reuse, so no caller can answer one
+ * candidate to validation and another to the decision. Every P01 defect of every readable record of the
+ * subtree is collected, whatever else is wrong with its parent, so `/withinLevelErrorOrder/P01` ranks
+ * them together: an unknown member of `current` or `incoming` is `UNKNOWN_FIELD` even when the
+ * classification or the outer observation is otherwise malformed. Idempotent on its own result.
+ */
+function decodeCandidateTree(value) {
+  if (DECODED_CANDIDATES.has(value)) return value;
+  const tree = Object.freeze(decodeCandidateOnce(value));
+  DECODED_CANDIDATES.add(tree);
+  return tree;
+}
+
+function decodeCandidateOnce(value) {
+  const none = { facts: null, rejecting: false, refOverBound: false };
+  const copied = copyRecord(value);
+  if (copied.error) return { defects: [copied.error], ...none };
+  const copy = copied.copy;
+  const members = Reflect.ownKeys(copy);
+  const defects = [];
+  if (members.some((key) => !CANDIDATE_MEMBER_UNION.includes(key))) defects.push('UNKNOWN_FIELD');
+  for (const key of members) if (!copiedDataMember(copy, key).ok) defects.push('INVALID_REQUEST');
+  const kindMember = members.includes('kind') ? copiedDataMember(copy, 'kind') : { ok: false };
+  let kind = null;
+  if (!kindMember.ok || typeof kindMember.value !== 'string') defects.push('INVALID_REQUEST');
+  else if (!Object.hasOwn(CANDIDATE_KINDS, kindMember.value)) defects.push('UNKNOWN_VALUE');
+  else kind = kindMember.value;
+  if (kind !== null) {
+    const expected = CANDIDATE_KINDS[kind];
+    if (members.some((key) => !expected.includes(key))) defects.push('UNKNOWN_FIELD');
+    if (expected.some((key) => !members.includes(key))) defects.push('INVALID_REQUEST');
+  }
+  // Each readable nested candidate is decoded whatever else is wrong, so its own P01 defect competes.
+  const pair = Object.create(null);
+  for (const side of ['current', 'incoming']) {
+    if (!members.includes(side)) continue;
+    const member = copiedDataMember(copy, side);
+    if (!member.ok) continue;
+    const read = readCandidate(member.value);
+    if (read.error) defects.push(read.error);
+    else pair[side] = read.candidate;
+  }
+  let reason = null;
+  if (kind === 'UNSUPPORTED_TOPOLOGY') {
+    const member = members.includes('reason') ? copiedDataMember(copy, 'reason') : { ok: false };
+    if (!member.ok || typeof member.value !== 'string' || member.value.length === 0) defects.push('INVALID_REQUEST');
+    else reason = member.value;
+  }
+  if (defects.length > 0) return { defects, ...none };
+  if (kind === 'CURRENT_PARENT' || kind === 'UNSUPPORTED_UPDATE_FORM') {
+    return { defects, facts: { kind }, rejecting: kind === 'UNSUPPORTED_UPDATE_FORM', refOverBound: false };
+  }
+  if (kind === 'UNSUPPORTED_TOPOLOGY') return { defects, facts: { kind, reason }, rejecting: true, refOverBound: false };
+  const left = pair.current;
+  const right = pair.incoming;
+  return {
+    defects,
+    facts: { kind, current: left, incoming: right },
+    // C-API `/rules/candidateSelector`: equal-committer, re-presented and out-of-profile identities are
+    // `UNSUPPORTED_COMMIT_SHAPE`, decided from the facts alone, before any RS commit request.
+    rejecting: left.ref === right.ref || sameCommitter(left.committerId, right.committerId)
+      || left.committerId.length !== COMMITTER_ID_BYTES || right.committerId.length !== COMMITTER_ID_BYTES,
+    refOverBound: left.ref.length > BOUNDS.MAX_CANDIDATE_REF_CHARS || right.ref.length > BOUNDS.MAX_CANDIDATE_REF_CHARS,
+  };
 }
 
 /** Whether two copied committer identities are the same exact-profile identity (32 equal bytes). */
@@ -1306,49 +1415,11 @@ function readApplyObservation(value, slotContext, slotDefects) {
     };
   }
 
-  const copied = copyRecord(value.candidate);
-  let kind = null;
-  let facts = null;
-  let rejecting = false;
-  let refOverBound = false;
-  if (copied.error) defects.push(copied.error);
-  else {
-    const shape = readClosed(copied.copy, CANDIDATE_MEMBER_UNION, CANDIDATE_MEMBER_UNION);
-    if (shape.error) defects.push(shape.error);
-    else if (typeof shape.values.kind !== 'string') defects.push('INVALID_REQUEST');
-    else if (!Object.hasOwn(CANDIDATE_KINDS, shape.values.kind)) defects.push('UNKNOWN_VALUE');
-    else {
-      kind = shape.values.kind;
-      const members = Reflect.ownKeys(copied.copy);
-      const expected = CANDIDATE_KINDS[kind];
-      if (members.some((key) => !expected.includes(key))) defects.push('UNKNOWN_FIELD');
-      else if (expected.some((key) => !members.includes(key))) defects.push('INVALID_REQUEST');
-      else if (kind === 'CURRENT_PARENT' || kind === 'UNSUPPORTED_UPDATE_FORM') {
-        facts = { kind };
-        rejecting = kind === 'UNSUPPORTED_UPDATE_FORM';
-      } else if (kind === 'UNSUPPORTED_TOPOLOGY') {
-        if (typeof shape.values.reason !== 'string' || shape.values.reason.length === 0) defects.push('INVALID_REQUEST');
-        else facts = { kind, reason: shape.values.reason };
-        rejecting = true;
-      } else {
-        const current = readCandidate(shape.values.current);
-        const incoming = readCandidate(shape.values.incoming);
-        if (current.error) defects.push(current.error);
-        if (incoming.error) defects.push(incoming.error);
-        if (!current.error && !incoming.error) {
-          const left = current.candidate;
-          const right = incoming.candidate;
-          facts = { kind, current: left, incoming: right };
-          // C-API `/rules/candidateSelector`: equal-committer, re-presented and out-of-profile identities are
-          // `UNSUPPORTED_COMMIT_SHAPE`, decided from the facts alone, before any RS commit request.
-          rejecting = left.ref === right.ref || sameCommitter(left.committerId, right.committerId)
-            || left.committerId.length !== COMMITTER_ID_BYTES || right.committerId.length !== COMMITTER_ID_BYTES;
-          refOverBound = left.ref.length > BOUNDS.MAX_CANDIDATE_REF_CHARS
-            || right.ref.length > BOUNDS.MAX_CANDIDATE_REF_CHARS;
-        }
-      }
-    }
-  }
+  // The classification subtree is decoded exactly once per call (`decodeCandidateTree`); the outer read
+  // already substituted the module-owned decoded tree, so this reads nothing from the caller again.
+  const tree = decodeCandidateTree(value.candidate);
+  defects.push(...tree.defects);
+  const { facts, rejecting, refOverBound } = tree;
 
   if (rejecting) {
     // A shape the selector refuses is decided before mutation: no RS commit request exists for it.
@@ -1379,6 +1450,16 @@ function readApplyObservation(value, slotContext, slotDefects) {
 function readObservation(operation, observation, decoded = null) {
   const shape = decoded !== null ? { error: null, values: decoded }
     : readClosed(observation, OBSERVATION_KEYS[operation], OPTIONAL_OBSERVATION_MEMBERS[operation] ?? []);
+  if (operation === 'APPLY_PEER_UPDATE') {
+    // I-FORK review r1 R1: the candidate classification is read from the caller exactly once. The decoded,
+    // module-owned tree replaces the caller value in the module's own member maps before any other check,
+    // so the evidence-recovery re-check below and the decision see the same decoded candidates.
+    for (const holder of [shape.values, shape.partial]) {
+      if (holder && Object.hasOwn(holder, 'candidate') && holder.candidate !== null) {
+        holder.candidate = decodeCandidateTree(holder.candidate);
+      }
+    }
+  }
   let value = shape.values;
   if (shape.error) {
     const evidence = Object.hasOwn(EVIDENCE_MEMBERS, operation) ? EVIDENCE_MEMBERS[operation] : null;
@@ -1676,9 +1757,12 @@ function heldOutputShapeCode(heldFacts, heldOutput) {
   if (Array.isArray(byCode) && byCode.length === 1 && byCode[0] !== expected) return 'INVALID_REQUEST';
   if (REFERENCE_OUTPUT_MEMBERS.includes(expected)) {
     // The hold fixes the winner: releasing whatever reference the observation hands over would report an
-    // escrow the held mutation does not own.
+    // escrow the held mutation does not own. The reference is bounded exactly as the direct path bounds it
+    // (`MAX_CANDIDATE_REF_CHARS`, contract #450 choice 1), so an injected hold carrying an over-bound
+    // reference never releases it (I-FORK review r1 F2).
     const fixed = heldFacts.selectedCandidateRef;
-    return typeof fixed === 'string' && heldOutput.ref === fixed ? null : 'INVALID_REQUEST';
+    return typeof fixed === 'string' && fixed.length <= BOUNDS.MAX_CANDIDATE_REF_CHARS && heldOutput.ref === fixed
+      ? null : 'INVALID_REQUEST';
   }
   // The released escrow is bounded exactly like the staged one, or a hold created for an escrow the direct
   // path refused could be cleared in two calls by presenting an empty or over-bound one. The length is
@@ -1912,8 +1996,9 @@ function run(input) {
   const bounds = [
     ...requestBoundCodes(checked.values, decodedInput), ...(observed.bounds ?? []), ...(observed.extraCodes ?? []),
   ];
-  // Contract R2 step 5 scopes this bound to `CREATE`, `JOIN_WELCOME` and `SELF_UPDATE`; the I-MSG
-  // operations keep their integrated behaviour unchanged (final review, confirmed on AI395).
+  // Contract R2 step 5 scopes this bound to `CREATE`, `JOIN_WELCOME` and `SELF_UPDATE`, and I-FORK (#450)
+  // adds `APPLY_PEER_UPDATE`; the I-MSG operations keep their integrated behaviour unchanged (final
+  // review, confirmed on AI395).
   const identityOverBound = IDENTITY_BOUND_OPERATIONS.includes(operation)
     && typeof observed.operationIdentity === 'string'
     && observed.operationIdentity.length > BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
