@@ -325,8 +325,8 @@ describe('I-UPD module surface and the widened closed sets', () => {
   test('the integrated operation set is this slice widened onto the merged base', () => {
     expect(M2_ADAPTER.API).toBe('styx-m2-session-adapter/v1');
     expect([...M2_ADAPTER.INTEGRATED_OPERATIONS]).toEqual([
-      'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION', 'SELF_UPDATE',
-      'RECONCILE_INDETERMINATE',
+      'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
+      'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE',
     ]);
     expect([...M2_ADAPTER.OPERATIONS]).toEqual([
       'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
@@ -569,9 +569,9 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
     expect(result.stateAfter).toBe('EMPTY');
   });
 
-  test('a valid C-API operation outside this slice stays UNSUPPORTED_OPERATION', () => {
+  test('an operation outside the exact eight C-API operations stays UNSUPPORTED_OPERATION', () => {
     const outside = [
-      ['APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) }],
+      ['apply_peer_update', { protectedCommitBytes: bytes(0x01) }],
       ['ADD_MEMBER', {}],
     ];
     for (const [operation, input] of outside) {
@@ -774,8 +774,8 @@ describe('I-UPD fail-closed request validation', () => {
     ['drifted profile member', request('SELF_UPDATE', {}, { profile: { ...PROFILE, pastEpochWindow: PROFILE.pastEpochWindow + 1 } }), active(), okUpdate, 'UNSUPPORTED_PROFILE'],
     ['missing profile member', request('SELF_UPDATE', {}, { profile: withoutMember({ ...PROFILE }, 'adapterApi') }), active(), okUpdate, 'UNSUPPORTED_PROFILE'],
     ['unknown operation', request('ADD_MEMBER', {}), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
-    ['operation outside the slice', request('APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) }), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
-    ['malformed input of an outside operation', request('APPLY_PEER_UPDATE', {}), active(), okUpdate, 'INVALID_REQUEST'],
+    ['operation outside the exact eight (letter-case drift)', request('apply_peer_update', { protectedCommitBytes: bytes(0x01) }), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
+    ['malformed input of APPLY_PEER_UPDATE', request('APPLY_PEER_UPDATE', {}), active(), { authentication: 'AUTHENTICATED', candidate: { kind: 'CURRENT_PARENT' }, commitOutcome: 'COMMITTED', operationIdentity: 'op-apply-1', slotContext: SLOT.slice() }, 'INVALID_REQUEST'],
     ['unknown input member', request('SELF_UPDATE', { extra: 1 }), active(), okUpdate, 'UNKNOWN_FIELD'],
     ['missing reconcile reference', request('RECONCILE_INDETERMINATE', {}), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
     ['empty reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: '' }), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
@@ -952,7 +952,7 @@ describe('I-UPD total precedence and the internal failure boundary', () => {
     const several = request('ADD_MEMBER', {}, { extra: 1, api: 'styx-m2-session-adapter/v2' });
     expect(code(invokeAdapter({ request: several, snapshot: active(), observation: updateObservation({}) })))
       .toBe('UNKNOWN_FIELD');
-    const apiThenOperation = request('APPLY_PEER_UPDATE', { protectedCommitBytes: bytes(0x01) },
+    const apiThenOperation = request('apply_peer_update', { protectedCommitBytes: bytes(0x01) },
       { api: 'styx-m2-session-adapter/v2' });
     expect(code(invokeAdapter({ request: apiThenOperation, snapshot: active(), observation: updateObservation({}) })))
       .toBe('UNSUPPORTED_API_VERSION');

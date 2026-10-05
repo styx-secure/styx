@@ -404,8 +404,8 @@ describe('I-JOIN module surface and closure', () => {
       'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE',
     ]);
     expect([...M2_ADAPTER.INTEGRATED_OPERATIONS]).toEqual([
-      'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION', 'SELF_UPDATE',
-      'RECONCILE_INDETERMINATE',
+      'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
+      'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE',
     ]);
     expect([...M2_ADAPTER.STATES]).toEqual(['EMPTY', 'ACTIVE', 'RECONCILIATION_REQUIRED']);
     expect([...M2_ADAPTER.RESULT_KINDS]).toEqual([
@@ -725,7 +725,7 @@ describe('I-JOIN fail-closed request validation', () => {
     ['empty bindingRef', request('RESTORE', {}, { bindingRef: new Uint8Array(0) }), restoreObservation({}), 'BINDING_MISMATCH'],
     ['non-byte bindingRef', request('RESTORE', {}, { bindingRef: 7 }), {}, 'INVALID_REQUEST'],
     ['unknown operation', request('ADD_MEMBER', {}), {}, 'UNSUPPORTED_OPERATION'],
-    ['operation outside the integrated seven', request('APPLY_PEER_UPDATE', { protectedCommitBytes: new Uint8Array([0x01]) }), {}, 'UNSUPPORTED_OPERATION'],
+    ['operation outside the exact eight (letter-case drift)', request('apply_peer_update', { protectedCommitBytes: new Uint8Array([0x01]) }), {}, 'UNSUPPORTED_OPERATION'],
     ['unknown request input member', request('RESTORE', { extra: 1 }), {}, 'UNKNOWN_FIELD'],
     ['non-closed observation', request('RESTORE', {}), { restoreObservation: null, extra: 1 }, 'UNKNOWN_FIELD'],
     ['unknown observation member', request('RESTORE', {}), { restoreObservation: { faults: [], inventory: 'NONE', legacy: false, vector: null, selectorState: 'ACTIVE' }, extra: 1 }, 'UNKNOWN_FIELD'],
@@ -823,8 +823,9 @@ describe('I-JOIN fail-closed request validation', () => {
   test('validateAdapterRequest decides only the request-level levels', () => {
     expect(validateAdapterRequest(request('RESTORE', {}))).toEqual({ ok: true, code: null });
     expect(validateAdapterRequest(request('RESTORE', {}, { extra: 1 })).code).toBe('UNKNOWN_FIELD');
-    expect(validateAdapterRequest(request('APPLY_PEER_UPDATE', { protectedCommitBytes: new Uint8Array([0x01]) })).code)
-      .toBe('UNSUPPORTED_OPERATION');
+    expect(validateAdapterRequest(request('APPLY_PEER_UPDATE', { protectedCommitBytes: new Uint8Array([0x01]) })))
+      .toEqual({ ok: true, code: null });
+    expect(validateAdapterRequest(request('ADD_MEMBER', {})).code).toBe('UNSUPPORTED_OPERATION');
     expect(validateAdapterRequest(request('RESTORE', {})).ok).toBe(true);
     expect(Object.isFrozen(validateAdapterRequest(request('RESTORE', {})))).toBe(true);
   });
