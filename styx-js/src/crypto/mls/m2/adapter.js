@@ -1,11 +1,13 @@
 // adapter.js — M2 session adapter integration: onboarding/re-establishment, opaque application
-// messages and the C-RET replay/retention window, staged self-update and reconciliation.
-// (cards I-JOIN, I-MSG and I-UPD of #317 G-SCOPE; contract Issues #402/#407, #411, and the I-UPD
-// contract of record, revision R2, which supersedes #412 and #415 in exactly the clauses it records.)
+// messages and the C-RET replay/retention window, staged self-update and reconciliation, and the bounded
+// two-candidate peer update.
+// (cards I-JOIN, I-MSG, I-UPD and I-FORK of #317 G-SCOPE; contract Issues #402/#407, #411, the I-UPD
+// contract of record, revision R2, which supersedes #412 and #415 in exactly the clauses it records, and
+// the I-FORK contract #450.)
 //
 // This is the semantic integration boundary of the M2 session adapter API. It accepts exactly the
-// closed C-API request record for the seven operations it integrates (`CREATE`, `RESTORE`,
-// `JOIN_WELCOME`, `PROTECT_APPLICATION`, `OPEN_APPLICATION`, `SELF_UPDATE`,
+// closed C-API request record for all eight C-API operations, which it integrates (`CREATE`, `RESTORE`,
+// `JOIN_WELCOME`, `PROTECT_APPLICATION`, `OPEN_APPLICATION`, `SELF_UPDATE`, `APPLY_PEER_UPDATE`,
 // `RECONCILE_INDETERMINATE`), reads the owning-layer facts from an INJECTED closed observation,
 // applies the C-RET current-plus-five-past-epoch replay/retention window to the declared framing epoch
 // of `OPEN_APPLICATION` before any key-dependent work, takes the decision with the merged I-SM decision
@@ -47,14 +49,13 @@ const OPERATIONS = Object.freeze([
 ]);
 
 /**
- * The seven operations this module integrates. The other one remains a valid C-API operation; this
- * module's closed dispatch refuses them with `UNSUPPORTED_OPERATION` (contract Issues #402 and #411
- * and the I-UPD contract of record, "Open owner questions" item 1). `APPLY_PEER_UPDATE` is owned by
- * I-FORK.
+ * The operations this module integrates: all eight C-API operations. I-FORK adds `APPLY_PEER_UPDATE`,
+ * limited to the bounded two-candidate case of C-API `/rules/candidateSelector` (CAPI-S016 to
+ * CAPI-S019); every other candidate shape fails closed.
  */
 const INTEGRATED_OPERATIONS = Object.freeze([
   'CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION', 'SELF_UPDATE',
-  'RECONCILE_INDETERMINATE',
+  'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE',
 ]);
 
 /** The three C-API `/stateEnum` members. */
@@ -201,9 +202,12 @@ const OUTPUT_BY_SUCCESS_CODE = Object.freeze({
 
 /**
  * The decision rows the C-MUT section 4 mutation plans drive: the `RS_TRI_STATE` rows this module
- * consumes (I-JOIN `CAPI-S001`/`CAPI-S006`, I-MSG `CAPI-S009`/`CAPI-S010`, I-UPD `CAPI-S014`).
+ * consumes (I-JOIN `CAPI-S001`/`CAPI-S006`, I-MSG `CAPI-S009`/`CAPI-S010`, I-UPD `CAPI-S014`, I-FORK
+ * `CAPI-S016`/`CAPI-S017`).
  */
-const TRI_STATE_ROWS = Object.freeze(['CAPI-S001', 'CAPI-S006', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014']);
+const TRI_STATE_ROWS = Object.freeze([
+  'CAPI-S001', 'CAPI-S006', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014', 'CAPI-S016', 'CAPI-S017',
+]);
 
 /**
  * The C-MUT-owning rule of the I-SM decision rows I-MSG's single decision path consumes whose complete
@@ -319,6 +323,10 @@ const BOUNDS = Object.freeze({
   // every reconciliation. The bound is derived from the reference bound, never independent of it.
   MAX_OPERATION_IDENTITY_CHARS: 256 - 'I-SM-HOLD:'.length,
   MAX_FRAMING_EPOCH: 2147483647,
+  // An `APPLY_PEER_UPDATE` candidate reference is an opaque SS value that becomes the released
+  // `selectedCandidateRef`, or the held one of a `CAPI-S017` hold. It is bounded like the reconciliation
+  // reference so that a hold this module creates always stays releasable (I-FORK, CAPI-E014).
+  MAX_CANDIDATE_REF_CHARS: 256,
 });
 
 /**
@@ -345,6 +353,7 @@ const OBSERVATION_KEYS = Object.freeze({
     'operationIdentity', 'stagedOutput', 'internalFailure',
   ]),
   SELF_UPDATE: Object.freeze(['updateForm', 'commitOutcome', 'operationIdentity', 'stagedOutput', 'slotContext']),
+  APPLY_PEER_UPDATE: Object.freeze(['authentication', 'candidate', 'commitOutcome', 'operationIdentity', 'slotContext']),
   RECONCILE_INDETERMINATE: Object.freeze(['commitOutcome', 'responseEmission', 'heldOutput', 'slotContext']),
 });
 
@@ -355,14 +364,33 @@ const OBSERVATION_KEYS = Object.freeze({
  * `/comparisonRules/reconciliationRequired`, C-API `CAPI-E006`).
  */
 const BINDING_CONTEXT_BYTES = 32;
-const SLOT_BOUND_OPERATIONS = Object.freeze(['SELF_UPDATE', 'RECONCILE_INDETERMINATE']);
+const SLOT_BOUND_OPERATIONS = Object.freeze(['SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE']);
 
 /**
  * The operations whose observed RS `operationIdentity` is bounded at P06 by
- * `MAX_OPERATION_IDENTITY_CHARS` (contract R2 step 5, C-API `CAPI-E014`, C-MUT §3). The I-MSG operations
- * are not in this set: R2 keeps their integrated behaviour unchanged.
+ * `MAX_OPERATION_IDENTITY_CHARS` (contract R2 step 5, C-API `CAPI-E014`, C-MUT §3; I-FORK contract #450
+ * adds `APPLY_PEER_UPDATE`). The I-MSG operations are not in this set: R2 keeps their integrated behaviour
+ * unchanged.
  */
-const IDENTITY_BOUND_OPERATIONS = Object.freeze(['CREATE', 'JOIN_WELCOME', 'SELF_UPDATE']);
+const IDENTITY_BOUND_OPERATIONS = Object.freeze(['CREATE', 'JOIN_WELCOME', 'SELF_UPDATE', 'APPLY_PEER_UPDATE']);
+
+/**
+ * The closed `APPLY_PEER_UPDATE` candidate classification the SS derives (C-API
+ * `/request/derivedByOperation` `APPLY_PEER_UPDATE`, `/rules/candidateSelector`), one per decision row:
+ * `CURRENT_PARENT` (`CAPI-S016`), `ELIGIBLE_TWO_CANDIDATE` (`CAPI-S017`, or `CAPI-S019` for an equal
+ * committer or a re-presented candidate), `UNSUPPORTED_UPDATE_FORM` (`CAPI-S018`) and
+ * `UNSUPPORTED_TOPOLOGY` (`CAPI-S019`: any other parent, count, witness, priority or digest shape).
+ */
+const CANDIDATE_KINDS = Object.freeze({
+  CURRENT_PARENT: Object.freeze(['kind']),
+  ELIGIBLE_TWO_CANDIDATE: Object.freeze(['kind', 'current', 'incoming']),
+  UNSUPPORTED_UPDATE_FORM: Object.freeze(['kind']),
+  UNSUPPORTED_TOPOLOGY: Object.freeze(['kind', 'reason']),
+});
+const CANDIDATE_MEMBERS = Object.freeze(['committerId', 'ref']);
+const CANDIDATE_MEMBER_UNION = Object.freeze(['kind', 'current', 'incoming', 'reason']);
+/** The raw authenticated committer identity of C-API `/rules/candidateSelector`: exactly 32 bytes. */
+const COMMITTER_ID_BYTES = 32;
 
 /** The two closed `responseEmission` values of the merged I-SM reconciliation rows. */
 const RESPONSE_EMISSIONS = Object.freeze(['SUCCEEDED', 'INTERRUPTED']);
@@ -900,6 +928,13 @@ function nestedObservationDefects(operation, partial) {
   if (operation === 'RESTORE' && Object.hasOwn(partial, 'restoreObservation')) {
     if (unknownIn(partial.restoreObservation, RESTORE_OBSERVATION_KEYS)) defects.push('UNKNOWN_FIELD');
   }
+  if (operation === 'APPLY_PEER_UPDATE' && Object.hasOwn(partial, 'candidate')) {
+    // The classification subtree is decoded once (`decodeCandidateTree`), whatever its parent's own
+    // defect: an unknown member of the classification or of either candidate competes here (review r1 R3).
+    if (partial.candidate !== null && decodeCandidateTree(partial.candidate).defects.includes('UNKNOWN_FIELD')) {
+      defects.push('UNKNOWN_FIELD');
+    }
+  }
   return defects;
 }
 
@@ -912,6 +947,7 @@ function nestedObservationDefects(operation, partial) {
  */
 const EVIDENCE_MEMBERS = Object.freeze({
   SELF_UPDATE: Object.freeze(['commitOutcome', 'stagedOutput']),
+  APPLY_PEER_UPDATE: Object.freeze(['commitOutcome']),
   RECONCILE_INDETERMINATE: Object.freeze(['commitOutcome', 'responseEmission', 'heldOutput']),
 });
 const ABSENT_MEMBER = Object.freeze({ absent: true });
@@ -1179,6 +1215,233 @@ function readOpenObservation(value) {
 }
 
 /**
+ * Copy a caller record once, through its own property descriptors, into an ordinary object carrying the
+ * same descriptors. No accessor is invoked, and every later check reads the copy, never the caller's
+ * object again (the single-read rule of review findings p13b and cycle 5f). Returns `{ error, copy }`.
+ */
+function copyRecord(value) {
+  // A revoked proxy makes even the plain-record guard throw: a defect of the record, never an escape
+  // (I-FORK review r1 R4).
+  let plain;
+  try {
+    plain = isPlainObject(value);
+  } catch {
+    plain = false;
+  }
+  if (!plain) return { error: 'INVALID_REQUEST', copy: null };
+  const descriptors = Object.create(null);
+  try {
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== 'string') return { error: 'UNKNOWN_FIELD', copy: null };
+      const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+      // A key the record lists but whose descriptor vanishes stays a member of the copy, as a
+      // non-enumerable placeholder: closure is decided from the listed keys, so the key still counts as
+      // unknown, or as a malformed member, and is never silently dropped (I-FORK review r1 R2).
+      descriptors[key] = descriptor !== undefined ? descriptor
+        : { value: undefined, writable: false, enumerable: false, configurable: true };
+    }
+  } catch {
+    return { error: 'INVALID_REQUEST', copy: null };
+  }
+  return { error: null, copy: Object.defineProperties({}, descriptors) };
+}
+
+/** The value of a plain, enumerable own data member of a module-owned copy, read from its descriptor. */
+function copiedDataMember(copy, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(copy, key);
+  if (!descriptor || !Object.hasOwn(descriptor, 'value') || descriptor.enumerable !== true) return { ok: false };
+  return { ok: true, value: descriptor.value };
+}
+
+/**
+ * Read one closed candidate of an `ELIGIBLE_TWO_CANDIDATE` classification: exactly `committerId` (the raw
+ * authenticated committer identity, a `Uint8Array`) and `ref` (a non-empty opaque SS reference). The
+ * identity bytes are copied once, so the comparison the merged core makes and the reference it selects
+ * read bytes no caller can change afterwards. A committer identity that is a byte array of another
+ * length (a detached buffer has length 0) is not copied: it is outside the exact profile and the merged
+ * core classifies it `CAPI-S019` from its length alone, so a fresh zero array of that length stands for it.
+ */
+function readCandidate(value) {
+  const copied = copyRecord(value);
+  if (copied.error) return { error: copied.error, candidate: null };
+  const shape = readClosed(copied.copy, CANDIDATE_MEMBERS);
+  if (shape.error) return { error: shape.error, candidate: null };
+  const { committerId, ref } = shape.values;
+  const defects = [];
+  let identity = null;
+  const length = isUint8Array(committerId) ? byteLengthOf(committerId) : -1;
+  if (length < 0) defects.push('INVALID_REQUEST');
+  else if (length !== COMMITTER_ID_BYTES) identity = new Uint8Array(length);
+  else {
+    try {
+      identity = new Uint8Array(committerId);
+    } catch {
+      identity = null;
+    }
+    if (identity === null || identity.length !== COMMITTER_ID_BYTES) defects.push('INVALID_REQUEST');
+  }
+  if (typeof ref !== 'string' || ref.length === 0) defects.push('INVALID_REQUEST');
+  if (defects.length > 0) return { error: worst(defects), candidate: null };
+  return { error: null, candidate: { committerId: identity, ref } };
+}
+
+/**
+ * The candidate classifications this module decoded itself. Membership is tested with `WeakSet#has`,
+ * which never consults a caller trap, so no caller value can pass for a decoded one.
+ */
+const DECODED_CANDIDATES = new WeakSet();
+
+/**
+ * Decode the `APPLY_PEER_UPDATE` candidate classification subtree exactly once per call (I-FORK review r1
+ * R1, R3). Every record of the subtree is read once, through `copyRecord`; the decoded result is a
+ * module-owned record that every later check and the decision reuse, so no caller can answer one
+ * candidate to validation and another to the decision. Every P01 defect of every readable record of the
+ * subtree is collected, whatever else is wrong with its parent, so `/withinLevelErrorOrder/P01` ranks
+ * them together: an unknown member of `current` or `incoming` is `UNKNOWN_FIELD` even when the
+ * classification or the outer observation is otherwise malformed. Idempotent on its own result.
+ */
+function decodeCandidateTree(value) {
+  if (DECODED_CANDIDATES.has(value)) return value;
+  const tree = Object.freeze(decodeCandidateOnce(value));
+  DECODED_CANDIDATES.add(tree);
+  return tree;
+}
+
+function decodeCandidateOnce(value) {
+  const none = { facts: null, rejecting: false, refOverBound: false };
+  const copied = copyRecord(value);
+  if (copied.error) return { defects: [copied.error], ...none };
+  const copy = copied.copy;
+  const members = Reflect.ownKeys(copy);
+  const defects = [];
+  if (members.some((key) => !CANDIDATE_MEMBER_UNION.includes(key))) defects.push('UNKNOWN_FIELD');
+  for (const key of members) if (!copiedDataMember(copy, key).ok) defects.push('INVALID_REQUEST');
+  const kindMember = members.includes('kind') ? copiedDataMember(copy, 'kind') : { ok: false };
+  let kind = null;
+  if (!kindMember.ok || typeof kindMember.value !== 'string') defects.push('INVALID_REQUEST');
+  else if (!Object.hasOwn(CANDIDATE_KINDS, kindMember.value)) defects.push('UNKNOWN_VALUE');
+  else kind = kindMember.value;
+  if (kind !== null) {
+    const expected = CANDIDATE_KINDS[kind];
+    if (members.some((key) => !expected.includes(key))) defects.push('UNKNOWN_FIELD');
+    if (expected.some((key) => !members.includes(key))) defects.push('INVALID_REQUEST');
+  }
+  // Each readable nested candidate is decoded whatever else is wrong, so its own P01 defect competes.
+  const pair = Object.create(null);
+  for (const side of ['current', 'incoming']) {
+    if (!members.includes(side)) continue;
+    const member = copiedDataMember(copy, side);
+    if (!member.ok) continue;
+    const read = readCandidate(member.value);
+    if (read.error) defects.push(read.error);
+    else pair[side] = read.candidate;
+  }
+  let reason = null;
+  if (kind === 'UNSUPPORTED_TOPOLOGY') {
+    const member = members.includes('reason') ? copiedDataMember(copy, 'reason') : { ok: false };
+    if (!member.ok || typeof member.value !== 'string' || member.value.length === 0) defects.push('INVALID_REQUEST');
+    else reason = member.value;
+  }
+  if (defects.length > 0) return { defects, ...none };
+  if (kind === 'CURRENT_PARENT' || kind === 'UNSUPPORTED_UPDATE_FORM') {
+    return { defects, facts: { kind }, rejecting: kind === 'UNSUPPORTED_UPDATE_FORM', refOverBound: false };
+  }
+  if (kind === 'UNSUPPORTED_TOPOLOGY') return { defects, facts: { kind, reason }, rejecting: true, refOverBound: false };
+  const left = pair.current;
+  const right = pair.incoming;
+  return {
+    defects,
+    facts: { kind, current: left, incoming: right },
+    // C-API `/rules/candidateSelector`: equal-committer, re-presented and out-of-profile identities are
+    // `UNSUPPORTED_COMMIT_SHAPE`, decided from the facts alone, before any RS commit request.
+    rejecting: left.ref === right.ref || sameCommitter(left.committerId, right.committerId)
+      || left.committerId.length !== COMMITTER_ID_BYTES || right.committerId.length !== COMMITTER_ID_BYTES,
+    refOverBound: left.ref.length > BOUNDS.MAX_CANDIDATE_REF_CHARS || right.ref.length > BOUNDS.MAX_CANDIDATE_REF_CHARS,
+  };
+}
+
+/** Whether two copied committer identities are the same exact-profile identity (32 equal bytes). */
+function sameCommitter(left, right) {
+  if (left.length !== COMMITTER_ID_BYTES || right.length !== COMMITTER_ID_BYTES) return false;
+  for (let index = 0; index < COMMITTER_ID_BYTES; index += 1) if (left[index] !== right[index]) return false;
+  return true;
+}
+
+/**
+ * Read the closed `APPLY_PEER_UPDATE` observation (card I-FORK).
+ *
+ * C-API `/request/derivedByOperation` `APPLY_PEER_UPDATE` and `/rules/derivedFacts`: the AP supplies only
+ * the opaque `protectedCommitBytes`; the authentication verdict, the candidate classification (parent,
+ * committer identities, witness and priority facts) and the RS tri-state are SS/RS facts, injected here.
+ *
+ * Three forms are admissible at `P01`:
+ * - no RS commit request was made and nothing was classified (every member except `slotContext` exactly
+ *   `null`): the honest report of a call the `P05` state gate refuses (`CAPI-G007`, `CAPI-G023`);
+ * - key-dependent authentication failed (`CAPI-E017`/`CAPI-E018`, `P08`): no candidate, no RS request;
+ * - authenticated, with one closed candidate classification. A rejecting shape (`CAPI-S018`, `CAPI-S019`,
+ *   including an equal-committer or re-presented pair) carries no RS request; a supported one
+ *   (`CAPI-S016`, distinct-committer `CAPI-S017`) carries its operation identity and RS outcome, and once
+ *   that identity exists an absent, failed or unknown outcome is `INDETERMINATE` (`/rules/rsTriState`).
+ *
+ * Defects are collected and ranked by the ratified `/withinLevelErrorOrder`. The returned `facts` are the
+ * merged I-SM core's own closed `APPLY_PEER_UPDATE` facts, built from this module's copies.
+ */
+function readApplyObservation(value, slotContext, slotDefects) {
+  const defects = [...slotDefects];
+  const absentForm = [value.authentication, value.candidate, value.commitOutcome, value.operationIdentity]
+    .every(mustBeNull);
+  if (absentForm) {
+    if (defects.length > 0) return { error: worst(defects) };
+    return {
+      error: null, facts: null, applicableErrors: [], extraCodes: [], noCommitRequest: true,
+      commitOutcome: null, operationIdentity: null, staged: null, slotContext,
+    };
+  }
+  if (typeof value.authentication !== 'string') defects.push('INVALID_REQUEST');
+  else if (!AUTHENTICATION_VALUES.includes(value.authentication)) defects.push('UNKNOWN_VALUE');
+  const identityIssued = typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0;
+  if (value.operationIdentity !== null && !identityIssued) defects.push('INVALID_REQUEST');
+  const outcomeNull = value.commitOutcome === null;
+
+  if (value.authentication === 'AUTHENTICATION_FAILED' || value.authentication === 'AUTHENTICATED_STATE_INCONSISTENT') {
+    // `P08` is decided before any candidate classification and before any RS commit request.
+    if (value.candidate !== null || !outcomeNull || value.operationIdentity !== null) defects.push('INVALID_REQUEST');
+    if (defects.length > 0) return { error: worst(defects) };
+    // The merged core needs a closed fact to reach the decision; the applicable `P08` error preempts the
+    // `P10` row it names, and the `P05` gate of a refusing state preempts both.
+    return {
+      error: null, facts: { kind: 'CURRENT_PARENT' }, applicableErrors: [value.authentication], extraCodes: [],
+      commitOutcome: null, operationIdentity: null, staged: null, slotContext,
+    };
+  }
+
+  // The classification subtree is decoded exactly once per call (`decodeCandidateTree`); the outer read
+  // already substituted the module-owned decoded tree, so this reads nothing from the caller again.
+  const tree = decodeCandidateTree(value.candidate);
+  defects.push(...tree.defects);
+  const { facts, rejecting, refOverBound } = tree;
+
+  if (rejecting) {
+    // A shape the selector refuses is decided before mutation: no RS commit request exists for it.
+    if (!outcomeNull || value.operationIdentity !== null) defects.push('INVALID_REQUEST');
+    if (defects.length > 0) return { error: worst(defects) };
+    return {
+      error: null, facts, applicableErrors: [], extraCodes: [], refOverBound,
+      commitOutcome: null, operationIdentity: null, staged: null, slotContext,
+    };
+  }
+  // A supported shape always issues exactly one RS commit request, identified by its operation identity.
+  if (!identityIssued) defects.push('INVALID_REQUEST');
+  const commitOutcome = identityIssued && !COMMIT_OUTCOMES.includes(value.commitOutcome)
+    ? 'INDETERMINATE' : value.commitOutcome;
+  if (defects.length > 0) return { error: worst(defects) };
+  return {
+    error: null, facts, applicableErrors: [], extraCodes: [], refOverBound,
+    commitOutcome, operationIdentity: value.operationIdentity, staged: null, slotContext,
+  };
+}
+
+/**
  * Read the closed observation of one integrated operation, at P01: an unknown member is
  * `UNKNOWN_FIELD`, a missing, accessor or out-of-type member is `INVALID_REQUEST`, an out-of-set value
  * is `UNKNOWN_VALUE`. No accessor is invoked. Returns `{ error }`, or the decoded observation, or the
@@ -1187,6 +1450,16 @@ function readOpenObservation(value) {
 function readObservation(operation, observation, decoded = null) {
   const shape = decoded !== null ? { error: null, values: decoded }
     : readClosed(observation, OBSERVATION_KEYS[operation], OPTIONAL_OBSERVATION_MEMBERS[operation] ?? []);
+  if (operation === 'APPLY_PEER_UPDATE') {
+    // I-FORK review r1 R1: the candidate classification is read from the caller exactly once. The decoded,
+    // module-owned tree replaces the caller value in the module's own member maps before any other check,
+    // so the evidence-recovery re-check below and the decision see the same decoded candidates.
+    for (const holder of [shape.values, shape.partial]) {
+      if (holder && Object.hasOwn(holder, 'candidate') && holder.candidate !== null) {
+        holder.candidate = decodeCandidateTree(holder.candidate);
+      }
+    }
+  }
   let value = shape.values;
   if (shape.error) {
     const evidence = Object.hasOwn(EVIDENCE_MEMBERS, operation) ? EVIDENCE_MEMBERS[operation] : null;
@@ -1306,6 +1579,8 @@ function readObservation(operation, observation, decoded = null) {
       slotContext,
     };
   }
+
+  if (operation === 'APPLY_PEER_UPDATE') return readApplyObservation(value, slotContext, slotDefects);
 
   const selfUpdate = operation === 'SELF_UPDATE';
   const factKey = selfUpdate ? 'updateForm' : (operation === 'CREATE' ? 'onboarding' : 'keyPackage');
@@ -1482,9 +1757,12 @@ function heldOutputShapeCode(heldFacts, heldOutput) {
   if (Array.isArray(byCode) && byCode.length === 1 && byCode[0] !== expected) return 'INVALID_REQUEST';
   if (REFERENCE_OUTPUT_MEMBERS.includes(expected)) {
     // The hold fixes the winner: releasing whatever reference the observation hands over would report an
-    // escrow the held mutation does not own.
+    // escrow the held mutation does not own. The reference is bounded exactly as the direct path bounds it
+    // (`MAX_CANDIDATE_REF_CHARS`, contract #450 choice 1), so an injected hold carrying an over-bound
+    // reference never releases it (I-FORK review r1 F2).
     const fixed = heldFacts.selectedCandidateRef;
-    return typeof fixed === 'string' && heldOutput.ref === fixed ? null : 'INVALID_REQUEST';
+    return typeof fixed === 'string' && fixed.length <= BOUNDS.MAX_CANDIDATE_REF_CHARS && heldOutput.ref === fixed
+      ? null : 'INVALID_REQUEST';
   }
   // The released escrow is bounded exactly like the staged one, or a hold created for an escrow the direct
   // path refused could be cleared in two calls by presenting an empty or over-bound one. The length is
@@ -1543,6 +1821,12 @@ function shapeDecision(decision, requestId, operation, staged, heldOutput = null
         originalSuccessCode: result.originalSuccessCode,
         originalOutput: released,
       });
+    } else if (expectedMember !== null && REFERENCE_OUTPUT_MEMBERS.includes(expectedMember)) {
+      // I-FORK `CANDIDATE_SELECTED` (`CAPI-S017`): the released escrow is the opaque reference the merged
+      // core selected from this module's own copies of the two candidates, never a caller-supplied value.
+      const ref = result.selectedCandidateRef;
+      if (typeof ref !== 'string' || ref.length === 0) return null;
+      extra.output = freezeData({ [expectedMember]: ref });
     } else if (expectedMember !== null) {
       if (staged === null || staged.member !== expectedMember) return null;
       const released = releasedOutput(staged);
@@ -1712,11 +1996,18 @@ function run(input) {
   const bounds = [
     ...requestBoundCodes(checked.values, decodedInput), ...(observed.bounds ?? []), ...(observed.extraCodes ?? []),
   ];
-  // Contract R2 step 5 scopes this bound to `CREATE`, `JOIN_WELCOME` and `SELF_UPDATE`; the I-MSG
-  // operations keep their integrated behaviour unchanged (final review, confirmed on AI395).
+  // Contract R2 step 5 scopes this bound to `CREATE`, `JOIN_WELCOME` and `SELF_UPDATE`, and I-FORK (#450)
+  // adds `APPLY_PEER_UPDATE`; the I-MSG operations keep their integrated behaviour unchanged (final
+  // review, confirmed on AI395).
   const identityOverBound = IDENTITY_BOUND_OPERATIONS.includes(operation)
     && typeof observed.operationIdentity === 'string'
     && observed.operationIdentity.length > BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
+  // I-FORK: an `APPLY_PEER_UPDATE` candidate reference past its bound is refused up front exactly like an
+  // over-bound identity (`CAPI-E014`, P06): no commit request, nothing held.
+  const refusedUpFront = identityOverBound || observed.refOverBound === true
+    // The opaque incoming Commit bound of `APPLY_PEER_UPDATE` is decidable from the request alone, before
+    // authentication and before any RS commit request: a report of a commit for it is never held.
+    || (operation === 'APPLY_PEER_UPDATE' && requestBoundCodes(checked.values, decodedInput).length > 0);
 
   if (operation === 'RESTORE') {
     const restore = decideRestore(snapshot, observed.restoreObservation);
@@ -1824,12 +2115,12 @@ function run(input) {
   if (decision === null) {
     return rejectedTransition(requestId, operation, stateBefore, worst([...bounds, 'FAIL_CLOSED_INTERNAL']));
   }
-  if (decision.result.kind === 'REJECTED' || observed.commitOutcome === null || identityOverBound) {
+  if (decision.result.kind === 'REJECTED' || observed.commitOutcome === null || refusedUpFront) {
     // No RS commit request was made: every applicable error preempts by the C-API total precedence. An
     // operation identity past its bound is C-API `CAPI-E014` ("a structural byte/count bound is exceeded
     // before stateful processing", P06, REJECTED, UNCHANGED): with it, no commit request is ever issued.
     const candidates = [...bounds];
-    if (identityOverBound) candidates.push('VALUE_OUT_OF_RANGE');
+    if (refusedUpFront) candidates.push('VALUE_OUT_OF_RANGE');
     if (decision.result.kind === 'REJECTED') candidates.push(decision.result.code);
     if (candidates.length > 0) {
       const code = worst(candidates);
