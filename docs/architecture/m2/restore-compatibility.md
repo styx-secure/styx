@@ -10,7 +10,7 @@ It specifies no restore implementation, transaction, migration, rewrite, repair,
 
 ## 2. Frozen input
 
-The only format authority is `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `43e0765f0d81994a2c00fd32ca79851b3230dcc8de7dd06bba61f2b31efa718e`; access is not required. The input remains external and read-only. Drift is BLOCK.
+The only format authority is `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `5d514cb45fb54f3c7877fbb02f9716aa40b965b019db55548e730effc932f28b`; access is not required. The input remains external and read-only. Drift is BLOCK.
 
 The exact readable profile is the conjunction copied under `compatibilityRegistry`: all eight versions, algorithms and widths, big-endian integers, framing and zero-salt rules, four 32-byte HKDF outputs, magic/domain/label strings, key/envelope/AAD/plaintext/manifest/selector grammar, all 17 kind IDs and versions, bounds, registries, mappings, generation rules, crash boundaries, vectors, negative classes, and non-claims. ProductProfile is exactly 306 bytes as stated by C-FMT; its layout remains C-BIND-owned and is not independently accepted here. Compatibility is equality, never a range, minimum, semver rule, downgrade, or partial recognition. Unknown, future, missing, mixed, or downgraded versions are `UNSUPPORTED_VERSION`; other profile mismatches are `INCOMPATIBLE_FORMAT`.
 
@@ -94,7 +94,7 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "cFmtCommit": "697e257ab106fa67c144f8fbbcde5c68ed4359c3",
     "cFmtPath": "docs/architecture/m2/storage-format.md",
     "cFmtSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
-    "cFmtEvidenceBundleSha256": "43e0765f0d81994a2c00fd32ca79851b3230dcc8de7dd06bba61f2b31efa718e"
+    "cFmtEvidenceBundleSha256": "5d514cb45fb54f3c7877fbb02f9716aa40b965b019db55548e730effc932f28b"
   },
   "compatibilityRegistry": {
     "versions": {
