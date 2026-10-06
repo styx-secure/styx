@@ -703,7 +703,12 @@ export function createReceipts(options) {
    */
   async function buildAndSignReceipt(message, own) {
     const reading = callSyncPort(read === null ? null : read.clock, 'now');
-    if (!reading.ok || typeof reading.value !== 'number' || !Number.isFinite(reading.value)) return { ok: false };
+    if (!reading.ok) return { ok: false };
+    /* C-DLV section 4.5 ahead of the number, finite, negative and safe-integer
+     * checks: a clock return that carries a closed slot outside its closed set
+     * is an unknown value, not a bad reading (C-SDK section 5.3). */
+    if (closedSlotViolation(reading.value) !== null) return { ok: false, unknown: true };
+    if (typeof reading.value !== 'number' || !Number.isFinite(reading.value)) return { ok: false };
     /* C-DLV section 6.1: a negative reading builds no structure, whatever the
      * division of C-SDK section 8.4 would make of it. */
     if (reading.value < 0) return { ok: false };

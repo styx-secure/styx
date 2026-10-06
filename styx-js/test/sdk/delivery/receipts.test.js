@@ -1363,186 +1363,459 @@ describe('the stop', () => {
 });
 
 /* ------------------------------------------------------------------------- *
- * O-SCEN3 `duplicateAndReordered` / `inboundDuplicateReordered`.
+ * A generative property over a deterministic draw stream (owner decision R4,
+ * H-1 and G1: the acceptance criterion of the contract applied literally).
  * ------------------------------------------------------------------------- */
 
-describe('O-SCEN3 duplicateAndReordered / inboundDuplicateReordered', () => {
-  test('the recipient: e2 first, then e1, then every copy dropped, two messages and two receipts', async () => {
-    const recipient = makeHarness();
-    const sender = recipient.other;
-    // The recipient client started at 20000 with its own clock.
-    recipient.options.clock.now = () => 21200;
-    const e1 = messageEvent({ sender, owner: recipient.owner.pub, n: '1'.repeat(32), payload: [1] });
-    const e2 = messageEvent({ sender, owner: recipient.owner.pub, n: '2'.repeat(32), payload: [2] });
-
-    // relay1 replays its stored matches in reverse insertion order, each twice.
-    recipient.module.ingest(eventFrame(e2, 1));
-    recipient.module.ingest(eventFrame(e2, 1));
-    recipient.module.ingest(eventFrame(e1, 1));
-    recipient.module.ingest(eventFrame(e1, 1));
-    await flush(8);
-    // The first accepted receipt of e2 arrives on the sender's client, not here.
-    // relay0's insertion-order replay of both events, then a second copy of each.
-    recipient.module.ingest(eventFrame(e1, 0));
-    recipient.module.ingest(eventFrame(e2, 0));
-    recipient.module.ingest(eventFrame(e1, 0));
-    recipient.module.ingest(eventFrame(e2, 0));
-    await flush(8);
-
-    expect(recipient.events).toHaveLength(2);
-    expect(recipient.events.map((event) => event.kind)).toEqual(['MESSAGE_RECEIVED', 'MESSAGE_RECEIVED']);
-    expect(Array.from(recipient.events[0].payload)).toEqual([7, 8, 9]);
-    expect(Array.from(recipient.events[1].payload)).toEqual([7, 8, 9]);
-    expect(new Set(recipient.published.map((receipt) => receipt.tags[1][1]))).toEqual(new Set([e1.id, e2.id]));
-    expect(recipient.published).toHaveLength(2);
-    // Exactly one receipt per event id, and the processing order is e2 then e1.
-    expect(recipient.published.map((receipt) => receipt.tags[1][1])).toEqual([e2.id, e1.id]);
-    expect(recipient.opens).toHaveLength(2);
-    // Every published receipt is well formed and signed by the recipient.
-    for (const receipt of recipient.published) {
-      expect(receipt.id).toBe(eventIdOf(receipt.pubkey, receipt.created_at, receipt.kind, receipt.tags, receipt.content));
-      expect(schnorr.verify(hexToBytes(receipt.sig), hexToBytes(receipt.id), hexToBytes(receipt.pubkey))).toBe(true);
-    }
-  });
-
-  test('the sender: two distinct acknowledgements reach the item-side seam in arrival order, every copy dropped', async () => {
-    const recipientKey = makeKey();
-    const senderClient = makeHarness();
-    const e1 = messageEvent({ sender: senderClient.other, owner: senderClient.owner.pub, n: '1'.repeat(32) });
-    const e2 = messageEvent({ sender: senderClient.other, owner: senderClient.owner.pub, n: '2'.repeat(32) });
-    const r2 = receiptEvent({ recipient: recipientKey, owner: senderClient.owner.pub, eventId: e2.id, n: '3'.repeat(32) });
-    const r1 = receiptEvent({ recipient: recipientKey, owner: senderClient.owner.pub, eventId: e1.id, n: '4'.repeat(32) });
-
-    senderClient.module.ingest(frame(['EVENT', 'sub', r2], 1));
-    senderClient.module.ingest(frame(['EVENT', 'sub', r2], 1));
-    senderClient.module.ingest(frame(['EVENT', 'sub', r1], 1));
-    senderClient.module.ingest(frame(['EVENT', 'sub', r1], 1));
-    senderClient.module.ingest(frame(['EVENT', 'sub', r2], 0));
-    senderClient.module.ingest(frame(['EVENT', 'sub', r1], 0));
-    await flush(8);
-
-    expect(senderClient.acks).toEqual([
-      { eventId: e2.id, recipient: recipientKey.pub },
-      { eventId: e1.id, recipient: recipientKey.pub },
-    ]);
-    expect(senderClient.events).toEqual([]);
-    expect(senderClient.opens).toHaveLength(0);
-    expect(senderClient.published).toHaveLength(0);
-  });
-});
-
-/* ------------------------------------------------------------------------- *
- * A generative property over a deterministic draw stream.
- * ------------------------------------------------------------------------- */
-
-/** A small deterministic generator, so "fixed seed" means exactly that. */
+/**
+ * A small deterministic generator, so "fixed seed" means exactly that. Every
+ * draw takes the HIGH bits of the linear congruential state: the low bits of
+ * `state * 1664525 + 1013904223` modulo 2^32 have short periods (bit 0 simply
+ * alternates), so two consecutive low-bit draws are correlated, which is what
+ * made the receipt dimension unreachable at the round-3 head.
+ */
 function makeGenerator(seed) {
   let state = seed >>> 0;
+  const high16 = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state >>> 16;
+  };
   return {
-    next() {
-      state = (state * 1664525 + 1013904223) >>> 0;
-      return state;
-    },
     below(bound) {
-      return this.next() % bound;
+      if (bound <= 0x10000) return high16() % bound;
+      return (high16() * 0x10000 + high16()) % bound;
+    },
+    between(min, max) {
+      return min + this.below(max - min + 1);
+    },
+    pick(list) {
+      return list[this.below(list.length)];
+    },
+    shuffle(list) {
+      for (let index = list.length - 1; index > 0; index -= 1) {
+        const other = this.below(index + 1);
+        [list[index], list[other]] = [list[other], list[index]];
+      }
+      return list;
     },
   };
 }
 
+/** A key derived from a label, so every generated timeline is reproducible. */
+function deterministicKey(label) {
+  const priv = sha256(utf8Encode(label));
+  return { priv, pub: bytesToHex(schnorr.getPublicKey(priv)) };
+}
+
+/** C-SDK section 7's closed event-kind set and section 5.2's INBOUND_DISCARDED codes. */
+const CLOSED_EVENT_KINDS = new Set([
+  'CLIENT_STATE_CHANGED', 'DELIVERY_STATE_CHANGED', 'MESSAGE_RECEIVED', 'INBOUND_DISCARDED',
+]);
+const INBOUND_DISCARD_CODES = new Set(['E_SDK_INBOUND_INVALID', 'E_SDK_SESSION_FAILED', 'E_SDK_UNKNOWN_CODE']);
+/** C-SDK section 4.1's two receipt modes; the sender's mode decides the `r` tag. */
+const GENERATED_RECEIPT_MODES = ['RECIPIENT_RECEIPT', 'RELAY_ACCEPTANCE_ONLY'];
+/** The single-field mutations; each one fails a step of C-DLV section 7.1. */
+const GENERATED_MUTATIONS = {
+  id: () => ({ id: 'f'.repeat(64) }),
+  sig: () => ({ sig: 'f'.repeat(128) }),
+  pubkey: (owner) => ({ pubkey: owner.pub }),
+  createdAtNegative: () => ({ created_at: -1 }),
+  createdAtFraction: () => ({ created_at: 1.5 }),
+  kind: () => ({ kind: 4740 }),
+  content: () => ({ content: null }),
+  tags: () => ({ tags: null }),
+};
+const GENERATED_VALIDITY = ['valid', ...Object.keys(GENERATED_MUTATIONS)];
+
 describe('generative invariants over a deterministic draw stream', () => {
-  test('300 timelines: a valid event is processed exactly once, mutations are discarded, and the window and stop invariants hold', async () => {
-    let accepted = 0;
-    for (let seed = 1; seed <= 300; seed += 1) {
-      const generator = makeGenerator(seed);
-      /* H2: the timeout is drawn, not fixed, and the frames of a timeline are
-       * addressed to the key the client of that timeline reads, so a well-formed
-       * frame passes step 3 and the mutations below reach steps 4 and 5. */
-      const timeoutMs = 40 * (1 + generator.below(4));
+  test('300 drawn timelines over timeout, relay count, receipt mode, kind, validity and duplicate pattern', async () => {
+    const TIMELINES = 300;
+    const generator = makeGenerator(0x1acc2026);
+    const coverage = {
+      relayCounts: new Set(),
+      timeoutMin: Infinity,
+      timeoutMax: -Infinity,
+      receiptModes: new Map(),
+      kindCases: new Map(),
+      validKindCases: new Map(),
+      validity: new Map(),
+      copies: new Map(),
+    };
+    const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
+    const totals = { messages: 0, receipts: 0, acks: 0, discards: 0, droppedCopies: 0, accepted: 0 };
+
+    for (let timeline = 0; timeline < TIMELINES; timeline += 1) {
+      /* The six dimensions of the criterion, each drawn from the stream. */
+      const relayCount = generator.between(1, 16);
+      const perRelayTimeoutMs = generator.between(11000, 30000);
+      const receiptMode = generator.pick(GENERATED_RECEIPT_MODES);
+      const clockMs = generator.below(2 ** 31);
+      coverage.relayCounts.add(relayCount);
+      coverage.timeoutMin = Math.min(coverage.timeoutMin, perRelayTimeoutMs);
+      coverage.timeoutMax = Math.max(coverage.timeoutMax, perRelayTimeoutMs);
+      bump(coverage.receiptModes, receiptMode);
+      expect(Number.isSafeInteger(perRelayTimeoutMs)).toBe(true);
+      expect(perRelayTimeoutMs).toBeGreaterThanOrEqual(11000);
+      expect(perRelayTimeoutMs).toBeLessThanOrEqual(30000);
+      expect(relayCount).toBeGreaterThanOrEqual(1);
+      expect(relayCount).toBeLessThanOrEqual(16);
+
+      /* Every frame of the timeline is addressed to the key its own client
+       * reads, so a well-formed frame passes step 3 and a mutation reaches the
+       * step it targets. */
+      const owner = deterministicKey(`i-ack-generative-owner-${timeline}`);
+      const sender = deterministicKey(`i-ack-generative-sender-${timeline}`);
       const harness = makeHarness({
-        clock: { now: () => generator.below(100000) },
-        perRelayTimeoutMs: timeoutMs,
+        owner,
+        perRelayTimeoutMs,
+        clock: { now: () => clockMs },
+        session: { open: ({ ciphertext }) => ({ plaintext: Uint8Array.from(ciphertext) }) },
       });
-      const sender = makeKey();
-      const askReceipt = generator.below(2) === 0;
-      const kind = generator.below(2) === 0 ? 4741 : 4742;
-      const n = generator.next().toString(16).padStart(32, '0');
-      const event = kind === 4741
-        ? buildEvent({
-          priv: sender.priv,
-          pub: sender.pub,
-          tags: askReceipt
-            ? [['p', harness.owner.pub], ['v', VERSION], ['n', n], ['r', '1']]
-            : [['p', harness.owner.pub], ['v', VERSION], ['n', n]],
-          content: bytesToBase64(new Uint8Array([generator.below(256)])),
-        })
-        : receiptEvent({ recipient: sender, owner: harness.owner.pub, eventId: 'a'.repeat(64), n });
 
-      const before = harness.events.length;
-      const queued = harness.module.ingest(frame(['EVENT', 'sub', event], generator.below(4)));
-      expect(queued.value.queued).toBe(true);
-      await flush(3);
-      expect(harness.events.length - before).toBe(kind === 4741 ? 1 : 0);
-      if (kind === 4741) {
-        expect(harness.events[before].kind).toBe('MESSAGE_RECEIVED');
-        expect(harness.events[before].sender).toBe(sender.pub);
-        expect(harness.published.length).toBe(askReceipt ? 1 : 0);
-        accepted += 1;
-      } else {
-        expect(harness.acks).toHaveLength(1);
+      const plan = [];
+      const eventCount = generator.between(1, 3);
+      for (let index = 0; index < eventCount; index += 1) {
+        const kind = generator.pick([4741, 4742]);
+        const validity = generator.below(2) === 0 ? 'valid' : generator.pick(GENERATED_VALIDITY.slice(1));
+        const copies = generator.between(1, 3);
+        const n = (timeline * 4 + index).toString(16).padStart(32, '0');
+        const askReceipt = kind === 4741 && receiptMode === 'RECIPIENT_RECEIPT';
+        const payload = [generator.below(256), generator.below(256), index + 1];
+        const base = kind === 4741
+          ? messageEvent({ sender, owner: owner.pub, askReceipt, payload, n })
+          : receiptEvent({
+            recipient: sender,
+            owner: owner.pub,
+            eventId: bytesToHex(sha256(utf8Encode(`i-ack-generative-target-${timeline}-${index}`))),
+            n,
+          });
+        const event = validity === 'valid' ? base : { ...base, ...GENERATED_MUTATIONS[validity](owner) };
+        const kindCase = kind === 4742 ? '4742' : (askReceipt ? '4741-r' : '4741-no-r');
+        bump(coverage.kindCases, kindCase);
+        if (validity === 'valid') bump(coverage.validKindCases, kindCase);
+        bump(coverage.validity, validity);
+        bump(coverage.copies, copies);
+        for (let copy = 0; copy < copies; copy += 1) {
+          plan.push({ event, base, kind, validity, askReceipt, payload, relayIndex: generator.below(relayCount) });
+        }
+      }
+      /* The duplicate pattern: copies, their relays and their interleaving. */
+      generator.shuffle(plan);
+
+      /* The model of C-DLV sections 7.1, 7.2, 7.3 and 8, in arrival order. */
+      const seen = new Set();
+      const expectedEvents = [];
+      const expectedReceiptsFor = [];
+      const expectedAcks = [];
+      let droppedCopies = 0;
+      for (const step of plan) {
+        if (step.validity !== 'valid') {
+          expectedEvents.push({ kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' });
+          continue;
+        }
+        if (seen.has(step.event.id)) {
+          droppedCopies += 1;
+          continue;
+        }
+        seen.add(step.event.id);
+        if (step.kind === 4741) {
+          expectedEvents.push({ kind: 'MESSAGE_RECEIVED', sender: sender.pub, payload: new Uint8Array(step.payload) });
+          if (step.askReceipt) expectedReceiptsFor.push(step.event.id);
+        } else {
+          expectedAcks.push({ eventId: step.event.tags[1][1], recipient: sender.pub });
+        }
       }
 
-      // A duplicate copy is dropped whatever the relay.
-      const again = harness.module.ingest(frame(['EVENT', 'sub', event], generator.below(4)));
-      expect(again.value.queued).toBe(true);
-      await flush(3);
-      expect(harness.events.length - before).toBe(kind === 4741 ? 1 : 0);
-      expect(harness.published.length).toBe(kind === 4741 && askReceipt ? 1 : 0);
+      for (const step of plan) {
+        expect(harness.module.ingest(eventFrame(step.event, step.relayIndex))).toEqual({ ok: true, value: { queued: true } });
+      }
+      await waitFor(() => harness.events.length >= expectedEvents.length
+        && harness.acks.length >= expectedAcks.length
+        && harness.published.length >= expectedReceiptsFor.length);
+      await flush(8);
 
-      // Every single-field mutation of the event is discarded, in a client that
-      // reads the same owner key, so that the control below is a real one.
-      const mutations = [
-        { id: 'f'.repeat(64) },
-        { sig: 'f'.repeat(128) },
-        { pubkey: harness.owner.pub },
-        { created_at: -1 },
-        { created_at: 1.5 },
-        { kind: 4740 },
-        { content: null },
-        { tags: null },
-      ];
-      const freshHarness = makeHarness({ owner: harness.owner, clock: { now: () => 12000 } });
-      const seen = freshHarness.events.length;
-      /* The positive control: the untouched frame of this timeline is accepted
-       * here, so the window and the eight discards below cannot be vacuous. */
-      freshHarness.module.ingest(frame(['EVENT', 'sub', event]));
-      await flush(3);
-      expect(freshHarness.events.length - seen).toBe(kind === 4741 ? 1 : 0);
-      const control = freshHarness.events.length;
-      for (const patch of mutations) {
-        freshHarness.module.ingest(frame(['EVENT', 'sub', { ...event, ...patch }]));
+      /* The closed sets. */
+      for (const event of harness.events) {
+        expect(CLOSED_EVENT_KINDS.has(event.kind)).toBe(true);
+        if (event.kind === 'INBOUND_DISCARDED') expect(INBOUND_DISCARD_CODES.has(event.code)).toBe(true);
       }
-      await flush(12);
-      expect(freshHarness.events.length - control).toBe(8);
-      for (const entry of freshHarness.events.slice(control)) {
-        expect(entry.code).toBe('E_SDK_INBOUND_INVALID');
+      /* Exactly the modelled events, in arrival order: one MESSAGE_RECEIVED per
+       * distinct valid kind-4 741 id that opens, one discard per invalid copy. */
+      expect(harness.events).toEqual(expectedEvents);
+      /* One receipt per such event that carries the `r` tag, and no other. */
+      expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual(expectedReceiptsFor);
+      for (const receipt of harness.published) {
+        expect(receipt.pubkey).toBe(owner.pub);
+        expect(receipt.created_at).toBe(Math.floor(clockMs / 1000));
+        expect(receipt.tags[0]).toEqual(['p', sender.pub]);
+        expect(receipt.id).toBe(eventIdOf(receipt.pubkey, receipt.created_at, receipt.kind, receipt.tags, receipt.content));
+        expect(schnorr.verify(hexToBytes(receipt.sig), hexToBytes(receipt.id), hexToBytes(receipt.pubkey))).toBe(true);
       }
-      /* The window invariant: the id accepted by the control is held, so the
-       * same frame again changes nothing. */
-      freshHarness.module.ingest(frame(['EVENT', 'sub', event]));
+      /* One acknowledgement per distinct valid kind-4 742 id, before the seam. */
+      expect(harness.acks).toEqual(expectedAcks);
+
+      /* The terminal state: nothing is emitted, published or routed after the stop. */
+      const stop = harness.module.shutdown();
+      expect(stop).toEqual({ ok: true, value: { dropped: 0 } });
+      const late = generator.pick(plan);
+      expect(harness.module.ingest(eventFrame(late.base, late.relayIndex))).toEqual({ ok: true, value: { queued: false } });
       await flush(3);
-      expect(freshHarness.events.length - control).toBe(8);
-      /* The terminal invariant: nothing is emitted after the stop of C-DLV
-       * section 4.6 step (1). */
-      freshHarness.module.shutdown();
-      freshHarness.module.ingest(frame(['EVENT', 'sub', event]));
-      await flush(3);
-      expect(freshHarness.events.length - control).toBe(8);
+      expect(harness.events).toHaveLength(expectedEvents.length);
+      expect(harness.published).toHaveLength(expectedReceiptsFor.length);
+      expect(harness.acks).toHaveLength(expectedAcks.length);
+
+      const messages = expectedEvents.filter((event) => event.kind === 'MESSAGE_RECEIVED').length;
+      totals.messages += messages;
+      totals.receipts += expectedReceiptsFor.length;
+      totals.acks += expectedAcks.length;
+      totals.discards += expectedEvents.length - messages;
+      totals.droppedCopies += droppedCopies;
+      totals.accepted += messages + expectedAcks.length;
     }
-    /* The property is non-vacuous: a nonzero number of the generated well-formed
-     * frames was accepted and processed. */
-    expect(accepted).toBeGreaterThan(0);
-    console.log(`generative: ${accepted} of 300 drawn timelines were accepted and processed`);
-  }, 240000);
+
+    /* Per-dimension coverage: every drawn dimension took more than one value
+     * and every kind / receipt case was seen, valid, at least once. */
+    expect(coverage.relayCounts.size).toBe(16);
+    expect(coverage.timeoutMin).toBeLessThan(13000);
+    expect(coverage.timeoutMax).toBeGreaterThan(28000);
+    for (const mode of GENERATED_RECEIPT_MODES) expect(coverage.receiptModes.get(mode) ?? 0).toBeGreaterThan(0);
+    for (const kindCase of ['4741-r', '4741-no-r', '4742']) {
+      expect(coverage.kindCases.get(kindCase) ?? 0).toBeGreaterThan(0);
+      expect(coverage.validKindCases.get(kindCase) ?? 0).toBeGreaterThan(0);
+    }
+    for (const validity of GENERATED_VALIDITY) expect(coverage.validity.get(validity) ?? 0).toBeGreaterThan(0);
+    for (const copies of [1, 2, 3]) expect(coverage.copies.get(copies) ?? 0).toBeGreaterThan(0);
+    /* The property is not vacuous: messages were delivered, receipts were
+     * published, acknowledgements were routed, mutations were discarded and
+     * duplicate copies were dropped. */
+    expect(totals.messages).toBeGreaterThan(0);
+    expect(totals.receipts).toBeGreaterThan(0);
+    expect(totals.acks).toBeGreaterThan(0);
+    expect(totals.discards).toBeGreaterThan(0);
+    expect(totals.droppedCopies).toBeGreaterThan(0);
+    console.log(`generative: ${totals.accepted} generated well-formed frames accepted over ${TIMELINES} timelines; `
+      + `${totals.messages} messages, ${totals.receipts} receipts, ${totals.acks} acknowledgements, `
+      + `${totals.discards} discards, ${totals.droppedCopies} duplicate copies dropped; relay counts `
+      + `${coverage.relayCounts.size}/16, timeouts ${coverage.timeoutMin}..${coverage.timeoutMax} ms; kind cases `
+      + `${JSON.stringify(Object.fromEntries(coverage.validKindCases))} valid of `
+      + `${JSON.stringify(Object.fromEntries(coverage.kindCases))}`);
+  }, 600000);
+
+  test('the window bound over a drawn stream: 4 096 ids are held and the 4 097th distinct insertion evicts the oldest', async () => {
+    const generator = makeGenerator(0x4096);
+    const owner = deterministicKey('i-ack-generative-window-owner');
+    const sender = deterministicKey('i-ack-generative-window-sender');
+    const relayCount = generator.between(1, 16);
+    const harness = makeHarness({ owner, perRelayTimeoutMs: generator.between(11000, 30000) });
+    const processed = () => harness.events.length + harness.acks.length;
+    const stream = [];
+    for (let index = 0; index < 4097; index += 1) {
+      const n = index.toString(16).padStart(32, '0');
+      stream.push(generator.below(2) === 0
+        ? messageEvent({ sender, owner: owner.pub, askReceipt: generator.below(2) === 0, n, payload: [index & 0xff] })
+        : receiptEvent({ recipient: sender, owner: owner.pub, eventId: 'c'.repeat(64), n }));
+    }
+    expect(new Set(stream.map((event) => event.id)).size).toBe(4097);
+    const ingestWave = async (events, expected) => {
+      for (const event of events) harness.module.ingest(eventFrame(event, generator.below(relayCount)));
+      expect(await waitFor(() => processed() === expected, 120000)).toBe(true);
+    };
+    const [first, ...rest] = stream;
+    let expected = 1;
+    await ingestWave([first], expected);
+    for (let start = 0; start < 4095; start += 256) {
+      const wave = rest.slice(start, Math.min(start + 256, 4095));
+      expected += wave.length;
+      await ingestWave(wave, expected);
+    }
+    /* 4 096 distinct ids are in the window: a copy of the oldest is dropped. */
+    harness.module.ingest(eventFrame(first, generator.below(relayCount)));
+    await flush(8);
+    expect(processed()).toBe(4096);
+    /* The 4 097th distinct insertion evicts it, and only it: the id inserted
+     * right after it is still held, and the oldest one's copy is processed
+     * again. */
+    await ingestWave([rest[4095]], 4097);
+    harness.module.ingest(eventFrame(rest[0], generator.below(relayCount)));
+    await flush(8);
+    expect(processed()).toBe(4097);
+    harness.module.ingest(eventFrame(first, generator.below(relayCount)));
+    expect(await waitFor(() => processed() === 4098, 30000)).toBe(true);
+    await flush(8);
+    expect(processed()).toBe(4098);
+  }, 600000);
+});
+
+/* ------------------------------------------------------------------------- *
+ * O-SCEN3 replays (owner decision R4, S1). Each test below replays exactly the
+ * inbound frames that the record's own client receives, from the relay the
+ * record names, at the instant the record fixes (the clock port reads that
+ * instant when the frame is processed). The session double returns the
+ * ciphertext bytes as the plaintext, so distinct payloads stay distinct, and the
+ * sender client ingests the very receipts the recipient client published.
+ * ------------------------------------------------------------------------- */
+
+/** One client of a replay: a harness whose clock reads the replay's instant. */
+function replayClient(label, overrides = {}) {
+  const at = { now: 0 };
+  const opened = [];
+  const harness = makeHarness({
+    owner: deterministicKey(label),
+    clock: { now: () => at.now },
+    session: {
+      open: ({ sender, ciphertext }) => {
+        opened.push({ sender, ciphertext });
+        return { plaintext: Uint8Array.from(ciphertext) };
+      },
+    },
+    perRelayTimeoutMs: 12000,
+    ...overrides,
+  });
+  harness.opens = opened;
+  /** Deliver one frame at its record instant and let it be processed there. */
+  const deliver = async (instant, event, relayIndex) => {
+    at.now = instant;
+    const answer = harness.module.ingest(eventFrame(event, relayIndex));
+    await flush(8);
+    return answer;
+  };
+  return { harness, deliver };
+}
+
+describe('O-SCEN3 duplicateAndReordered / inboundDuplicateReordered -- exact replay', () => {
+  test('the recipient and the sender receive the frames of the record at its instants', async () => {
+    const recipient = replayClient('i-ack-replay-dup-recipient');
+    const sender = replayClient('i-ack-replay-dup-sender');
+    const senderKey = sender.harness.owner;
+    const recipientKey = recipient.harness.owner;
+    /* 12 000: the sender sends P1 then P2 in RECIPIENT_RECEIPT mode; the two n
+     * tags differ, so the event ids differ. */
+    const e1 = messageEvent({ sender: senderKey, owner: recipientKey.pub, askReceipt: true, payload: [0x50, 0x31], n: '1'.repeat(32), createdAt: 12 });
+    const e2 = messageEvent({ sender: senderKey, owner: recipientKey.pub, askReceipt: true, payload: [0x50, 0x32], n: '2'.repeat(32), createdAt: 12 });
+    expect(e1.id).not.toBe(e2.id);
+
+    /* The recipient: relay1 replays in reverse insertion order, each twice. */
+    await recipient.deliver(21105, e2, 1);
+    expect(recipient.harness.events).toEqual([
+      { kind: 'MESSAGE_RECEIVED', sender: senderKey.pub, payload: new Uint8Array([0x50, 0x32]) },
+    ]);
+    expect(recipient.harness.published.map((receipt) => receipt.tags[1][1])).toEqual([e2.id]);
+    await recipient.deliver(21115, e2, 1);
+    await recipient.deliver(21125, e1, 1);
+    expect(recipient.harness.events).toHaveLength(2);
+    expect(recipient.harness.events[1]).toEqual(
+      { kind: 'MESSAGE_RECEIVED', sender: senderKey.pub, payload: new Uint8Array([0x50, 0x31]) },
+    );
+    await recipient.deliver(21135, e1, 1);
+    /* 21 205: relay0's insertion-order replay, e1 then e2, both dropped. */
+    await recipient.deliver(21205, e1, 0);
+    await recipient.deliver(21205, e2, 0);
+    expect(recipient.harness.events).toHaveLength(2);
+    expect(recipient.harness.opens).toHaveLength(2);
+    /* Exactly two receipts, one per event id, in processing order e2 then e1. */
+    const [r2, r1] = recipient.harness.published;
+    expect(recipient.harness.published).toHaveLength(2);
+    expect(r2.tags[1][1]).toBe(e2.id);
+    expect(r1.tags[1][1]).toBe(e1.id);
+    expect(r2.id).not.toBe(r1.id);
+    expect(r2.created_at).toBe(21);
+    expect(r1.created_at).toBe(21);
+    for (const receipt of [r2, r1]) {
+      expect(receipt.pubkey).toBe(recipientKey.pub);
+      expect(receipt.tags[0]).toEqual(['p', senderKey.pub]);
+      expect(schnorr.verify(hexToBytes(receipt.sig), hexToBytes(receipt.id), hexToBytes(receipt.pubkey))).toBe(true);
+    }
+
+    /* The sender ingests the receipts the recipient published, as the record
+     * delivers them: relay1 twice each, then relay0's copies of both. */
+    await sender.deliver(21200, r2, 1);
+    expect(sender.harness.acks).toEqual([{ eventId: e2.id, recipient: recipientKey.pub }]);
+    await sender.deliver(21210, r2, 1);
+    await sender.deliver(21220, r1, 1);
+    await sender.deliver(21230, r1, 1);
+    await sender.deliver(21305, r2, 0);
+    await sender.deliver(21305, r1, 0);
+    expect(sender.harness.acks).toEqual([
+      { eventId: e2.id, recipient: recipientKey.pub },
+      { eventId: e1.id, recipient: recipientKey.pub },
+    ]);
+    expect(sender.harness.events).toEqual([]);
+    expect(sender.harness.opens).toHaveLength(0);
+    expect(sender.harness.published).toHaveLength(0);
+  });
+});
+
+describe('O-SCEN3 offlineRecipient -- exact replays', () => {
+  /** The real item-side seam's refusal shape (card I-QUEUE `acceptReceipt`). */
+  const refusing = (routed) => ({ eventId, recipient }) => {
+    routed.push({ eventId, recipient });
+    return Object.freeze({ ok: true, value: Object.freeze({ accepted: false, deliveryId: 'd1' }) });
+  };
+
+  test('receiptBeforeDeadline: 61 105 / 61 250 at the recipient, 61 200 / 61 260 at the sender', async () => {
+    const recipient = replayClient('i-ack-replay-before-recipient');
+    const sender = replayClient('i-ack-replay-before-sender');
+    const message = messageEvent({
+      sender: sender.harness.owner, owner: recipient.harness.owner.pub, askReceipt: true, payload: [0x50], createdAt: 12,
+    });
+    await recipient.deliver(61105, message, 0);
+    expect(recipient.harness.events).toEqual([
+      { kind: 'MESSAGE_RECEIVED', sender: sender.harness.owner.pub, payload: new Uint8Array([0x50]) },
+    ]);
+    expect(recipient.harness.published).toHaveLength(1);
+    const receipt = recipient.harness.published[0];
+    expect(receipt.created_at).toBe(61);
+    expect(receipt.tags[1][1]).toBe(message.id);
+
+    await sender.deliver(61200, receipt, 0);
+    expect(sender.harness.acks).toEqual([{ eventId: message.id, recipient: recipient.harness.owner.pub }]);
+    await recipient.deliver(61250, message, 1);
+    expect(recipient.harness.events).toHaveLength(1);
+    expect(recipient.harness.published).toHaveLength(1);
+    await sender.deliver(61260, receipt, 1);
+    expect(sender.harness.acks).toHaveLength(1);
+    expect(sender.harness.events).toEqual([]);
+  });
+
+  test('receiptAfterDeadline: 134 105 / 134 250 at the recipient, 135 000 at the sender, refused without an event', async () => {
+    const routed = [];
+    const recipient = replayClient('i-ack-replay-after-recipient');
+    const sender = replayClient('i-ack-replay-after-sender', { acceptReceipt: refusing(routed) });
+    const message = messageEvent({
+      sender: sender.harness.owner, owner: recipient.harness.owner.pub, askReceipt: true, payload: [0x50], createdAt: 12,
+    });
+    await recipient.deliver(134105, message, 0);
+    await recipient.deliver(134250, message, 1);
+    expect(recipient.harness.events).toHaveLength(1);
+    expect(recipient.harness.published).toHaveLength(1);
+    const receipt = recipient.harness.published[0];
+    expect(receipt.created_at).toBe(134);
+
+    await sender.deliver(135000, receipt, 0);
+    expect(routed).toEqual([{ eventId: message.id, recipient: recipient.harness.owner.pub }]);
+    expect(sender.harness.events).toEqual([]);
+    expect(sender.harness.published).toHaveLength(0);
+  });
+
+  test('receiptExactlyAtDeadline: 122 105 / 122 250 at the recipient, both receipt copies at 132 000 at the sender', async () => {
+    const routed = [];
+    const recipient = replayClient('i-ack-replay-boundary-recipient');
+    const sender = replayClient('i-ack-replay-boundary-sender', { acceptReceipt: refusing(routed) });
+    const message = messageEvent({
+      sender: sender.harness.owner, owner: recipient.harness.owner.pub, askReceipt: true, payload: [0x50], createdAt: 12,
+    });
+    await recipient.deliver(122105, message, 0);
+    await recipient.deliver(122250, message, 1);
+    expect(recipient.harness.events).toHaveLength(1);
+    expect(recipient.harness.published).toHaveLength(1);
+    const receipt = recipient.harness.published[0];
+    expect(receipt.created_at).toBe(122);
+
+    await sender.deliver(132000, receipt, 0);
+    await sender.deliver(132000, receipt, 1);
+    expect(routed).toEqual([{ eventId: message.id, recipient: recipient.harness.owner.pub }]);
+    expect(sender.harness.events).toEqual([]);
+  });
 });
 
 /* ------------------------------------------------------------------------- *
@@ -1882,9 +2155,10 @@ describe('the terminal stop at every awaited boundary', () => {
  * unknown closed slot there is `E_SDK_UNKNOWN_CODE` and only a well-formed but
  * non-64-hex key is the step-3 failure of `E_SDK_INBOUND_INVALID`. (c)1: the
  * five closed slots the contract names are read on any object return. (c)4: the
- * acknowledgement envelope is checked with `Object.isFrozen`. H1: one replay
- * per cited O-SCEN3 purpose item -- `offlineRecipient`, `relayLoss`,
- * `hungRelay` -- at the arrival instant the record fixes. The remaining tests
+ * acknowledgement envelope is checked with `Object.isFrozen`. The O-SCEN3
+ * replays are the exact replays above; `relayLoss` and `hungRelay` carry no
+ * inbound frame and are checked below as C-DLV section 7.1 properties, with
+ * C1, the clock return under C-DLV section 4.5. The remaining tests
  * are the MEDIUM findings of the round-3 review that are inside the two-file
  * allowlist and change no contract text.
  * ------------------------------------------------------------------------- */
@@ -1974,108 +2248,108 @@ describe('(c)4 -- the acknowledgement envelope is checked with Object.isFrozen',
   });
 });
 
-describe('O-SCEN3 offlineRecipient / receiptBeforeDeadline / receiptAfterDeadline', () => {
-  test('the replayed frame is processed at its arrival instant while the client is still CREATED, and its second copy is dropped', async () => {
-    /* O-SCEN3 `relayLoss`'s sibling record `offlineRecipient`, timeline
-     * `receiptBeforeDeadline`, precondition 4 and the events at 61 105 and
-     * 61 250: the recipient has not resolved its `start()` -- its state is still
-     * CREATED -- when relay0's stored match arrives, and C-DLV section 7.1
-     * holds no inbound frame for that state, so the frame is processed at its
-     * arrival instant: `MESSAGE_RECEIVED` with the sender key and a fresh copy
-     * of the payload, and one published receipt because the event carries the
-     * `r` tag. The copy relay1 delivers 50 ms later is already in the window. */
+/* ------------------------------------------------------------------------- *
+ * C-DLV section 7.1 properties (owner decision R4, S1: relabelled). The O-SCEN3
+ * records `relayLoss` (`relayLossAndReplacement`) and `hungRelay`
+ * (`hungRelayAlongsideNormal`) have one sender client and carry no inbound
+ * kind-4 741 or kind-4 742 frame, so there is nothing of theirs for this module
+ * to replay; the contract cites them transitively for the inbound rule below,
+ * which these two tests check as properties of C-DLV section 7.1, not as replays.
+ * ------------------------------------------------------------------------- */
+
+describe('C-DLV section 7.1 -- arrival order across relays, without waiting on a relay', () => {
+  test('frames delivered by two relays before the client is RUNNING are queued and processed in arrival order', async () => {
     const harness = makeHarness();
-    harness.options.clock.now = () => 61105;
-    const incoming = messageEvent({ sender: harness.other, owner: harness.owner.pub });
-    harness.module.ingest(eventFrame(incoming, 0));
-    await flush(8);
-    expect(harness.events).toEqual([
-      { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) },
-    ]);
-    expect(harness.published).toHaveLength(1);
-    expect(harness.published[0].created_at).toBe(61);
-    expect(harness.published[0].tags[1][1]).toBe(incoming.id);
-
-    harness.options.clock.now = () => 61200;
-    harness.module.ingest(eventFrame(incoming, 1));
-    await flush(8);
-    expect(harness.events).toHaveLength(1);
-    expect(harness.published).toHaveLength(1);
-  });
-
-  test('the sender routes a receipt to the item-side seam before the deadline and at the deadline reading, and emits nothing', async () => {
-    /* O-SCEN3 `offlineRecipient`, timeline `receiptAfterDeadline`: the
-     * acknowledgement reaches the sender at 132 000, the clock reading of
-     * `deadlineAt`, and C-DLV section 7.3 leaves the deadline to the seam, so
-     * the module routes the structure exactly as section 7.3 states and emits
-     * no event of its own; the seam's refusal is ignored without an event. */
-    const harness = makeHarness({
-      acceptReceipt: ({ eventId, recipient }) => {
-        routed.push({ eventId, recipient });
-        return Object.freeze({ ok: false, code: 'E_SDK_DELIVERY_TERMINAL' });
-      },
-    });
-    const recipientKey = makeKey();
-    const routed = [];
-    harness.options.clock.now = () => 61200;
-    harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
-      recipient: recipientKey, owner: harness.owner.pub, eventId: 'a'.repeat(64),
-    })], 0));
-    await flush();
-    harness.options.clock.now = () => 132000;
-    harness.module.ingest(frame(['EVENT', 'sub', receiptEvent({
-      recipient: recipientKey, owner: harness.owner.pub, eventId: 'b'.repeat(64),
-    })], 1));
-    await flush();
-    expect(routed).toEqual([
-      { eventId: 'a'.repeat(64), recipient: recipientKey.pub },
-      { eventId: 'b'.repeat(64), recipient: recipientKey.pub },
-    ]);
-    expect(harness.events).toEqual([]);
-    expect(harness.published).toHaveLength(0);
-  });
-});
-
-describe('O-SCEN3 relayLoss / relayLossAndReplacement', () => {
-  test('a frame delivered while the client is not RUNNING is queued and processed at its arrival instant, in arrival order', async () => {
-    /* O-SCEN3 `relayLoss`: relay1 drops its connection after receiving the
-     * published EVENT frame and is retired and replaced, and the harness fixes
-     * the arrival instant of each frame it delivers. The inbound side of that
-     * timeline is C-DLV section 7.1: a frame relay1 delivers and a frame relay0
-     * delivers while the client has not resolved its `start()` -- state CREATED,
-     * not RUNNING -- are queued and processed one at a time in arrival order,
-     * and the receipt of each is published at that instant. */
-    const harness = makeHarness();
-    harness.options.clock.now = () => 30000;
-    const dropped = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '1'.repeat(32), payload: [1] });
-    const normal = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '2'.repeat(32), payload: [2] });
-    harness.module.ingest(eventFrame(dropped, 1));
-    harness.module.ingest(eventFrame(normal, 0));
+    const first = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '1'.repeat(32), payload: [1] });
+    const second = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '2'.repeat(32), payload: [2] });
+    harness.module.ingest(eventFrame(first, 1));
+    harness.module.ingest(eventFrame(second, 0));
     await flush(8);
     expect(harness.events.map((event) => event.kind)).toEqual(['MESSAGE_RECEIVED', 'MESSAGE_RECEIVED']);
-    expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual([dropped.id, normal.id]);
+    expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual([first.id, second.id]);
     expect(harness.opens).toHaveLength(2);
+  });
+
+  test("one relay's frame is processed at once and another relay's later frame at its own arrival, in arrival order", async () => {
+    const harness = makeHarness();
+    const early = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '3'.repeat(32), payload: [3] });
+    const late = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '4'.repeat(32), payload: [4] });
+    harness.module.ingest(eventFrame(early, 0));
+    await flush(8);
+    expect(harness.events).toHaveLength(1);
+    harness.module.ingest(eventFrame(late, 1));
+    await flush(8);
+    expect(harness.events).toHaveLength(2);
+    expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual([early.id, late.id]);
   });
 });
 
-describe('O-SCEN3 hungRelay / hungRelayAlongsideNormal', () => {
-  test("the normal relay's frame is processed at once and the hung relay's frame at its own arrival instant, in arrival order", async () => {
-    /* O-SCEN3 `hungRelay`, timeline `hungRelayAlongsideNormal`: relay1 never
-     * answers and is still open when relay0's acceptance moves the item at once,
-     * and the frame relay1 later delivers arrives after that instant. C-DLV
-     * section 7.1 holds neither frame for the other and waits on no per-relay
-     * timeout: each is processed at its arrival instant, in arrival order. */
-    const harness = makeHarness();
-    harness.options.clock.now = () => 45000;
-    const normal = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '3'.repeat(32), payload: [3] });
-    const hung = messageEvent({ sender: harness.other, owner: harness.owner.pub, n: '4'.repeat(32), payload: [4] });
-    harness.module.ingest(eventFrame(normal, 0));
+describe('C1 -- C-DLV section 4.5 on the clock return (owner decision R4)', () => {
+  test('a clock return carrying a closed slot outside its set is E_SDK_UNKNOWN_CODE after the message event, with no receipt', async () => {
+    for (const reading of [
+      { code: 'E_FUTURE_RESULT' },
+      { state: 'FUTURE_STATE' },
+      { outcome: 'FUTURE_OUTCOME' },
+      { lastCode: 'E_FUTURE_RESULT' },
+      { receiptMode: 'FUTURE_MODE' },
+      Object.assign(new Number(12000), { code: 'E_FUTURE_RESULT' }),
+    ]) {
+      const harness = makeHarness({ clock: { now: () => reading } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toEqual([
+        { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) },
+        { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
+      ]);
+      expect(harness.published).toHaveLength(0);
+    }
+  });
+
+  test('the closed-slot check runs before the number checks, and the rest of the clock clause is unchanged', async () => {
+    /* A slot inside its closed set is not unknown: the reading is then a
+     * non-number and means no receipt and no event, as before. */
+    for (const reading of [{ code: 'E_SDK_INTERNAL' }, { state: 'QUEUED' }, { lastCode: null }, {}, '1000', null]) {
+      const harness = makeHarness({ clock: { now: () => reading } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toHaveLength(1);
+      expect(harness.events[0].kind).toBe('MESSAGE_RECEIVED');
+      expect(harness.published).toHaveLength(0);
+    }
+    /* A throwing clock and a promise are still faults with no event. */
+    for (const now of [() => { throw new Error('clock'); }, () => Promise.resolve({ code: 'E_FUTURE_RESULT' })]) {
+      const harness = makeHarness({ clock: { now } });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      await flush();
+      expect(harness.events).toHaveLength(1);
+      expect(harness.published).toHaveLength(0);
+    }
+    /* A legal reading still builds and publishes the receipt. */
+    const harness = makeHarness({ clock: { now: () => 12000.5 } });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    await flush();
+    expect(harness.events).toHaveLength(1);
+    expect(harness.published).toHaveLength(1);
+    expect(harness.published[0].created_at).toBe(12);
+  });
+
+  test('a stop that lands while the clock return is screened emits no discard', async () => {
+    let module = null;
+    const value = {};
+    Object.defineProperty(value, 'state', {
+      enumerable: true,
+      get() {
+        module.shutdown();
+        return 'FUTURE_STATE';
+      },
+    });
+    const harness = makeHarness({ clock: { now: () => value } });
+    module = harness.module;
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
     await flush(8);
     expect(harness.events).toHaveLength(1);
-    harness.module.ingest(eventFrame(hung, 1));
-    await flush(8);
-    expect(harness.events).toHaveLength(2);
-    expect(harness.published.map((receipt) => receipt.tags[1][1])).toEqual([normal.id, hung.id]);
+    expect(harness.events[0].kind).toBe('MESSAGE_RECEIVED');
+    expect(harness.published).toEqual([]);
   });
 });
 
