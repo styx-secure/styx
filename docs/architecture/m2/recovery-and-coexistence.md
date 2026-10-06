@@ -10,7 +10,7 @@ It implements nothing, imports no legacy state, releases no output, deletes no b
 
 ## 2. Frozen inputs and ownership
 
-The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `40a3dee0fcb297d6fe8efc8657a9bbe6098d099d`, SHA-256 `6c2c045c5317d6893a0bd338e728f2cdc686237af5688925f9756c014deb3060`; C-FMT `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `2f3c1473ed2197257395ac958c1a8b7d3963af70`, SHA-256 `9582378764362d1e7df05c217ea4423fe52be0b36775371c1b91e520b4615c16`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
+The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `40a3dee0fcb297d6fe8efc8657a9bbe6098d099d`, SHA-256 `6c2c045c5317d6893a0bd338e728f2cdc686237af5688925f9756c014deb3060`; C-FMT `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `bc3b01f2411615c40a177a913de11dba72c4a8eb`, SHA-256 `ccbdd3ceb94c0c32c081757bbf6f0d19a84b5c45933f94115c58500e70854c9f`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
 
 Every transition and invariant is classified in `dependencyCoverage`. `DEPENDENCY_DERIVED` facts are only those entailed by the cited exact fields. `C_REC_OWNED` rules are authorized recovery consequences whose consumed dependency preconditions are cited and unchanged. A missing or insufficient field is BLOCK; prose or an evidence bundle cannot fill it.
 
@@ -102,15 +102,15 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
         "commit": "697e257ab106fa67c144f8fbbcde5c68ed4359c3",
         "path": "docs/architecture/m2/storage-format.md",
         "sha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
-        "evidenceBundleSha256": "43e0765f0d81994a2c00fd32ca79851b3230dcc8de7dd06bba61f2b31efa718e",
+        "evidenceBundleSha256": "5d514cb45fb54f3c7877fbb02f9716aa40b965b019db55548e730effc932f28b",
         "ratification": "issue-327-final-owner-act-9dace4a0"
       },
       {
         "card": "C-REST",
-        "commit": "2f3c1473ed2197257395ac958c1a8b7d3963af70",
+        "commit": "bc3b01f2411615c40a177a913de11dba72c4a8eb",
         "path": "docs/architecture/m2/restore-compatibility.md",
-        "sha256": "9582378764362d1e7df05c217ea4423fe52be0b36775371c1b91e520b4615c16",
-        "evidenceBundleSha256": "d294c83f0d409c4f3dd7716a91e674b911f33a25d39b03aa161312f7cf74f333",
+        "sha256": "ccbdd3ceb94c0c32c081757bbf6f0d19a84b5c45933f94115c58500e70854c9f",
+        "evidenceBundleSha256": "38f3100907bd8cf58f1bbabfe005c59420fe44c7684998e9de1f7bcdd5071275",
         "ratification": "issue-327-final-owner-act-9dace4a0"
       }
     ]
