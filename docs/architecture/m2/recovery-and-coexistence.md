@@ -10,7 +10,7 @@ It implements nothing, imports no legacy state, releases no output, deletes no b
 
 ## 2. Frozen inputs and ownership
 
-The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `40a3dee0fcb297d6fe8efc8657a9bbe6098d099d`, SHA-256 `6c2c045c5317d6893a0bd338e728f2cdc686237af5688925f9756c014deb3060`; C-FMT `docs/architecture/m2/storage-format.md` at `96a358cc64cf6fd76c5bbf61bd7a65f8fde9d471`, SHA-256 `b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `99c1565d6a8bd47494e5fb20365e9f948eb51c1e`, SHA-256 `853dbc41778d86ff42432d5cc0bc75d8c51ac32606daae9240271c1ce78766b6`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
+The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `40a3dee0fcb297d6fe8efc8657a9bbe6098d099d`, SHA-256 `6c2c045c5317d6893a0bd338e728f2cdc686237af5688925f9756c014deb3060`; C-FMT `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `2f3c1473ed2197257395ac958c1a8b7d3963af70`, SHA-256 `9582378764362d1e7df05c217ea4423fe52be0b36775371c1b91e520b4615c16`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
 
 Every transition and invariant is classified in `dependencyCoverage`. `DEPENDENCY_DERIVED` facts are only those entailed by the cited exact fields. `C_REC_OWNED` rules are authorized recovery consequences whose consumed dependency preconditions are cited and unchanged. A missing or insufficient field is BLOCK; prose or an evidence bundle cannot fill it.
 
@@ -30,7 +30,7 @@ The exact outcome rows and eight related crash-boundary identifiers are copied. 
 
 For the M2 recovery surface, password re-wrap requires successful wrapper authentication and `RESTORED_ACTIVE` or `RESTORED_EMPTY`. This owned precondition neither grants nor removes the existing vault password-change facility for `NO_M2_STATE` or `LEGACY_ONLY`. It atomically replaces only the wrapper around the same Root Storage Key; every M2 byte and fact remains identical. A crash leaves the old or new valid wrapper. Re-wrap is unavailable during reconciliation. Wrong or forgotten credentials permit no re-wrap, reset-by-default, salvage, migration or record oracle; there is no forgotten-password recovery.
 
-`INCOMPATIBLE_BUILD` has only `SHOW_COMPATIBLE_BUILD`: identify reader profile `CFMT_EXACT_B57DF3A8`, preserve and stop, and read or change no byte. A feature flag, acknowledgement or partial match cannot widen eligibility. It is not reset-eligible.
+`INCOMPATIBLE_BUILD` has only `SHOW_COMPATIBLE_BUILD`: identify reader profile `CFMT_EXACT_9DACE4A0`, preserve and stop, and read or change no byte. A feature flag, acknowledgement or partial match cannot widen eligibility. It is not reset-eligible.
 
 ## 6. Legacy coexistence and re-establishment
 
@@ -99,19 +99,19 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
       },
       {
         "card": "C-FMT",
-        "commit": "96a358cc64cf6fd76c5bbf61bd7a65f8fde9d471",
+        "commit": "697e257ab106fa67c144f8fbbcde5c68ed4359c3",
         "path": "docs/architecture/m2/storage-format.md",
-        "sha256": "b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812",
-        "evidenceBundleSha256": "d9bf475926e54f1221b15a9574185b81a09af1631fdaa722ef94ea969876ae3e",
-        "ratification": "issue-327-comment-5898801523"
+        "sha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
+        "evidenceBundleSha256": "43e0765f0d81994a2c00fd32ca79851b3230dcc8de7dd06bba61f2b31efa718e",
+        "ratification": "issue-327-final-owner-act-9dace4a0"
       },
       {
         "card": "C-REST",
-        "commit": "99c1565d6a8bd47494e5fb20365e9f948eb51c1e",
+        "commit": "2f3c1473ed2197257395ac958c1a8b7d3963af70",
         "path": "docs/architecture/m2/restore-compatibility.md",
-        "sha256": "853dbc41778d86ff42432d5cc0bc75d8c51ac32606daae9240271c1ce78766b6",
-        "evidenceBundleSha256": "88e27deb4bd0f719206e515564b7c2929f16940901b86bc4d2680d08e7cad4d4",
-        "ratification": "issue-332-comment-5900545454"
+        "sha256": "9582378764362d1e7df05c217ea4423fe52be0b36775371c1b91e520b4615c16",
+        "evidenceBundleSha256": "d294c83f0d409c4f3dd7716a91e674b911f33a25d39b03aa161312f7cf74f333",
+        "ratification": "issue-327-final-owner-act-9dace4a0"
       }
     ]
   },
@@ -841,7 +841,7 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
   "compatibleBuild": {
     "result": "INCOMPATIBLE_BUILD",
     "disposition": "SHOW_COMPATIBLE_BUILD",
-    "readerProfile": "CFMT_EXACT_B57DF3A8",
+    "readerProfile": "CFMT_EXACT_9DACE4A0",
     "preserveAndStop": true,
     "readsOrMutatesBytes": false,
     "resetEligible": false
@@ -1047,7 +1047,8 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
     {
       "fault": "orphanGeneration",
       "phase": "INVENTORY",
-      "result": "PARTIAL_GENERATION"
+      "result": "PARTIAL_GENERATION",
+      "scope": "An orphan generation is a generation artifact with no fixed selector, or whose record key does not share the selector's local context. Records in the selector's context that the selector names neither as selected nor as candidate, whether a complete or a partially staged generation, are unbound debris: non-authoritative, preserved, never a repair source, and not `orphanGeneration`, `PARTIAL_GENERATION` or a stop. `partialSelectedOrCandidateGeneration` applies only to a generation the selector names."
     },
     {
       "fault": "wrapperWrongOrInvalid",
