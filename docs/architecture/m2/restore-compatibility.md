@@ -10,7 +10,7 @@ It specifies no restore implementation, transaction, migration, rewrite, repair,
 
 ## 2. Frozen input
 
-The only format authority is `docs/architecture/m2/storage-format.md` at `96a358cc64cf6fd76c5bbf61bd7a65f8fde9d471`, SHA-256 `b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812`, re-ratified in Issue #327 comment `5898801523`. Its external evidence bundle is cited only as SHA-256 `d9bf475926e54f1221b15a9574185b81a09af1631fdaa722ef94ea969876ae3e`; access is not required. The input remains external and read-only. Drift is BLOCK.
+The only format authority is `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `43e0765f0d81994a2c00fd32ca79851b3230dcc8de7dd06bba61f2b31efa718e`; access is not required. The input remains external and read-only. Drift is BLOCK.
 
 The exact readable profile is the conjunction copied under `compatibilityRegistry`: all eight versions, algorithms and widths, big-endian integers, framing and zero-salt rules, four 32-byte HKDF outputs, magic/domain/label strings, key/envelope/AAD/plaintext/manifest/selector grammar, all 17 kind IDs and versions, bounds, registries, mappings, generation rules, crash boundaries, vectors, negative classes, and non-claims. ProductProfile is exactly 306 bytes as stated by C-FMT; its layout remains C-BIND-owned and is not independently accepted here. Compatibility is equality, never a range, minimum, semver rule, downgrade, or partial recognition. Unknown, future, missing, mixed, or downgraded versions are `UNSUPPORTED_VERSION`; other profile mismatches are `INCOMPATIBLE_FORMAT`.
 
@@ -28,7 +28,7 @@ Unauthenticated selector-header inspection may distinguish a closed unsupported 
 
 `NO_M2_STATE` requires absence of every M2 fixed locator and every generation artifact under the closed inventory. It is unauthenticated and claims no freshness, non-deletion, or rollback prevention. `LEGACY_ONLY` requires the same M2 absence and separately observed legacy presence. `EMPTY` is not absence: `RESTORED_EMPTY` requires the authenticated fixed selector and the exact complete C-FMT EMPTY generation.
 
-Exactly one authenticated selector at the fixed `STYXSEL1` locator chooses authority. Restore MUST NOT scan generations, compare counters or timestamps, choose the newest/highest/decryptable/most-complete object, fall back to an older generation, or use an unselected generation as repair material. A selector without its exact generation, orphan records, multiple selector candidates, and partial generations fail closed.
+Exactly one authenticated selector at the fixed `STYXSEL1` locator chooses authority. Restore MUST NOT scan generations, compare counters or timestamps, choose the newest/highest/decryptable/most-complete object, fall back to an older generation, or use an unselected generation as repair material. A selector without its exact generation, orphan records, multiple selector candidates, and partial generations fail closed. An orphan generation is a generation artifact with no fixed selector, or whose record key does not share the selector's local context. Records in the selector's context that the selector names neither as selected nor as candidate, whether a complete or a partially staged generation, are unbound debris: non-authoritative, preserved, never a repair source, and not `orphanGeneration`, `PARTIAL_GENERATION` or a stop. `partialSelectedOrCandidateGeneration` applies only to a generation the selector names.
 
 ## 6. Complete-generation validation
 
@@ -46,7 +46,7 @@ The located candidate is a complete immutable unselected generation. Its `MUTATI
 
 Legacy inventory is disjoint. Legacy envelopes, ciphersuites, identifiers, records, and provider states are never decoded as M2, compared against selected SS-0, copied into M2, or used as fallback. Valid M2 plus legacy uses the M2 result with `LEGACY_PRESENT`; invalid M2 plus legacy keeps the M2 failure with that flag. All bytes remain preserved and visible re-establishment guidance may be shown. The legacy shipping ciphersuite at an M2 locator is rejected as incompatible legacy-shaped M2 input without comparing it to SS-0.
 
-Compatible-build guidance identifies reader profile `CFMT_EXACT_B57DF3A8` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
+Compatible-build guidance identifies reader profile `CFMT_EXACT_9DACE4A0` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
 
 ## 9. Corruption, diagnostics, and immutability
 
@@ -91,10 +91,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "issue": 332,
     "card": "C-REST",
     "exactBase": "e1538ef9c070e463a8256872a3fd0882c424e2ef",
-    "cFmtCommit": "96a358cc64cf6fd76c5bbf61bd7a65f8fde9d471",
+    "cFmtCommit": "697e257ab106fa67c144f8fbbcde5c68ed4359c3",
     "cFmtPath": "docs/architecture/m2/storage-format.md",
-    "cFmtSha256": "b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812",
-    "cFmtEvidenceBundleSha256": "d9bf475926e54f1221b15a9574185b81a09af1631fdaa722ef94ea969876ae3e"
+    "cFmtSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
+    "cFmtEvidenceBundleSha256": "43e0765f0d81994a2c00fd32ca79851b3230dcc8de7dd06bba61f2b31efa718e"
   },
   "compatibilityRegistry": {
     "versions": {
@@ -1090,6 +1090,9 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "candidateBindingRule": "candidate locator fields are always present; when the candidate generation, exact manifest key, manifest-key digest, manifest ciphertext digest and keyed root equal the selected values there is no separate candidate and state MUST NOT be RECONCILIATION_REQUIRED; when different, state MUST be RECONCILIATION_REQUIRED, selected MUTATION_HOLD MUST be a tombstone, and candidate MUTATION_HOLD MUST be present; every other combination rejects",
       "parentBindingRule": "for an unresolved candidate MUTATION_HOLD whose resultStatus is INDETERMINATE while the selector names old authority, parentGeneration and parentKeyedRoot MUST equal the selector generation and keyedRoot; this compares physical identity only; terminal COMMITTED or NOT_COMMITTED holds are governed by C-MUT terminal rules and do not compare their parent to a selector that has moved",
       "originalAuthorityMatch": "candidate MUTATION_HOLD originalAuthorityDigest and originalAuthorityReference MUST equal the same fields in the candidate COMMIT_RESULT authenticated RS evidence; these remain C-MUT logical identifiers and are not compared with parentGeneration or parentKeyedRoot",
+      "holdLocatorRule": "MUTATION_HOLD stays version 2 and carries no locator field; the locator of a present hold is derived from the authenticated canonical record key under which that kind-13 record is stored: the candidate generation is that key writeGeneration, and the candidate manifest key is the canonical kind-16 record key with the same scope, localContextId, secureSessionIdentity and writeGeneration and empty objectId; the record key is authenticated by the record AAD, so the derivation needs no plaintext field and no inference; when a selector binds the candidate, the derived generation and manifest key MUST equal the selector candidateGeneration and candidateManifestKey and the SHA-256 of the derived key MUST equal candidateManifestKeyDigest; the derived manifest key MUST be the located candidate manifest key and the located candidate manifest binding digest MUST match that generation own BINDING_PROFILE; a hold stored under any other generation, kind, scope, context or session than its candidate rejects; the fixed selector's authority generation MUST NOT carry a present unresolved hold, except through the one atomic GENERATION_SELECTOR replacement of retainedHoldLookup, which resolves that candidate hold with a tombstone in the same durable write",
+      "retainedHoldLookup": "only SS reconciliation of the one unresolved hold retained in SS memory, whether AP reaches it through RECONCILE_INDETERMINATE or SS acts on retained internal reconciliation evidence under C-MUT, while the fixed selector names the hold parent as authority without binding a candidate, MAY derive the candidate generation and exact manifest key from the retained hold record key under holdLocatorRule and perform one point lookup of that manifest and the records it lists; SS memory retains the hold together with the record key under which it was written; no scan, enumeration, counter comparison or inference is permitted to locate the candidate, no second fixed locator exists, and the lookup confers no authority; the located generation MUST validate as complete, MUST store its MUTATION_HOLD under exactly the retained record key, that stored hold MUST equal the retained hold, its parentGeneration and parentKeyedRoot MUST equal the selector generation and keyedRoot, and its COMMIT_RESULT MUST satisfy originalAuthorityMatch; any mismatch rejects with the hold unchanged; authority then changes only through one atomic GENERATION_SELECTOR replacement under C-MUT terminal rules; a storage-only reader never derives or follows a hold locator that the selector does not bind",
+      "unboundCandidate": "a candidate generation that no selector binds, including one left with a present MUTATION_HOLD after the binding selector replacement did not land and SS memory was lost, is preserved non-authoritative debris: restore classifies by the selector alone, so a single crash yields COMPLETE_OLD under C-MUT crashBoundaries and section 8; the unbound candidate is not an orphan generation and not PARTIAL_GENERATION, never stops the profile, and is not authority, evidence for another mutation or a repair source; it becomes authority only if SS reconciliation of its own retained hold under retainedHoldLookup selects it through the one atomic GENERATION_SELECTOR replacement; a failed or impossible binding never discards the candidate, its hold or its escrow, and only terminal NOT_COMMITTED evidence under C-MUT discards them, which is not cleanup; its generation number is never reused: a later candidate generation MUST exceed every generation number present under the locator context, read from a number-only inventory of every generation with any stored artifact, complete or partially staged; that inventory read chooses only a number, never locates a candidate and never confers authority; no cleanup of it is authorized by this format; cleanup is future work under the profile lock, only from ACTIVE, and requires its own amendment",
       "authorityRule": "only the selected generation is authoritative; the candidate is validated as complete immutable evidence and is never authority or a repair source",
       "storageReadback": [
         "COMPLETE_OLD",
@@ -1391,7 +1394,12 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "RECONCILIATION_REQUIRED_CANDIDATE_EQUALS_SELECTED",
       "CANDIDATE_MANIFEST_KEY_MISMATCH",
       "CANDIDATE_PARENT_MISMATCH",
-      "CANDIDATE_MANIFEST_KEY_SCOPE_SESSION_SUBSTITUTION"
+      "CANDIDATE_MANIFEST_KEY_SCOPE_SESSION_SUBSTITUTION",
+      "HOLD_LOCATOR_DERIVATION_MISMATCH",
+      "HOLD_LOCATOR_SCOPE_SESSION_SUBSTITUTION",
+      "HOLD_LOCATOR_ON_NON_CANDIDATE_HOLD",
+      "HOLD_LOCATOR_GENERATION_MISMATCH",
+      "UNBOUND_CANDIDATE_GENERATION_REUSE"
     ],
     "nonClaims": [
       "freshness",
@@ -1456,13 +1464,39 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "recordsCanonicalJsonSha256": "3f7e5fd63da3a27738b79506aa8336b1e5e76408e31241634b9679d64d7a9e38",
         "literalVectorCanonicalJsonSha256": "6d0dc562748cab0cfbcace64e8604ee2e2c47faa5a8d907ee241c2e6a74a1c30",
         "authorityRule": "selector names FMT-KAT-EMPTY pre-session authority and uses its pre-session selector AAD while the exact candidateManifestKey locates this SESSION-scoped immutable non-authoritative candidate"
+      },
+      {
+        "id": "FMT-KAT-UNBOUND-HOLD",
+        "state": "RETAINED_UNBOUND_HOLD",
+        "generation": 5,
+        "selectedGeneration": 2,
+        "candidateGeneration": 2,
+        "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
+        "keyedRootHex": "a04f8b7406b8dffe559f9d2a159eca80491143a4a8fee97963eeec07149f4542",
+        "selectorEnvelopeSha256": "4ee79d7db2db52c915f3e4e73be05aac6f069fe702217cb62e36501f25243a0e",
+        "recordsCanonicalJsonSha256": "deb939e023ea2485da4143e6337da421ec7331982d95dfc6e726e9ee3753fdc6",
+        "literalVectorCanonicalJsonSha256": "c86267ce4355aae7a25827035836645dd43c31a828b1d1202a2b446af16bdd73",
+        "authorityRule": "fixed selector is byte-identical to FMT-KAT-ACTIVE and names it as sole authority with no bound candidate; this complete immutable non-authoritative SESSION-scoped candidate is reachable only by RECONCILE_INDETERMINATE deriving its locator from the retained MUTATION_HOLD record key; after SS memory loss it is preserved debris and readback is COMPLETE_OLD"
+      },
+      {
+        "id": "FMT-KAT-EMPTY-UNBOUND-HOLD",
+        "state": "RETAINED_UNBOUND_HOLD",
+        "generation": 6,
+        "selectedGeneration": 1,
+        "candidateGeneration": 1,
+        "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
+        "keyedRootHex": "f187a5af559aa6cf895fccf8827a2682ed6311d7f7320a558266c0031533ea45",
+        "selectorEnvelopeSha256": "8534cf44851d83bed98fbb8669483df30a78afaf00b61eebd23adb3ff559ae4c",
+        "recordsCanonicalJsonSha256": "8d5370502fc4dea22e882bb5e773354bb1773c93808fa46c7b71858cc36104c5",
+        "literalVectorCanonicalJsonSha256": "74b8550901636bd13eb374680b0b25adb5b299d457a482c354aa8de19893d1e7",
+        "authorityRule": "fixed selector is byte-identical to FMT-KAT-EMPTY and names the pre-session EMPTY generation as sole authority with no bound candidate; this complete immutable non-authoritative SESSION-scoped candidate is reachable only by RECONCILE_INDETERMINATE deriving its locator from the retained MUTATION_HOLD record key; after SS memory loss it is preserved debris and readback is COMPLETE_OLD"
       }
     ]
   },
   "buildMatrix": [
     {
-      "readerProfile": "CFMT_EXACT_B57DF3A8",
-      "cFmtDocumentSha256": "b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812",
+      "readerProfile": "CFMT_EXACT_9DACE4A0",
+      "cFmtDocumentSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -1486,8 +1520,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "browserClass": "CHROMIUM"
     },
     {
-      "readerProfile": "CFMT_EXACT_B57DF3A8",
-      "cFmtDocumentSha256": "b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812",
+      "readerProfile": "CFMT_EXACT_9DACE4A0",
+      "cFmtDocumentSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -1597,6 +1631,7 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "emptyState": "authenticated selector and complete C-FMT EMPTY generation only",
     "multipleSelectorCandidates": "SELECTOR_INVALID",
     "orphanGeneration": "PARTIAL_GENERATION",
+    "unboundDebris": "An orphan generation is a generation artifact with no fixed selector, or whose record key does not share the selector's local context. Records in the selector's context that the selector names neither as selected nor as candidate, whether a complete or a partially staged generation, are unbound debris: non-authoritative, preserved, never a repair source, and not `orphanGeneration`, `PARTIAL_GENERATION` or a stop. `partialSelectedOrCandidateGeneration` applies only to a generation the selector names.",
     "legacyDomain": "disjoint; preserve, never decode as M2, import, compare against SS-0, or use as fallback"
   },
   "candidateRules": {
@@ -1664,7 +1699,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     {
       "fault": "orphanGeneration",
       "phase": "INVENTORY",
-      "result": "PARTIAL_GENERATION"
+      "result": "PARTIAL_GENERATION",
+      "scope": "An orphan generation is a generation artifact with no fixed selector, or whose record key does not share the selector's local context. Records in the selector's context that the selector names neither as selected nor as candidate, whether a complete or a partially staged generation, are unbound debris: non-authoritative, preserved, never a repair source, and not `orphanGeneration`, `PARTIAL_GENERATION` or a stop. `partialSelectedOrCandidateGeneration` applies only to a generation the selector names."
     },
     {
       "fault": "wrapperWrongOrInvalid",
@@ -1892,6 +1928,36 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "fault": "candidateManifestKeyScopeSessionSubstitution",
       "phase": "RECORD_DECODE",
       "result": "RECORD_INVALID"
+    },
+    {
+      "negativeClass": "HOLD_LOCATOR_DERIVATION_MISMATCH",
+      "fault": "candidateManifestKeyMismatch",
+      "phase": "REFERENCES",
+      "result": "REFERENCE_INCONSISTENT"
+    },
+    {
+      "negativeClass": "HOLD_LOCATOR_SCOPE_SESSION_SUBSTITUTION",
+      "fault": "candidateManifestKeyScopeSessionSubstitution",
+      "phase": "RECORD_DECODE",
+      "result": "RECORD_INVALID"
+    },
+    {
+      "negativeClass": "HOLD_LOCATOR_ON_NON_CANDIDATE_HOLD",
+      "fault": "referenceOrLifecycleInconsistent",
+      "phase": "REFERENCES",
+      "result": "REFERENCE_INCONSISTENT"
+    },
+    {
+      "negativeClass": "HOLD_LOCATOR_GENERATION_MISMATCH",
+      "fault": "candidateManifestKeyMismatch",
+      "phase": "REFERENCES",
+      "result": "REFERENCE_INCONSISTENT"
+    },
+    {
+      "negativeClass": "UNBOUND_CANDIDATE_GENERATION_REUSE",
+      "fault": "referenceOrLifecycleInconsistent",
+      "phase": "REFERENCES",
+      "result": "REFERENCE_INCONSISTENT"
     }
   ],
   "failureDefault": "INTERNAL_VALIDATION_FAILED",
@@ -1983,7 +2049,7 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "automaticReset": false
   },
   "guidance": {
-    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_B57DF3A8 and preserve all bytes.",
+    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_9DACE4A0 and preserve all bytes.",
     "destructiveReset": "Explicit, separate, irreversible, never automatic; not implemented here.",
     "passwordChange": "Re-wrap the same Root Storage Key; not migration or repair.",
     "legacy": "Visible re-establishment guidance only; preserve all bytes."
@@ -4725,6 +4791,211 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         ],
         "result": "RECORD_INVALID",
         "firstPhase": "RECORD_DECODE",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "NEG-CFMT-HOLD_LOCATOR_DERIVATION_MISMATCH",
+        "inventory": "M2",
+        "vector": "FMT-KAT-ACTIVE",
+        "legacy": false,
+        "negativeClass": "HOLD_LOCATOR_DERIVATION_MISMATCH",
+        "faults": [
+          "candidateManifestKeyMismatch"
+        ],
+        "result": "REFERENCE_INCONSISTENT",
+        "firstPhase": "REFERENCES",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "NEG-CFMT-HOLD_LOCATOR_SCOPE_SESSION_SUBSTITUTION",
+        "inventory": "M2",
+        "vector": "FMT-KAT-ACTIVE",
+        "legacy": false,
+        "negativeClass": "HOLD_LOCATOR_SCOPE_SESSION_SUBSTITUTION",
+        "faults": [
+          "candidateManifestKeyScopeSessionSubstitution"
+        ],
+        "result": "RECORD_INVALID",
+        "firstPhase": "RECORD_DECODE",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "NEG-CFMT-HOLD_LOCATOR_ON_NON_CANDIDATE_HOLD",
+        "inventory": "M2",
+        "vector": "FMT-KAT-ACTIVE",
+        "legacy": false,
+        "negativeClass": "HOLD_LOCATOR_ON_NON_CANDIDATE_HOLD",
+        "faults": [
+          "referenceOrLifecycleInconsistent"
+        ],
+        "result": "REFERENCE_INCONSISTENT",
+        "firstPhase": "REFERENCES",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "NEG-CFMT-HOLD_LOCATOR_GENERATION_MISMATCH",
+        "inventory": "M2",
+        "vector": "FMT-KAT-ACTIVE",
+        "legacy": false,
+        "negativeClass": "HOLD_LOCATOR_GENERATION_MISMATCH",
+        "faults": [
+          "candidateManifestKeyMismatch"
+        ],
+        "result": "REFERENCE_INCONSISTENT",
+        "firstPhase": "REFERENCES",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "NEG-CFMT-UNBOUND_CANDIDATE_GENERATION_REUSE",
+        "inventory": "M2",
+        "vector": "FMT-KAT-ACTIVE",
+        "legacy": false,
+        "negativeClass": "UNBOUND_CANDIDATE_GENERATION_REUSE",
+        "faults": [
+          "referenceOrLifecycleInconsistent"
+        ],
+        "result": "REFERENCE_INCONSISTENT",
+        "firstPhase": "REFERENCES",
         "gates": {
           "LOCK": "PASS",
           "BUILD_ELIGIBILITY": "PASS",
