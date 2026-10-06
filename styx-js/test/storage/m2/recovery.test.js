@@ -9,6 +9,10 @@
 // functions are compared with an independently structured oracle over generated inputs, and the vault
 // methods run over the shared in-memory VaultDb double with the real Argon2id KDF: nothing is mocked
 // but the storage engine, whose real IndexedDB behaviour belongs to B-CHR/B-FF.
+//
+// Card R-WIRE (#317) adds, at the end of this file, the vault-unlock → C-REST fault mapping
+// (`vaultUnlockRestoreFault`, owner interpretation #317 comment 6022947656) and the three R-UX notes
+// (R-UX ratification #447 comment 6013153608, items 2-4): tests W1-W10 and N1-N3.
 
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import fc from 'fast-check';
@@ -17,8 +21,11 @@ import { readFileSync } from 'node:fs';
 import initKdf, { argon2id_derive } from '../../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js';
 import {
   createVault, VAULT_STATES, M2_RECOVERY, dispatchRecovery, decideRecoveryAction, decidePasswordRewrap,
-  decideRecoveryDiagnostic, recoveryBoundary, recoveryGuidance,
+  decideRecoveryDiagnostic, recoveryBoundary, recoveryGuidance, vaultUnlockRestoreFault,
 } from '../../../src/storage/vault.js';
+import * as vaultModule from '../../../src/storage/vault.js';
+import { classifyRestore, FAULT_PRECEDENCE } from '../../../src/storage/m2/session-restore.js';
+import { KdfBoundsError } from '../../../src/crypto/kdf-bounds.js';
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../../../src/crypto/vault-errors.js';
 import { encodeMarker, M2_LEGACY_INVALIDATION } from '../../../src/storage/m2/legacy-session-invalidation.js';
 import { FakeVaultDb, deepClone, seededBytes } from '../../support/fake-vault-db.js';
@@ -1726,6 +1733,8 @@ describe('C-REC transcription', () => {
     expect(M2_RECOVERY.CLEANUP).toBe(CREC.legacy.cleanup);
     expect(M2_RECOVERY.RESET_DISCLOSURE.interruptedClassification).toBe(CREC.reset.interruptedClassification);
     expect(M2_RECOVERY.RESET_AUTOMATIC).toBe(false);
+    expect(M2_RECOVERY.RESET_PRESERVE_DIAGNOSIS).toBe(CREC.reset.preserveDiagnosis);
+    expect(M2_RECOVERY.VAULT_UNLOCK_FAULTS).toHaveLength(8);
     expect(Object.isFrozen(M2_RECOVERY) && Object.isFrozen(M2_RECOVERY.RESULTS)
       && Object.isFrozen(M2_RECOVERY.RESET_DISCLOSURE)).toBe(true);
   });
@@ -1965,8 +1974,7 @@ describe('closed user-visible guidance (C-REC §9)', () => {
 
 // A VaultDb double that records every storage call made through it, including transaction entry and
 // every operation (read or write) performed inside a transaction callback.
-function tracedDb() {
-  const db = new FakeVaultDb();
+function tracedDb(db = new FakeVaultDb()) {
   const calls = [];
   const traced = {
     get version() { return db.version; },
@@ -2384,6 +2392,569 @@ describe('static boundaries of the recovery section', () => {
     expect(imports.sort()).toEqual([
       '../crypto/kdf-bounds.js', '../crypto/vault-aad.js', '../crypto/vault-errors.js', '../crypto/vault-keys.js',
       '../crypto/vault-shape.js', '../utils.js', './vault-migration.js', './vault-record.js', './vault-wrapper.js',
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// R-WIRE (#317): vault-level unlock failures → C-REST fault, and the three R-UX notes.
+//
+// Owner interpretation (#317 comment 6022947656, Q1 = A): `WRAPPER_AUTH` completes only when
+// `vault.unlock()` completes, so `VAULT_MANIFEST_TAMPERED` (including `schema-downgrade`) after a
+// successful unwrap is `wrapperWrongOrInvalid`: reset-ineligible, its only reset the existing
+// `destroy()`. Every other rejection that is not wrapper/container evidence maps to `null`.
+// ---------------------------------------------------------------------------------------------------
+
+const EXPECTED_UNLOCK_FAULT_ROWS = [
+  { code: 'VAULT_WRONG_PASSWORD', detail: 'ANY', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_WRAPPER_INVALID', detail: 'ANY', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_WRAPPER_UNSUPPORTED', detail: 'ANY', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_KEY_VERSION_UNSUPPORTED', detail: 'ANY', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_KDF_PARAMS_INVALID', detail: 'FIELD', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_KDF_PARAMS_INVALID', detail: 'REASON_EXCEPT:password-length', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_MANIFEST_TAMPERED', detail: 'NO_REASON', fault: 'wrapperWrongOrInvalid' },
+  { code: 'VAULT_MANIFEST_TAMPERED', detail: 'REASON:schema-downgrade', fault: 'wrapperWrongOrInvalid' },
+];
+const WRAPPER_FAULT = 'wrapperWrongOrInvalid';
+const isDeepFrozen = (v) => v === null || typeof v !== 'object'
+  || (Object.isFrozen(v) && Object.values(v).every(isDeepFrozen));
+
+// The rejection of exactly one unlock() call (never a resolution).
+const unlockRejection = async (v, password) => {
+  try {
+    await v.unlock(password);
+  } catch (e) {
+    return e;
+  }
+  throw new Error('unlock unexpectedly resolved');
+};
+const stateAfter = async (v) => {
+  try { return (await v.status()).state; } catch (e) { return e; }
+};
+
+// A locked vault over a traced FakeVaultDb, with the same instance kept for the reset checks.
+async function lockedTracedVault(db = new FakeVaultDb()) {
+  const t = tracedDb(db);
+  const v = makeVault(t.traced);
+  await v.createVault(PW, { profile: TEST_PROFILE });
+  await v.lock();
+  t.calls.length = 0;
+  return { ...t, v };
+}
+
+// W2 trigger: flip one byte of the stored manifest HMAC (canonical base64 kept).
+const flipManifestHmac = (db) => {
+  const m = db.manifest();
+  const bytes = Buffer.from(m.hmacB64, 'base64');
+  bytes[0] ^= 0x01;
+  m.hmacB64 = bytes.toString('base64');
+};
+
+// W3 trigger (rollback only: not reachable by a normal older-build open, which fails at INIT with
+// VersionError): a vault created at database version 2, its stores copied into a version-1 database.
+async function rolledBackVault() {
+  const newer = new FakeVaultDb({ version: 2 });
+  const creator = makeVault(newer);
+  await creator.createVault(PW, { profile: TEST_PROFILE });
+  await creator.lock();
+  const older = new FakeVaultDb({ version: 1 });
+  older.stores = new Map([...newer.stores].map(([ns, m]) => [ns, new Map([...m].map(([k, val]) => [k, deepClone(val)]))]));
+  const t = tracedDb(older);
+  return { ...t, v: makeVault(t.traced) };
+}
+
+// The test's reference wiring (not exported, not product code): a fault is fed to the merged C-REST
+// classifier only after LOCK, BUILD_ELIGIBILITY and INVENTORY = M2 passed (F1). The vector and selector
+// state are SYNTHETIC: a real run that stops at WRAPPER_AUTH has none (open product-wiring obligation).
+const referenceWiring = (error, legacy) => {
+  const fault = vaultUnlockRestoreFault(error);
+  if (fault === null) return { observation: null, outcome: null, dispatch: null };
+  const observation = { faults: [fault], inventory: 'M2', legacy, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE' };
+  const outcome = classifyRestore(observation);
+  return { observation, outcome, dispatch: dispatchRecovery({ result: outcome.result, legacyPresent: legacy }) };
+};
+
+const assertWrapperAuthChain = (err) => {
+  expect(vaultUnlockRestoreFault(err)).toBe(WRAPPER_FAULT);
+  for (const legacy of [false, true]) {
+    const { outcome, dispatch } = referenceWiring(err, legacy);
+    expect(outcome.result).toBe('WRAPPER_AUTH_FAILED');
+    expect(outcome.stage).toBe('WRAPPER_AUTH');
+    expect(outcome.exposed).toBe(false);
+    expect(dispatch.disposition).toBe('PRESERVE_AND_STOP');
+    expect(dispatch.authority).toBe('NONE');
+    expect(dispatch.resetEligible).toBe(false);
+  }
+};
+
+// W4: on the same LOCKED instance, every M2 reset and re-wrap path refuses with zero storage access.
+async function assertResetRefusedWithoutStorage({ v, calls, db }) {
+  calls.length = 0;
+  const before = snapshotStores(db);
+  for (const result of ['WRAPPER_AUTH_FAILED', ...CREC.reset.eligibleResults]) {
+    const begun = await v.beginRecoveryReset({ restoreResult: result, lockHeld: true });
+    expect(begun.reject).toBe('RESET_INELIGIBLE');
+    expect(begun.confirmation).toBeUndefined();
+    const held = await v.confirmRecoveryReset({ restoreResult: result, lockHeld: true, confirmed: true, disclosure: true, confirmation: {} });
+    expect(held.reject).toBe('RESET_INELIGIBLE');
+    const notHeld = await v.confirmRecoveryReset({ restoreResult: result, lockHeld: false, confirmed: true, disclosure: true, confirmation: {} });
+    expect(notHeld.reject).toBe('LOCKED_ELSEWHERE');
+  }
+  await expect(v.confirmRecoveryReset({ restoreResult: 'WRAPPER_AUTH_FAILED', lockHeld: 'yes' })).rejects.toThrow(TypeError);
+  const rewrap = await v.recoveryChangePassword({ restoreResult: 'WRAPPER_AUTH_FAILED', lockHeld: true, currentPassword: PW, newPassword: PW2, profile: TEST_PROFILE });
+  expect(rewrap.reject).toBe('RESTORE_PRECONDITION_FAILED');
+  const forged = await v.recoveryChangePassword({ restoreResult: 'RESTORED_ACTIVE', lockHeld: true, currentPassword: PW, newPassword: PW2, profile: TEST_PROFILE });
+  expect(forged.reject).toBe('WRAPPER_AUTH_FAILED');
+  expect(calls).toEqual([]);
+  expect(snapshotStores(db)).toEqual(before);
+  expect(db.destroyed).toBe(0);
+}
+
+async function assertDestroyStillResets({ v, db }) {
+  const outside = outsideBytes();
+  const before = outside.snap();
+  expect((await v.destroy()).state).toBe(VAULT_STATES.UNINITIALIZED);
+  expect(db.destroyed).toBe(1);
+  expect(db.wrapper()).toBeUndefined();
+  expect(outside.snap()).toEqual(before);
+}
+
+describe('R-WIRE W1: the vault-unlock fault table', () => {
+  test('VAULT_UNLOCK_FAULTS is the closed eight-row allowlist, deep-frozen, over ratified C-REST faults', () => {
+    expect(JSON.parse(JSON.stringify(M2_RECOVERY.VAULT_UNLOCK_FAULTS))).toEqual(EXPECTED_UNLOCK_FAULT_ROWS);
+    expect(isDeepFrozen(M2_RECOVERY.VAULT_UNLOCK_FAULTS)).toBe(true);
+    const ratifiedFaults = new Set(FAULT_PRECEDENCE.map((row) => row.fault));
+    for (const row of M2_RECOVERY.VAULT_UNLOCK_FAULTS) {
+      expect(Object.keys(row).sort()).toEqual(['code', 'detail', 'fault']);
+      expect(ratifiedFaults.has(row.fault)).toBe(true);
+      expect(row.fault).not.toBe('unexpectedValidatorCondition');
+      expect(Object.values(Codes)).toContain(row.code);
+    }
+  });
+});
+
+describe('R-WIRE W2/W3/W4/W5/W8: vault-container failures after a successful unwrap', () => {
+  test('W2: a tampered manifest HMAC → VAULT_MANIFEST_TAMPERED, LOCKED, wrapperWrongOrInvalid → WRAPPER_AUTH_FAILED (synthetic composition)', async () => {
+    const t = await lockedTracedVault();
+    flipManifestHmac(t.db);
+    const err = await unlockRejection(t.v, PW);
+    expect(err).toBeInstanceOf(VaultCryptoError);
+    expect(err.code).toBe(Codes.MANIFEST_TAMPERED);
+    expect(err.details).toBeUndefined();
+    expect(await stateAfter(t.v)).toBe(VAULT_STATES.LOCKED);
+    assertWrapperAuthChain(err);
+    await assertResetRefusedWithoutStorage(t);
+    await assertDestroyStillResets(t);
+  });
+
+  test('W3: a rolled-back database below the signed schema marker (rollback only) → schema-downgrade → wrapperWrongOrInvalid', async () => {
+    const t = await rolledBackVault();
+    const err = await unlockRejection(t.v, PW);
+    expect(err).toBeInstanceOf(VaultCryptoError);
+    expect(err.code).toBe(Codes.MANIFEST_TAMPERED);
+    expect(err.details).toEqual({ reason: 'schema-downgrade' });
+    expect(await stateAfter(t.v)).toBe(VAULT_STATES.LOCKED);
+    assertWrapperAuthChain(err);
+    await assertResetRefusedWithoutStorage(t);
+    await assertDestroyStillResets(t);
+  });
+
+  test('W8: NEG-RESET-WRONG-CREDENTIALS replays from the W2 trigger', async () => {
+    const t = await lockedTracedVault();
+    flipManifestHmac(t.db);
+    const err = await unlockRejection(t.v, PW);
+    const { outcome } = referenceWiring(err, false);
+    const f = CREC.fixtures.find((x) => x.id === 'NEG-RESET-WRONG-CREDENTIALS');
+    expect(f.input.result).toBe(outcome.result);
+    expect(decideRecoveryAction({ ...f.input, result: outcome.result })).toEqual(f.expected);
+  });
+});
+
+// A VaultDb wrapper that throws a chosen error at one storage point; the support file is unchanged.
+function faultingDb(db, { getFail = null, putFail = null } = {}) {
+  return {
+    get version() { return db.version; },
+    get: async (ns, key) => {
+      if (getFail && getFail.when(ns, key)) { getFail.count = (getFail.count ?? 0) + 1; if (getFail.count >= (getFail.nth ?? 1)) throw getFail.error(); }
+      return db.get(ns, key);
+    },
+    list: async (ns) => db.list(ns),
+    transaction: async (namespaces, cb) => db.transaction(namespaces, (ops) => cb({
+      ...ops,
+      put: (ns, key, value) => { if (putFail && putFail.when(ns, key, value)) throw putFail.error(); return ops.put(ns, key, value); },
+    })),
+    destroy: async () => db.destroy(),
+  };
+}
+
+const freshLockedDb = async ({ version = 1 } = {}) => {
+  const db = new FakeVaultDb({ version });
+  const v = makeVault(db);
+  await v.createVault(PW, { profile: TEST_PROFILE });
+  await v.lock();
+  return db;
+};
+const loadedVault = async (db) => {
+  const v = makeVault(db);
+  expect((await v.status()).state).toBe(VAULT_STATES.LOCKED);
+  return v;
+};
+
+describe('R-WIRE W6: every other row and the null set, through a real unlock()', () => {
+  test('row 1: wrong password', async () => {
+    const v = await loadedVault(await freshLockedDb());
+    const err = await unlockRejection(v, 'wrong-password-1');
+    expect(err.code).toBe(Codes.WRONG_PASSWORD);
+    expect(vaultUnlockRestoreFault(err)).toBe(WRAPPER_FAULT);
+    expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+  });
+
+  test('row 2: a corrupted wrapper at load (ERROR)', async () => {
+    const db = await freshLockedDb();
+    db.wrapper().format = 'not-a-wrapper';
+    const v = makeVault(db);
+    const err = await unlockRejection(v, PW);
+    expect(err.code).toBe(Codes.WRAPPER_INVALID);
+    expect(vaultUnlockRestoreFault(err)).toBe(WRAPPER_FAULT);
+    // the load failed closed into ERROR; status() re-raises the same load rejection
+    expect(await stateAfter(v)).toBe(err);
+  });
+
+  test('row 3: a version-2 wrapper', async () => {
+    const db = await freshLockedDb();
+    db.wrapper().version = 2;
+    const err = await unlockRejection(makeVault(db), PW);
+    expect(err.code).toBe(Codes.WRAPPER_UNSUPPORTED);
+    expect(vaultUnlockRestoreFault(err)).toBe(WRAPPER_FAULT);
+  });
+
+  test('row 4: a keyVersion-2 wrapper, at a fresh load and at unlock\'s second parse', async () => {
+    const db = await freshLockedDb();
+    db.wrapper().keyVersion = 2;
+    const atLoad = await unlockRejection(makeVault(db), PW);
+    expect(atLoad.code).toBe(Codes.KEY_VERSION_UNSUPPORTED);
+    expect(vaultUnlockRestoreFault(atLoad)).toBe(WRAPPER_FAULT);
+
+    const db2 = await freshLockedDb();
+    const v = await loadedVault(db2);
+    db2.wrapper().keyVersion = 2;
+    const atUnlock = await unlockRejection(v, PW);
+    expect(atUnlock.code).toBe(Codes.KEY_VERSION_UNSUPPORTED);
+    expect(vaultUnlockRestoreFault(atUnlock)).toBe(WRAPPER_FAULT);
+    expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+  });
+
+  test('row 5: a non-canonical saltB64', async () => {
+    const db = await freshLockedDb();
+    const v = await loadedVault(db);
+    db.wrapper().saltB64 = ` ${db.wrapper().saltB64}`;
+    const err = await unlockRejection(v, PW);
+    expect(err.code).toBe(Codes.KDF_PARAMS_INVALID);
+    expect(err.details).toEqual({ field: 'saltB64' });
+    expect(vaultUnlockRestoreFault(err)).toBe(WRAPPER_FAULT);
+    expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+  });
+
+  test('row 6: stored KDF parameters rejected by policy', async () => {
+    const db = await freshLockedDb();
+    const v = await loadedVault(db);
+    db.wrapper().mKib = 1;
+    const err = await unlockRejection(v, PW);
+    expect(err.code).toBe(Codes.KDF_PARAMS_INVALID);
+    expect(typeof err.details.reason).toBe('string');
+    expect(err.details.reason).not.toBe('password-length');
+    expect(vaultUnlockRestoreFault(err)).toBe(WRAPPER_FAULT);
+    expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+  });
+
+  test('null: caller preconditions (unlock from UNLOCKED; a short password)', async () => {
+    const { v } = await unlockedVault();
+    const twice = await unlockRejection(v, PW);
+    expect(twice.code).toBe(Codes.WRONG_STATE);
+    expect(twice.details.reason).toBe('state:UNLOCKED');
+    expect(vaultUnlockRestoreFault(twice)).toBeNull();
+    expect(await stateAfter(v)).toBe(VAULT_STATES.UNLOCKED);
+
+    const locked = await loadedVault(await freshLockedDb());
+    const short = await unlockRejection(locked, 'short');
+    expect(short.code).toBe(Codes.KDF_PARAMS_INVALID);
+    expect(short.details).toEqual({ reason: 'password-length' });
+    expect(vaultUnlockRestoreFault(short)).toBeNull();
+    expect(await stateAfter(locked)).toBe(VAULT_STATES.LOCKED);
+  });
+
+  const nativeError = () => new Error('injected storage interruption');
+  const typedAbort = () => new VaultCryptoError(Codes.TX_ABORTED, 'transaction aborted');
+
+  test.each([['native Error', nativeError], ['typed VAULT_TX_ABORTED', typedAbort]])('null: interruptions (%s) at every injected point, with the resulting state', async (_label, error) => {
+    // (a) the load() wrapper read: the load rejects; status() re-raises it.
+    {
+      const db = await freshLockedDb();
+      const v = makeVault(faultingDb(db, { getFail: { when: (ns, key) => key === 'wrapper', error } }));
+      const err = await unlockRejection(v, PW);
+      expect(vaultUnlockRestoreFault(err)).toBeNull();
+      expect(await stateAfter(v)).toBe(err);
+    }
+    // (b) the orphan-pending cleanup write (state RECOVERING when it throws; the load rejection persists).
+    {
+      const db = await freshLockedDb();
+      const w = db.wrapper();
+      w.rewrapPending = { ...deepClone(w), rewrapPending: null };
+      const v = makeVault(faultingDb(db, { putFail: { when: (ns, key) => key === 'wrapper', error } }));
+      const err = await unlockRejection(v, PW);
+      expect(vaultUnlockRestoreFault(err)).toBeNull();
+      expect(await stateAfter(v)).toBe(err);
+    }
+    // (c) unlock's second wrapper read, outside unlock's try: the instance is left UNLOCKING.
+    {
+      const db = await freshLockedDb();
+      const spec = { when: (ns, key) => key === 'wrapper', nth: 2, error };
+      const v = makeVault(faultingDb(db, { getFail: spec }));
+      const err = await unlockRejection(v, PW);
+      expect(vaultUnlockRestoreFault(err)).toBeNull();
+      expect(await stateAfter(v)).toBe(VAULT_STATES.UNLOCKING);
+    }
+    // (d) the manifest read, inside unlock's try: LOCKED.
+    {
+      const db = await freshLockedDb();
+      const v = makeVault(faultingDb(db, { getFail: { when: (ns, key) => key === 'manifest', error } }));
+      const err = await unlockRejection(v, PW);
+      expect(vaultUnlockRestoreFault(err)).toBeNull();
+      expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+    }
+    // (e) the high-water reconcile write (database ahead of the signed marker): LOCKED.
+    {
+      const db = await freshLockedDb();
+      db.version = 2;
+      const v = makeVault(faultingDb(db, { putFail: { when: (ns, key) => key === 'manifest', error } }));
+      const err = await unlockRejection(v, PW);
+      expect(vaultUnlockRestoreFault(err)).toBeNull();
+      expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+    }
+  });
+
+  test('null: an injected deriveKek failure (VAULT_CRYPTO_FAILED; a KdfBoundsError), LOCKED', async () => {
+    for (const error of [new VaultCryptoError(Codes.CRYPTO_FAILED, 'kek derivation failed'), new KdfBoundsError('memory cost below the OWASP floor')]) {
+      const db = await freshLockedDb();
+      const v = createVault({ db, deriveKek: async () => { throw error; }, randomBytes: seededBytes(7), todayIso: () => '2026-10-05' });
+      const err = await unlockRejection(v, PW);
+      expect(err).toBe(error);
+      expect(vaultUnlockRestoreFault(err)).toBeNull();
+      expect(await stateAfter(v)).toBe(VAULT_STATES.LOCKED);
+    }
+  });
+});
+
+describe('R-WIRE W7: vaultUnlockRestoreFault is total and never invokes an accessor', () => {
+  test('arbitrary values never throw and give null', () => {
+    fc.assert(fc.property(fc.anything({ withObjectString: true, withNullPrototype: true }), (x) => {
+      const r = vaultUnlockRestoreFault(x);
+      return r === null;
+    }), { numRuns: 2000 });
+  });
+
+  test('generated VaultCryptoErrors map exactly by the table', () => {
+    const codes = Object.values(Codes);
+    const detailArb = fc.option(fc.record({
+      reason: fc.constantFrom('schema-downgrade', 'password-length', 'session-ended', 'state:LOCKED', 'other'),
+      field: fc.constantFrom('saltB64', 'keyVersion', 'version'),
+    }, { requiredKeys: [] }), { nil: undefined });
+    fc.assert(fc.property(fc.constantFrom(...codes), detailArb, (code, details) => {
+      const err = new VaultCryptoError(code, 'generated', details);
+      const reason = details && Object.hasOwn(details, 'reason') ? details.reason : undefined;
+      const field = details && Object.hasOwn(details, 'field') ? details.field : undefined;
+      let expected = null;
+      if (['VAULT_WRONG_PASSWORD', 'VAULT_WRAPPER_INVALID', 'VAULT_WRAPPER_UNSUPPORTED', 'VAULT_KEY_VERSION_UNSUPPORTED'].includes(code)) expected = WRAPPER_FAULT;
+      if (code === 'VAULT_KDF_PARAMS_INVALID' && (field !== undefined || (reason !== undefined && reason !== 'password-length'))) expected = WRAPPER_FAULT;
+      if (code === 'VAULT_MANIFEST_TAMPERED' && (reason === undefined || reason === 'schema-downgrade')) expected = WRAPPER_FAULT;
+      return vaultUnlockRestoreFault(err) === expected;
+    }), { numRuns: 2000 });
+  });
+
+  test('fixed hostile and look-alike cases are null, with no accessor invoked', () => {
+    let touched = 0;
+    const spy = () => { touched += 1; return 'VAULT_MANIFEST_TAMPERED'; };
+    const cases = [];
+    cases.push({ code: 'VAULT_MANIFEST_TAMPERED' });
+    cases.push(Object.assign(new Error('x'), { code: 'VAULT_WRONG_PASSWORD' }));
+    const accessorCode = new VaultCryptoError(Codes.WRONG_PASSWORD, 'x');
+    Object.defineProperty(accessorCode, 'code', { get: spy });
+    cases.push(accessorCode);
+    const accessorDetails = new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'x');
+    Object.defineProperty(accessorDetails, 'details', { get: () => { touched += 1; return undefined; } });
+    cases.push(accessorDetails);
+    const accessorReason = new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'x');
+    Object.defineProperty(accessorReason, 'details', { value: Object.defineProperty({}, 'reason', { get: () => { touched += 1; return 'schema-downgrade'; }, enumerable: true }) });
+    cases.push(accessorReason);
+    const accessorField = new VaultCryptoError(Codes.KDF_PARAMS_INVALID, 'x');
+    Object.defineProperty(accessorField, 'details', { value: Object.defineProperty({}, 'field', { get: () => { touched += 1; return 'saltB64'; }, enumerable: true }) });
+    cases.push(accessorField);
+    cases.push(new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'x', { reason: 'future-reason' }));
+    cases.push(new VaultCryptoError(Codes.WRONG_STATE, 'x', { reason: 'session-ended' }));
+    cases.push(new VaultCryptoError(Codes.OPEN_FAILED, 'x', { reason: 'VersionError' }));
+    const mutated = new VaultCryptoError(Codes.WRONG_PASSWORD, 'x');
+    mutated.code = 'VAULT_SOMETHING_ELSE';
+    cases.push(mutated);
+    const nonPlainDetails = new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'x');
+    Object.defineProperty(nonPlainDetails, 'details', { value: Object.create({ reason: 'schema-downgrade' }) });
+    cases.push(nonPlainDetails);
+    const { proxy: revoked, revoke } = Proxy.revocable(new VaultCryptoError(Codes.WRONG_PASSWORD, 'x'), {});
+    revoke();
+    cases.push(revoked);
+    cases.push(new Proxy(new VaultCryptoError(Codes.WRONG_PASSWORD, 'x'), { getPrototypeOf() { throw new Error('trap'); } }));
+    cases.push(new Proxy(new VaultCryptoError(Codes.WRONG_PASSWORD, 'x'), { getOwnPropertyDescriptor() { throw new Error('trap'); } }));
+    cases.push(new KdfBoundsError('memory cost below the OWASP floor'));
+    for (const c of cases) {
+      expect(() => vaultUnlockRestoreFault(c)).not.toThrow();
+      expect(vaultUnlockRestoreFault(c)).toBeNull();
+    }
+    expect(touched).toBe(0);
+  });
+});
+
+describe('R-WIRE W9/W10: the wiring precondition and the consuming boundary', () => {
+  test('W9: the fault outside inventory M2 is never WRAPPER_AUTH_FAILED; earlier phases keep precedence', () => {
+    for (const [inventory, legacy] of [['NONE', false], ['LEGACY_ONLY', true]]) {
+      const out = classifyRestore({ faults: [WRAPPER_FAULT], inventory, legacy, vector: null, selectorState: 'ACTIVE' });
+      expect(out.result).toBe('INTERNAL_VALIDATION_FAILED');
+      expect(out.stage).toBe('CLASSIFY');
+    }
+    const expectedEarlier = { lockUnavailable: 'LOCKED_ELSEWHERE', buildNotListed: 'INCOMPATIBLE_BUILD', inventoryAmbiguous: 'INTERNAL_VALIDATION_FAILED' };
+    for (const [earlier, result] of Object.entries(expectedEarlier)) {
+      const out = classifyRestore({ faults: [WRAPPER_FAULT, earlier], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE' });
+      expect(out.result).toBe(result);
+      expect(out.stage).toBe(FAULT_PRECEDENCE.find((r) => r.fault === earlier).phase);
+    }
+  });
+
+  test('W10: a null mapping forms no observation, no dispatch and never a RESTORED_* result', () => {
+    const nullCases = [
+      new VaultCryptoError(Codes.WRONG_STATE, 'x', { reason: 'state:UNLOCKED' }),
+      new VaultCryptoError(Codes.WRONG_STATE, 'x', { reason: 'session-ended' }),
+      new VaultCryptoError(Codes.KDF_PARAMS_INVALID, 'x', { reason: 'password-length' }),
+      new VaultCryptoError(Codes.TX_ABORTED, 'x'),
+      new VaultCryptoError(Codes.QUOTA_EXCEEDED, 'x'),
+      new VaultCryptoError(Codes.BLOCKED, 'x'),
+      new VaultCryptoError(Codes.OPEN_FAILED, 'x'),
+      new VaultCryptoError(Codes.SCHEMA_GAP, 'x'),
+      new VaultCryptoError(Codes.CRYPTO_FAILED, 'x'),
+      new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'x', { reason: 'future-reason' }),
+      new Error('native'), new KdfBoundsError('x'), null, undefined, {}, 'VAULT_WRONG_PASSWORD',
+    ];
+    for (const legacy of [false, true]) {
+      for (const err of nullCases) {
+        const wired = referenceWiring(err, legacy);
+        expect(wired).toEqual({ observation: null, outcome: null, dispatch: null });
+      }
+    }
+    // every non-null mapping, by construction, is a non-RESTORED, non-reset-eligible result
+    for (const row of M2_RECOVERY.VAULT_UNLOCK_FAULTS) {
+      const err = new VaultCryptoError(row.code, 'x', row.detail === 'FIELD' ? { field: 'saltB64' }
+        : row.detail.startsWith('REASON_EXCEPT:') ? { reason: 'memory cost below the OWASP floor' }
+          : row.detail.startsWith('REASON:') ? { reason: row.detail.slice(7) } : undefined);
+      const wired = referenceWiring(err, false);
+      expect(wired.outcome.result.startsWith('RESTORED_')).toBe(false);
+      expect(wired.dispatch.resetEligible).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// R-WIRE notes (R-UX ratification #447 comment 6013153608, items 2-4)
+// ---------------------------------------------------------------------------------------------------
+
+describe('R-WIRE N1: a malformed begin voids the open handle first (supersedes R-UX rule 5 wording)', () => {
+  test('each malformed begin throws TypeError and the earlier handle is then stale', async () => {
+    const { v, db, calls } = await unlockedVault();
+    for (const bad of [null, {}, { restoreResult: 'MANIFEST_INVALID', lockHeld: 'yes' }, { restoreResult: 'MANIFEST_INVALID', lockHeld: true, extra: 1 }]) {
+      const begun = await v.beginRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: true });
+      expect(typeof begun.confirmation).toBe('object');
+      await expect(v.beginRecoveryReset(bad)).rejects.toThrow(TypeError);
+      const later = await v.confirmRecoveryReset({
+        restoreResult: 'MANIFEST_INVALID', lockHeld: true, confirmed: true, disclosure: true, confirmation: begun.confirmation,
+      });
+      expect(later.reject).toBe('FRESH_CONFIRMATION_REQUIRED');
+    }
+    expect(calls).toEqual([]);
+    expect(db.destroyed).toBe(0);
+  });
+});
+
+describe('R-WIRE N2: every C-REC /reset member has a carrier (predicate table)', () => {
+  const PREDICATES = {
+    eligibleResults: () => [...M2_RECOVERY.RESET_ELIGIBLE_RESULTS].sort().join() === [...CREC.reset.eligibleResults].sort().join(),
+    ineligibleResults: () => [...M2_RECOVERY.RESET_INELIGIBLE_RESULTS].sort().join() === [...CREC.reset.ineligibleResults].sort().join(),
+    requiresOneWriterLock: () => M2_RECOVERY.REQUIRES_ONE_WRITER_LOCK_FOR_STATE_CHANGE === CREC.reset.requiresOneWriterLock,
+    preserveDiagnosis: () => M2_RECOVERY.RESET_PRESERVE_DIAGNOSIS === CREC.reset.preserveDiagnosis,
+    legacyBytes: () => M2_RECOVERY.RESET_LEGACY_BYTES === CREC.reset.legacyBytes,
+    markerState: () => M2_RECOVERY.RESET_MARKER_STATE === CREC.reset.markerState,
+    physicalErasureClaim: () => M2_RECOVERY.PHYSICAL_ERASURE_CLAIM === CREC.reset.physicalErasureClaim,
+    interruptedClassification: () => M2_RECOVERY.RESET_DISCLOSURE.interruptedClassification === CREC.reset.interruptedClassification,
+    requiresExplicitSeparateIrreversibleConfirmation: () => CREC.reset.requiresExplicitSeparateIrreversibleConfirmation === true
+      && M2_RECOVERY.RESET_AUTOMATIC === false && M2_RECOVERY.RESET_DISCLOSURE.irreversible === true
+      && decideRecoveryAction({ action: 'RESET', result: 'MANIFEST_INVALID', confirmed: false, disclosure: true, lock: 'HELD', token: 'FRESH_BOUND_TOKEN' }).reject === 'EXPLICIT_CONFIRMATION_REQUIRED',
+    valueFreeAuthorityLossDisclosureRequired: () => CREC.reset.valueFreeAuthorityLossDisclosureRequired === true
+      && typeof M2_RECOVERY.RESET_DISCLOSURE.authorityBecomesUnavailable === 'string'
+      && M2_RECOVERY.RESET_DISCLOSURE.authorityBecomesUnavailable.length > 0
+      && decideRecoveryAction({ action: 'RESET', result: 'MANIFEST_INVALID', confirmed: true, disclosure: false, lock: 'HELD', token: 'FRESH_BOUND_TOKEN' }).reject === 'DISCLOSURE_REQUIRED',
+    // NOT_A_VAULT_FLAG: C-REC's statement about itself.
+    implementedHere: () => CREC.reset.implementedHere === false && !Object.hasOwn(M2_RECOVERY, 'IMPLEMENTED_HERE'),
+  };
+
+  test('the predicate table covers exactly the /reset members and every predicate holds', () => {
+    expect(Object.keys(PREDICATES).sort()).toEqual(Object.keys(CREC.reset).sort());
+    for (const [member, holds] of Object.entries(PREDICATES)) expect([member, holds()]).toEqual([member, true]);
+    expect(M2_RECOVERY.RESET_PRESERVE_DIAGNOSIS).toBe(CREC.reset.preserveDiagnosis);
+  });
+});
+
+describe('R-WIRE N3: diagnostic arrays carry only their indices and length', () => {
+  const ok = ['stageCode', 'reasonCode'];
+  const RAW = 'RAW_VALUE_DIAGNOSTIC';
+
+  test('extra string key, symbol key, non-enumerable index, accessor index and hostile proxies are rejected without throwing', () => {
+    const extra = [...ok]; extra.note = 'x';
+    const sym = [...ok]; sym[Symbol('s')] = 1;
+    const hidden = [...ok]; Object.defineProperty(hidden, '1', { value: 'reasonCode', enumerable: false });
+    let touched = 0;
+    const accessor = [...ok]; Object.defineProperty(accessor, '0', { get: () => { touched += 1; return 'stageCode'; }, enumerable: true });
+    const { proxy: revoked, revoke } = Proxy.revocable([...ok], {}); revoke();
+    const throwing = new Proxy([...ok], { ownKeys() { throw new Error('trap'); } });
+    const holey = ['stageCode']; holey.length = 2;
+    for (const fields of [extra, sym, hidden, accessor, revoked, throwing, holey]) {
+      expect(() => decideRecoveryDiagnostic({ fields })).not.toThrow();
+      expect(decideRecoveryDiagnostic({ fields }).reject).toBe(RAW);
+    }
+    expect(touched).toBe(0);
+  });
+
+  test('plain and frozen literals of 0-6 distinct allowed names are still accepted', () => {
+    for (let n = 0; n <= CREC.diagnostics.allowed.length; n += 1) {
+      const fields = CREC.diagnostics.allowed.slice(0, n);
+      expect(decideRecoveryDiagnostic({ fields: [...fields] }).accepted).toBe(true);
+      expect(decideRecoveryDiagnostic({ fields: Object.freeze([...fields]) }).accepted).toBe(true);
+    }
+  });
+
+  test('a random extra key (neither an index nor length) is always rejected', () => {
+    fc.assert(fc.property(
+      fc.subarray(CREC.diagnostics.allowed),
+      fc.string({ minLength: 1 }).filter((k) => k !== 'length' && k !== '__proto__' && !/^(0|[1-9][0-9]*)$/.test(k)),
+      (fields, key) => {
+        const arr = [...fields];
+        arr[key] = 'stageCode';
+        return decideRecoveryDiagnostic({ fields: arr }).reject === RAW;
+      },
+    ), { numRuns: 1000 });
+  });
+});
+
+describe('R-WIRE: the closed named-export surface of vault.js', () => {
+  test('exactly the four pre-existing exports, the seven R-UX exports and vaultUnlockRestoreFault', () => {
+    expect(Object.keys(vaultModule).sort()).toEqual([
+      'DEFAULT_VAULT_PROFILE', 'ENABLED_NAMESPACES', 'M2_RECOVERY', 'VAULT_STATES', 'createVault',
+      'decidePasswordRewrap', 'decideRecoveryAction', 'decideRecoveryDiagnostic', 'dispatchRecovery',
+      'recoveryBoundary', 'recoveryGuidance', 'vaultUnlockRestoreFault',
     ]);
   });
 });
