@@ -20,7 +20,7 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
     "uncoveredClauses": [],
     "uncoveredPairs": []
   },
-  "inputManifestSha256": "aaa3860e8774188613be1edacefc5ec26336ccc4cd0506142860347d0b20afb6",
+  "inputManifestSha256": "38bb5975f3fd723aabf165eebda3f16883a99e3f564b61051ec1f68cc2a3a873",
   "nonClaims": [
     "No implementation conformance",
     "No browser or IndexedDB behavior",
