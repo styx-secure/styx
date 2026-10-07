@@ -1191,11 +1191,13 @@ async function killSweep({ rows = TRI_STATE_ROWS, outcomes = ['COMMITTED', 'NOT_
       for (const rs of outcomes) {
         if (phase === 'RECONCILIATION' && rs === 'INDETERMINATE') {
           // A continued INDETERMINATE reconciliation applies nothing: the hold stays and still closes.
+          // LOST: the process restarts and the memory hold is gone before the continuation.
           for (const memory of ['RETAINED', 'LOST']) {
-            const d = forkDevice(base);
+            let d = forkDevice(base);
             const plan = planMutation(d, scenario, 'INDETERMINATE');
             const first = await runPlan(d, plan, portOpts);
             if (first.error !== null) { report.violations.push(`${scenario} prepare ${errCode(first.error)}`); continue; }
+            if (memory === 'LOST') { d = await d.restart(); d.disk.hold = null; }
             const r = await reconcilePlan(d, plan, 'INDETERMINATE', portOpts);
             note(`${scenario} RECONCILIATION INDETERMINATE ${memory}`, r.code === 'OK' && r.port.applied.length === 0
               ? await settle(d, plan, memory, 'COMMITTED') : { outcome: 'ERROR', violations: [`continued ${r.code}`] });
