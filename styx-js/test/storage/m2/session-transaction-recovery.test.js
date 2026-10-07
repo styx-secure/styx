@@ -1469,7 +1469,7 @@ describe('R2a F3 no sidecar is authoritative', () => {
   }
 
   for (const memory of ['LOST', 'RETAINED']) {
-    for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
+    for (const rs of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
       test(`a sidecar that matches the authenticated kind-13 record is accepted (memory ${memory}, ${rs})`, async () => {
         const { d, plan } = await heldWithRecord(memory);
         expect(await d.authority(plan.parentGeneration, plan.generation)).toMatchObject({ authority: 'COMPLETE_OLD', held: true });
@@ -1484,7 +1484,7 @@ describe('R2a F3 no sidecar is authoritative', () => {
     ['a sidecar with another parent root', (g) => { g.mutationHold.parentKeyedRoot = new Uint8Array(32).fill(9); }],
   ]) {
     for (const memory of ['LOST', 'RETAINED']) {
-      for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
+      for (const rs of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
         test(`${label} beside the authenticated record is refused before any decision (memory ${memory}, ${rs})`, async () => {
           const { d, plan } = await heldWithRecord(memory);
           mutate(d.disk.generations.get(plan.generation));

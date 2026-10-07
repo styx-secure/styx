@@ -1557,13 +1557,6 @@ export async function reconcileIndeterminate(input) {
       storedSelector, expectedSelectorBytes);
   }
 
-  if (evidence.outcome === M2_OUTCOME.INDETERMINATE) {
-    return freezeDeep({
-      reconciliation: 'INDETERMINATE', resultKind: 'INDETERMINATE', state: 'RECONCILIATION_REQUIRED',
-      authority: 'COMPLETE_OLD', output: null, holds: 1,
-    });
-  }
-
   if (selector === null) {
     partial('no stored selector exists although one hold is pending');
   }
@@ -1606,6 +1599,15 @@ export async function reconcileIndeterminate(input) {
         'the bound candidate\'s stored commit result does not identify the held mutation; nothing is '
         + 'selected or discarded and the hold is left unchanged');
     }
+  }
+
+  // A continued INDETERMINATE applies nothing; it answers only after the bound candidate, its F3
+  // projection and its stored result were checked above, so a contradiction is refused here too.
+  if (evidence.outcome === M2_OUTCOME.INDETERMINATE) {
+    return freezeDeep({
+      reconciliation: 'INDETERMINATE', resultKind: 'INDETERMINATE', state: 'RECONCILIATION_REQUIRED',
+      authority: 'COMPLETE_OLD', output: null, holds: 1,
+    });
   }
 
   if (evidence.outcome === M2_OUTCOME.NOT_COMMITTED) {
