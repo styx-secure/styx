@@ -12,8 +12,8 @@ import { M2_KIND, decodeRecordKey, M2StorageCodecError } from '../../../src/stor
 
 // The ratified C-REC vocabulary asserted below is copied verbatim from
 // `docs/architecture/m2/recovery-and-coexistence.md` §13 `/marker` and `/fixtures`
-// (commit c755c2c2eafd0d58f74577c1adaa8031011ec7a7, SHA-256
-// 5b0d2fbd685a198e7e6e6bb10cb7740680086d27690c3cc622915e68beb94f87, #335 comment 5909885218).
+// (commit 4693fd93ae06114be356e9e8d9320caccdcb6a14, SHA-256
+// ab11271cc038b49f24d356ee4a52bfc993dfd62195fec3e27925bc71e8837149, #327 comment 6035801582).
 
 const ABSENT = 'ABSENT';
 const PENDING = 'PENDING_NEW_SESSION';
@@ -813,7 +813,7 @@ describe('legacy-session-invalidation: seeded properties', () => {
   });
 });
 
-// O-SCEN /marker scenarios (#337, ratification 5912195865). Eleven rows, all mapped.
+// O-SCEN /marker scenarios (#337, ratification #327 comment 6035801582). Eleven rows, all mapped.
 describe('legacy-session-invalidation: O-SCEN /marker scenario mapping', () => {
   test('OSC-0617f4a2e92bc67a /marker/states', () => {
     expect(M2_LEGACY_INVALIDATION.STATES).toEqual([ABSENT, PENDING, CONFIRMED, INVALIDATED]);

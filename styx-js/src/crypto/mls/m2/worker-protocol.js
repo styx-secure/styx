@@ -12,8 +12,8 @@
 //   C-API  docs/architecture/m2/adapter-contract.md  sha256 b77d39fb…05ad9  (#319 5886838783)
 //   C-BIND docs/architecture/m2/binding-v0.md        sha256 2ee9b022…1d4a42 (#323 5890060894)
 //   C-MUT  docs/architecture/m2/mutation-table.md    sha256 6c2c045c…eb3060 (#324 5890545934)
-//   C-REC  docs/architecture/m2/recovery-and-coexistence.md  sha256 5b0d2fbd…94f87 (#335 5909885218)
-//   O-SCEN docs/architecture/m2/scenarios/clause-scenarios.md sha256 6c19a01c…4d37ae (#337 5912195865)
+//   C-REC  docs/architecture/m2/recovery-and-coexistence.md  sha256 ab11271c…7149 (owner act #327 6035801582)
+//   O-SCEN docs/architecture/m2/scenarios/clause-scenarios.md sha256 75d84350…16532 (owner act #327 6035801582)
 
 import { STATES as ADAPTER_STATES, OPERATIONS as ADAPTER_OPERATIONS } from './state-machine.js';
 

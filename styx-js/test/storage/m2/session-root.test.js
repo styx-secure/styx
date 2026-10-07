@@ -9,7 +9,7 @@ import {
 } from '../../../src/storage/m2/session-root.js';
 
 // Known-answer vectors, byte-derived from the ratified C-FMT machine record
-// (SHA-256 b57df3a8f5dac9cc9f11702fe55d9badf9f98683e3dd7ac03aa81b8fa7932812 at commit 96a358c).
+// (SHA-256 9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b at commit 697e257).
 const VECTORS = [
   {
     "id": "FMT-KAT-EMPTY",

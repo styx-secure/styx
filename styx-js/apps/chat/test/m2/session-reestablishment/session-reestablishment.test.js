@@ -47,7 +47,7 @@ const EV = {
 };
 
 // ------------------------------------------------------------------------------------------------
-// C-REC §13 rows, transcribed verbatim (C-REC sha256 5b0d2fbd…94f87, #335 comment 5909885218).
+// C-REC §13 rows, transcribed verbatim (C-REC sha256 ab11271c…7149, #327 comment 6035801582).
 // ------------------------------------------------------------------------------------------------
 
 const CREC_OWNED_DISPATCH_ROWS = [
@@ -1127,7 +1127,7 @@ describe('totality: malformed input writes nothing and throws only M2Reestablish
 });
 
 // ------------------------------------------------------------------------------------------------
-// O-SCEN clause rows owned by this card (#337, ratification 5912195865; reconciliation list OPEN).
+// O-SCEN clause rows owned by this card (#337, ratification #327 comment 6035801582; reconciliation list OPEN).
 // Each row is pinned by a named test that drives the public surface; the other /marker/* rows are
 // L-MARK's and are consumed, not re-owned.
 // ------------------------------------------------------------------------------------------------

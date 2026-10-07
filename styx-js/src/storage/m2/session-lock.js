@@ -23,7 +23,7 @@
 //   C-MUT   docs/architecture/m2/mutation-table.md    sha256 6c2c045c…eb3060 (#324 5890545934)
 //           "The D13/C-API `singleWriter` precondition is one worker and one writer per
 //           browser profile, enforced outside the adapter by I-LOCK."
-//   C-REC   docs/architecture/m2/recovery-and-coexistence.md  sha256 5b0d2fbd…94f87 (#335 5909885218)
+//   C-REC   docs/architecture/m2/recovery-and-coexistence.md  sha256 ab11271c…7149 (owner act #327 6035801582)
 //           §8, /precedence, /faultPhaseOrder, /faultPrecedence, /restoreResults,
 //           /dispositionEnum, /fixtures (NEG-NO-LOCK), /marker/transitions.
 //   C-REST  docs/architecture/m2/restore-compatibility.md (reached through O-SCEN)
@@ -31,7 +31,7 @@
 //           legacy bytes before success."  /prose/19 — "Before reading any stored M2 or
 //           legacy byte, the one-writer Web Lock MUST be held and one complete
 //           `buildMatrix` row MUST match."
-//   O-SCEN  docs/architecture/m2/scenarios/clause-scenarios.md sha256 6c19a01c…4d37ae (#337 5912195865)
+//   O-SCEN  docs/architecture/m2/scenarios/clause-scenarios.md sha256 75d84350…16532 (owner act #327 6035801582)
 //           the blind scenario set whose lock clauses are transcribed in LOCK_SCENARIOS.
 //   SCOPE-M2 (owner proposal ratified into D13/D7): "one worker and one writer per
 //           browser profile under Web Lock; second tab is read-disabled/session-active
