@@ -868,15 +868,16 @@ export function createVault({
      * bound to this result and this unlocked session; any earlier handle is void.
      * It never loads the vault: an instance that has not reached UNLOCKED in this
      * session (never loaded, LOCKED, ERROR) is decided from memory as ineligible,
-     * so a refusal reads and writes no byte. Every well-formed call voids any
-     * earlier handle (contract #447 rule 5: a second `begin` voids the first).
+     * so a refusal reads and writes no byte. Every call, malformed included, voids
+     * any open handle before validating its input (R-WIRE, superseding the R-UX
+     * rule 5 phrase "a second `begin` voids the first"; R-UX ratification item 2).
      */
     async beginRecoveryReset(input) {
+      pendingReset = null;
       const s = snapshotRecoveryInput(input, ['restoreResult', 'lockHeld']);
       if (s === null || typeof s.lockHeld !== 'boolean') {
         throw new TypeError('recovery reset input is malformed');
       }
-      pendingReset = null;
       const eligibleResult = state === VAULT_STATES.UNLOCKED ? s.restoreResult : null;
       const gate = decideRecoveryAction({
         action: 'RESET', result: eligibleResult, confirmed: true, disclosure: true,
@@ -1167,6 +1168,26 @@ const RESET_DISCLOSURE = Object.freeze({
   noErasureStatement: RECOVERY_GUIDANCE.RESET_NO_ERASURE,
 });
 
+/**
+ * R-WIRE: the closed vault-unlock rejection → C-REST fault table, a positive allowlist. Each row is
+ * `{ code, detail, fault }`; `detail` is `ANY`, `NO_REASON` (no own `details.reason`),
+ * `REASON:<slug>` (own `details.reason` equals the slug), `FIELD` (own string `details.field`) or
+ * `REASON_EXCEPT:<slug>` (own string `details.reason` other than the slug). The first matching row
+ * wins; no matching row means the rejection is not C-REST evidence (`null`). Rows 7 and 8 are the
+ * vault-container failures that the owner interpretation (#317 comment 6022947656) places in
+ * C-REST `WRAPPER_AUTH` as `wrapperWrongOrInvalid`.
+ */
+const VAULT_UNLOCK_FAULT_ROWS = Object.freeze([
+  Object.freeze({ code: Codes.WRONG_PASSWORD, detail: 'ANY', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.WRAPPER_INVALID, detail: 'ANY', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.WRAPPER_UNSUPPORTED, detail: 'ANY', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.KEY_VERSION_UNSUPPORTED, detail: 'ANY', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.KDF_PARAMS_INVALID, detail: 'FIELD', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.KDF_PARAMS_INVALID, detail: 'REASON_EXCEPT:password-length', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.MANIFEST_TAMPERED, detail: 'NO_REASON', fault: 'wrapperWrongOrInvalid' }),
+  Object.freeze({ code: Codes.MANIFEST_TAMPERED, detail: 'REASON:schema-downgrade', fault: 'wrapperWrongOrInvalid' }),
+]);
+
 export const M2_RECOVERY = deepFreezeRecovery({
   SCHEMA: 'styx-m2-recovery-actions/v1',
   C_REC_DOCUMENT_SHA256: '5b0d2fbd685a198e7e6e6bb10cb7740680086d27690c3cc622915e68beb94f87',
@@ -1198,6 +1219,12 @@ export const M2_RECOVERY = deepFreezeRecovery({
   LEGACY_IMPORT: false,
   LEGACY_FALLBACK: false,
   CLEANUP: 'DEFERRED',
+  // C-REC `/reset/preserveDiagnosis` (R-WIRE; R-UX ratification item 3). Policy only:
+  // the diagnosis is the caller's injected C-REST result, never stored or cleared here.
+  RESET_PRESERVE_DIAGNOSIS: true,
+  // R-WIRE: the closed vault-unlock rejection → C-REST fault rows of
+  // `vaultUnlockRestoreFault` (owner interpretation #317 comment 6022947656 for rows 7-8).
+  VAULT_UNLOCK_FAULTS: VAULT_UNLOCK_FAULT_ROWS,
 });
 
 const agreementOf = (disposition, authorityIdentity, firstFailingPhase) => Object.freeze({
@@ -1343,13 +1370,18 @@ export function decideRecoveryDiagnostic(input) {
       const d = Object.getOwnPropertyDescriptor(s.fields, 'length');
       const n = d && Object.hasOwn(d, 'value') ? d.value : -1;
       if (Number.isSafeInteger(n) && n >= 0 && n <= DIAGNOSTIC_MAX_FIELDS) {
+        // R-WIRE (R-UX ratification item 4): the own keys are exactly the indices and `length`,
+        // and every index is an own enumerable data member; anything else is not value-free.
+        const keys = Reflect.ownKeys(s.fields);
+        const exact = keys.length === n + 1 && keys.every((k) => typeof k === 'string'
+          && (k === 'length' || (/^(0|[1-9][0-9]*)$/.test(k) && Number(k) < n)));
         const copy = [];
-        for (let i = 0; i < n; i += 1) {
+        for (let i = 0; exact && i < n; i += 1) {
           const e = Object.getOwnPropertyDescriptor(s.fields, String(i));
-          if (!e || !Object.hasOwn(e, 'value')) { copy.length = 0; break; }
+          if (!e || !Object.hasOwn(e, 'value') || e.enumerable !== true) { copy.length = 0; break; }
           copy.push(e.value);
         }
-        if (copy.length === n) fields = copy;
+        if (exact && copy.length === n) fields = copy;
       }
     }
   } catch {
@@ -1386,4 +1418,76 @@ export function recoveryBoundary(boundary) {
     });
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// R-WIRE: vault-level unlock failures → C-REST fault (card R-WIRE, #317).
+//
+// Owner interpretation #317 comment 6022947656 (R-WIRE Q1 = A): for C-REST,
+// `WRAPPER_AUTH` ("Unlock and authenticate the existing wrapper") completes only
+// when `vault.unlock()` completes. A `VAULT_MANIFEST_TAMPERED` failure, including
+// `schema-downgrade`, raised after a successful unwrap is the
+// `wrapperWrongOrInvalid` fault: reset-ineligible, its only reset the existing
+// `destroy()`. The distinct vault code may drive vault-lifecycle wording only,
+// never C-REC diagnostics.
+//
+// This is a pure, total mapping. It does no I/O and does not classify: the
+// caller feeds the fault to the C-REST classifier, and may do so only for the
+// rejection of the same `unlock()` call whose run is being classified, after
+// LOCK, BUILD_ELIGIBILITY and INVENTORY (= M2) have genuinely passed.
+// ---------------------------------------------------------------------------
+
+const UNLOCK_FAULT_UNREAD = Symbol('unread');
+
+// Own data member of a non-null object, or UNLOCK_FAULT_UNREAD when absent. An
+// accessor is never invoked: it throws, and the caller maps every throw to null.
+function ownDataMember(obj, key) {
+  const d = Object.getOwnPropertyDescriptor(obj, key);
+  if (d === undefined) return UNLOCK_FAULT_UNREAD;
+  if (!Object.hasOwn(d, 'value')) throw new TypeError('accessor member');
+  return d.value;
+}
+
+const unlockDetailMatches = (detail, reason, field) => {
+  if (detail === 'ANY') return true;
+  if (detail === 'NO_REASON') return reason === UNLOCK_FAULT_UNREAD;
+  if (detail === 'FIELD') return typeof field === 'string';
+  if (detail.startsWith('REASON_EXCEPT:')) {
+    return typeof reason === 'string' && reason !== detail.slice('REASON_EXCEPT:'.length);
+  }
+  if (detail.startsWith('REASON:')) return reason === detail.slice('REASON:'.length);
+  return false;
+};
+
+/**
+ * The C-REST fault that the rejection of ONE `vault.unlock()` call stands for, or
+ * `null` when that rejection is not C-REST evidence (no complete C-REST result may
+ * be formed from it: a caller precondition, an interruption, or an unrecognised or
+ * infrastructure failure). Accepts only a `VaultCryptoError`; reads `code`,
+ * `details`, `details.reason` and `details.field` through own data descriptors and
+ * never invokes an accessor. Total: never throws.
+ */
+export function vaultUnlockRestoreFault(error) {
+  try {
+    if (!(error instanceof VaultCryptoError)) return null;
+    const code = ownDataMember(error, 'code');
+    if (typeof code !== 'string') return null;
+    const details = ownDataMember(error, 'details');
+    let reason = UNLOCK_FAULT_UNREAD;
+    let field = UNLOCK_FAULT_UNREAD;
+    if (details !== UNLOCK_FAULT_UNREAD && details !== undefined) {
+      if (details === null || typeof details !== 'object' || Array.isArray(details)
+        || Object.getPrototypeOf(details) !== Object.prototype) {
+        return null;
+      }
+      reason = ownDataMember(details, 'reason');
+      field = ownDataMember(details, 'field');
+    }
+    for (const row of VAULT_UNLOCK_FAULT_ROWS) {
+      if (row.code === code && unlockDetailMatches(row.detail, reason, field)) return row.fault;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
