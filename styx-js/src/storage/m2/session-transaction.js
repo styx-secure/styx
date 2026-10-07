@@ -954,9 +954,11 @@ function resultFor(envelope, candidate, outcome, row) {
 //   hold and performs the single selector replacement that binds the retained candidate and sets
 //   RECONCILIATION_REQUIRED (C-FMT §6/§7, the INDETERMINATE plan), which reconciliation then resolves;
 // - COMPLETE_OLD with no hold: the request is terminal NOT_COMMITTED (which retains no hold or escrow,
-//   C-MUT §5), or the candidate is not completely staged and so can never be bound (C-FMT partial
-//   generation rejects); the unbound candidate is discarded best-effort.
-// Every write here is best-effort: the caller rethrows the original fault and storage is re-read.
+//   C-MUT §5), and the unbound candidate is discarded best-effort. A candidate that is not completely
+//   staged can never be bound (C-FMT partial generation rejects); it is left as non-authoritative
+//   debris and never discarded without terminal evidence (C-FMT generationCommit.unboundCandidate).
+// Every write here is best-effort: the caller rethrows the original fault and storage is re-read,
+// except a refused compare-and-set on the bind, which is rethrown unchanged in its place (F2).
 // The module never guesses an outcome from SS memory and never reports a result.
 async function establishRecoveryEvidence(storage, manifestRootKey, envelope, candidate, outcome, row, expectedSelectorBytes) {
   let classification;
@@ -1032,10 +1034,13 @@ async function establishRecoveryEvidence(storage, manifestRootKey, envelope, can
       // F2: the envelope this request read when it was planned, never re-read here.
       payload: { selectorBytes: candidate.holdSelectorBytes, resolveHoldGeneration: null, expectedSelectorBytes },
     }));
-  } catch {
-    // The bind did not land. Nothing is discarded without terminal evidence: the candidate, its hold
-    // and escrow stay preserved. A hold retained in SS memory with its record key stays reconcilable
-    // through the rule-only retainedHoldLookup; without it the candidate is non-authoritative debris.
+  } catch (e) {
+    // F2: a refused compare-and-set on the binding selector is rethrown unchanged; it replaces the
+    // original fault as the typed signal that the stored selector changed under this request.
+    if (isPreconditionFailure(e)) throw e;
+    // Otherwise the bind did not land. Nothing is discarded without terminal evidence: the candidate,
+    // its hold and escrow stay preserved. A hold retained in SS memory with its record key stays
+    // reconcilable through the rule-only retainedHoldLookup; without it the candidate is debris.
   }
 }
 
@@ -1588,10 +1593,11 @@ export async function reconcileIndeterminate(input) {
       + 'left unchanged');
   }
 
-  // The bound candidate's stored COMMIT_RESULT must identify the held mutation (C-FMT
-  // /generationCommit/originalAuthorityMatch) before evidence for that mutation selects it, and before
-  // a durable hold - read from storage rather than SS memory - is terminally resolved either way.
-  if (durableHold || evidence.outcome === M2_OUTCOME.COMMITTED) {
+  // Before any decision, for every outcome and whether the hold is durable or retained in SS memory:
+  // the bound candidate is read through the trusted reader (F3: its mutationHold projection must match
+  // its authenticated kind-13 record), and its stored COMMIT_RESULT must identify the held mutation
+  // (C-FMT /generationCommit/originalAuthorityMatch) before evidence selects or discards it.
+  {
     const bound = generationFactsFromStorage(
       await storage.readGeneration(target), target, manifestRootKey,
     );

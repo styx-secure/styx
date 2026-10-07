@@ -1084,10 +1084,15 @@ function lineage(disk) {
   const rootOf = new Map();
   const seen = new Set();
   let last = null;
+  let highest = null;
   for (const s of disk.selections ?? []) {
     const key = `${s.generation}:${s.root}`;
     if (rootOf.has(s.generation) && rootOf.get(s.generation) !== s.root) violations.push(`FORK ${s.generation}`);
     else if (key !== last && seen.has(key)) violations.push(`LOST_UPDATE ${key}`);
+    // The durable authority only moves forward: a selection below the highest generation ever
+    // selected is a rollback, whatever its root.
+    if (highest !== null && s.generation < highest) violations.push(`ROLLBACK ${s.generation} below ${highest}`);
+    if (highest === null || s.generation > highest) highest = s.generation;
     if (!rootOf.has(s.generation)) rootOf.set(s.generation, s.root);
     seen.add(key);
     last = key;
@@ -1292,6 +1297,14 @@ describe('R2a B3-1 kill sweep through the I-TXN public surface', () => {
     }
     expect(lineage(d.disk).violations).toEqual([`FORK ${cur.generation}`, `FORK stored ${cur.generation}`]);
   });
+
+  test('lineage control: a descending selection with fresh roots fails the oracle', () => {
+    const disk = {
+      generations: new Map(),
+      selections: [{ generation: 1, root: 'a' }, { generation: 3, root: 'c' }, { generation: 2, root: 'b' }],
+    };
+    expect(lineage(disk).violations).toEqual(['ROLLBACK 2 below 3']);
+  });
 });
 
 describe('R2a F2 compare-and-set on every authority write', () => {
@@ -1342,6 +1355,31 @@ describe('R2a F2 compare-and-set on every authority write', () => {
       expect(await d.authority(plan.parentGeneration, plan.generation)).toMatchObject({ authority: 'COMPLETE_OLD', held: false });
     });
   }
+
+  test('a compare-and-set refused on the recovery bind is propagated unchanged in place of the original fault', async () => {
+    const d = await preparedDevice('CAPI-S014');
+    const plan = planMutation(d, 'CAPI-S014', 'INDETERMINATE');
+    let selectorWrites = 0;
+    // The ORIGINAL binding write fails with an ordinary I/O error; before the recovery bind, a
+    // concurrent writer re-seals the stored selector, so the recovery compare-and-set is refused.
+    const hook = (step) => {
+      if (step.kind !== 'REPLACE_SELECTOR') return;
+      selectorWrites += 1;
+      if (selectorWrites === 1) {
+        // The candidate is staged; the hold and the selector write did not land.
+        d.disk.generations.get(plan.generation).mutationHold = { presence: 0 };
+        d.disk.hold = null;
+        throw new Error('io: the original binding write failed');
+      }
+      d.disk.selectorEnvelope = sealSelector(d.disk.selector);
+    };
+    const run = await runPlan(d, plan, { stage: 'EAGER', hook });
+    expect(selectorWrites).toBe(2);
+    expect(run.port.applied.filter((s) => /\/REPLACE_SELECTOR$/.test(s))).toHaveLength(2);
+    expect(errCode(run.error)).toBe('SELECTOR_PRECONDITION_FAILED');
+    expect(run.error.code).toBe(d.P.txn.M2_TXN.SELECTOR_PRECONDITION_FAILED);
+    expect(run.result).toBeNull();
+  });
 
   test('a reconciliation whose stored envelope changed after planning is SELECTOR_PRECONDITION_FAILED and leaves the hold', async () => {
     const d = await preparedDevice('CAPI-S014');
@@ -1405,7 +1443,7 @@ describe('R2a F2 compare-and-set on every authority write', () => {
 });
 
 describe('R2a F3 no sidecar is authoritative', () => {
-  async function heldWithRecord() {
+  async function heldWithRecord(memory = 'LOST') {
     const d = await preparedDevice('CAPI-S014');
     // The hold I-TXN writes for this envelope, captured from a dry run on a copy of the disk.
     const probe = forkDevice(d);
@@ -1423,30 +1461,43 @@ describe('R2a F3 no sidecar is authoritative', () => {
     expect(hex(plan.envelope.operationIdentity.value)).toBe(hex(dry.envelope.operationIdentity.value));
     const run = await runPlan(d, plan);
     expect(run.error).toBeNull();
-    d.disk.hold = null; // SS memory lost: only the durable record can say what is held
+    // LOST: SS memory lost, only the durable record can say what is held. RETAINED: the memory hold
+    // the binding write left stays, and reconciliation still reads the bound candidate through F3.
+    if (memory === 'LOST') d.disk.hold = null;
+    else expect(d.disk.hold).not.toBeNull();
     return { d, plan };
   }
 
-  test('a sidecar that matches the authenticated kind-13 record is accepted', async () => {
-    const { d, plan } = await heldWithRecord();
-    expect(await d.authority(plan.parentGeneration, plan.generation)).toMatchObject({ authority: 'COMPLETE_OLD', held: true });
-    expect((await reconcilePlan(d, plan, 'NOT_COMMITTED')).code).toBe('OK');
-  });
+  for (const memory of ['LOST', 'RETAINED']) {
+    for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
+      test(`a sidecar that matches the authenticated kind-13 record is accepted (memory ${memory}, ${rs})`, async () => {
+        const { d, plan } = await heldWithRecord(memory);
+        expect(await d.authority(plan.parentGeneration, plan.generation)).toMatchObject({ authority: 'COMPLETE_OLD', held: true });
+        expect((await reconcilePlan(d, plan, rs)).code).toBe('OK');
+      });
+    }
+  }
 
   for (const [label, mutate] of [
     ['an absent sidecar', (g) => { g.mutationHold = { presence: 0 }; }],
     ['a sidecar with another reconciliation reference', (g) => { g.mutationHold.reconciliationReference = new Uint8Array(32).fill(7); }],
     ['a sidecar with another parent root', (g) => { g.mutationHold.parentKeyedRoot = new Uint8Array(32).fill(9); }],
   ]) {
-    test(`${label} beside the authenticated record is refused before any decision`, async () => {
-      const { d, plan } = await heldWithRecord();
-      mutate(d.disk.generations.get(plan.generation));
-      const selector = hex(d.disk.selectorEnvelope);
-      expect(await attempt(() => d.authority(plan.parentGeneration, plan.generation))).toBe('PARTIAL_APPLICATION');
-      const r = await reconcilePlan(d, plan, 'COMMITTED');
-      expect(['PARTIAL_APPLICATION', 'NO_REFERENCE']).toContain(r.code);
-      expect(r.port.applied).toEqual([]);
-      expect(hex(d.disk.selectorEnvelope)).toBe(selector);
-    });
+    for (const memory of ['LOST', 'RETAINED']) {
+      for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
+        test(`${label} beside the authenticated record is refused before any decision (memory ${memory}, ${rs})`, async () => {
+          const { d, plan } = await heldWithRecord(memory);
+          mutate(d.disk.generations.get(plan.generation));
+          const selector = hex(d.disk.selectorEnvelope);
+          expect(await attempt(() => d.authority(plan.parentGeneration, plan.generation))).toBe('PARTIAL_APPLICATION');
+          const r = await reconcilePlan(d, plan, rs);
+          expect(['PARTIAL_APPLICATION', 'NO_REFERENCE']).toContain(r.code);
+          if (memory === 'RETAINED') expect(r.code).toBe('PARTIAL_APPLICATION');
+          expect(r.port.applied).toEqual([]);
+          expect(hex(d.disk.selectorEnvelope)).toBe(selector);
+          expect(d.disk.generations.has(plan.generation)).toBe(true);
+        });
+      }
+    }
   }
 });
