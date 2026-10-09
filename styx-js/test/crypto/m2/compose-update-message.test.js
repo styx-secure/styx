@@ -864,10 +864,11 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
   // (b) INDETERMINATE during SELF_UPDATE, restart, reconcile.
   for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
     for (const memory of ['RETAINED', 'LOST']) {
-      const outcomeIds = rs === 'COMMITTED' ? 'OSC-c90d3d132707cad8' : 'OSC-c7441026f4b0594f';
+      const outcomeIds = rs === 'COMMITTED' ? 'OSC-c90d3d132707cad8' : 'OSC-c7441026f4b0594f, OSC-040428778da7f360';
       const stillIds = memory === 'RETAINED' ? 'OSC-7298412dac6a8db3, ' : '';
       test(`(b) SELF_UPDATE INDETERMINATE -> restart (memory hold ${memory}) -> reconcile ${rs}: exactly one outcome `
-        + `(OSC-4e6a91e8fd134c5c, ${stillIds}${outcomeIds}, OSC-2a042900cfba5cb7, OSC-5fbff302d019a663)`, async () => {
+        + `(OSC-4e6a91e8fd134c5c, ${stillIds}${outcomeIds}, OSC-2a042900cfba5cb7, OSC-5fbff302d019a663, `
+        + 'OSC-f2d864ee58cc0784, OSC-272164b3f6ced9b4)', async () => {
         let d = await activeDevice();
         await d.open(sealMessage(0, 'peer-before', 'before'));
         const ind = await d.selfUpdate('INDETERMINATE');
@@ -933,8 +934,10 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
   // original terminal path (C-MUT §5, C-FMT /crashModel/5): the hold is already resolved, the AP never
   // received a reference, so no AP reconciliation row exists; the SS recovers internally by readback.
   for (const kind of ['REPLACE_SELECTOR', 'RELEASE_ESCROW']) {
+    // AFTER REPLACE_SELECTOR is /crashModel/5; AFTER RELEASE_ESCROW is /crashModel/10 ORIGINAL_TERMINAL.
+    const crashId = kind === 'REPLACE_SELECTOR' ? 'OSC-8c6968efb4972ccf' : 'OSC-6086dd97b6ef94b0';
     test(`(c) SELF_UPDATE COMMITTED, crash AFTER ${kind} before emission -> restart: one apply, internal readback, no AP reconciliation row `
-      + '(OSC-4e6a91e8fd134c5c, OSC-8c6968efb4972ccf, OSC-6818fbd5a19c9a3d, OSC-bc87562e4f763a5b)', async () => {
+      + `(OSC-4e6a91e8fd134c5c, ${crashId}, OSC-6818fbd5a19c9a3d, OSC-bc87562e4f763a5b)`, async () => {
       let d = await activeDevice();
       const crash = await attempt(() => d.selfUpdate('COMMITTED', [{ kind, mode: 'AFTER', remaining: 1 }]));
       expect(crash).toMatch(/^crash AFTER/);
@@ -1157,7 +1160,7 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
 
   // Seeded property-style sweep over interleavings with interruption and restart.
   test('seeded sweep: random I-UPD/I-MSG interleavings with INDETERMINATE + restart keep one authority and C-RET '
-    + '(OSC-4e6a91e8fd134c5c, OSC-039d2541ca381eb6, OSC-272164b3f6ced9b4, OSC-c90d3d132707cad8, OSC-c7441026f4b0594f, OSC-ad26b270e382b2fb)', async () => {
+    + '(OSC-4e6a91e8fd134c5c, OSC-039d2541ca381eb6, OSC-272164b3f6ced9b4, OSC-f2d864ee58cc0784, OSC-c90d3d132707cad8, OSC-c7441026f4b0594f, OSC-ad26b270e382b2fb)', async () => {
     const stats = { ops: 0, held: 0, committed: 0, notCommitted: 0 };
     for (let seed = 1; seed <= 12; seed += 1) {
       const rand = prng(seed * 7919);
