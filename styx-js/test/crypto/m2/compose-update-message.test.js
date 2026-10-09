@@ -357,28 +357,6 @@ function selectorBytes(P, facts, state, candidate = facts) {
   });
 }
 
-/** Replace one record's plaintext and recompute the manifest and keyed root over the new records. */
-function withRecordPlaintext(P, facts, recordKind, plaintext) {
-  const { root } = P;
-  const records = facts.records.map((r) => {
-    if (r.recordKind !== recordKind) return r;
-    const ciphertext = Uint8Array.from(plaintext, (b, i) => b ^ (0x5a + i) & 0xff);
-    return { ...r, plaintext, ciphertext, tag: sha256('tag', ciphertext).slice(0, 16) };
-  });
-  const manifestBytes = root.encodeManifest(records.map((r) => root.manifestEntry({
-    recordKey: r.recordKey,
-    recordKind: r.recordKind,
-    ciphertextDigest: root.ciphertextDigest({ recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag }),
-  })));
-  return {
-    ...facts,
-    records,
-    manifestBytes,
-    manifestCipherDigest: sha256('manifest-cipher', manifestBytes),
-    keyedRoot: root.computeKeyedRoot({ manifestRootKey: ROOT_KEY, manifestKey: facts.manifestKey, generation: facts.generation, manifestBytes }),
-  };
-}
-
 // ---------------------------------------------------------------------------------------------
 // The device: one SS process over one disk.
 // ---------------------------------------------------------------------------------------------
@@ -515,12 +493,12 @@ class Device {
    * `rs`, then let the adapter decide from what the transaction returned. A crash fault propagates as
    * a process death before the adapter is ever asked.
    */
-  async mutate(operation, input, nextState, output, rs = 'COMMITTED', faults = []) {
+  async mutate(operation, input, nextState, output, rs = 'COMMITTED', faults = [], identity = null) {
     const { txn } = this.P;
     const cur = this.current();
     const parent = this.disk.generations.get(cur.generation);
     const opBytes = nonzeroBytes(this.rand, 32);
-    const operationIdentity = `op-${hex(opBytes).slice(0, 40)}`;
+    const operationIdentity = identity ?? `op-${hex(opBytes).slice(0, 40)}`;
     const generation = this.disk.nextGeneration;
     this.disk.nextGeneration += 1n;
     const scenario = SCENARIO_BY_OPERATION[operation];
@@ -591,6 +569,24 @@ class Device {
 
   // ----- the operations -------------------------------------------------------------------
 
+  /**
+   * The pre-storage gate (see selfUpdate). The SS owns its slot context: a request that names another
+   * bindingRef, that the integrated request gate refuses, or whose SS-assigned operationIdentity exceeds
+   * the published bound never reaches storage. The adapter alone decides the disposition, from the SS's
+   * real slot context and a no-commit observation. Returns that decision, or null when nothing is gated.
+   */
+  gate(req, identity) {
+    const { adapter } = this.P;
+    const checked = adapter.validateAdapterRequest(req);
+    const foreign = hex(req.bindingRef) !== hex(SLOT);
+    const overBound = identity !== null && identity.length > adapter.M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
+    if (checked.ok && !foreign && !overBound) return null;
+    const observation = req.operation === 'SELF_UPDATE'
+      ? { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: identity ?? 'op-gated', stagedOutput: null }
+      : { commitOutcome: 'NOT_COMMITTED', operationIdentity: identity ?? 'op-gated', stagedOutput: null };
+    return this.decide(req, observation);
+  }
+
   async create(rs = 'COMMITTED', faults = []) {
     const welcome = nonzeroBytes(this.rand, 24);
     const req = this.request('CREATE', { peerFramedKeyPackage: nonzeroBytes(this.rand, 16) });
@@ -604,8 +600,13 @@ class Device {
     });
   }
 
-  async selfUpdate(rs = 'COMMITTED', faults = [], bindingRef = SLOT) {
+  async selfUpdate(rs = 'COMMITTED', faults = [], bindingRef = SLOT, { operationIdentity: identity = null } = {}) {
     const req = this.request('SELF_UPDATE', {}, bindingRef);
+    // The pre-storage gate: the SS sends nothing to I-TXN for a request the integrated adapter's
+    // request gate refuses (P01-P04, request bounds), or for an SS-assigned operationIdentity beyond the
+    // adapter's published bound. The adapter then decides, from a no-commit observation.
+    const gated = this.gate(req, identity);
+    if (gated !== null) return gated;
     const cur = this.current().state;
     const epoch = cur.epoch + 1;
     const window = this.P.adapter.M2_ADAPTER.RETENTION.PAST_EPOCHS_ONCE_AVAILABLE;
@@ -616,7 +617,7 @@ class Device {
     epochKeys[epoch] = epochKey(epoch);
     const next = { ...cur, epoch, epochKeys };
     const commitBytes = sha256('commit', String(epoch), nonzeroBytes(this.rand, 8));
-    const { txnResult, operationIdentity } = await this.mutate('SELF_UPDATE', {}, next, commitBytes, rs, faults);
+    const { txnResult, operationIdentity } = await this.mutate('SELF_UPDATE', {}, next, commitBytes, rs, faults, identity);
     return this.decide(req, {
       slotContext: SLOT.slice(),
       updateForm: 'SUPPORTED',
@@ -863,8 +864,10 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
   // (b) INDETERMINATE during SELF_UPDATE, restart, reconcile.
   for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
     for (const memory of ['RETAINED', 'LOST']) {
+      const outcomeIds = rs === 'COMMITTED' ? 'OSC-c90d3d132707cad8' : 'OSC-c7441026f4b0594f';
+      const stillIds = memory === 'RETAINED' ? 'OSC-7298412dac6a8db3, ' : '';
       test(`(b) SELF_UPDATE INDETERMINATE -> restart (memory hold ${memory}) -> reconcile ${rs}: exactly one outcome `
-        + '(OSC-4e6a91e8fd134c5c, OSC-7298412dac6a8db3, OSC-c90d3d132707cad8, OSC-c7441026f4b0594f, OSC-2a042900cfba5cb7, OSC-5fbff302d019a663)', async () => {
+        + `(OSC-4e6a91e8fd134c5c, ${stillIds}${outcomeIds}, OSC-2a042900cfba5cb7, OSC-5fbff302d019a663)`, async () => {
         let d = await activeDevice();
         await d.open(sealMessage(0, 'peer-before', 'before'));
         const ind = await d.selfUpdate('INDETERMINATE');
@@ -983,7 +986,7 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
   // AP, decided only from the integrated readback; reconciliation then resolves it either way.
   for (const rs of ['COMMITTED', 'NOT_COMMITTED']) {
     test(`(c) R2 SELF_UPDATE INDETERMINATE, I/O failure AFTER the binding REPLACE_SELECTOR -> restart -> reconcile ${rs} `
-      + '(OSC-4e6a91e8fd134c5c, OSC-6818fbd5a19c9a3d, OSC-7298412dac6a8db3, OSC-c90d3d132707cad8, OSC-c7441026f4b0594f)', async () => {
+      + `(OSC-4e6a91e8fd134c5c, OSC-6818fbd5a19c9a3d, ${rs === 'COMMITTED' ? 'OSC-c90d3d132707cad8' : 'OSC-c7441026f4b0594f'})`, async () => {
       let d = await activeDevice();
       const ind = await d.selfUpdate('INDETERMINATE', [{ kind: 'REPLACE_SELECTOR', mode: 'AFTER', remaining: 1, fatal: false }]);
       expect(ind.result.kind).toBe('INDETERMINATE');
@@ -1067,7 +1070,7 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
   });
 
   test('(d) a NOT_COMMITTED reconcile across restarts does not resurrect the discarded epoch '
-    + '(OSC-4a5c7b3eeb3046d7, OSC-c90d3d132707cad8)', async () => {
+    + '(OSC-4a5c7b3eeb3046d7, OSC-c7441026f4b0594f)', async () => {
     let d = await activeDevice();
     await d.selfUpdate('COMMITTED');
     await d.selfUpdate('INDETERMINATE');
@@ -1108,65 +1111,53 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
     expect(code((await d.open(sealMessage(WINDOW + 1, 'x', 'x'))).result)).toBe('FUTURE_EPOCH');
   });
 
-  // (e) bindingRef mismatch on SELF_UPDATE after restart.
+  // (e) bindingRef mismatch on SELF_UPDATE after restart, through the composed operation path.
   test('(e) SELF_UPDATE with a foreign bindingRef after restart is BINDING_MISMATCH and persists nothing '
     + '(OSC-20663d6756e478a4, OSC-4e6a91e8fd134c5c)', async () => {
     let d = await activeDevice();
     await d.selfUpdate('COMMITTED');
     d = await d.restart();
-    const sel = hex(d.disk.selector);
-    const gens = d.disk.generations.size;
-    const snap = d.snapshot();
-    // A well-formed observation (P01 precedes P03): the SS reports a full commit shape, yet the P03 binding
-    // check refuses before anything is applied. The harness runs no I-TXN transaction for this request.
-    for (const commitOutcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
-      const r = d.decide(d.request('SELF_UPDATE', {}, OTHER_SLOT), {
-        slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome, operationIdentity: 'op-mismatch',
-        stagedOutput: commitOutcome === 'COMMITTED' ? { protectedCommitBytes: new Uint8Array([1, 2, 3]) } : null,
-      });
+    const before = cloneDisk(d.disk);
+    for (const rs of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
+      // Every RS outcome the request could have had: the storage port is never even constructed.
+      const r = await d.selfUpdate(rs, [{ at: 1, mode: 'BEFORE', remaining: 1 }], OTHER_SLOT);
       expect(r.result.kind).toBe('REJECTED');
       expect(code(r.result)).toBe('BINDING_MISMATCH');
       expect(r.result.output).toBeUndefined();
       expect(r.snapshot).toBeNull();
+      expect(d.disk).toEqual(before);
     }
-    const r = d.decide(d.request('SELF_UPDATE', {}, OTHER_SLOT), {
-      slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'INDETERMINATE', operationIdentity: 'op-mismatch-2', stagedOutput: null,
-    });
-    expect(code(r.result)).toBe('BINDING_MISMATCH');
-    expect(r.snapshot).toBeNull();
-    expect(hex(d.disk.selector)).toBe(sel);
-    expect(d.disk.generations.size).toBe(gens);
-    expect(d.snapshot()).toEqual(snap);
+    d = await d.restart();
+    expect(d.disk).toEqual(before);
     expect(d.current().state.epoch).toBe(1);
     expect(code((await d.selfUpdate('COMMITTED')).result)).toBe('SELF_UPDATED');
   });
 
-  // p06 lesson: an over-bound operationIdentity is refused up front, before any hold.
-  test('p06 sweep: an over-bound operationIdentity is VALUE_OUT_OF_RANGE before any hold (OSC-5a23d7268d61c6c1)', async () => {
+  // p06 lesson: an over-bound operationIdentity is refused up front, before any hold or storage write.
+  test('p06 sweep: an over-bound operationIdentity is VALUE_OUT_OF_RANGE before any hold or storage write (OSC-5a23d7268d61c6c1)', async () => {
     let d = await activeDevice();
     d = await d.restart();
     const max = d.P.adapter.M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
     const rand = prng(606);
+    const before = cloneDisk(d.disk);
     for (let i = 0; i < 24; i += 1) {
       const extra = 1 + Math.floor(rand() * 64);
-      for (const commitOutcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
-        const sel = hex(d.disk.selector);
-        const r = d.decide(d.request('SELF_UPDATE', {}), {
-          slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome,
-          operationIdentity: 'i'.repeat(max + extra),
-          stagedOutput: commitOutcome === 'COMMITTED' ? { protectedCommitBytes: new Uint8Array([9]) } : null,
-        });
+      for (const rs of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
+        // A fault on the first storage call: any write attempt would surface as a crash, not a result.
+        const r = await d.selfUpdate(rs, [{ at: 1, mode: 'BEFORE', remaining: 1 }], SLOT, { operationIdentity: 'i'.repeat(max + extra) });
         expect(code(r.result)).toBe('VALUE_OUT_OF_RANGE');
         expect(r.snapshot).toBeNull();
         expect(d.snapshot().held).toBeNull();
-        expect(hex(d.disk.selector)).toBe(sel);
+        expect(d.disk).toEqual(before);
       }
     }
-    expect(code((await d.selfUpdate('COMMITTED')).result)).toBe('SELF_UPDATED');
+    // The bound itself is admissible and commits.
+    expect(code((await d.selfUpdate('COMMITTED', [], SLOT, { operationIdentity: 'i'.repeat(max) })).result)).toBe('SELF_UPDATED');
   });
 
   // Seeded property-style sweep over interleavings with interruption and restart.
-  test('seeded sweep: random I-UPD/I-MSG interleavings with INDETERMINATE + restart keep one authority and C-RET', async () => {
+  test('seeded sweep: random I-UPD/I-MSG interleavings with INDETERMINATE + restart keep one authority and C-RET '
+    + '(OSC-4e6a91e8fd134c5c, OSC-039d2541ca381eb6, OSC-272164b3f6ced9b4, OSC-c90d3d132707cad8, OSC-c7441026f4b0594f, OSC-ad26b270e382b2fb)', async () => {
     const stats = { ops: 0, held: 0, committed: 0, notCommitted: 0 };
     for (let seed = 1; seed <= 12; seed += 1) {
       const rand = prng(seed * 7919);
