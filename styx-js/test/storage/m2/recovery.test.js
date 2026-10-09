@@ -2,7 +2,7 @@
 // reset actions in `src/storage/vault.js`.
 //
 // Normative source: the owner-ratified C-REC contract (`docs/architecture/m2/recovery-and-coexistence.md`,
-// SHA-256 5b0d2fbd685a198e7e6e6bb10cb7740680086d27690c3cc622915e68beb94f87, #335 comment 5909885218).
+// SHA-256 ab11271cc038b49f24d356ee4a52bfc993dfd62195fec3e27925bc71e8837149, owner act on #327, sync PR #453 4693fd9).
 // The §13 members this card consumes are transcribed verbatim below (`CREC`); its canonical-JSON SHA-256
 // is pinned, so any edit of a row fails the suite. Every DISPATCH, ACTION, PASSWORD_REWRAP and DIAGNOSTIC
 // fixture and the re-wrap/reset BOUNDARY fixtures are replayed through the public surface, the decision
@@ -76,7 +76,7 @@ const CREC = deepFreezeLiteral({
   "compatibleBuild": {
     "disposition": "SHOW_COMPATIBLE_BUILD",
     "preserveAndStop": true,
-    "readerProfile": "CFMT_EXACT_B57DF3A8",
+    "readerProfile": "CFMT_EXACT_9DACE4A0",
     "readsOrMutatesBytes": false,
     "resetEligible": false,
     "result": "INCOMPATIBLE_BUILD"
@@ -1680,7 +1680,7 @@ const CREC = deepFreezeLiteral({
     "INTERNAL_VALIDATION_FAILED"
   ]
 });
-const CREC_SUBSET_SHA256 = '9949dd3e60bae6a6c74b279d79aabc1c5d9ac29183f0941524579ed939c53c18';
+const CREC_SUBSET_SHA256 = '7b40a9b35780f744381af3a31ec0ffeb3b64d5d544635cbfb0fdf1243d183adf';
 
 const canonical = (v) => {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
@@ -1709,7 +1709,7 @@ describe('C-REC transcription', () => {
   });
 
   test('the module vocabulary equals the C-REC record', () => {
-    expect(M2_RECOVERY.C_REC_DOCUMENT_SHA256).toBe('5b0d2fbd685a198e7e6e6bb10cb7740680086d27690c3cc622915e68beb94f87');
+    expect(M2_RECOVERY.C_REC_DOCUMENT_SHA256).toBe('ab11271cc038b49f24d356ee4a52bfc993dfd62195fec3e27925bc71e8837149');
     expect([...M2_RECOVERY.RESULTS]).toEqual(CREC.restoreResults);
     expect([...M2_RECOVERY.DISPOSITIONS]).toEqual(CREC.dispositionEnum);
     expect([...M2_RECOVERY.RESET_ELIGIBLE_RESULTS].sort()).toEqual([...CREC.reset.eligibleResults].sort());
@@ -1950,8 +1950,8 @@ describe('closed user-visible guidance (C-REC §9)', () => {
     expect(recoveryGuidance('CONTINUE_ACTIVE')).toMatch(/ripristinata/);
     expect(recoveryGuidance('SHOW_REESTABLISHMENT')).toMatch(/nuova sessione/);
     expect(recoveryGuidance('SHOW_REESTABLISHMENT')).toMatch(/non viene convertita né importata/);
-    expect(recoveryGuidance('SHOW_COMPATIBLE_BUILD')).toMatch(/CFMT_EXACT_B57DF3A8/);
-    expect(CREC.compatibleBuild.readerProfile).toBe('CFMT_EXACT_B57DF3A8');
+    expect(recoveryGuidance('SHOW_COMPATIBLE_BUILD')).toMatch(/CFMT_EXACT_9DACE4A0/);
+    expect(CREC.compatibleBuild.readerProfile).toBe('CFMT_EXACT_9DACE4A0');
     expect(recoveryGuidance('RESET')).toMatch(/irreversibile/);
     expect(recoveryGuidance('RESET')).toMatch(/Non è un recupero/);
     expect(recoveryGuidance('RESET_NO_ERASURE')).toMatch(/non garantisce la cancellazione fisica/);

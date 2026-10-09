@@ -203,7 +203,11 @@ function candidateInput(scenario, outcome, overrides = {}) {
     manifestCipherDigest: NEW.manifestCipherDigest,
     keyedRoot: NEW.keyedRoot,
     sessionBindingDigest: NEW.sessionBindingDigest,
-    escrow: row.outputKind === 'NONE' ? null : { ...ESCROW, output: Uint8Array.prototype.slice.call(ESCROW.output) },
+    // The escrow is the row's held output: its kind, digest and reference are the envelope's heldOutput.
+    escrow: row.outputKind === 'NONE' ? null : {
+      ...ESCROW, kind: row.outputKind, digest: envelope.heldOutput.digest, reference: envelope.heldOutput.reference,
+      output: Uint8Array.prototype.slice.call(ESCROW.output),
+    },
     resultEvidence: evidenceFor(envelope, outcome),
     selectorBytes: COMMIT_SELECTOR,
     holdSelectorBytes: HOLD_SELECTOR,
@@ -255,10 +259,38 @@ function holdRecordFor(scenario) {
  * `{ boundary, kind, mode, remaining, id }`; a fault matches the first time a step with the same
  * boundary, kind and mode is applied, `BEFORE` raising before the durable effect and `AFTER` after it.
  */
+// F2: the stored selector is an opaque C-FMT envelope. A fresh nonce per write is modelled by a
+// write counter, so re-writing the same plaintext yields different envelope bytes.
+let ENVELOPE_WRITES = 0;
+function sealSelector(plaintext) {
+  ENVELOPE_WRITES += 1;
+  const nonce = new Uint8Array(12);
+  new DataView(nonce.buffer).setUint32(8, ENVELOPE_WRITES);
+  const out = new Uint8Array(12 + plaintext.length + 16);
+  out.set(nonce, 0);
+  out.set(plaintext, 12);
+  out.fill(0xa5, 12 + plaintext.length); // stand-in tag: the port never interprets the envelope
+  return out;
+}
+const selectorPreconditionFailed = () => Object.assign(
+  new Error('the stored selector envelope differs from expectedSelectorBytes'),
+  { code: 'SELECTOR_PRECONDITION_FAILED' },
+);
+// Every REPLACE_SELECTOR this module executes carries the CAS member; the port compares bytes only.
+function checkSelectorPrecondition(payload, envelope) {
+  if (!Object.hasOwn(payload, 'expectedSelectorBytes')) throw new Error('REPLACE_SELECTOR without expectedSelectorBytes');
+  const expected = payload.expectedSelectorBytes;
+  const same = expected === null ? envelope === null
+    : envelope !== null && expected.length === envelope.length && expected.every((b, i) => b === envelope[i]);
+  if (!same) throw selectorPreconditionFailed();
+}
+
 function makeStore() {
   const store = {
     generations: new Map(),
     selector: null,
+    selectorEnvelope: null,
+    sealedFor: null, // the stored plaintext object the current envelope seals
     memoryHold: null,
     applied: [],
     faults: [],
@@ -276,6 +308,14 @@ function makeStore() {
     return null;
   };
   const boom = (step, mode) => new Error(`injected crash ${mode} ${step.boundary}/${step.kind}`);
+  // A direct test assignment of store.selector is a new durable write: it gets a new envelope.
+  const currentEnvelope = () => {
+    if (store.selector !== store.sealedFor) {
+      store.sealedFor = store.selector;
+      store.selectorEnvelope = store.selector === null ? null : sealSelector(store.selector);
+    }
+    return store.selectorEnvelope;
+  };
 
   store.seed = (generations = [OLD], selector = PARENT_SELECTOR) => {
     store.generations.clear();
@@ -338,21 +378,18 @@ function makeStore() {
       if (g !== undefined) g.escrow = payload.escrow;
     } else if (step.kind === 'WRITE_HOLD') {
       const g = store.generations.get(payload.generation);
-      if (g !== undefined) {
-        g.mutationHold = {
-          presence: 1,
-          resultStatus: payload.hold.resultStatus,
-          parentGeneration: payload.hold.parentGeneration,
-          parentKeyedRoot: payload.hold.parentKeyedRoot,
-        };
-      }
-      store.memoryHold = payload.hold;
+      // A conformant port stores the complete C-FMT kind-13 record in the candidate generation.
+      if (g !== undefined) g.mutationHold = { ...payload.hold };
+      store.memoryHold = payload.hold === null || payload.holdRecordKey === undefined || payload.holdRecordKey === null
+        ? payload.hold : { ...payload.hold, recordKey: payload.holdRecordKey };
     } else if (step.kind === 'CLEAR_CANDIDATE') {
       store.generations.delete(payload.generation);
       pendingRecords.delete(payload.generation);
       store.memoryHold = null;
     } else if (step.kind === 'REPLACE_SELECTOR') {
+      checkSelectorPrecondition(payload, currentEnvelope());
       store.selector = Uint8Array.prototype.slice.call(payload.selectorBytes);
+      currentEnvelope();
       // The authority change is atomic with the resolution of the candidate's retained hold: the
       // selector that names a generation as authority and the tombstone of that generation's
       // unresolved hold are one durable write, so no reader ever sees a mixture.
@@ -372,7 +409,11 @@ function makeStore() {
       store.readFault.remaining -= 1;
       throw new Error('injected crash before the RS request');
     }
-    return store.selector === null ? null : Uint8Array.prototype.slice.call(store.selector);
+    const envelope = currentEnvelope();
+    return store.selector === null ? null : {
+      plaintext: Uint8Array.prototype.slice.call(store.selector),
+      envelope: Uint8Array.prototype.slice.call(envelope),
+    };
   };
   store.readGeneration = async (generation) => {
     const g = store.generations.get(generation);
@@ -391,6 +432,8 @@ function makeStore() {
     };
   };
   store.readMemoryHold = async () => store.memoryHold;
+  // Number-only inventory: every generation number with any stored artifact, complete or staged.
+  store.readGenerationNumbers = async () => [...new Set([...store.generations.keys(), ...pendingRecords.keys()])];
   return store;
 }
 
@@ -531,43 +574,43 @@ const MAPPING = [
   { item: 'row:CAPI-S001:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S001:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S001', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S001', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S001', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'row:CAPI-S006', disposition: 'MAPPED', scenarios: ['OSC-0d238b5685352693', 'OSC-11e5567a07066948', 'OSC-182925a16715ecf7', 'OSC-25242934bdd6ada6', 'OSC-3400f06e4194ae2e', 'OSC-345d9f9fb61f4c7a', 'OSC-8c7f1cf1a1c11050', 'OSC-9fc8875eeccb297a', 'OSC-c359ad98204af835', 'OSC-c99986582316e23c', 'OSC-d6ecf1bdc183c085'] },
   { item: 'row:CAPI-S006:COMMITTED', disposition: 'UNMAPPED', reason: 'the ratified O-SCEN blind set names no C-MUT commit outcome as a bound clause value: it carries the outcome only inside the three-row enum registry, which binds no observation' },
   { item: 'row:CAPI-S006:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S006:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S006', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S006', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S006', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'row:CAPI-S009', disposition: 'MAPPED', scenarios: ['OSC-04cc306cd9846794', 'OSC-050c82981f89d599', 'OSC-1029ab9325459674', 'OSC-17716576addeb3f1', 'OSC-1aa23e70f40184bc', 'OSC-1cc072dba10a2854', 'OSC-3400f06e4194ae2e', 'OSC-3401e254e9f15e28', 'OSC-4c997dc0bf6eb84b', 'OSC-685f7964be69bbe4', 'OSC-695490a460e82efa', 'OSC-71ee405a29339504', 'OSC-7db34b0c712afc85', 'OSC-7e717b5f91a3ca2b', 'OSC-8d548f6a9ecd92fb', 'OSC-a852e6a8cda419e2', 'OSC-b5c4ed22e9e24e8d', 'OSC-bb242d983717f6c5', 'OSC-bbdaaec35cce1524', 'OSC-c359ad98204af835', 'OSC-d427cba99a720ea3', 'OSC-e275c339da596e6f'] },
   { item: 'row:CAPI-S009:COMMITTED', disposition: 'UNMAPPED', reason: 'the ratified O-SCEN blind set names no C-MUT commit outcome as a bound clause value: it carries the outcome only inside the three-row enum registry, which binds no observation' },
   { item: 'row:CAPI-S009:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S009:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S009', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S009', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S009', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'row:CAPI-S010', disposition: 'MAPPED', scenarios: ['OSC-04cc306cd9846794', 'OSC-050c82981f89d599', 'OSC-1029ab9325459674', 'OSC-17716576addeb3f1', 'OSC-1a08e0ffd8d5ea96', 'OSC-1aa23e70f40184bc', 'OSC-1cc072dba10a2854', 'OSC-31fcaf5066f6ef17', 'OSC-3400f06e4194ae2e', 'OSC-3401e254e9f15e28', 'OSC-3ab959d8e50a26a2', 'OSC-4675f6391aa57171', 'OSC-4c997dc0bf6eb84b', 'OSC-541bd9326aef4530', 'OSC-5ed707585970798d', 'OSC-685f7964be69bbe4', 'OSC-695490a460e82efa', 'OSC-6f7a3ab9e58f6159', 'OSC-71ee405a29339504', 'OSC-78d1a8f340cad648', 'OSC-7db34b0c712afc85', 'OSC-7e717b5f91a3ca2b', 'OSC-8281eefda6850e2f', 'OSC-831f2bf06490baf4', 'OSC-8d548f6a9ecd92fb', 'OSC-99576027eb6292b2', 'OSC-a852e6a8cda419e2', 'OSC-b3f71bbe3a7db50a', 'OSC-b5c4ed22e9e24e8d', 'OSC-bb242d983717f6c5', 'OSC-bbdaaec35cce1524', 'OSC-c0241ae770e62cd6', 'OSC-c359ad98204af835', 'OSC-d40d9b6c2170f7b3', 'OSC-d427cba99a720ea3', 'OSC-d45b03d2149e9214', 'OSC-e275c339da596e6f', 'OSC-e2871dc4bd750ba4', 'OSC-eafd401729822193', 'OSC-f3196edee41e7f5e'] },
   { item: 'row:CAPI-S010:COMMITTED', disposition: 'UNMAPPED', reason: 'the ratified O-SCEN blind set names no C-MUT commit outcome as a bound clause value: it carries the outcome only inside the three-row enum registry, which binds no observation' },
   { item: 'row:CAPI-S010:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S010:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S010', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S010', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S010', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'row:CAPI-S014', disposition: 'MAPPED', scenarios: ['OSC-04738fa7ac2291cd', 'OSC-128bf4a039055481', 'OSC-24ca2258e98b5e59', 'OSC-31f0021b23bf7538', 'OSC-3400f06e4194ae2e', 'OSC-55b81d35adc0364c', 'OSC-55e536517e005ce7', 'OSC-6a70b695d4208a1f', 'OSC-700c1ae9277784ba', 'OSC-81f17aae8cb70ff5', 'OSC-8d548f6a9ecd92fb', 'OSC-a0ced4d7fa79adad', 'OSC-a64784c52329ee2c', 'OSC-a852e6a8cda419e2', 'OSC-be27ec8a776e557e', 'OSC-c359ad98204af835', 'OSC-dfd3d9a47d9b0152', 'OSC-e44bc308ffade4f8', 'OSC-e61f0562a8141183', 'OSC-f0cb026186adfe24', 'OSC-f5d08a775c94816a', 'OSC-f8e42479496626f8'] },
   { item: 'row:CAPI-S014:COMMITTED', disposition: 'UNMAPPED', reason: 'the ratified O-SCEN blind set names no C-MUT commit outcome as a bound clause value: it carries the outcome only inside the three-row enum registry, which binds no observation' },
   { item: 'row:CAPI-S014:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S014:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S014', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S014', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S014', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'row:CAPI-S016', disposition: 'MAPPED', scenarios: ['OSC-3400f06e4194ae2e', 'OSC-345d9f9fb61f4c7a', 'OSC-43bc2f410abce99b', 'OSC-4a35f605fe18b4a1', 'OSC-66ad56eda1ee122d', 'OSC-9fc8875eeccb297a', 'OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S016:COMMITTED', disposition: 'UNMAPPED', reason: 'the ratified O-SCEN blind set names no C-MUT commit outcome as a bound clause value: it carries the outcome only inside the three-row enum registry, which binds no observation' },
   { item: 'row:CAPI-S016:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S016:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S016', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S016', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S016', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'row:CAPI-S017', disposition: 'MAPPED', scenarios: ['OSC-12b7a5ba00f42584', 'OSC-1378eefba98c3bd6', 'OSC-15ab3ed907be546d', 'OSC-1fe113241f2c9918', 'OSC-3400f06e4194ae2e', 'OSC-3437bea23599b7a8', 'OSC-3d72f930d4889668', 'OSC-5f3965bf73f28403', 'OSC-78cb88bff97774de', 'OSC-8d548f6a9ecd92fb', 'OSC-91a80dfc04637543', 'OSC-a4649178d11d8442', 'OSC-a49834cd1e212b4b', 'OSC-a852e6a8cda419e2', 'OSC-b5d4b1bb18b6c450', 'OSC-bb5dd5c0a6aeb984', 'OSC-c359ad98204af835', 'OSC-c9063ada2ad882b2', 'OSC-d534e533becc26b6', 'OSC-de916ead32d92304', 'OSC-ecfeb9e6b5e0ce4e', 'OSC-ee25153e1020e020'] },
   { item: 'row:CAPI-S017:COMMITTED', disposition: 'UNMAPPED', reason: 'the ratified O-SCEN blind set names no C-MUT commit outcome as a bound clause value: it carries the outcome only inside the three-row enum registry, which binds no observation' },
   { item: 'row:CAPI-S017:NOT_COMMITTED', disposition: 'MAPPED', scenarios: ['OSC-c99986582316e23c'] },
   { item: 'row:CAPI-S017:INDETERMINATE', disposition: 'MAPPED', scenarios: ['OSC-51567df24eb069da', 'OSC-c99986582316e23c'] },
   { item: 'hold:CAPI-S017', disposition: 'MAPPED', scenarios: ['OSC-112920325b357a7e', 'OSC-250f10c2a2c543e6', 'OSC-3ed8449397b3ffbe', 'OSC-4ef8014c76cd3087', 'OSC-51ed1457d19a4a24', 'OSC-5f9478e07be50a17'] },
-  { item: 'reconciliation:CAPI-S017', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-cbea248e6ffa0c43', 'OSC-ee1310a7fcd443b8'] },
+  { item: 'reconciliation:CAPI-S017', disposition: 'MAPPED', scenarios: ['OSC-0cee31b5a784a715', 'OSC-10460c2c4a6b46ab', 'OSC-c99986582316e23c', 'OSC-527ea0d7ec05ac1e', 'OSC-ee1310a7fcd443b8'] },
   { item: 'boundary:BEFORE_STAGING', disposition: 'MAPPED', scenarios: ['OSC-2710110ec6e695f2', 'OSC-4818f75fc23c5086', 'OSC-c40f165d4c9d88eb'] },
   { item: 'boundary:AFTER_CANDIDATE_COMPUTATION', disposition: 'MAPPED', scenarios: ['OSC-716a648405acf45a', 'OSC-c40f165d4c9d88eb', 'OSC-cf85a9910593f32a'] },
   { item: 'boundary:AFTER_LOCAL_STAGING', disposition: 'MAPPED', scenarios: ['OSC-17a6efef854703e6', 'OSC-3514faaba88506e0', 'OSC-c40f165d4c9d88eb'] },
@@ -595,7 +638,7 @@ describe('M2_TXN constants', () => {
     expect(M2_TXN.SCENARIOS).toHaveLength(7);
     expect(M2_TXN.BOUNDARIES).toHaveLength(12);
     expect(Object.isFrozen(M2_TXN.STORAGE_METHODS)).toBe(true);
-    expect(M2_TXN.STORAGE_METHODS).toEqual(['apply', 'readSelector', 'readGeneration', 'readMemoryHold']);
+    expect(M2_TXN.STORAGE_METHODS).toEqual(['apply', 'readSelector', 'readGeneration', 'readMemoryHold', 'readGenerationNumbers']);
     expect(M2_TXN.AUTOMATIC_ROWS).toEqual(['CAPI-S006']);
     expect(M2_OUTCOME).toEqual({ COMMITTED: 1, NOT_COMMITTED: 2, INDETERMINATE: 3 });
   });
@@ -966,7 +1009,7 @@ describe('acceptance sweep over every plan step', () => {
         expect(durable.length).toBeGreaterThan(0);
         for (const step of durable) {
           for (const mode of ['BEFORE', 'AFTER']) {
-            const { store, result, error } = await runCase(scenario, outcome, {}, {
+            const { store, result, error, envelope } = await runCase(scenario, outcome, {}, {
               faults: [{ boundary: step.boundary, kind: step.kind, mode, remaining: 1 }],
             });
             SWEEP.cases += 1;
@@ -986,10 +1029,28 @@ describe('acceptance sweep over every plan step', () => {
             expect(classification.generation).toBe(named);
 
             if (classification.authority === 'COMPLETE_OLD') {
-              // SS retains exactly one immutable hold as internal reconciliation evidence.
-              expect(store.memoryHold).not.toBeNull();
-              expect(store.memoryHold.presence).toBe(1);
-              expect(store.memoryHold.resultStatus).toBe(M2_OUTCOME.INDETERMINATE);
+              // C-MUT /crashBoundaries: exactly COMPLETE_OLD with no hold, or OLD_PLUS_ONE_IMMUTABLE_HOLD
+              // bound durably by a RECONCILIATION_REQUIRED selector. Never an unbound memory-only hold.
+              if (classification.held) {
+                expect(hex(store.selector)).toBe(hex(HOLD_SELECTOR));
+                expect(store.memoryHold).not.toBeNull();
+                expect(store.memoryHold.resultStatus).toBe(M2_OUTCOME.INDETERMINATE);
+                // After an SS restart (memory lost) the durable hold alone is reconcilable.
+                store.memoryHold = null;
+                const evidence = evidenceFor(envelope, M2_OUTCOME.NOT_COMMITTED, { terminal: true });
+                const r = await reconcileIndeterminate({
+                  storage: store, manifestRootKey: ROOT_KEY, hold: null, evidence,
+                  reference: holdRecordFor(scenario).reconciliationReference,
+                });
+                expect(r.reconciliation).toBe('NOT_COMMITTED');
+                expect(store.memoryHold).toBeNull();
+                const after = await classify(store);
+                expect(after.authority).toBe('COMPLETE_OLD');
+                expect(after.held).toBe(false);
+              } else {
+                expect(hex(store.selector)).toBe(hex(PARENT_SELECTOR));
+                expect(store.memoryHold).toBeNull();
+              }
             } else {
               // A complete new authority is selected: the committed evidence is present.
               const generation = await store.readGeneration(NEW_GENERATION);
@@ -1199,6 +1260,56 @@ describe('runMutation outcomes', () => {
     expect(store.memoryHold.presence).toBe(1);
   });
 
+  test('a candidate generation number is refused when any generation number is present at or above it', async () => {
+    // C-FMT unboundCandidate: generation numbers are never reused, and the number-only inventory
+    // covers a generation whose bytes exist but whose complete generation read returns nothing.
+    const store = makeStore();
+    store.seed([OLD], PARENT_SELECTOR);
+    store.generations.set(5n, { ...NEW, generation: 5n });
+    const error = await runMutation({
+      storage: store, manifestRootKey: ROOT_KEY, envelope: buildMutationEnvelope(envelopeInput('CAPI-S001')),
+      candidate: candidateInput('CAPI-S001', M2_OUTCOME.INDETERMINATE), outcome: M2_OUTCOME.INDETERMINATE,
+    }).then(() => null, (e) => e);
+    expect(error.code).toBe('STALE_PARENT');
+    expect(store.applyCalls).toBe(0);
+  });
+
+  test('a bound selector that names a candidate the retained record key does not derive is refused', async () => {
+    // holdLocatorRule: the bound selector and the locator derived from the retained key must coincide.
+    const { store, envelope } = await runCase('CAPI-S001', M2_OUTCOME.INDETERMINATE, {}, {
+      faults: [{ boundary: 'AFTER_INDETERMINATE', kind: 'REPLACE_SELECTOR', mode: 'AFTER', remaining: 1 }],
+    });
+    expect(store.memoryHold).not.toBeNull();
+    // A bound selector that names a candidate the retained record key does not derive.
+    const decoyKey = Uint8Array.prototype.slice.call(NEW.manifestKey);
+    decoyKey[24] ^= 0x01;
+    store.selector = encodePlaintext(M2_KIND.GENERATION_SELECTOR, {
+      presence: 1, generation: OLD.generation, manifestKeyDigest: manifestKeyDigest(OLD.manifestKey),
+      manifestCipherDigest: OLD.manifestCipherDigest, keyedRoot: OLD.keyedRoot, state: 3,
+      candidateGeneration: NEW.generation, candidateManifestKey: decoyKey,
+      candidateManifestKeyDigest: manifestKeyDigest(decoyKey),
+      candidateManifestCipherDigest: NEW.manifestCipherDigest, candidateKeyedRoot: NEW.keyedRoot,
+    });
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED, { terminal: true }),
+      reference: holdRecordFor('CAPI-S001').reconciliationReference,
+    })).rejects.toThrow(/does not derive the candidate|must be present/);
+  });
+
+  test('a stored result whose expected original state is not the held original state is an evidence mismatch', async () => {
+    const { store, envelope } = await runCase('CAPI-S001', M2_OUTCOME.INDETERMINATE, {}, {
+      faults: [{ boundary: 'AFTER_INDETERMINATE', kind: 'REPLACE_SELECTOR', mode: 'AFTER', remaining: 1 }],
+    });
+    expect(store.memoryHold).not.toBeNull();
+    store.memoryHold = { ...store.memoryHold, originalApiState: { marker: 'tampered' } };
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED, { terminal: true }),
+      reference: holdRecordFor('CAPI-S001').reconciliationReference,
+    })).rejects.toThrow(/original/i);
+  });
+
   test('a stale parent is refused strictly before the RS request, leaving nothing durable', async () => {
     const { store, result, error } = await runCase('CAPI-S001', M2_OUTCOME.COMMITTED, {}, {
       selector: COMMIT_SELECTOR,
@@ -1395,6 +1506,100 @@ describe('reconcileIndeterminate', () => {
       reference: buildMutationEnvelope(envelopeInput('CAPI-S001')).reconciliationIdentity.reference,
     })).rejects.toThrow(/no reconciliation is pending/);
   });
+
+  // A durable hold, or an interrupted local emission, is reconciled only for the mutation the bound
+  // generation's own stored COMMIT_RESULT and escrow identify (C-FMT /generationCommit/
+  // originalAuthorityMatch, §9; C-MUT /escrow sameMutationAsCandidate).
+  const SUBSTITUTE = Object.freeze({
+    operationIdentity: bytesOf(32, 0xde), originalAuthorityReference: bytesOf(32, 0xdf),
+    candidateDigest: bytesOf(32, 0xe0), candidateReference: bytesOf(32, 0xe1),
+  });
+
+  test('a substituted durable hold with matching substituted evidence selects nothing', async () => {
+    const { store, envelope } = await pendingHold('CAPI-S014');
+    const { recordKey: _memoryOnlyKey, ...v2 } = store.memoryHold; // the stored kind-13 record is v2: no key field
+    const held = { ...v2, ...SUBSTITUTE };
+    store.generations.get(NEW_GENERATION).mutationHold = held;
+    store.memoryHold = null;
+    const selector = hex(store.selector);
+    const applied = store.applied.length;
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      evidence: { ...evidenceFor(envelope, M2_OUTCOME.COMMITTED), ...SUBSTITUTE },
+      reference: held.reconciliationReference,
+    })).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(hex(store.selector)).toBe(selector);
+    expect((await classify(store)).held).toBe(true);
+    // The same substitution answered by terminal NOT_COMMITTED discards nothing either.
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      evidence: { ...evidenceFor(envelope, M2_OUTCOME.NOT_COMMITTED), ...SUBSTITUTE },
+      reference: held.reconciliationReference,
+    })).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(await store.readGeneration(NEW_GENERATION)).not.toBeNull();
+  });
+
+  async function interruptedEmission(scenario = 'CAPI-S014') {
+    const pending = await pendingHold(scenario);
+    const input = {
+      storage: pending.store, manifestRootKey: ROOT_KEY, hold: pending.store.memoryHold,
+      evidence: evidenceFor(pending.envelope, M2_OUTCOME.COMMITTED),
+      reference: pending.store.memoryHold.reconciliationReference,
+    };
+    pending.store.faults = [{ boundary: 'DURING_ESCROW_OUTPUT_RESPONSE', kind: 'RELEASE_ESCROW', mode: 'BEFORE', remaining: 1 }];
+    await expect(reconcileIndeterminate(input)).rejects.toThrow();
+    expect((await classify(pending.store)).authority).toBe('COMPLETE_NEW');
+    expect(pending.store.memoryHold).not.toBeNull();
+    return { ...pending, input };
+  }
+
+  test('an interrupted emission repeats once with the same escrow and clears the hold', async () => {
+    const { store, input } = await interruptedEmission();
+    const applied = store.applied.length;
+    const outcome = await reconcileIndeterminate(input);
+    expect(outcome).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', authority: 'COMPLETE_NEW', holds: 0 });
+    expect(hex(outcome.output)).toBe(hex(ESCROW.output));
+    expect(store.applied.slice(applied).map((a) => a.kind)).toEqual(['RELEASE_ESCROW']);
+    expect(store.memoryHold).toBeNull();
+  });
+
+  test('an interrupted emission never releases a substituted escrow', async () => {
+    const { store, input } = await interruptedEmission();
+    store.generations.get(NEW_GENERATION).escrow = {
+      kind: 'APPLICATION_BYTES', digest: bytesOf(32, 0x58), reference: bytesOf(32, 0x59), output: new Uint8Array([99, 100]),
+    };
+    const applied = store.applied.length;
+    await expect(reconcileIndeterminate(input)).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(store.memoryHold).not.toBeNull();
+  });
+
+  test('a COMMITTED selection never releases a substituted escrow', async () => {
+    const { store, envelope } = await pendingHold('CAPI-S014');
+    store.generations.get(NEW_GENERATION).escrow = { ...store.generations.get(NEW_GENERATION).escrow, digest: bytesOf(32, 0x58) };
+    const selector = hex(store.selector);
+    const applied = store.applied.length;
+    await expect(reconcileIndeterminate({
+      storage: store, manifestRootKey: ROOT_KEY, hold: store.memoryHold,
+      evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED), reference: store.memoryHold.reconciliationReference,
+    })).rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    expect(store.applied.length).toBe(applied);
+    expect(hex(store.selector)).toBe(selector);
+    expect(store.memoryHold).not.toBeNull();
+  });
+
+  test('non-COMMITTED evidence, INDETERMINATE included, contradicts an interrupted emission', async () => {
+    const { store, envelope, input } = await interruptedEmission();
+    const applied = store.applied.length;
+    for (const [outcome, overrides] of [[M2_OUTCOME.INDETERMINATE, { terminal: false }], [M2_OUTCOME.NOT_COMMITTED, {}]]) {
+      await expect(reconcileIndeterminate({ ...input, evidence: evidenceFor(envelope, outcome, overrides) }))
+        .rejects.toMatchObject({ code: 'EVIDENCE_MISMATCH' });
+    }
+    expect(store.applied.length).toBe(applied);
+    expect(store.memoryHold).not.toBeNull();
+  });
 });
 
 
@@ -1500,8 +1705,8 @@ describe('runMutation rejects malformed inputs', () => {
   const portCases = [
     ['a null port', null],
     ['an array port', []],
-    ['a port missing apply', { readSelector: async () => null, readGeneration: async () => null, readMemoryHold: async () => null }],
-    ['a port with a non-function apply', { apply: 1, readSelector: async () => null, readGeneration: async () => null, readMemoryHold: async () => null }],
+    ['a port missing apply', { readSelector: async () => null, readGeneration: async () => null, readMemoryHold: async () => null, readGenerationNumbers: async () => [] }],
+    ['a port with a non-function apply', { apply: 1, readSelector: async () => null, readGeneration: async () => null, readMemoryHold: async () => null, readGenerationNumbers: async () => [] }],
   ];
   test.each(portCases)('%s is rejected', async (_name, storage) => {
     await expect(runMutation({ ...base(), storage })).rejects.toThrow(/storage port/);

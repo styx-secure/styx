@@ -1024,7 +1024,7 @@ function currentProfile(stored) {
 //
 // Normative source: the owner-ratified C-REC contract
 // `docs/architecture/m2/recovery-and-coexistence.md` (SHA-256
-// 5b0d2fbd685a198e7e6e6bb10cb7740680086d27690c3cc622915e68beb94f87), §3, §5, §7,
+// ab11271cc038b49f24d356ee4a52bfc993dfd62195fec3e27925bc71e8837149), §3, §5, §7,
 // §8, §9 and the §13 record. The tables below are transcribed from that record;
 // `test/storage/m2/recovery.test.js` replays every DISPATCH, ACTION,
 // PASSWORD_REWRAP and DIAGNOSTIC fixture and the re-wrap/reset BOUNDARY fixtures
@@ -1147,7 +1147,7 @@ const RECOVERY_GUIDANCE = Object.freeze({
   RECONCILE_ONLY: 'È in corso una riconciliazione: nessuna altra azione è disponibile finché non termina.',
   SHOW_CREATE: 'Nessuna sessione M2 trovata: può creare una nuova sessione. Questo non attesta che prima non ce ne fossero.',
   SHOW_REESTABLISHMENT: 'È presente solo una sessione precedente: può avviare, con il suo consenso, una nuova sessione. La sessione precedente non viene convertita né importata.',
-  SHOW_COMPATIBLE_BUILD: 'Questi dati richiedono una versione compatibile dell’app (CFMT_EXACT_B57DF3A8). Nulla è stato letto o modificato.',
+  SHOW_COMPATIBLE_BUILD: 'Questi dati richiedono una versione compatibile dell’app (CFMT_EXACT_9DACE4A0). Nulla è stato letto o modificato.',
   PRESERVE_AND_STOP: 'I dati non sono leggibili da questa versione. Sono stati conservati senza modifiche.',
   LOCK_RETRY: 'La sessione è in uso in un’altra scheda. Riprovi più tardi.',
   PASSWORD_REWRAP: 'Cambio password: la chiave dell’archivio resta la stessa; cambia solo la protezione. Non è un recupero di password dimenticata.',
@@ -1190,7 +1190,7 @@ const VAULT_UNLOCK_FAULT_ROWS = Object.freeze([
 
 export const M2_RECOVERY = deepFreezeRecovery({
   SCHEMA: 'styx-m2-recovery-actions/v1',
-  C_REC_DOCUMENT_SHA256: '5b0d2fbd685a198e7e6e6bb10cb7740680086d27690c3cc622915e68beb94f87',
+  C_REC_DOCUMENT_SHA256: 'ab11271cc038b49f24d356ee4a52bfc993dfd62195fec3e27925bc71e8837149',
   RESULTS: RECOVERY_RESULTS,
   DISPOSITIONS: RECOVERY_DISPOSITIONS,
   RESET_ELIGIBLE_RESULTS,

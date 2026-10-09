@@ -2,7 +2,7 @@
 // adapter (contract Issue #402 of #317 G-SCOPE).
 //
 // The tests drive the real `invokeAdapter` over the injected request, snapshot and owning-layer
-// observation: the seven exact C-REST positive fixtures, all sixty-five C-REST negative fixtures, the
+// observation: the seven exact C-REST positive fixtures, all seventy C-REST negative fixtures, the
 // exact create and Welcome outcomes, the fail-closed request validation, total precedence, the closed
 // result envelope, purity and immutability, and a seeded property sweep. Nothing is mocked: the
 // decision is taken by the merged I-SM core and, for restore, by the merged I-REST classifier.
@@ -527,9 +527,9 @@ describe('I-JOIN exact positive fixtures restore through adapter', () => {
   });
 });
 
-describe('I-JOIN all sixty-five negative fixtures', () => {
+describe('I-JOIN all seventy negative fixtures', () => {
   test('every negative fixture returns its exact mapped rejected code and never a success', () => {
-    expect(negatives).toHaveLength(65);
+    expect(negatives).toHaveLength(70);
     const seen = new Set();
     for (const row of negatives) {
       const observation = observationOfFixture(row);

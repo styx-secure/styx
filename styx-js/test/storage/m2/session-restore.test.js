@@ -228,7 +228,7 @@ describe('the closed metadata', () => {
     expect([...UNSUPPORTED_RUNTIME_CLASSES]).toEqual([
       'MOBILE', 'NATIVE_NON_BROWSER', 'PRIVATE_BROWSING', 'EVICTED_OR_PARTIAL_PROFILE',
     ]);
-    expect(READER_PROFILE).toBe('CFMT_EXACT_B57DF3A8');
+    expect(READER_PROFILE).toBe('CFMT_EXACT_9DACE4A0');
   });
 
   test('the copied C-REST value registries are exactly the eleven closed registries', () => {
@@ -241,13 +241,13 @@ describe('the closed metadata', () => {
 });
 
 describe('the fresh-worker fixture matrix', () => {
-  test('the matrix carries exactly seven positive and sixty-five negative fixtures', () => {
-    expect(runFreshWorkerFixtureMatrix()).toHaveLength(72);
+  test('the matrix carries exactly seven positive and seventy negative fixtures', () => {
+    expect(runFreshWorkerFixtureMatrix()).toHaveLength(77);
     expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(7);
-    expect(FRESH_WORKER_FIXTURES.negative).toHaveLength(65);
+    expect(FRESH_WORKER_FIXTURES.negative).toHaveLength(70);
   });
 
-  test('all seventy-two fixtures return their exact typed outcome at their exact first phase', () => {
+  test('all seventy-seven fixtures return their exact typed outcome at their exact first phase', () => {
     for (const row of runFreshWorkerFixtureMatrix()) {
       expect({ id: row.id, result: row.actual.result, stage: row.actual.stage })
         .toEqual({ id: row.id, result: row.expected.result, stage: row.expected.firstPhase });
@@ -332,12 +332,48 @@ describe('fault precedence', () => {
   });
 
   test('the negative class map agrees with the fault precedence table', () => {
-    expect(NEGATIVE_CLASSES).toHaveLength(20);
+    expect(NEGATIVE_CLASSES).toHaveLength(25);
     for (const row of NEGATIVE_CLASSES) {
       const fault = FAULT_PRECEDENCE.find((item) => item.fault === row.fault);
       expect({ negativeClass: row.negativeClass, phase: fault.phase, result: fault.result })
         .toEqual({ negativeClass: row.negativeClass, phase: row.phase, result: row.result });
       expect(outcomeOf({ faults: [row.fault] }).stage).toBe(row.phase);
+    }
+  });
+
+  // Independent transcription of the five rows the C-REST sync (commit bc3b01f, SHA-256
+  // ccbdd3ce…4c9f) adds for the C-FMT rule-only hold locator. The literals below are copied from the
+  // ratified record, not derived from the module, so a count-preserving substitution, a wrong code or
+  // phase, or a duplicated identity fails here even when every length assertion still holds.
+  test('the five hold-locator rows carry exactly the ratified C-REST identities, codes and phases', () => {
+    const ratifiedClasses = [
+      ['HOLD_LOCATOR_DERIVATION_MISMATCH', 'candidateManifestKeyMismatch', 'REFERENCES', 'REFERENCE_INCONSISTENT'],
+      ['HOLD_LOCATOR_SCOPE_SESSION_SUBSTITUTION', 'candidateManifestKeyScopeSessionSubstitution', 'RECORD_DECODE', 'RECORD_INVALID'],
+      ['HOLD_LOCATOR_ON_NON_CANDIDATE_HOLD', 'referenceOrLifecycleInconsistent', 'REFERENCES', 'REFERENCE_INCONSISTENT'],
+      ['HOLD_LOCATOR_GENERATION_MISMATCH', 'candidateManifestKeyMismatch', 'REFERENCES', 'REFERENCE_INCONSISTENT'],
+      ['UNBOUND_CANDIDATE_GENERATION_REUSE', 'referenceOrLifecycleInconsistent', 'REFERENCES', 'REFERENCE_INCONSISTENT'],
+    ];
+    const ratifiedNames = ratifiedClasses.map(([negativeClass]) => negativeClass);
+    expect(NEGATIVE_CLASSES.slice(20)
+      .map((row) => [row.negativeClass, row.fault, row.phase, row.result])).toEqual(ratifiedClasses);
+    const added = FRESH_WORKER_FIXTURES.negative.slice(65).map((row) => ({
+      id: row.id, inventory: row.inventory, vector: row.vector, legacy: row.legacy,
+      negativeClass: row.negativeClass, faults: [...row.faults], result: row.result, firstPhase: row.firstPhase,
+    }));
+    expect(added).toEqual(ratifiedClasses.map(([negativeClass, fault, firstPhase, result]) => ({
+      id: `NEG-CFMT-${negativeClass}`, inventory: 'M2', vector: 'FMT-KAT-ACTIVE', legacy: false,
+      negativeClass, faults: [fault], result, firstPhase,
+    })));
+    for (const row of FRESH_WORKER_FIXTURES.negative.slice(0, 65)) {
+      expect(ratifiedNames).not.toContain(row.negativeClass);
+    }
+    const ids = FRESH_WORKER_FIXTURES.negative.map((row) => row.id);
+    expect(new Set(ids).size).toBe(70);
+    expect(new Set(NEGATIVE_CLASSES.map((row) => row.negativeClass)).size).toBe(25);
+    for (const [negativeClass, fault, phase, result] of ratifiedClasses) {
+      const outcome = outcomeOf({ faults: [fault] });
+      expect({ negativeClass, result: outcome.result, stage: outcome.stage })
+        .toEqual({ negativeClass, result, stage: phase });
     }
   });
 });
