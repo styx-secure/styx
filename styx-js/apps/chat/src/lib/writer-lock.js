@@ -21,10 +21,11 @@ export const WRITER_LOCK_REASONS = Object.freeze({
  * Try to become the exclusive MLS writer for `name`.
  * @param {Lock-like} locksApi typically `navigator.locks`
  * @param {string} name lock name (per profile namespace)
- * @returns {Promise<{held: boolean, reason?: string, release: () => void}>}
+ * @returns {Promise<{held: boolean, reason?: string, release: () => Promise<void>}>}
  *   held=false means this tab must NOT become a writer; `reason` says why
  *   ('unsupported' when Web Locks are absent, 'held-elsewhere', 'rejected').
- *   `release()` frees the lock (call on logout; tab close frees it automatically).
+ *   `release()` frees the lock and resolves once it is actually free (call on logout; tab close
+ *   frees it automatically).
  */
 export async function acquireWriterLock(locksApi, name) {
   let request;
@@ -35,11 +36,13 @@ export async function acquireWriterLock(locksApi, name) {
   }
   if (typeof request !== 'function') {
     console.warn('[styx] Web Locks unavailable — refusing to start an MLS writer');
-    return { held: false, reason: WRITER_LOCK_REASONS.UNSUPPORTED, release: () => {} }; // fail closed
+    return { held: false, reason: WRITER_LOCK_REASONS.UNSUPPORTED, release: async () => {} }; // fail closed
   }
 
   let release = () => {};
   let invocationFailed = false;
+  let requestEnded = false;
+  let requestSettled = Promise.resolve();
   const outcome = await new Promise((resolve) => {
     let settled = false;
     const settle = (value) => {
@@ -51,7 +54,8 @@ export async function acquireWriterLock(locksApi, name) {
     let pending;
     try {
       pending = Reflect.apply(request, locksApi, [name, { mode: 'exclusive', ifAvailable: true }, (lock) => {
-        if (!lock) { settle(WRITER_LOCK_REASONS.HELD_ELSEWHERE); return undefined; } // another tab is the writer
+        if (lock === null || lock === undefined) { settle(WRITER_LOCK_REASONS.HELD_ELSEWHERE); return undefined; } // another tab is the writer
+        if (typeof lock !== 'object' && typeof lock !== 'function') { settle(WRITER_LOCK_REASONS.REJECTED); return undefined; }
         if (!settle(null)) return undefined;
         // Hold the lock until release() is called (or the tab closes).
         return new Promise((freeLock) => { release = freeLock; });
@@ -65,13 +69,22 @@ export async function acquireWriterLock(locksApi, name) {
       settle(WRITER_LOCK_REASONS.REJECTED);
       return;
     }
-    Promise.resolve(pending).then(
-      () => { settle(WRITER_LOCK_REASONS.REJECTED); },
-      () => { settle(WRITER_LOCK_REASONS.REJECTED); },
-    );
+    // The request settles only once the lock is no longer held. Settling (or rejecting) before this
+    // function has returned a grant means the grant is gone: it is not held.
+    const ended = () => { if (!settle(WRITER_LOCK_REASONS.REJECTED)) requestEnded = true; };
+    requestSettled = Promise.resolve(pending).then(ended, ended);
   });
 
-  if (invocationFailed) return { held: false, reason: WRITER_LOCK_REASONS.REJECTED, release: () => {} };
-  if (outcome !== null) return { held: false, reason: outcome, release: () => {} };
-  return { held: true, release };
+  if (invocationFailed) return { held: false, reason: WRITER_LOCK_REASONS.REJECTED, release: async () => {} };
+  if (outcome !== null) return { held: false, reason: outcome, release: async () => {} };
+  // Let an already-settled request report itself before the grant is trusted.
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  if (requestEnded) {
+    try { release(); } catch { /* ignore */ }
+    return { held: false, reason: WRITER_LOCK_REASONS.REJECTED, release: async () => {} };
+  }
+  // release() frees the lock and resolves once the request has settled, i.e. the lock is actually
+  // free: a re-acquisition after awaiting it never meets this tab's own lock.
+  const free = release;
+  return { held: true, release: () => { try { free(); } catch { /* ignore */ } return requestSettled; } };
 }

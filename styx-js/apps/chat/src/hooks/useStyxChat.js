@@ -31,7 +31,8 @@ export function useStyxChat() {
   const subsRef = useRef([]);
   const lockReleaseRef = useRef(null);
   const m2GateRef = useRef(null); // the held M2 beta gate ({ token, release }) or null
-  const m2TeardownRef = useRef(null); // the pending M2 release of the last logout, awaited by unlock
+  const attemptRef = useRef(0); // startup attempt counter: a logout or a newer attempt makes older ones stale
+  const busyRef = useRef(null); // work still retiring (an attempt, a logout's ordered release), awaited by unlock
   const typingTimers = useRef({});
   const notifierRef = useRef(null);
   const vaultSettingsRef = useRef(null);
@@ -112,171 +113,178 @@ export function useStyxChat() {
     }
     const ns = peerNamespace();
 
-    // A logout's M2 release (worker stop, then lock free) may still be running: finish it first, so
-    // this tab never meets its own `styx-m2:` lock and misreports "another tab".
-    const pendingTeardown = m2TeardownRef.current;
-    if (pendingTeardown) {
-      try { await pendingTeardown; } catch { /* the gate frees its lock in a finally */ }
-      if (m2TeardownRef.current === pendingTeardown) m2TeardownRef.current = null;
+    // One startup attempt at a time. Starting an attempt (or a logout) makes any earlier in-flight
+    // attempt stale; a stale attempt retires itself, releasing what it acquired in the act §3 order.
+    // This attempt first waits for everything still retiring (an earlier attempt, a logout's M2
+    // release), so the tab never meets its own locks and misreports "another tab".
+    attemptRef.current += 1;
+    const attempt = attemptRef.current;
+    const stale = () => attemptRef.current !== attempt;
+    const previous = busyRef.current;
+    let retire;
+    const retired = new Promise((resolve) => { retire = resolve; });
+    const busy = (async () => {
+      try { await previous; } catch { /* retiring work frees its locks in a finally */ }
+      await retired;
+    })();
+    busyRef.current = busy;
+    try {
+      try { await previous; } catch { /* retiring work frees its locks in a finally */ }
+      if (stale()) return undefined;
+      return await startSession({ StyxChat, ns, password, alias, firstRun, stale });
+    } finally {
+      retire();
+      void busy.finally(() => { if (busyRef.current === busy) busyRef.current = null; });
     }
+  }, [upsertMessage, patchMessageState]);
 
+  // Acquire both locks and start the chat. Everything this attempt acquires stays local until the
+  // attempt succeeds and is still current; on any failure, or when the attempt has gone stale, it
+  // is released here in the act §3 order: subscriptions off, chat destroyed, then the M2 gate
+  // (isHeld false → withdraw/terminate → vault worker stopped → lock freed), then the writer lock.
+  async function startSession({ StyxChat, ns, password, alias, firstRun, stale }) {
     // Become the single MLS writer for this profile, or refuse to start a writer.
     // A second tab that cannot get the lock must not construct a writable engine —
     // that is what corrupts mls:state.
     const { held, reason, release } = await acquireWriterLock(navigator.locks, `styx-mls:${ns}`);
     if (!held) {
       // Fail closed: no Web Locks is an "unsupported browser" refusal, never a degraded writer.
+      if (stale()) return undefined;
       if (reason === 'unsupported') setUnsupportedBrowser(true);
       else setSecondaryTab(true);
-      return;
+      return undefined;
     }
-    lockReleaseRef.current = release;
 
-    // M2 beta (test-profile build only): one exclusive `styx-m2:<vault db>` lock, taken on the main
-    // thread before the vault worker can receive any M2 request. Any refusal stops the whole entry,
-    // with the same screens as the writer lock, and releases the writer lock first.
-    let m2BetaGate;
     let gate = null;
-    try {
-      m2BetaGate = await loadM2BetaGate();
-      if (m2BetaGate) gate = await m2BetaGate.acquireM2BetaGate({ locks: navigator.locks });
-    } catch (e) {
-      // A failed chunk load (or any throw) must not strand the legacy writer lock.
-      release();
-      lockReleaseRef.current = null;
-      throw e;
-    }
-    if (m2BetaGate) {
-      if (!gate.entered) {
-        release();
-        lockReleaseRef.current = null;
-        if (gate.reason === m2BetaGate.M2_GATE_REFUSALS.UNSUPPORTED) setUnsupportedBrowser(true);
-        else setSecondaryTab(true);
-        return;
-      }
-      m2GateRef.current = gate;
-    }
+    let chat = null;
+    let settingsSession = null;
+    const subs = [];
+    const STALE = Symbol('stale');
+    const checkpoint = () => { if (stale()) throw STALE; };
 
-    // Release order: the M2 gate first (withdraw the held report, then free the lock), then the
-    // legacy writer lock. Callers stop the vault worker before calling this.
-    const releaseLocks = async () => {
-      const gate = m2GateRef.current;
-      m2GateRef.current = null;
-      try { await gate?.release(); } catch { /* the gate frees its lock in a finally */ }
-      release();
-      lockReleaseRef.current = null;
+    const stopWorker = async () => {
+      const session = settingsSession;
+      settingsSession = null;
+      let stop;
+      try { stop = session?.stop; } catch { stop = null; }
+      try { await stop?.call(session); } catch { /* bounded worker teardown */ }
+    };
+    const abort = async () => {
+      for (const off of subs.splice(0)) { try { off?.(); } catch { /* ignore */ } }
+      try { chat?.destroy(); } catch { /* best-effort transport teardown */ }
+      chat = null;
+      // Web Locks are not reentrant: without releasing here, a retry would find OUR OWN lock held
+      // and misreport "secondary tab".
+      if (gate) {
+        try { await gate.release({ beforeFree: stopWorker }); } catch { /* the gate frees its lock in a finally */ }
+      } else {
+        await stopWorker();
+      }
+      gate = null;
+      try { await release(); } catch { /* ignore */ }
     };
 
-    const chat = new StyxChat();
-    let identity;
     try {
-      identity = await chat.init({
+      checkpoint();
+      // M2 beta (test-profile build only): one exclusive `styx-m2:<vault db>` lock, taken on the
+      // main thread before the vault worker can receive any M2 request. Any refusal stops the whole
+      // entry, with the same screens as the writer lock, and releases the writer lock.
+      const m2BetaGate = await loadM2BetaGate();
+      if (m2BetaGate) {
+        const acquired = await m2BetaGate.acquireM2BetaGate({ locks: navigator.locks });
+        if (!acquired.entered) {
+          await abort();
+          if (stale()) return undefined;
+          if (acquired.reason === m2BetaGate.M2_GATE_REFUSALS.UNSUPPORTED) setUnsupportedBrowser(true);
+          else setSecondaryTab(true);
+          return undefined;
+        }
+        gate = acquired;
+      }
+      checkpoint();
+
+      chat = new StyxChat();
+      const identity = await chat.init({
         password, alias: alias?.trim(), ns, ...transportOptions(getRelays()), autoStart: false,
       }); // throws on wrong password or unloadable MLS state (fail-closed)
-    } catch (e) {
-      // Web Locks are not reentrant: without releasing here, the retry after a
-      // failed init would find OUR OWN lock held and misreport "secondary tab".
-      await releaseLocks();
-      throw e;
-    }
-    if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
-      try {
+      checkpoint();
+      if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
         await chat.setAlias(alias.trim());
+        checkpoint();
+      }
+
+      let preferences = null;
+      try {
+        const pairingActive = await chat.hasActivePairing();
+        settingsSession = await openVaultSettings({
+          password, peerProfile: ns, pairingActive,
+        });
+        preferences = settingsSession?.initial?.preferences ?? null;
       } catch (e) {
-        try { chat.destroy(); } catch { /* best-effort pre-network teardown */ }
-        await releaseLocks();
-        throw e;
+        // Shadow migration is stage-gated. A vault failure must never deny access
+        // to the unchanged legacy identity/settings path.
+        await stopWorker();
+        console.debug('vault unavailable; continuing with legacy product data', e?.code);
       }
-    }
+      checkpoint();
 
-    try {
-      const pairingActive = await chat.hasActivePairing();
-      const settingsSession = await openVaultSettings({
-        password, peerProfile: ns, pairingActive,
-      });
-      vaultSettingsRef.current = settingsSession;
-      if (settingsSession?.initial?.preferences) {
-        setVaultPreferences(settingsSession.initial.preferences);
-      }
-    } catch (e) {
-      // Shadow migration is stage-gated. A vault failure must never deny access
-      // to the unchanged legacy identity/settings path.
-      vaultSettingsRef.current = null;
-      setVaultPreferences(null);
-      console.debug('vault unavailable; continuing with legacy product data', e?.code);
-    }
-
-    try {
       // This is the first operation permitted to touch the network. Identity
       // migration has either verified its vault readback or selected fallback.
       await chat.start();
+      checkpoint();
+
+      const started = chat;
+      const refreshContacts = async (list) => {
+        // The event may carry the full list (real lib) or fire as a bare signal
+        // (mock) — in the latter case we re-fetch. Either way, never set undefined.
+        if (Array.isArray(list)) setContacts(list);
+        else setContacts(await started.listContacts());
+      };
+      // Each disposer is kept as soon as it exists, so a later failure can still undo it.
+      subs.push(started.onMessage((msg) => {
+        upsertMessage(msg);
+        if (msg.direction === 'in') notifierRef.current.notifyIncoming();
+      }));
+      subs.push(started.onMessageState((id, state) => patchMessageState(id, state)));
+      subs.push(started.onContactsChanged((list) => { refreshContacts(list); }));
+      // A peer we authenticated joined our group, but adding them is the user's call.
+      subs.push(started.onPairing?.(({ pubkey }) => setPendingPairings((prev) => (
+        prev.some((p) => p.pubkey === pubkey) ? prev : [...prev, { pubkey }]
+      ))));
+      subs.push(started.onTyping((pubkey, isTyping) => {
+        // Auto-expire: if no "stopped typing" arrives (lost, or a stale relayed
+        // event), clear the indicator after a few seconds so it never sticks.
+        clearTimeout(typingTimers.current[pubkey]);
+        if (isTyping) {
+          typingTimers.current[pubkey] = setTimeout(
+            () => setTypingByContact((prev) => ({ ...prev, [pubkey]: false })),
+            6000,
+          );
+        }
+        setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping }));
+      }));
+      const contactList = await started.listContacts();
+      checkpoint();
+
+      // Success, and still current: publish what this attempt owns.
+      chatRef.current = started;
+      subsRef.current = subs.filter(Boolean); // onPairing is absent on the mock
+      m2GateRef.current = gate;
+      lockReleaseRef.current = release;
+      vaultSettingsRef.current = settingsSession;
+      setVaultPreferences(preferences);
+      setMe(started.me || identity);
+      setContacts(contactList);
+      setReady(true);
+      // Opt-in: if a bridge is configured and permission is already granted, register.
+      enablePush();
+      return started.me || identity;
     } catch (e) {
-      let stop;
-      try { stop = vaultSettingsRef.current?.stop; } catch { stop = null; }
-      vaultSettingsRef.current = null;
-      try { await stop?.(); } catch { /* bounded worker teardown */ }
-      try { chat.destroy(); } catch { /* best-effort transport teardown */ }
-      await releaseLocks();
+      await abort();
+      if (e === STALE) return undefined; // a logout or a newer attempt superseded this one
       throw e;
     }
-    chatRef.current = chat;
-
-    const refreshContacts = async (list) => {
-      // The event may carry the full list (real lib) or fire as a bare signal
-      // (mock) — in the latter case we re-fetch. Either way, never set undefined.
-      if (Array.isArray(list)) setContacts(list);
-      else setContacts(await chat.listContacts());
-    };
-
-    try {
-      subsRef.current = [
-        chat.onMessage((msg) => {
-          upsertMessage(msg);
-          if (msg.direction === 'in') notifierRef.current.notifyIncoming();
-        }),
-        chat.onMessageState((id, state) => patchMessageState(id, state)),
-        chat.onContactsChanged((list) => { refreshContacts(list); }),
-        // A peer we authenticated joined our group, but adding them is the user's call.
-        chat.onPairing?.(({ pubkey }) => setPendingPairings((prev) => (
-          prev.some((p) => p.pubkey === pubkey) ? prev : [...prev, { pubkey }]
-        ))),
-        chat.onTyping((pubkey, isTyping) => {
-          // Auto-expire: if no "stopped typing" arrives (lost, or a stale relayed
-          // event), clear the indicator after a few seconds so it never sticks.
-          clearTimeout(typingTimers.current[pubkey]);
-          if (isTyping) {
-            typingTimers.current[pubkey] = setTimeout(
-              () => setTypingByContact((prev) => ({ ...prev, [pubkey]: false })),
-              6000,
-            );
-          }
-          setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping }));
-        }),
-      ];
-
-      subsRef.current = subsRef.current.filter(Boolean); // onPairing is absent on the mock
-
-      setMe(chat.me || identity);
-      setContacts(await chat.listContacts());
-    } catch (e) {
-      // A failure after start must not leave the chat running or either lock held: unsubscribe,
-      // stop the vault worker and the chat, then release the M2 gate and the legacy writer lock.
-      for (const off of subsRef.current) { try { off?.(); } catch { /* ignore */ } }
-      subsRef.current = [];
-      let stop;
-      try { stop = vaultSettingsRef.current?.stop; } catch { stop = null; }
-      vaultSettingsRef.current = null;
-      try { await stop?.(); } catch { /* bounded worker teardown */ }
-      try { chat.destroy(); } catch { /* best-effort transport teardown */ }
-      chatRef.current = null;
-      await releaseLocks();
-      throw e;
-    }
-    setReady(true);
-    // Opt-in: if a bridge is configured and permission is already granted, register.
-    enablePush();
-    return chat.me || identity;
-  }, [upsertMessage, patchMessageState]);
+  }
 
   const stopVaultSettings = useCallback(async () => {
     let stop;
@@ -291,27 +299,31 @@ export function useStyxChat() {
   }, []);
 
   const lock = useCallback(() => {
+    attemptRef.current += 1; // an in-flight startup attempt is now stale and retires itself
     subsRef.current.forEach((off) => {
       try { off(); } catch { /* ignore */ }
     });
     subsRef.current = [];
     try { chatRef.current?.destroy?.(); } catch { /* ignore */ }
     chatRef.current = null;
-    // M2 gate release order (act §3): `isHeld()` turns false at once, the vault worker is stopped
-    // (terminated) next, and only then is the `styx-m2:` lock freed. Tab close kills both together.
+    // Release order (act §3): the M2 gate's `isHeld()` turns false at once, the held report is
+    // withdrawn, the vault worker is stopped (terminated), and only then is the `styx-m2:` lock
+    // freed; the legacy writer lock is freed last. Tab close kills everything together.
     const m2Gate = m2GateRef.current;
     m2GateRef.current = null;
-    if (m2Gate) {
-      const teardown = m2Gate.release({ beforeFree: stopVaultSettings });
-      m2TeardownRef.current = teardown;
-      void teardown.finally(() => {
-        if (m2TeardownRef.current === teardown) m2TeardownRef.current = null;
-      });
-    } else {
-      void stopVaultSettings();
-    }
-    try { lockReleaseRef.current?.(); } catch { /* ignore */ }
+    const releaseWriter = lockReleaseRef.current;
     lockReleaseRef.current = null;
+    const teardown = (async () => {
+      try {
+        if (m2Gate) await m2Gate.release({ beforeFree: stopVaultSettings });
+        else await stopVaultSettings();
+      } catch { /* the gate frees its lock in a finally */ }
+      try { await releaseWriter?.(); } catch { /* ignore */ }
+    })();
+    const previous = busyRef.current;
+    const busy = Promise.allSettled([previous, teardown]);
+    busyRef.current = busy;
+    void busy.finally(() => { if (busyRef.current === busy) busyRef.current = null; });
     setReady(false);
     setMe(null);
     setContacts([]);

@@ -318,7 +318,10 @@ export async function acquireM2BetaGate({
       if (delivered !== 'DELIVERED') throw new Error('held report timed out');
     } catch {
       try { clearTimer(timer); } catch { /* ignore */ }
-      terminatePeer(); // its state is unknown: never leave a worker that may believe it holds the lock
+      // Only a peer that may have received the report has an unknown state; a peer never contacted
+      // (identity preparation failed) is left alone, and the lock is freed.
+      if (reported) terminatePeer(); // never leave a worker that may believe it holds the lock
+      reported = false;
       await release();
       return refusal(M2_GATE_REFUSALS.REPORT_FAILED, observe('UNAVAILABLE'));
     }

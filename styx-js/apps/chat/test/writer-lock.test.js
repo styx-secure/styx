@@ -69,8 +69,29 @@ describe('acquireWriterLock', () => {
     expect(reason).toBe(WRITER_LOCK_REASONS.REJECTED);
   });
 
+  test('release() resolves only once the request has settled (the lock is actually free)', async () => {
+    let settled = false;
+    const locks = {
+      request(name, options, callback) {
+        return Promise.resolve(callback({ name, mode: 'exclusive' }))
+          .then(() => new Promise((resolve) => { setTimeout(resolve, 10); }))
+          .then(() => { settled = true; });
+      },
+    };
+    const { held, release } = await acquireWriterLock(locks, 'styx-mls:');
+    expect(held).toBe(true);
+    await release();
+    expect(settled).toBe(true);
+  });
+
   test('a request that settles without calling back is treated as not-held', async () => {
     const { held, reason } = await acquireWriterLock({ request: () => Promise.resolve() }, 'styx-mls:');
+    expect(held).toBe(false);
+    expect(reason).toBe(WRITER_LOCK_REASONS.REJECTED);
+  });
+
+  test.each([[0], [false], [''], [1], ['lock']])('a non-object grant %p is rejected (not held, not "another tab")', async (value) => {
+    const { held, reason } = await acquireWriterLock({ request: (n, o, cb) => Promise.resolve(cb(value)) }, 'styx-mls:');
     expect(held).toBe(false);
     expect(reason).toBe(WRITER_LOCK_REASONS.REJECTED);
   });
@@ -90,10 +111,27 @@ describe('acquireWriterLock', () => {
     expect(freed).toBe(true);
   });
 
+  test('an async request that calls back with a grant and then rejects is not-held, and the grant is freed', async () => {
+    let freed = false;
+    const locks = {
+      request(name, options, callback) {
+        return (async () => {
+          Promise.resolve(callback({ name, mode: 'exclusive' })).then(() => { freed = true; });
+          throw new Error('request failed after callback');
+        })();
+      },
+    };
+    const { held, reason } = await acquireWriterLock(locks, 'styx-mls:');
+    expect(held).toBe(false);
+    expect(reason).toBe(WRITER_LOCK_REASONS.REJECTED);
+    await Promise.resolve();
+    expect(freed).toBe(true);
+  });
+
   test('the source has exactly one held:true return (the granted path) and never steals', () => {
     const src = readFileSync(new URL('../src/lib/writer-lock.js', import.meta.url), 'utf8');
     expect(src.match(/held:\s*true/g)).toEqual(['held: true']);
-    expect(src).toMatch(/return \{ held: true, release \};\n\}\n?$/);
+    expect(src).toMatch(/return \{ held: true, release: \(\) => \{[^\n]*\} \};\n\}\n?$/);
     expect(src).not.toMatch(/steal/);
   });
 });

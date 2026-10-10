@@ -84,6 +84,7 @@ function recordingPeer(locks, { ack = 'valid', report = 'ok' } = {}) {
       if (ack === 'reject') return Promise.reject(new Error('no ack'));
       if (ack === 'wrong-epoch') return Promise.resolve({ ...good, epoch: r.epoch + 1 });
       if (ack === 'wrong-type') return Promise.resolve({ ...good, type: 'M2_LOCK_HELD' });
+      if (ack === 'wrong-name') return Promise.resolve({ ...good, lockName: `${r.lockName}x` });
       if (ack === 'wrong-nonce') return Promise.resolve({ ...good, nonce: `${r.nonce}x` });
       if (ack === 'no-nonce') return Promise.resolve({ type: good.type, lockName: good.lockName, epoch: good.epoch });
       if (ack === 'throwing-getter') {
@@ -400,6 +401,32 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     expect(order).toEqual([['beforeFree', true], ['after', false]]);
   });
 
+  test('beforeFree does not start while the ack is pending; it runs only after the ack, then the lock is freed', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks, { ack: 'deferred' });
+    const gate = await acquireM2BetaGate({ locks, peer });
+    const order = [];
+    const p = gate.release({ beforeFree: async () => { order.push(['beforeFree', locks.held.has(PRODUCT_LOCK)]); } });
+    await flush(20);
+    expect(peer.events.map((e) => e[0])).toEqual(['reportHeld', 'withdrawHeld']);
+    expect(order).toEqual([]); // worker stop has not begun while the acknowledgement is pending
+    order.push(['ack']);
+    peer.pendingAck();
+    await p;
+    expect(order).toEqual([['ack'], ['beforeFree', true]]);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
+  });
+
+  test('beforeFree runs only after a failed ack has terminated the peer', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks, { ack: 'wrong-name' });
+    const gate = await acquireM2BetaGate({ locks, peer });
+    await gate.release({ beforeFree: () => { peer.events.push(['beforeFree', locks.held.has(PRODUCT_LOCK)]); } });
+    expect(peer.events.map((e) => e[0])).toEqual(['reportHeld', 'withdrawHeld', 'terminate', 'beforeFree']);
+    expect(peer.events[3]).toEqual(['beforeFree', true]);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
+  });
+
   test('a throwing beforeFree still frees the lock', async () => {
     const locks = fakeLocks();
     const gate = await acquireM2BetaGate({ locks });
@@ -407,7 +434,7 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
   });
 
-  test.each(['reject', 'wrong-epoch', 'wrong-type', 'wrong-nonce', 'no-nonce', 'throwing-getter'])('ack %s: the peer is terminated before the lock is freed', async (ack) => {
+  test.each(['reject', 'wrong-epoch', 'wrong-type', 'wrong-name', 'wrong-nonce', 'no-nonce', 'throwing-getter'])('ack %s: the peer is terminated before the lock is freed', async (ack) => {
     const locks = fakeLocks();
     const peer = recordingPeer(locks, { ack });
     const gate = await acquireM2BetaGate({ locks, peer });
@@ -534,6 +561,42 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     const again = await acquireM2BetaGate({ locks });
     expect(again.entered).toBe(true);
     await again.release();
+  });
+
+  test('an async request that calls back with a grant and then rejects: entry refused, nothing sent, lock not held', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks);
+    let freed = false;
+    const asyncLocks = {
+      request(name, options, callback) {
+        return (async () => {
+          Promise.resolve(callback({ name, mode: 'exclusive' })).then(() => { freed = true; });
+          throw new Error('request failed after callback');
+        })();
+      },
+    };
+    const gate = await acquireM2BetaGate({ locks: asyncLocks, peer });
+    expectRefused(gate, M2_GATE_REFUSALS.REJECTED);
+    expect(gate.token.isHeld()).toBe(false);
+    expect(peer.reports).toEqual([]);
+    await flush();
+    expect(freed).toBe(true);
+  });
+
+  test('a failing random source with a throwing terminate(): nothing is sent, the peer is not touched, the lock is freed', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks);
+    peer.terminate = () => { peer.events.push(['terminate']); throw new Error('termination failed'); };
+    const spy = jest.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(() => { throw new Error('no entropy'); });
+    let gate;
+    try {
+      gate = await acquireM2BetaGate({ locks, peer });
+    } finally {
+      spy.mockRestore();
+    }
+    expectRefused(gate, M2_GATE_REFUSALS.REPORT_FAILED);
+    expect(peer.events).toEqual([]);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
   });
 
   test('release is idempotent: a second call returns the same promise and only the first beforeFree runs', async () => {
@@ -728,5 +791,134 @@ describe('static check: no literal lockHeld true outside tests', () => {
 
   test('only the pinned pre-existing occurrence exists', () => {
     expect(scan()).toEqual(PINNED);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+describe('chat hook lifecycle with the gate (test-profile build)', () => {
+  // The hook source is executed with dependency doubles and the `test-profile` stage macro
+  // substituted; both lock modules are the real ones.
+  const hookPath = fileURLToPath(new URL('../../../apps/chat/src/hooks/useStyxChat.js', import.meta.url));
+  const settle = async () => { for (let i = 0; i < 200; i += 1) await Promise.resolve(); };
+  const drain = () => new Promise((resolve) => { setTimeout(resolve, 20); });
+
+  async function harness(Chat, openVaultSettings = async () => null) {
+    const beta = await import('../../../src/storage/m2/beta-gate.js');
+    const { acquireWriterLock } = await import('../../../apps/chat/src/lib/writer-lock.js');
+    const held = new Set();
+    const locks = {
+      request(name, options, callback) {
+        if (held.has(name)) return Promise.resolve(callback(null));
+        held.add(name);
+        return Promise.resolve().then(() => callback({ name, mode: options.mode })).finally(() => held.delete(name));
+      },
+    };
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks } });
+    const gates = [];
+    const source = readFileSync(hookPath, 'utf8')
+      .replace(/^import .*;\r?\n/gm, '')
+      .replaceAll('import.meta.env', "({ VITE_VAULT_STAGE: 'test-profile' })")
+      .replace("import('../../../../src/storage/m2/beta-gate.js')", 'loadGate()')
+      .replace('export function useStyxChat()', 'function useStyxChat()');
+    const deps = {
+      useCallback: (fn) => fn, useEffect: () => {},
+      useRef: (current) => ({ current }), useState: (value) => [value, () => {}],
+      getStyxChat: async () => Chat, acquireWriterLock,
+      peerNamespace: () => '', getRelays: () => [], getBridgeUrl: () => '', transportOptions: () => ({}),
+      browserNotifier: () => ({ notifyIncoming() {} }), openVaultSettings, PushRegistrar: class {},
+      loadGate: async () => ({
+        ...beta,
+        acquireM2BetaGate: async (options) => { const g = await beta.acquireM2BetaGate(options); gates.push(g); return g; },
+      }),
+    };
+    // eslint-disable-next-line no-new-func
+    const hook = Function(...Object.keys(deps), `${source}\nreturn useStyxChat;`)(...Object.values(deps))();
+    return { hook, held, gates };
+  }
+
+  const baseChat = (state) => class {
+    me = { pubkey: 'probe' };
+    async init() { return this.me; }
+    async hasActivePairing() { return false; }
+    async start() { state.chatRunning = true; }
+    destroy() { state.chatRunning = false; state.destroyed = true; }
+    onMessage() { state.subs += 1; return () => { state.subs -= 1; }; }
+    onMessageState() { state.subs += 1; return () => { state.subs -= 1; }; }
+    onContactsChanged() { state.subs += 1; return () => { state.subs -= 1; }; }
+    onTyping() { state.subs += 1; return () => { state.subs -= 1; }; }
+    async listContacts() { return []; }
+  };
+
+  test('a logout during an unfinished unlock retires it: no worker, no chat, no lock afterwards', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    let finishOpen;
+    let opens = 0;
+    const h = await harness(baseChat(state), () => {
+      opens += 1;
+      if (opens > 1) return Promise.resolve(null); // the later unlock opens at once
+      return new Promise((resolve) => {
+        finishOpen = () => { state.workerRunning = true; resolve({ stop: () => { state.workerRunning = false; } }); };
+      });
+    });
+    const unlocking = h.hook.unlock({ password: 'p' });
+    await drain();
+    expect(typeof finishOpen).toBe('function'); // the vault opener is pending
+    h.hook.lock();
+    finishOpen();
+    await expect(unlocking).resolves.toBeUndefined();
+    await drain();
+    expect(state).toEqual({ chatRunning: false, workerRunning: false, subs: 0, destroyed: true });
+    expect(h.held.size).toBe(0);
+    expect(h.gates[0].token.isHeld()).toBe(false);
+    // A later unlock is not refused by this tab's own locks.
+    const again = await h.hook.unlock({ password: 'p' });
+    expect(again).toEqual({ pubkey: 'probe' });
+    expect([...h.held].sort()).toEqual(['styx-m2:styx-vault-default', 'styx-mls:']);
+    h.hook.lock();
+    await drain();
+    expect(h.held.size).toBe(0);
+  });
+
+  test('a re-login right after logout waits for the ordered release instead of meeting its own lock', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    let stopCalls = 0;
+    const h = await harness(baseChat(state), async () => ({ stop: async () => { stopCalls += 1; await settle(); } }));
+    await h.hook.unlock({ password: 'p' });
+    h.hook.lock();
+    const again = await h.hook.unlock({ password: 'p' });
+    expect(again).toEqual({ pubkey: 'probe' });
+    expect(stopCalls).toBe(1);
+    expect(h.gates).toHaveLength(2);
+    expect(h.gates[1].entered).toBe(true);
+    h.hook.lock();
+    await drain();
+    expect(h.held.size).toBe(0);
+  });
+
+  test('a chat constructor failure releases both locks; a retry acquires them again', async () => {
+    let fail = true;
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const Ok = baseChat(state);
+    class Chat extends Ok { constructor() { if (fail) throw new Error('constructor failed'); super(); } }
+    const h = await harness(Chat);
+    await expect(h.hook.unlock({ password: 'p' })).rejects.toThrow('constructor failed');
+    expect(h.held.size).toBe(0);
+    expect(h.gates[0].token.isHeld()).toBe(false);
+    fail = false;
+    await expect(h.hook.unlock({ password: 'p' })).resolves.toEqual({ pubkey: 'probe' });
+    h.hook.lock();
+    await drain();
+    expect(h.held.size).toBe(0);
+  });
+
+  test('a subscription failure undoes every earlier subscription, stops the worker and frees both locks', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const Base = baseChat(state);
+    class Chat extends Base { onContactsChanged() { throw new Error('subscription failed'); } }
+    const h = await harness(Chat, async () => { state.workerRunning = true; return { stop: () => { state.workerRunning = false; } }; });
+    await expect(h.hook.unlock({ password: 'p' })).rejects.toThrow('subscription failed');
+    expect(state).toEqual({ chatRunning: false, workerRunning: false, subs: 0, destroyed: true });
+    expect(h.held.size).toBe(0);
   });
 });
