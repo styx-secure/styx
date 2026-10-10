@@ -177,15 +177,15 @@ export function useStyxChat() {
 
     const stopWorker = () => stopSession(settingsSession);
     const revokeNow = () => {
+      // First stop authorizing: `release()` turns `isHeld()` false synchronously; the lock itself
+      // is kept until the pending startup step has returned and the worker is stopped.
+      if (gate && !gateReleasing) {
+        const g = gate;
+        gateReleasing = g.release({ beforeFree: async () => { await bodySettled; await stopWorker(); } });
+      }
       for (const off of subs.splice(0)) { try { off?.(); } catch { /* ignore */ } }
       try { chat?.destroy(); } catch { /* best-effort transport teardown */ }
       if (settingsSession) void stopWorker();
-      if (gate && !gateReleasing) {
-        const g = gate;
-        // `release()` turns `isHeld()` false synchronously; the lock itself is kept until the
-        // pending startup step has returned and the worker is stopped.
-        gateReleasing = g.release({ beforeFree: async () => { await bodySettled; await stopWorker(); } });
-      }
     };
     const abort = () => {
       revokeNow();
@@ -247,11 +247,13 @@ export function useStyxChat() {
       let preferences = null;
       try {
         const pairingActive = await chat.hasActivePairing();
+        checkpoint(); // never open a vault worker for an attempt a logout has already retired
         settingsSession = await openVaultSettings({
           password, peerProfile: ns, pairingActive,
         });
         preferences = settingsSession?.initial?.preferences ?? null;
       } catch (e) {
+        if (e === STALE) throw e;
         // Shadow migration is stage-gated. A vault failure must never deny access
         // to the unchanged legacy identity/settings path.
         await stopWorker();

@@ -1090,4 +1090,41 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     await drain();
     expect(h.held.size).toBe(0);
   });
+
+  test('logout revokes the token before the worker stop begins (the stop observes isHeld() === false)', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    let heldAtStop;
+    let h;
+    h = await harness(baseChat(state), async () => {
+      state.workerRunning = true;
+      return { stop: () => { heldAtStop = h.gates[0].token.isHeld(); state.workerRunning = false; } };
+    });
+    await h.hook.unlock({ password: 'p' });
+    h.hook.lock();
+    expect(heldAtStop).toBe(false);
+    await drain();
+    expect(h.held.size).toBe(0);
+  });
+
+  test('a logout during the pairing check opens no vault worker', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const Base = baseChat(state);
+    let finishPairing;
+    let pairingEntered;
+    const entered = new Promise((resolve) => { pairingEntered = resolve; });
+    class Chat extends Base {
+      hasActivePairing() { return new Promise((resolve) => { finishPairing = () => resolve(false); pairingEntered(); }); }
+    }
+    let opens = 0;
+    const h = await harness(Chat, async () => { opens += 1; state.workerRunning = true; return { stop: () => { state.workerRunning = false; } }; });
+    const unlocking = h.hook.unlock({ password: 'p' });
+    await entered;
+    h.hook.lock();
+    finishPairing();
+    await expect(unlocking).resolves.toBeUndefined();
+    await drain();
+    expect(opens).toBe(0);
+    expect(state).toEqual({ chatRunning: false, workerRunning: false, subs: 0, destroyed: true });
+    expect(h.held.size).toBe(0);
+  });
 });
