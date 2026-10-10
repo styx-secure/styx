@@ -33,7 +33,7 @@ export const CITE = Object.freeze({
   REPEAT: 'C-MUT §6 (after clearing either terminal reconciliation, a repeat follows CAPI-G008/G016 NO_RECONCILIATION_PENDING with unchanged authority and no output)',
   RESUME: 'C-MUT §8 (after worker-memory loss, authenticated readback must terminally classify before another operation); C-REC §4 (indeterminate reconciliation from the durable hold); C-MUT §6 (reconciliation is idempotent)',
   DURABLE_HOLD: 'C-FMT §7 and /recordKinds[13] (the RECONCILIATION_REQUIRED selector binds the candidate and its kind-13 MUTATION_HOLD); C-REC §4; C-MUT §8',
-  DEBRIS: 'C-FMT §7 / generationCommit.unboundCandidate (an unbound candidate is preserved non-authoritative debris; restore classifies by the selector alone and yields COMPLETE_OLD; it never stops the profile and is never discarded without terminal NOT_COMMITTED)',
+  DEBRIS: 'C-FMT §7 / generationCommit.unboundCandidate and C-REST unboundDebris (an unbound candidate is preserved non-authoritative debris; restore classifies by the selector alone and yields COMPLETE_OLD; it never stops the profile and is never discarded without terminal NOT_COMMITTED)',
   NEVER_REUSE: 'C-FMT §7 (a generation number is never reused: a later candidate exceeds every number present in the number-only inventory)',
   SURVIVES: 'C-MUT §8 / C-FMT §7 (the classified authority is durable; a further restart reads back the same authority and the same selector bytes)',
   LOCK: 'C-MUT §7 (one writer per profile; the lock of a dead context is released and re-acquired before readback, act §1 item 4)',
@@ -42,6 +42,13 @@ export const CITE = Object.freeze({
   PUT_THROW: 'C-MUT §8 (abort and exception before the commit point leave the complete original authority; failure before the commit point exposes no output)',
   NO_EARLY_HOLD: 'B-CHR obligation v2 item 6 (no memory hold is retained before the complete of the transaction whose selector binds the held candidate); C-MUT §5 NOT_COMMITTED',
   CAS: 'B-CHR obligation v2 item 10 (every REPLACE_SELECTOR carries expectedSelectorBytes; on any difference no write and SELECTOR_PRECONDITION_FAILED; every completed authority write changes the stored bytes); restart design T6b',
+  DURABILITY: 'B-CHR obligation v2 item 7 (every authority-changing transaction is opened with durability strict), as observed by the harness on the IndexedDB transaction; C-FMT §7 generationCommit',
+  MEMORY_HOLD: 'B-CHR obligation v2 item 6 and C-MUT §5 (a terminal COMMITTED or NOT_COMMITTED leaves no hold; INDETERMINATE retains exactly one hold, in SS memory after the binding write completed)',
+  PRODUCER_NOT_COMMITTED: 'B-CHR obligation v2 item 13 (an RR selector that keeps the exact parent tuple and binds exactly this candidate gives NOT_COMMITTED, terminal) with A(1)-A(6); C-MUT §6 (matching terminal NOT_COMMITTED discards candidate and escrow)',
+  PRODUCER_UNAVAILABLE: 'B-CHR obligation v2 item 13 (a readback that cannot be performed gives evidence INDETERMINATE, authenticatedByRS, hence CAPI-S024); C-MUT §6 (continued INDETERMINATE leaves the hold logically unchanged)',
+  PRODUCER_NO_HOLD: 'B-CHR obligation v2 item 13 (identity fields are copied, none invented: with no readable hold no evidence can be produced) and C-REST §9 (fail closed, bytes preserved, nothing emitted)',
+  PRODUCER_TAMPER: 'B-CHR obligation v2 items 12 and 13 (only authenticated plaintext is used; an authenticated contradiction or an authentication failure is a fail-closed error, never S024); C-REST §9',
+  FAULT_RECEIPT: 'act §1 (T9: the injected fault must reach the reads it targets, or the check proves nothing)',
 });
 
 const authority = (classify) => (classify && !classify.error ? `${classify.authority}${classify.held ? '+HELD' : ''}` : `ERROR(${classify?.error?.code ?? '?'})`);
@@ -77,6 +84,7 @@ export function checkUninterrupted({ row, outcome, phase }, response, rb) {
         'the stored selector is RECONCILIATION_REQUIRED and binds the candidate', CITE.HELD);
     }
     if (outcome === 'NOT_COMMITTED') want(rb.candidatePresent === false, 'the candidate is discarded', CITE.NOT_COMMITTED);
+    want(rb.memoryHold === (outcome === 'INDETERMINATE'), `after ORIGINAL ${outcome} a memory hold is ${outcome === 'INDETERMINATE' ? '' : 'not '}retained`, CITE.MEMORY_HOLD);
   } else {
     const kind = { COMMITTED: 'RECONCILED_COMMITTED', NOT_COMMITTED: 'NOT_COMMITTED', INDETERMINATE: 'INDETERMINATE' }[outcome];
     want(r.reconciliation === kind, `reconciliation ${r.reconciliation} is ${kind}`, CITE.OUTPUT_RECON);
@@ -84,6 +92,17 @@ export function checkUninterrupted({ row, outcome, phase }, response, rb) {
     want(r.output === output, `reconciliation output ${r.output} is ${output}`, CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.candidatePresent === false, 'the candidate is discarded', CITE.NOT_COMMITTED);
     if (outcome === 'COMMITTED') want(rb.memoryHold === false, 'the hold is cleared by the local emission', CITE.OUTPUT_RECON);
+    if (outcome === 'NOT_COMMITTED') want(rb.memoryHold === false, 'terminal NOT_COMMITTED leaves no memory hold', CITE.MEMORY_HOLD);
+  }
+  f.push(...checkDurability(response.trace));
+  return f;
+}
+
+/** Every authority-changing (readwrite) transaction the harness saw was opened with durability strict. */
+export function checkDurability(trace) {
+  const f = [];
+  for (const e of trace ?? []) {
+    if (e.ev === 'OPEN' && e.durability !== 'strict') f.push({ what: `transaction T${e.tx} durability ${e.durability} is strict`, cite: CITE.DURABILITY });
   }
   return f;
 }
@@ -141,14 +160,42 @@ export function checkRestartReconcile({ row, outcome }, pre, response, rb, repea
   return f;
 }
 
-/** T9 faults on the restart path: the reconciliation fails closed and the store is byte-preserved. */
-export function checkFault(fault, pre, response, rb) {
+/**
+ * T9 on the port's own terminal readback producer (obligation item 13), in fixed, port-independent cells:
+ *   PRODUCE          restart, no fault: NOT_COMMITTED terminal, candidate discarded;
+ *   READ_FAIL_MEMORY SS memory survived, every producer read fails: INDETERMINATE, S024, bytes unchanged;
+ *   READ_FAIL_LOST   memory lost, every producer read fails: fail closed, bytes preserved, nothing emitted;
+ *   TAMPER_FIRST / TAMPER_ALL  restart, the first / every producer read returns flipped bytes: fail closed.
+ * A fault case whose fault never reached a producer read fails (receipt).
+ */
+export function checkProducer(kind, pre, response, rb) {
   const f = [];
-  const cite = fault === 'READ_FAIL' ? CITE.READ_FAIL : CITE.TAMPER;
-  if (response.error === null) f.push({ what: `${fault}: reconciliation fails closed (got ${response.result?.reconciliation})`, cite });
-  if ((response.result?.output ?? null) !== null) f.push({ what: `${fault}: nothing is emitted`, cite });
-  if (rb.dbDigest !== pre.dbDigest) f.push({ what: `${fault}: the store is byte-preserved`, cite });
-  if (authority(rb.classify) !== 'COMPLETE_OLD+HELD') f.push({ what: `${fault}: the hold is unchanged (${authority(rb.classify)})`, cite });
+  const want = (ok, what, cite) => { if (!ok) f.push({ what, cite }); };
+  const trace = response.trace ?? [];
+  const output = response.result?.output ?? null;
+  if (kind === 'PRODUCE') {
+    want(response.produced?.outcome === 2 && response.produced?.terminal === true, `the producer gives NOT_COMMITTED terminal (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_NOT_COMMITTED);
+    want(response.result?.reconciliation === 'NOT_COMMITTED', `reconciliation ${response.result?.reconciliation ?? response.error?.code} is NOT_COMMITTED`, CITE.PRODUCER_NOT_COMMITTED);
+    want(authority(rb.classify) === 'COMPLETE_OLD' && rb.candidatePresent === false, `readback ${authority(rb.classify)} is COMPLETE_OLD with the candidate discarded`, CITE.NOT_COMMITTED);
+    want(output === null, 'nothing is emitted', CITE.OUTPUT_RECON);
+    f.push(...checkDurability(trace));
+    return f;
+  }
+  const receipt = kind.startsWith('READ_FAIL')
+    ? trace.some((e) => e.ev === 'FAULT' && e.fault === 'READ_FAIL')
+    : trace.some((e) => e.ev === 'TAMPERED' && e.changed === true);
+  want(receipt, `${kind}: the fault reached a producer read`, CITE.FAULT_RECEIPT);
+  want(output === null, `${kind}: nothing is emitted`, CITE.PRODUCER_NO_HOLD);
+  want(rb.dbDigest === pre.dbDigest, `${kind}: the store is byte-preserved`, CITE.PRODUCER_UNAVAILABLE);
+  want(authority(rb.classify) === 'COMPLETE_OLD+HELD', `${kind}: the hold is unchanged (${authority(rb.classify)})`, CITE.CONTINUED);
+  if (kind === 'READ_FAIL_MEMORY') {
+    want(response.produced?.outcome === 3 && response.error === null, `READ_FAIL_MEMORY: the producer gives INDETERMINATE evidence (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_UNAVAILABLE);
+    want(response.result?.reconciliation === 'INDETERMINATE', `READ_FAIL_MEMORY: reconciliation ${response.result?.reconciliation ?? response.error?.code} is INDETERMINATE (S024)`, CITE.PRODUCER_UNAVAILABLE);
+  } else if (kind === 'READ_FAIL_LOST') {
+    want(response.error !== null, `READ_FAIL_LOST: fails closed (got ${response.result?.reconciliation})`, CITE.PRODUCER_NO_HOLD);
+  } else {
+    want(response.error !== null && response.produced === null, `${kind}: fails closed before any evidence, never S024 (got ${response.result?.reconciliation ?? 'error'})`, CITE.PRODUCER_TAMPER);
+  }
   return f;
 }
 
@@ -178,7 +225,7 @@ export function checkDebris({ outcome }, stage, data) {
   const want = (ok, what, cite) => { if (!ok) f.push({ what, cite }); };
   if (stage === 'DEBRIS') {
     want(authority(data.classify) === 'COMPLETE_OLD', `with debris present readback ${authority(data.classify)} is COMPLETE_OLD`, CITE.DEBRIS);
-    want(Array.isArray(data.numbers) && data.numbers.includes('2'), 'the debris generation number is listed by the number-only inventory', CITE.NEVER_REUSE);
+    want(Array.isArray(data.numbers) && data.numbers.join(',') === '1,2', `the number-only inventory is exactly {1,2} (got ${JSON.stringify(data.numbers)})`, CITE.NEVER_REUSE);
   } else if (stage === 'REUSE') {
     want(data.response.error?.code === 'STALE_PARENT', `a candidate reusing the debris number is refused (got ${data.response.error?.code ?? 'success'})`, CITE.NEVER_REUSE);
     want(data.rb.dbDigest === data.before, 'the refused request wrote nothing', CITE.NEVER_REUSE);

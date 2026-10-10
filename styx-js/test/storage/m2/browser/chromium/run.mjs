@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import {
   ROWS, OUTCOMES, PHASES, KILL_KINDS, checkUninterrupted, checkKilled, checkResumed, checkSurvives,
-  checkRestartReconcile, checkFault, checkPutThrow, checkDelayedWriter, checkDebris, endStates, CITE,
+  checkRestartReconcile, checkProducer, checkPutThrow, checkDelayedWriter, checkDebris, checkDurability, endStates, CITE,
 } from './suite/expectations.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -77,7 +77,17 @@ function kill(kind) {
   const tree = processTree();
   const victims = kind === 'RENDERER' ? tree.filter(isRenderer) : tree; // COMMIT_SENT kills the whole tree
   for (const v of victims) { try { process.kill(v.pid, 'SIGKILL'); } catch { /* gone */ } }
-  return { victims: victims.length, total: tree.length };
+  // Delivery receipt: every victim is gone or a zombie (SIGKILL is not catchable; a killed child of this
+  // process stays a zombie until Playwright reaps it).
+  const dead = (pid) => {
+    try { return fs.readFileSync(`/proc/${pid}/stat`, 'utf8').replace(/^.*\)\s+/, '')[0] === 'Z'; } catch { return true; }
+  };
+  let alive = victims;
+  for (let i = 0; i < 50 && alive.length > 0; i++) {
+    execFileSync('sleep', ['0.02']);
+    alive = alive.filter((v) => !dead(v.pid));
+  }
+  return { victims: victims.length, total: tree.length, survivors: alive.length };
 }
 async function launch() {
   const ctx = await engine.launchPersistentContext(PROFILE, {
@@ -187,7 +197,10 @@ async function killMatrix(rows) {
       const r = await runArmed(cell, { killAt: point, killKind: kind, plan });
       tally.kills += 1;
       const failures = [];
-      if (r.killed === null) { tally.notKilled += 1; failures.push({ what: `kill ${kind} at ${point} was not delivered`, cite: 'act §1 item 2 (every request boundary)' }); }
+      if (r.killed === null || r.killed.victims === 0 || r.killed.survivors !== 0) {
+        tally.notKilled += 1;
+        failures.push({ what: `kill ${kind} at ${point} was delivered (${JSON.stringify(r.killed)})`, cite: 'act §1 item 2 (every request boundary)' });
+      }
       failures.push(...checkKilled(cell, { point, firstPoint: point === first, committedPoint: committed.has(point) }, r.rb));
       const { initial, final } = endStates(cell);
       const got = r.rb.classify.error ? null : `${r.rb.classify.authority}${r.rb.classify.held ? '+HELD' : ''}`;
@@ -200,9 +213,10 @@ async function killMatrix(rows) {
         const rb2 = await call(r.page, 'readback', {});
         failures.push(...checkResumed(cell, resumed, rb2));
       }
-      if (committed.has(point) && got === final && r.snap !== null && r.rb.selector?.envelope !== r.snap.envelope) {
-        // T6b CAS: the landed commit changed the stored selector bytes, so a delayed writer holding the
-        // bytes its plan read before the operation is refused and changes nothing.
+      if (committed.has(point) && got === final && final !== initial && r.snap !== null) {
+        // T6b CAS: a landed authority write must change the stored selector bytes (fresh nonce, item 10),
+        // and a delayed writer holding the bytes its plan read before the operation is refused.
+        if (r.rb.selector?.envelope === r.snap.envelope) failures.push({ what: `after ${point}: the completed authority write changed the stored selector bytes`, cite: CITE.CAS });
         const delayed = await call(r.page, 'delayedReplace', { snap: r.snap });
         const after = await call(r.page, 'readback', {});
         failures.push(...checkDelayedWriter(point, delayed, r.rb.dbDigest, after.dbDigest));
@@ -273,23 +287,28 @@ async function restartReconcile(rows) {
 }
 
 async function faults(rows) {
+  // T9 on the port's terminal readback producer: five fixed cells per row, whatever the port reads.
   for (const row of rows) {
-    // Count the readonly requests of a restart reconciliation (port-neutral, from the trace).
-    const probe = await heldThenContextDeath(row);
-    await call(probe.page, 'arm', {});
-    const dry = await call(probe.page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
-    await closeHard(probe.ctx);
-    const cases = [['READ_FAIL', null], ...Array.from({ length: dry.reads }, (_, k) => ['TAMPER', k])];
-    for (const [fault, tamperAt] of cases) {
+    for (const kind of ['PRODUCE', 'READ_FAIL_MEMORY', 'READ_FAIL_LOST', 'TAMPER_FIRST', 'TAMPER_ALL']) {
       tally.cells += 1;
-      const { ctx, page, pre } = await heldThenContextDeath(row);
-      await call(page, 'arm', { fault, tamperAt });
-      const response = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
+      let ctx; let page; let pre;
+      if (kind === 'READ_FAIL_MEMORY') {
+        // SS memory survives: INDETERMINATE in this worker, then the producer in the same worker.
+        fs.rmSync(PROFILE, { recursive: true, force: true });
+        ({ ctx, page } = await launch());
+        await call(page, 'seed', { scenario: row });
+        const held = await call(page, 'original', { scenario: row, outcome: 'INDETERMINATE' });
+        if (held.error !== null) throw new Error(`INDETERMINATE setup failed: ${held.error.code}`);
+        pre = await call(page, 'readback', {});
+      } else {
+        ({ ctx, page, pre } = await heldThenContextDeath(row));
+      }
+      const fault = { PRODUCE: null, READ_FAIL_MEMORY: 'READ_FAIL', READ_FAIL_LOST: 'READ_FAIL', TAMPER_FIRST: 'TAMPER', TAMPER_ALL: 'TAMPER' }[kind];
+      await call(page, 'arm', {});
+      const response = await call(page, 'reconcile', { scenario: row, produce: true, produceFault: fault, tamperAt: kind === 'TAMPER_FIRST' ? 0 : null });
       const rb = await call(page, 'readback', {});
       await closeHard(ctx);
-      const touched = fault === 'READ_FAIL' || (response.trace ?? []).some((e) => e.ev === 'TAMPERED' && e.k === tamperAt && e.changed);
-      const failures = touched ? checkFault(fault, pre, response, rb) : [];
-      record({ id: `${row}/T9/${fault}${tamperAt === null ? '' : `@${tamperAt}`}`, row, phase: 'T9', fault, tamperAt, applicable: touched, response: response.result?.reconciliation ?? response.error?.code, failures });
+      record({ id: `${row}/T9/${kind}`, row, phase: 'T9', fault: kind, produced: response.produced, response: response.result?.reconciliation ?? response.error?.code, failures: checkProducer(kind, pre, response, rb) });
     }
   }
   // T6b mutant: a put throws mid-enqueue during the original write, for every outcome.

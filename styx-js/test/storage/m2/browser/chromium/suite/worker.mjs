@@ -132,14 +132,29 @@ async function original({ scenario, outcome, parent = '1', generation = '2', op 
   })));
 }
 
-async function reconcile({ scenario, outcome, op = 1 }) {
+/**
+ * Reconciliation. `outcome` injects the RS evidence the I-TXN driver consumes (the C-MUT outcome
+ * matrix). `produce: true` instead takes the evidence from the port's own terminal readback producer
+ * (obligation item 13); `produceFault` arms a T9 fault for the producer's reads only.
+ */
+async function reconcile({ scenario, outcome, op = 1, produce = false, produceFault = null, tamperAt = null }) {
   const envelope = envelopeInput(scenario, op);
-  const evidence = evidenceFor(envelope, M2_OUTCOME[outcome]);
   // The SS hold when SS memory survived; null after a restart, where I-TXN reads the durable kind-13 hold.
-  return finish(await guarded(async () => reconcileIndeterminate({
-    storage: port, manifestRootKey: ROOT_KEY, hold: await port.readMemoryHold(), evidence,
-    reference: envelope.reconciliationIdentity.reference,
+  const hold = await port.readMemoryHold();
+  let produced = null;
+  if (produce) {
+    const saved = { fault: state.fault, tamperAt: state.tamperAt };
+    Object.assign(state, { fault: produceFault, tamperAt });
+    const p = await guarded(() => port.readbackEvidence({ hold }));
+    Object.assign(state, saved);
+    if (p.error) return { ...finish(p), produced: null };
+    produced = p.ok;
+  }
+  const evidence = produced ?? evidenceFor(envelope, M2_OUTCOME[outcome]);
+  const r = finish(await guarded(async () => reconcileIndeterminate({
+    storage: port, manifestRootKey: ROOT_KEY, hold, evidence, reference: envelope.reconciliationIdentity.reference,
   })));
+  return { ...r, produced: produced === null ? null : { outcome: produced.outcome, terminal: produced.terminal } };
 }
 
 // Canonical logical-value digest: byte preservation by logical value, not by database files.
