@@ -202,6 +202,7 @@ async function killMatrix(rows) {
         failures.push({ what: `kill ${kind} at ${point} was delivered (${JSON.stringify(r.killed)})`, cite: 'act §1 item 2 (every request boundary)' });
       }
       failures.push(...checkKilled(cell, { point, firstPoint: point === first, committedPoint: committed.has(point) }, r.rb));
+      failures.push(...checkDurability(r.response?.trace));
       const { initial, final } = endStates(cell);
       const got = r.rb.classify.error ? null : `${r.rb.classify.authority}${r.rb.classify.held ? '+HELD' : ''}`;
       if (got === 'COMPLETE_NEW' && r.rb.candidateDigest !== dry.rb.candidateDigest) {
@@ -240,10 +241,15 @@ async function debris(rows) {
     fs.rmSync(PROFILE, { recursive: true, force: true });
     const { ctx, page } = await launch();
     await call(page, 'seed', { scenario: row });
+    const sealed = await call(page, 'readback', {});
     await call(page, 'seedDebris', { scenario: row, outcome });
     const failures = [];
     const d = await call(page, 'readback', {});
     failures.push(...checkDebris({ outcome }, 'DEBRIS', d));
+    // Fresh seal (item 10): seedDebris re-wrote the selector with unchanged plaintext.
+    const delayed = await call(page, 'delayedReplace', { snap: sealed.selector });
+    const afterDelayed = await call(page, 'readback', {});
+    failures.push(...checkDebris({ outcome }, 'RESEAL', { before: sealed.selector, after: d.selector, delayed, digestBefore: d.dbDigest, digestAfter: afterDelayed.dbDigest }));
     const reuse = await call(page, 'original', { scenario: row, outcome, generation: '2' });
     const afterReuse = await call(page, 'readback', {});
     failures.push(...checkDebris({ outcome }, 'REUSE', { response: reuse, rb: afterReuse, before: d.dbDigest }));
@@ -287,8 +293,20 @@ async function restartReconcile(rows) {
 }
 
 async function faults(rows) {
-  // T9 on the port's terminal readback producer: five fixed cells per row, whatever the port reads.
+  // T9 on the port's terminal readback producer: six fixed cells per row, whatever the port reads.
   for (const row of rows) {
+    tally.cells += 1;
+    {
+      // PRODUCE_COMMITTED: the commit lands while its response is lost; the SS kept its hold.
+      fs.rmSync(PROFILE, { recursive: true, force: true });
+      const { ctx, page } = await launch();
+      await call(page, 'seed', { scenario: row });
+      const held = await call(page, 'original', { scenario: row, outcome: 'INDETERMINATE' });
+      if (held.error !== null) throw new Error(`INDETERMINATE setup failed: ${held.error.code}`);
+      const response = await call(page, 'produceAfterCommit', { scenario: row });
+      await closeHard(ctx);
+      record({ id: `${row}/T9/PRODUCE_COMMITTED`, row, phase: 'T9', fault: 'PRODUCE_COMMITTED', produced: response.produced, response: response.error?.code ?? null, failures: checkProducer('PRODUCE_COMMITTED', null, response, null) });
+    }
     for (const kind of ['PRODUCE', 'READ_FAIL_MEMORY', 'READ_FAIL_LOST', 'TAMPER_FIRST', 'TAMPER_ALL']) {
       tally.cells += 1;
       let ctx; let page; let pre;

@@ -49,6 +49,10 @@ export const CITE = Object.freeze({
   PRODUCER_NO_HOLD: 'B-CHR obligation v2 item 13 (identity fields are copied, none invented: with no readable hold no evidence can be produced) and C-REST §9 (fail closed, bytes preserved, nothing emitted)',
   PRODUCER_TAMPER: 'B-CHR obligation v2 items 12 and 13 (only authenticated plaintext is used; an authenticated contradiction or an authentication failure is a fail-closed error, never S024); C-REST §9',
   FAULT_RECEIPT: 'act §1 (T9: the injected fault must reach the reads it targets, or the check proves nothing)',
+  PRODUCER_COMMITTED: 'B-CHR obligation v2 item 13 (a selector naming the candidate whose complete new generation validates gives COMMITTED; identity fields are copied from the authenticated COMMIT_RESULT and the hold, none invented); I-TXN validateCommitResultEvidence',
+  ESCROW: 'B-CHR obligation v2 item 14 and C-REC §4 (after COMMITTED the generation keeps its OUTPUT_ESCROW as commit-result evidence; it is never cleared by restore)',
+  FRESH_NONCE: 'B-CHR obligation v2 item 10 and C-FMT §4 nonce rule (every selector write is sealed with a fresh 96-bit CSPRNG nonce, also when the plaintext is unchanged; a nonce is never reused under the selector key)',
+  SCOPE: 'B-CHR obligation v2 item 1 (one transaction over the store that holds the records and the selector; the reference port uses only `mls`, act §1)',
 });
 
 const authority = (classify) => (classify && !classify.error ? `${classify.authority}${classify.held ? '+HELD' : ''}` : `ERROR(${classify?.error?.code ?? '?'})`);
@@ -94,15 +98,19 @@ export function checkUninterrupted({ row, outcome, phase }, response, rb) {
     if (outcome === 'COMMITTED') want(rb.memoryHold === false, 'the hold is cleared by the local emission', CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.memoryHold === false, 'terminal NOT_COMMITTED leaves no memory hold', CITE.MEMORY_HOLD);
   }
+  if (outcome === 'COMMITTED' && HAS_OUTPUT(row)) {
+    want(rb.escrowOutput === ESCROW_OUTPUT_HEX, `the committed generation keeps its OUTPUT_ESCROW (got ${rb.escrowOutput})`, CITE.ESCROW);
+  }
   f.push(...checkDurability(response.trace));
   return f;
 }
 
-/** Every authority-changing (readwrite) transaction the harness saw was opened with durability strict. */
+/** Every authority-changing (readwrite) transaction the harness saw was opened with durability strict, over `mls` only. */
 export function checkDurability(trace) {
   const f = [];
   for (const e of trace ?? []) {
     if (e.ev === 'OPEN' && e.durability !== 'strict') f.push({ what: `transaction T${e.tx} durability ${e.durability} is strict`, cite: CITE.DURABILITY });
+    if (e.ev === 'OPEN' && (e.stores ?? []).join(',') !== 'mls') f.push({ what: `transaction T${e.tx} scope ${JSON.stringify(e.stores)} is ["mls"]`, cite: CITE.SCOPE });
   }
   return f;
 }
@@ -133,6 +141,11 @@ export function checkResumed(cell, response, rb) {
   const { final } = endStates(cell);
   if (authority(rb.classify) !== final) f.push({ what: `resumed readback ${authority(rb.classify)} is ${final}`, cite: CITE.RESUME });
   if (response.error !== null) f.push({ what: `resume returned without error (got ${response.error?.code})`, cite: CITE.RESUME });
+  const kind = { COMMITTED: 'RECONCILED_COMMITTED', NOT_COMMITTED: 'NOT_COMMITTED', INDETERMINATE: 'INDETERMINATE' }[cell.outcome];
+  if (response.error === null && response.result?.reconciliation !== kind) f.push({ what: `resumed reconciliation ${response.result?.reconciliation} is ${kind}`, cite: CITE.OUTPUT_RECON });
+  const output = cell.outcome === 'COMMITTED' && HAS_OUTPUT(cell.row) ? ESCROW_OUTPUT_HEX : null;
+  if ((response.result?.output ?? null) !== output) f.push({ what: `resumed output ${response.result?.output ?? null} is ${output}`, cite: CITE.OUTPUT_RECON });
+  f.push(...checkDurability(response.trace));
   return f;
 }
 
@@ -140,6 +153,8 @@ export function checkSurvives(before, after) {
   const f = [];
   if (authority(before.classify) !== authority(after.classify)) f.push({ what: `after a further restart ${authority(after.classify)} is ${authority(before.classify)}`, cite: CITE.SURVIVES });
   if ((before.selector?.envelope ?? null) !== (after.selector?.envelope ?? null)) f.push({ what: 'after a further restart the selector bytes are unchanged', cite: CITE.SURVIVES });
+  if (before.dbDigest !== after.dbDigest) f.push({ what: 'after a further restart the whole store is unchanged', cite: CITE.SURVIVES });
+  if (before.escrowOutput !== after.escrowOutput) f.push({ what: 'after a further restart the escrow is unchanged', cite: CITE.ESCROW });
   return f;
 }
 
@@ -173,6 +188,14 @@ export function checkProducer(kind, pre, response, rb) {
   const want = (ok, what, cite) => { if (!ok) f.push({ what, cite }); };
   const trace = response.trace ?? [];
   const output = response.result?.output ?? null;
+  if (kind === 'PRODUCE_COMMITTED') {
+    want(response.setup === null && response.hadHold === true, `setup: the commit landed with the SS hold kept (${response.setup?.code ?? 'ok'})`, CITE.PRODUCER_COMMITTED);
+    want(response.produced?.outcome === 1 && response.produced?.terminal === true, `the producer gives COMMITTED terminal (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_COMMITTED);
+    want(response.identity === 'VALID', `the produced evidence validates against the envelope (got ${JSON.stringify(response.identity)})`, CITE.PRODUCER_COMMITTED);
+    want(response.before === response.after, 'the producer writes nothing', CITE.PRODUCER_COMMITTED);
+    want(!(response.trace ?? []).some((e) => e.ev === 'OPEN'), 'the producer opens no readwrite transaction', CITE.PRODUCER_COMMITTED);
+    return f;
+  }
   if (kind === 'PRODUCE') {
     want(response.produced?.outcome === 2 && response.produced?.terminal === true, `the producer gives NOT_COMMITTED terminal (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_NOT_COMMITTED);
     want(response.result?.reconciliation === 'NOT_COMMITTED', `reconciliation ${response.result?.reconciliation ?? response.error?.code} is NOT_COMMITTED`, CITE.PRODUCER_NOT_COMMITTED);
@@ -229,9 +252,19 @@ export function checkDebris({ outcome }, stage, data) {
   } else if (stage === 'REUSE') {
     want(data.response.error?.code === 'STALE_PARENT', `a candidate reusing the debris number is refused (got ${data.response.error?.code ?? 'success'})`, CITE.NEVER_REUSE);
     want(data.rb.dbDigest === data.before, 'the refused request wrote nothing', CITE.NEVER_REUSE);
+  } else if (stage === 'RESEAL') {
+    // seedDebris replaced the selector with the same plaintext: the envelope must still change, and a
+    // writer holding the earlier envelope must be refused with nothing written.
+    want(data.after !== null && data.after.plaintext === data.before.plaintext && data.after.envelope !== data.before.envelope,
+      'an unchanged-plaintext selector replacement is re-sealed (new envelope)', CITE.FRESH_NONCE);
+    want(data.after !== null && data.after.nonce !== data.before.nonce, 'the re-seal uses a fresh nonce', CITE.FRESH_NONCE);
+    f.push(...checkDelayedWriter('RESEAL', data.delayed, data.digestBefore, data.digestAfter));
   } else if (stage === 'SECOND') {
     f.push(...checkUninterrupted({ row: data.row, outcome, phase: 'ORIGINAL' }, data.response, data.rb));
     want(data.debrisDigest === data.debrisAfter, 'the debris generation is preserved byte-identical', CITE.DEBRIS);
+    const n = Array.isArray(data.rb.numbers) ? data.rb.numbers : [];
+    want(n.includes('2') && n.every((x) => ['1', '2', '3'].includes(x)) && n.includes('3') === (outcome !== 'NOT_COMMITTED'),
+      `after the second mutation the inventory ${JSON.stringify(n)} keeps 2, holds 3 iff not NOT_COMMITTED, nothing else`, CITE.NEVER_REUSE);
   }
   return f;
 }

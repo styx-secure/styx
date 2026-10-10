@@ -285,7 +285,9 @@ export async function createPort({ db, context }) {
         if (memory !== null && !sameBytes(memory.operationIdentity, hold.operationIdentity)) {
           throw failed('EVIDENCE_MISMATCH', 'the memory hold is not the durable hold');
         }
-        if (s.generation !== BigInt(hold.parentGeneration)) throw failed('EVIDENCE_MISMATCH', 'the RR selector does not keep the exact parent');
+        if (s.generation !== BigInt(hold.parentGeneration) || !sameBytes(s.keyedRoot, hold.parentKeyedRoot)) {
+          throw failed('EVIDENCE_MISMATCH', 'the RR selector does not keep the exact parent tuple of the hold');
+        }
         return evidenceOf(hold, OUTCOME.NOT_COMMITTED, true);
       }
       if (memory === null) throw failed('NO_RECONCILIATION_PENDING', 'no reconciliation is pending');
@@ -298,7 +300,8 @@ export async function createPort({ db, context }) {
           if (e.code === 'AUTHENTICATION_FAILED') throw e;
           return unavailable();
         }
-        if (cand !== null && cand.resultEvidence !== null && sameBytes(cand.resultEvidence.operationIdentity, memory.operationIdentity)) {
+        if (cand !== null && cand.resultEvidence !== null && BigInt(cand.generation) === s.generation
+          && sameBytes(cand.keyedRoot, s.keyedRoot) && sameBytes(cand.resultEvidence.operationIdentity, memory.operationIdentity)) {
           return evidenceOf(memory, OUTCOME.COMMITTED, true);
         }
       }

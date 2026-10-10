@@ -2,9 +2,10 @@
 // in one dedicated worker that the harness creates and that dies with its page. Port-neutral: it uses
 // only the port's public C-FMT/I-TXN interface and the public VaultDb reads.
 import { openVaultDb } from '/src/storage/vault-db.js';
-import { M2_KIND, decodePlaintext } from '/src/storage/m2/session-codec.js';
+import { M2_KIND, decodeEnvelope, decodePlaintext } from '/src/storage/m2/session-codec.js';
 import {
-  M2_OUTCOME, classifyAuthority, mutationRow, reconcileIndeterminate, runMutation,
+  M2_OUTCOME, buildMutationEnvelope, classifyAuthority, mutationRow, reconcileIndeterminate, runMutation,
+  validateCommitResultEvidence,
 } from '/src/storage/m2/session-transaction.js';
 import { instrument } from './instrument.mjs';
 import {
@@ -101,6 +102,32 @@ async function delayedReplace({ snap }) {
   return { error: r.error ?? null };
 }
 
+/**
+ * T9 PRODUCE_COMMITTED (obligation item 13, COMMITTED branch): the commit lands while its response is
+ * lost and the SS still holds its hold. The landed commit is driven through the I-TXN driver with
+ * injected RS evidence; the producer is then given the hold the SS kept and must read back COMMITTED,
+ * terminal, with identity fields that validate against the operation's envelope. It writes nothing.
+ */
+async function produceAfterCommit({ scenario, op = 1 }) {
+  const hold = await port.readMemoryHold();
+  const envelope = envelopeInput(scenario, op);
+  const landed = await guarded(async () => reconcileIndeterminate({
+    storage: port, manifestRootKey: ROOT_KEY, hold, evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED),
+    reference: envelope.reconciliationIdentity.reference,
+  }));
+  const before = (await readback({})).dbDigest;
+  arm({});
+  const p = await guarded(() => port.readbackEvidence({ hold }));
+  state.armed = false;
+  const valid = p.ok ? await guarded(async () => validateCommitResultEvidence({ evidence: p.ok, envelope: buildMutationEnvelope(envelope) })) : null;
+  const after = await readback({});
+  return {
+    setup: landed.error ?? null, hadHold: hold !== null,
+    produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null, error: p.error ?? null,
+    identity: valid === null ? null : (valid.error ?? 'VALID'), before, after: after.dbDigest, trace: state.trace,
+  };
+}
+
 function arm({ plan = {}, fault = null, tamperAt = null } = {}) {
   Object.assign(state, { armed: true, fault, tamperAt, plan, trace: [], next: 0, reads: 0, faulted: false });
 }
@@ -177,7 +204,8 @@ async function readback({ parent = '1', candidate = '2' }) {
   else {
     const s = decodePlaintext(M2_KIND.GENERATION_SELECTOR, stored.ok.plaintext);
     out.selector = {
-      envelope: hex(stored.ok.envelope), generation: s.generation.toString(),
+      envelope: hex(stored.ok.envelope), nonce: hex(decodeEnvelope(stored.ok.envelope).nonce),
+      plaintext: hex(stored.ok.plaintext), generation: s.generation.toString(),
       candidateGeneration: s.candidateGeneration.toString(), state: s.state,
     };
   }
@@ -188,6 +216,7 @@ async function readback({ parent = '1', candidate = '2' }) {
   const cand = await guarded(() => port.readGeneration(BigInt(candidate)));
   out.candidatePresent = cand.error ? { error: cand.error } : cand.ok !== null;
   out.candidateDigest = cand.ok ? await digest(cand.ok) : null;
+  out.escrowOutput = cand.ok?.escrow?.output ? hex(cand.ok.escrow.output) : null;
   const nums = await guarded(() => port.readGenerationNumbers());
   out.numbers = nums.error ? { error: nums.error } : Array.from(nums.ok, (n) => BigInt(n).toString()).sort();
   const mh = await guarded(() => port.readMemoryHold());
@@ -200,7 +229,7 @@ async function readback({ parent = '1', candidate = '2' }) {
   return out;
 }
 
-const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, readback };
+const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, readback };
 self.onmessage = async (ev) => {
   const { id, op, args } = ev.data;
   try {
