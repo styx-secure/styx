@@ -234,6 +234,17 @@ export async function acquireM2BetaGate({
     return refusal(reason, observe(elsewhere ? 'HELD_BY_OTHER' : 'UNAVAILABLE'));
   }
 
+  // A request that settles or rejects right after calling back (even across an async boundary)
+  // has no lock: let it report itself before the grant is trusted. Nothing is sent before this.
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  if (phase !== 'HELD') {
+    const free = freeLock;
+    freeLock = null;
+    if (typeof free === 'function') free();
+    phase = 'NOT_GRANTED';
+    return refusal(M2_GATE_REFUSALS.REJECTED, observe('UNAVAILABLE'));
+  }
+
   const decision = observe(token.isHeld() ? 'HELD_BY_SELF' : 'UNAVAILABLE');
 
   const freeNow = () => {
