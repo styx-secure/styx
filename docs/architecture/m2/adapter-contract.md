@@ -63,6 +63,8 @@ Result kinds are disjoint:
 | `INDETERMINATE` | Unknown result; retain original state and held mutation; reconcile only. |
 | `REJECTED` | Stable value-free error; state unchanged and no output. |
 
+`RESTORE` returns only `SUCCESS` (`RESTORED` or `RESTORED_EMPTY_SESSION`), `INDETERMINATE` (`CAPI-S030` only) or `REJECTED`; it never returns `NO_CHANGE` or `NOT_COMMITTED`. `CAPI-S030` re-exposes an existing authenticated durable hold after a restart and starts no new commit. `RESTORED_EMPTY_SESSION` (`CAPI-S031`) reports an authenticated restored `EMPTY` authority; it carries no output and leaves the state `EMPTY`.
+
 Section 10 closes code-to-kind mapping and the value-free error shape. Error details never contain secrets/plaintext, stable group ids, paths, host/user identity, timing, evidence identity or arbitrary upstream text. An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.
 
 ## 5. Commit and reconciliation
@@ -71,11 +73,19 @@ For `RS_TRI_STATE`, SS stages one complete logical mutation and requests exactly
 
 The indeterminate response carries `originalStateBefore`. Reconciliation obtains the outcome from RS; AP cannot supply it. Proven commit applies the held transition once and releases held output. Proven absence restores `EMPTY` or `ACTIVE` according to the original state. Continued uncertainty stays blocked.
 
+The emitted `reconciliationRef` is exactly `"I-SM-HOLD:"` followed by the unpadded base64url encoding of the 32-byte kind-13 `reconciliationReference`: 53 characters. It replaces the I-SM rule `reconciliationRef = I-SM-HOLD:${operationIdentity}`. The original `INDETERMINATE` emission and `CAPI-S030` use the same function, so the two emissions are byte-equal. The 32-byte reference reaches the adapter only as an SS/RS-owned observation fact, never as AP input. An AP echo that is not exactly this form, or whose decoded bytes differ from the held reference, is `RECONCILIATION_REFERENCE_MISMATCH` (`CAPI-S028`) with no mutation.
+
+For the operations of all seven `RS_TRI_STATE` rows (`CAPI-S001`, `CAPI-S006`, `CAPI-S009`, `CAPI-S010`, `CAPI-S014`, `CAPI-S016`, `CAPI-S017`), the SS/RS `operationIdentity` observed by the adapter is the unpadded base64url encoding of the 32-byte SS/RS operation identity: exactly 43 characters, canonical, decoding to nonzero bytes. It replaces the free string bounded by `MAX_OPERATION_IDENTITY_CHARS` = 246. An identity longer than 43 characters exceeds that structural bound and is `VALUE_OUT_OF_RANGE` (`CAPI-E014`) at `P06`, as the replaced bound was. Any other non-conforming identity, that is one of at most 43 characters that is shorter, outside the base64url alphabet, non-canonical or decoding to all-zero bytes, is a defect of an SS_RS fact and is `FAIL_CLOSED_INTERNAL` (`CAPI-E025`) under C-MUT section 3. Both are detected when the `MutationEnvelope` is formed, strictly before any RS commit request: no request is sent and nothing is held.
+
 ## 6. Operations
 
 `CREATE` authenticates a peer framed non-last-resort KeyPackage, commits the founder session and emits an opaque embedded-tree Welcome only after commit. `JOIN_WELCOME` uses an SS/RS-owned unconsumed local KeyPackage reference and AP-supplied opaque Welcome; consumption and joined state commit together. C-BIND owns local KeyPackage issuance at the SS bootstrap boundary. Unsupported or unmatched onboarding rejects before mutation.
 
 `RESTORE` classifies the complete stored set into four mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile candidate are ignored and never make it incompatible. SS/RS then synchronously perform authentication, complete-record, binding, version and tuple revalidation. Only full success returns `ACTIVE`; decoded bytes never become authoritative. Authenticated inconsistency, including multiple/mixed nonlegacy candidates or coarse-anchor regression, differs from authentication failure. Coherent whole-profile rollback may remain invisible.
+
+For exactly one exact-profile candidate, the C-REST classification of its authenticated authority selects the row. `RESTORED_ACTIVE` is `CAPI-S003`. `RESTORED_EMPTY` is `CAPI-S031`: `SUCCESS` `RESTORED_EMPTY_SESSION`, state `EMPTY`, no output. `RESTORED_RECONCILIATION_REQUIRED` is `CAPI-S030` when the SS/RS restore facts carry an authenticated selector-bound `INDETERMINATE` hold that passes the I-RESTART loader: kind `INDETERMINATE`, state `RECONCILIATION_REQUIRED`, with `commitOutcome`, `originalStateBefore` and the same `reconciliationRef` as section 5. A hold that fails the loader stays the fail-closed `AUTHENTICATED_STATE_INCONSISTENT` (`CAPI-S004`). `CAPI-S030` re-exposes the existing hold: it starts no new uncertain commit and writes, releases or clears nothing. The restore classification, the hold and its 32-byte reference are SS/RS-owned restore facts, never AP input; from the hold SS rebuilds the complete reconciliation snapshot, including `selectedCandidateRef` for `CAPI-S017`.
+
+Assumption, stated explicitly: in M2 the adapter, the I-TXN driver and the port run in the existing dedicated vault worker, which dies with its page; the M2 worker runtime is deferred to M3. Every relaunch therefore starts the adapter at `EMPTY` and reaches `CAPI-S030` again. Within one worker, `RESTORE` in `RECONCILIATION_REQUIRED` stays the `CAPI-G018` reject, because AP already holds the reference from S030. A shared worker or a service worker is out of scope.
 
 `PROTECT_APPLICATION`/`OPEN_APPLICATION` carry opaque bytes. SS structurally classifies the bounded framing epoch without trusting content: current through current-5 continue, while distance 6+ and future epochs reject. Eligible framing then undergoes key-dependent authentication and replay lookup. Exact duplicate identity emits no duplicate plaintext and makes no second transition.
 
@@ -163,7 +173,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
     "PEER_UPDATE_APPLIED",
     "CANDIDATE_SELECTED",
     "RECONCILED_COMMITTED",
-    "DUPLICATE_IGNORED"
+    "DUPLICATE_IGNORED",
+    "RESTORED_EMPTY_SESSION"
   ],
   "errorCodeEnum": [
     "UNKNOWN_FIELD",
@@ -229,7 +240,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
     "VALUE_OUT_OF_RANGE": "REJECTED",
     "FAIL_CLOSED_INTERNAL": "REJECTED",
     "NOT_COMMITTED": "NOT_COMMITTED",
-    "INDETERMINATE": "INDETERMINATE"
+    "INDETERMINATE": "INDETERMINATE",
+    "RESTORED_EMPTY_SESSION": "SUCCESS"
   },
   "request": {
     "commonRequired": [
@@ -281,7 +293,10 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "RESTORE": [
         "restoredLogicalSession from RS",
         "profileFacts",
-        "bindingFacts"
+        "bindingFacts",
+        "restoreClassification from RS under C-REST",
+        "authenticated selector-bound INDETERMINATE hold from SS/RS when restoreClassification is RESTORED_RECONCILIATION_REQUIRED",
+        "reconciliationReference32 from the authenticated kind-13 hold"
       ],
       "JOIN_WELCOME": [
         "framedKeyPackageRef from SS/RS",
@@ -344,7 +359,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
           "SELF_UPDATED",
           "PEER_UPDATE_APPLIED",
           "CANDIDATE_SELECTED",
-          "RECONCILED_COMMITTED"
+          "RECONCILED_COMMITTED",
+          "RESTORED_EMPTY_SESSION"
         ],
         "commitOutcomeIfPresent": "COMMITTED"
       },
@@ -431,7 +447,24 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
         "originalSuccessCode",
         "originalOutput"
       ],
-      "DUPLICATE_IGNORED": []
+      "DUPLICATE_IGNORED": [],
+      "RESTORED_EMPTY_SESSION": []
+    },
+    "resultSurfaceByOperation": {
+      "RESTORE": {
+        "SUCCESS": [
+          "RESTORED",
+          "RESTORED_EMPTY_SESSION"
+        ],
+        "INDETERMINATE": [
+          "CAPI-S030"
+        ],
+        "REJECTED": "ERROR_CODES_OF_APPLICABLE_RESTORE_ROWS",
+        "excludedKinds": [
+          "NO_CHANGE",
+          "NOT_COMMITTED"
+        ]
+      }
     },
     "valueDomains": {
       "originalStateBefore": [
@@ -483,7 +516,33 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "replay and retention state",
       "authenticated manifest"
     ],
-    "restore": "RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure",
+    "restore": "RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure. For exactly one exact-profile M2 candidate, the C-REST classification of its authenticated authority selects the row: RESTORED_ACTIVE is CAPI-S003; RESTORED_EMPTY is CAPI-S031 RESTORED_EMPTY_SESSION with state EMPTY and no output; RESTORED_RECONCILIATION_REQUIRED whose authenticated selector-bound INDETERMINATE hold passes the I-RESTART loader is CAPI-S030; a hold that fails the loader is the fail-closed AUTHENTICATED_STATE_INCONSISTENT of CAPI-S004. No other C-REST success reaches a RESTORE row",
+    "restoreFacts": "restoreClassification, the authenticated selector-bound INDETERMINATE hold and its 32-byte reconciliationReference are SS/RS-owned observation facts of RESTORE, never AP input. From the hold SS rebuilds the complete reconciliation snapshot it would have held after the original INDETERMINATE response, including originalStateBefore, the operation identity and, for CAPI-S017, selectedCandidateRef. AP cannot supply, select or alter any of them",
+    "restoreReexposure": "CAPI-S030 re-exposes an existing durable hold after a restart: it emits commitOutcome INDETERMINATE, originalStateBefore and the reconciliationRef of that hold, enters RECONCILIATION_REQUIRED, starts no new uncertain commit, issues no RS commit request, and writes, releases or clears nothing. Its response is a prior INDETERMINATE response emitted by SS in the sense of RECONCILE_INDETERMINATE",
+    "reconciliationReferenceForm": "the emitted reconciliationRef is exactly \"I-SM-HOLD:\" followed by the unpadded base64url encoding of the 32-byte kind-13 reconciliationReference, 53 characters in total; the original INDETERMINATE emission and CAPI-S030 use the same function, so the two emissions are byte-equal; the 32-byte reference reaches the adapter only as an SS/RS-owned observation fact; an AP echo that is not exactly this form, or whose decoded bytes differ from the held reference, is RECONCILIATION_REFERENCE_MISMATCH (CAPI-S028) with no mutation",
+    "operationIdentityForm": {
+      "appliesToScenarios": [
+        "CAPI-S001",
+        "CAPI-S006",
+        "CAPI-S009",
+        "CAPI-S010",
+        "CAPI-S014",
+        "CAPI-S016",
+        "CAPI-S017"
+      ],
+      "form": "unpadded base64url encoding of the 32-byte SS/RS operation identity: exactly 43 characters, canonical, decoding to nonzero bytes",
+      "replaces": "the free string bounded by MAX_OPERATION_IDENTITY_CHARS = 246",
+      "violation": "an identity longer than 43 characters exceeds the structural bound and is VALUE_OUT_OF_RANGE (CAPI-E014) at P06, as the replaced bound was; any other non-conforming identity, that is one of at most 43 characters that is shorter, outside the base64url alphabet, non-canonical or decoding to all-zero bytes, is a defect of an SS_RS fact and is FAIL_CLOSED_INTERNAL (CAPI-E025) under C-MUT section 3; both are detected when the MutationEnvelope is formed, strictly before any RS commit request: no commit request is sent and nothing is held",
+      "origin": "SS_RS only; never AP"
+    },
+    "restartAssumption": {
+      "statement": "Assumption, stated explicitly: in M2 the adapter, the I-TXN driver and the port run in the existing dedicated vault worker, which dies with its page; the M2 worker runtime is deferred to M3.",
+      "consequences": [
+        "Every relaunch therefore starts the adapter at EMPTY and reaches CAPI-S030 again.",
+        "Within one worker, RESTORE in RECONCILIATION_REQUIRED stays the CAPI-G018 reject, because AP already holds the reference from S030.",
+        "A shared worker or a service worker is out of scope."
+      ]
+    },
     "keyPackageProvisioning": "C-BIND owns local framed KeyPackage issuance at the SS bootstrap boundary; SS/RS own its reference and one-shot state; AP can supply only peer KeyPackage bytes and Welcome bytes",
     "peerMaterial": "CREATE emits opaque embedded-tree Welcome bytes; SELF_UPDATE emits opaque protected Commit bytes; APPLY_PEER_UPDATE consumes one incoming Commit and either applies a current-parent update or selects the exact bounded same-parent pair; no transport semantics follow",
     "singleWriter": "I-LOCK prevents a second active context before it invokes this API; session-active-elsewhere is therefore an outer UI/controller result, not an adapter result",
@@ -1294,7 +1353,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S003",
       "operation": "RESTORE",
       "stateBefore": "EMPTY",
-      "condition": "RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency",
+      "condition": "RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency; C-REST classifies its authenticated authority RESTORED_ACTIVE",
       "precedenceLevel": "P10",
       "persistence": "NONE",
       "stateAfterOnNamedDisposition": "ACTIVE",
@@ -1311,7 +1370,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "scenario": "CAPI-S004",
       "operation": "RESTORE",
       "stateBefore": "EMPTY",
-      "condition": "RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor",
+      "condition": "RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor, or C-REST RESTORED_RECONCILIATION_REQUIRED whose hold fails the I-RESTART loader",
       "precedenceLevel": "P08",
       "persistence": "NONE",
       "stateAfterOnNamedDisposition": "EMPTY",
@@ -1745,6 +1804,40 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
       "ownership": {
         "AP": "opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred",
         "SS": "synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE",
+        "RS": "supply the complete stored record set and keyed-root/authenticity evidence; perform no write",
+        "TR": "ABSENT"
+      }
+    },
+    {
+      "scenario": "CAPI-S030",
+      "operation": "RESTORE",
+      "stateBefore": "EMPTY",
+      "condition": "C-REST RESTORED_RECONCILIATION_REQUIRED, and the SS/RS restore facts carry an authenticated selector-bound INDETERMINATE hold that passes the I-RESTART loader",
+      "precedenceLevel": "P10",
+      "persistence": "NONE",
+      "stateAfterOnNamedDisposition": "RECONCILIATION_REQUIRED",
+      "namedDisposition": "INDETERMINATE",
+      "resultKindOnNamedDisposition": "INDETERMINATE",
+      "ownership": {
+        "AP": "opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred",
+        "SS": "synchronously authenticate the restored record set, load the authenticated selector-bound hold and re-expose it with the same reconciliationRef; start no new commit",
+        "RS": "supply the complete stored record set and keyed-root/authenticity evidence; perform no write",
+        "TR": "ABSENT"
+      }
+    },
+    {
+      "scenario": "CAPI-S031",
+      "operation": "RESTORE",
+      "stateBefore": "EMPTY",
+      "condition": "C-REST RESTORED_EMPTY",
+      "precedenceLevel": "P10",
+      "persistence": "NONE",
+      "stateAfterOnNamedDisposition": "EMPTY",
+      "namedDisposition": "RESTORED_EMPTY_SESSION",
+      "resultKindOnNamedDisposition": "SUCCESS",
+      "ownership": {
+        "AP": "opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred",
+        "SS": "synchronously authenticate and revalidate the exact committed EMPTY authority; establish no session",
         "RS": "supply the complete stored record set and keyed-root/authenticity evidence; perform no write",
         "TR": "ABSENT"
       }
@@ -2338,10 +2431,12 @@ The JSON below is normative and closed. Prose clarifies but does not widen it.
 
 A conforming validator accepts this exact complete record and rejects copies with: missing/duplicate/overlapping row; unknown field/value; changed enum or tuple; incomplete operation/state matrix; missing/reversed precedence pair; unmapped error; overlapping result code/kind; AP-supplied SS/RS fact; wrong reconciliation origin transition; output before commit; unsupported topology mutation; restored bytes authoritative before revalidation; or widened ownership/TR.
 
-Required negative fixtures include at least missing row, duplicate row signature, unknown nested field, unsupported tuple and missing precedence pair. Duplicate JSON keys are invalid.
+Required negative fixtures include at least missing row, duplicate row signature, unknown nested field, unsupported tuple and missing precedence pair, and, for the restart-reconciliation amendment, a missing `CAPI-S030` or `CAPI-S031`, a widened `RESTORE` result surface, an output on `RESTORED_EMPTY_SESSION`, a changed reference form and an operation-identity bound that omits an `RS_TRI_STATE` row. Duplicate JSON keys are invalid.
 
 ## 12. Authority and ratification
 
 This contract implements C-API under #313, #314, #317 and #319 at base `e1538ef9c070e463a8256872a3fd0882c424e2ef`. It applies D0–D5, D8–D15 and D17–D18 and preserves G-SCOPE's exact tuple.
 
 The final file SHA-256 must be separately owner-ratified before C-BIND, C-MUT or dependent implementation. Any byte change voids that act. Removing this file fully rolls back C-API; no implementation or persisted bytes are introduced.
+
+Restart-reconciliation amendment (C-API-RR). This revision amends the ratified C-API (SHA-256 `b77d39fbb412b0eba3a579ebf6053408186a4c11f0de07b8727b4e1147305ad9`, commit `00ae21802396b85f36acea703060f140f40f6407`, #319 comment 5886838783) exactly as chartered by the C-FMT owner act v2 (#327 comment 6035801582, sections 3.3, 3.4 and 6) and the M2 re-scope act (#317 comment 6091950328 and its attachment, comment 6091950674): rows `CAPI-S030` and `CAPI-S031`, the success code `RESTORED_EMPTY_SESSION`, the closed `RESTORE` result surface, the SS/RS restore facts, the reference form and the `operationIdentity` bound. Nothing else changes. It requires its own owner hash-ratification; until then the ratified bytes stay authoritative.
