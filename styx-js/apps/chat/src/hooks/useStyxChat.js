@@ -228,35 +228,50 @@ export function useStyxChat() {
       else setContacts(await chat.listContacts());
     };
 
-    subsRef.current = [
-      chat.onMessage((msg) => {
-        upsertMessage(msg);
-        if (msg.direction === 'in') notifierRef.current.notifyIncoming();
-      }),
-      chat.onMessageState((id, state) => patchMessageState(id, state)),
-      chat.onContactsChanged((list) => { refreshContacts(list); }),
-      // A peer we authenticated joined our group, but adding them is the user's call.
-      chat.onPairing?.(({ pubkey }) => setPendingPairings((prev) => (
-        prev.some((p) => p.pubkey === pubkey) ? prev : [...prev, { pubkey }]
-      ))),
-      chat.onTyping((pubkey, isTyping) => {
-        // Auto-expire: if no "stopped typing" arrives (lost, or a stale relayed
-        // event), clear the indicator after a few seconds so it never sticks.
-        clearTimeout(typingTimers.current[pubkey]);
-        if (isTyping) {
-          typingTimers.current[pubkey] = setTimeout(
-            () => setTypingByContact((prev) => ({ ...prev, [pubkey]: false })),
-            6000,
-          );
-        }
-        setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping }));
-      }),
-    ];
+    try {
+      subsRef.current = [
+        chat.onMessage((msg) => {
+          upsertMessage(msg);
+          if (msg.direction === 'in') notifierRef.current.notifyIncoming();
+        }),
+        chat.onMessageState((id, state) => patchMessageState(id, state)),
+        chat.onContactsChanged((list) => { refreshContacts(list); }),
+        // A peer we authenticated joined our group, but adding them is the user's call.
+        chat.onPairing?.(({ pubkey }) => setPendingPairings((prev) => (
+          prev.some((p) => p.pubkey === pubkey) ? prev : [...prev, { pubkey }]
+        ))),
+        chat.onTyping((pubkey, isTyping) => {
+          // Auto-expire: if no "stopped typing" arrives (lost, or a stale relayed
+          // event), clear the indicator after a few seconds so it never sticks.
+          clearTimeout(typingTimers.current[pubkey]);
+          if (isTyping) {
+            typingTimers.current[pubkey] = setTimeout(
+              () => setTypingByContact((prev) => ({ ...prev, [pubkey]: false })),
+              6000,
+            );
+          }
+          setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping }));
+        }),
+      ];
 
-    subsRef.current = subsRef.current.filter(Boolean); // onPairing is absent on the mock
+      subsRef.current = subsRef.current.filter(Boolean); // onPairing is absent on the mock
 
-    setMe(chat.me || identity);
-    setContacts(await chat.listContacts());
+      setMe(chat.me || identity);
+      setContacts(await chat.listContacts());
+    } catch (e) {
+      // A failure after start must not leave the chat running or either lock held: unsubscribe,
+      // stop the vault worker and the chat, then release the M2 gate and the legacy writer lock.
+      for (const off of subsRef.current) { try { off?.(); } catch { /* ignore */ } }
+      subsRef.current = [];
+      let stop;
+      try { stop = vaultSettingsRef.current?.stop; } catch { stop = null; }
+      vaultSettingsRef.current = null;
+      try { await stop?.(); } catch { /* bounded worker teardown */ }
+      try { chat.destroy(); } catch { /* best-effort transport teardown */ }
+      chatRef.current = null;
+      await releaseLocks();
+      throw e;
+    }
     setReady(true);
     // Opt-in: if a bridge is configured and permission is already granted, register.
     enablePush();

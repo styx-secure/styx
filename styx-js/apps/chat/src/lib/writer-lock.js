@@ -39,6 +39,7 @@ export async function acquireWriterLock(locksApi, name) {
   }
 
   let release = () => {};
+  let invocationFailed = false;
   const outcome = await new Promise((resolve) => {
     let settled = false;
     const settle = (value) => {
@@ -56,6 +57,11 @@ export async function acquireWriterLock(locksApi, name) {
         return new Promise((freeLock) => { release = freeLock; });
       }]);
     } catch {
+      // The request threw. A grant it may already have called back with is void: free it at once.
+      invocationFailed = true;
+      const free = release;
+      release = () => {};
+      free();
       settle(WRITER_LOCK_REASONS.REJECTED);
       return;
     }
@@ -65,6 +71,7 @@ export async function acquireWriterLock(locksApi, name) {
     );
   });
 
+  if (invocationFailed) return { held: false, reason: WRITER_LOCK_REASONS.REJECTED, release: () => {} };
   if (outcome !== null) return { held: false, reason: outcome, release: () => {} };
   return { held: true, release };
 }

@@ -159,14 +159,17 @@ export async function acquireM2BetaGate({
   let epoch = 0;
   let nonce = '';
   let invocationFailed = false;
+  let peerStopUnproven = false; // a terminate() threw: the peer may still run, so the lock is kept
   let requestSettled = Promise.resolve();
 
   const token = Object.freeze({ isHeld: () => phase === 'HELD' });
 
+  // Terminate the peer. If terminate() throws, the peer's stop is not established: the lock is then
+  // never freed by this module (it stays held until the tab closes, which kills both together).
   const terminatePeer = () => {
     if (peer === null || peerClosed) return;
     peerClosed = true;
-    try { peer.terminate(); } catch { /* the worker may already be gone */ }
+    try { peer.terminate(); } catch { peerStopUnproven = true; }
   };
 
   const grant = await new Promise((resolve) => {
@@ -234,9 +237,11 @@ export async function acquireM2BetaGate({
   const decision = observe(token.isHeld() ? 'HELD_BY_SELF' : 'UNAVAILABLE');
 
   const freeNow = () => {
+    if (peerStopUnproven) return false; // fail closed: keep the lock while the peer may still run
     const free = freeLock;
     freeLock = null;
     if (typeof free === 'function') free();
+    return true;
   };
 
   async function withdrawThenTerminateOnFailure() {
@@ -276,6 +281,7 @@ export async function acquireM2BetaGate({
     const wasHeld = phase === 'HELD';
     if (wasHeld) phase = 'RELEASING';
     releasing = (async () => {
+      let freed = false;
       try {
         await withdrawThenTerminateOnFailure();
         if (typeof beforeFree === 'function') {
@@ -283,10 +289,11 @@ export async function acquireM2BetaGate({
         }
       } finally {
         if (phase === 'RELEASING') phase = 'RELEASED';
-        freeNow();
+        freed = freeNow();
       }
-      // Resolve only once the lock manager reports the request settled, i.e. the lock is free.
-      await requestSettled;
+      // Resolve only once the lock manager reports the request settled, i.e. the lock is free. When
+      // the peer's stop could not be established the lock is deliberately kept and this resolves now.
+      if (freed) await requestSettled;
     })();
     return releasing;
   };
@@ -299,10 +306,10 @@ export async function acquireM2BetaGate({
   if (peer !== null) {
     acquisitionCounter += 1;
     epoch = acquisitionCounter;
-    nonce = freshNonce();
-    const report = Object.freeze({ type: M2_HELD_REPORT_TYPES.HELD, lockName: name, epoch, nonce });
     let timer = null;
     try {
+      nonce = freshNonce(); // a failing random source refuses entry and frees the lock (nothing sent yet)
+      const report = Object.freeze({ type: M2_HELD_REPORT_TYPES.HELD, lockName: name, epoch, nonce });
       reported = true;
       const timedOut = new Promise((resolve) => { timer = setTimer(() => resolve('TIMEOUT'), reportTimeoutMs); });
       const delivered = await Promise.race([
@@ -326,4 +333,3 @@ export async function acquireM2BetaGate({
 
   return Object.freeze({ entered: true, reason: null, decision, token, release, lockName: name });
 }
-

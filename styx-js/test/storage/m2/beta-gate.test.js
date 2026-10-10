@@ -8,7 +8,7 @@
 // stands in for the I-IDB production receiver. Node cannot prove real-browser Web Lock semantics
 // (multi-tab, context death); those are not claimed here.
 
-import { describe, test, expect, beforeAll } from '@jest/globals';
+import { describe, test, expect, beforeAll, jest } from '@jest/globals';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative, sep } from 'node:path';
@@ -493,6 +493,49 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     await gate.release();
   });
 
+  test('a peer whose terminate() throws keeps the lock held (its stop is not established)', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks, { report: 'never' });
+    peer.terminate = () => { peer.events.push(['terminate-threw']); throw new Error('termination failed'); };
+    const t = manualTimers();
+    const p = acquireM2BetaGate({ locks, peer, setTimer: t.setTimer, clearTimer: t.clearTimer });
+    await flush(20);
+    t.fireAll();
+    const gate = await p;
+    expectRefused(gate, M2_GATE_REFUSALS.REPORT_FAILED);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
+    expectRefused(await acquireM2BetaGate({ locks }), M2_GATE_REFUSALS.HELD_ELSEWHERE);
+  });
+
+  test('a throwing terminate() on a bad withdrawal ack also keeps the lock; release still resolves', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks, { ack: 'reject' });
+    peer.terminate = () => { throw new Error('termination failed'); };
+    const gate = await acquireM2BetaGate({ locks, peer });
+    expect(gate.entered).toBe(true);
+    await gate.release();
+    expect(gate.token.isHeld()).toBe(false);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
+  });
+
+  test('a failing random source refuses entry, sends nothing and frees the lock', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks);
+    const spy = jest.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(() => { throw new Error('no entropy'); });
+    let gate;
+    try {
+      gate = await acquireM2BetaGate({ locks, peer });
+    } finally {
+      spy.mockRestore();
+    }
+    expectRefused(gate, M2_GATE_REFUSALS.REPORT_FAILED);
+    expect(peer.reports).toEqual([]);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
+    const again = await acquireM2BetaGate({ locks });
+    expect(again.entered).toBe(true);
+    await again.release();
+  });
+
   test('release is idempotent: a second call returns the same promise and only the first beforeFree runs', async () => {
     const locks = fakeLocks();
     const gate = await acquireM2BetaGate({ locks, peer: recordingPeer(locks) });
@@ -598,9 +641,12 @@ describe('R-UX reset gate input is token.isHeld() (act §3 "R-UX reset gate")', 
 describe('static check: no literal lockHeld true outside tests', () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url)); // styx-js/
   const SKIP_DIRS = new Set(['node_modules', 'test', 'tests', 'e2e', 'dist', 'coverage', 'vendor', '.git', 'spikes']);
-  // Key, colon and value may be separated by any whitespace (newlines included) and comments.
-  const GAP = String.raw`(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*(?:\n|$))*`;
-  const LITERAL_TRUE_SRC = String.raw`["'\x60]?\blockHeld["'\x60]?` + GAP + ':' + GAP + String.raw`(?:true|!0|!!1|!!\s*1)\b`;
+  // Key, colon and value may be separated by any whitespace (newlines included) and comments; a
+  // line comment ends at any ECMAScript line terminator (LF, CR, U+2028, U+2029). The value may be
+  // `true`, `!0`, `!!1` (with spaces after `!`) and wrapped in parentheses.
+  const GAP = String.raw`(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n\r\u2028\u2029]*(?:[\n\r\u2028\u2029]|$))*`;
+  const VALUE = String.raw`(?:\(` + GAP + String.raw`)*(?:true|!\s*0|!\s*!\s*1)\b`;
+  const LITERAL_TRUE_SRC = String.raw`["'\x60]?\blockHeld["'\x60]?` + GAP + ':' + GAP + VALUE;
   const LITERAL_TRUE = new RegExp(LITERAL_TRUE_SRC);
   /** Every hit in a whole source text, reported as the full line where the key starts. */
   const hitsIn = (text) => {
@@ -661,7 +707,17 @@ describe('static check: no literal lockHeld true outside tests', () => {
       'f({ lockHeld: /* held */ true });',
       'f({ lockHeld: // held\n true });',
       'f({ "lockHeld"\t:\r\n!0 })',
+      'const input = { lockHeld: // held\r  true };',
+      'const input = { lockHeld: // held\u2028  true };',
+      'const input = { lockHeld: // held\u2029  true };',
+      'f({ lockHeld: ! 0 })',
+      'f({ lockHeld: (!0) })',
+      'f({ lockHeld: ( /* x */ true) })',
+      'f({ lockHeld: ! ! 1 })',
     ]) {
+      // each sample is valid JavaScript whose lockHeld really is true
+      const value = new Function(`let seen; const f = (o) => { seen = o; }; ${text}; return (typeof input === 'object' ? input : seen).lockHeld;`)();
+      expect(value).toBe(true);
       expect(hitsIn(text)).toHaveLength(1);
     }
     expect(hitsIn('a({ lockHeld: true }); b({ lockHeld: !0 });')).toHaveLength(2);

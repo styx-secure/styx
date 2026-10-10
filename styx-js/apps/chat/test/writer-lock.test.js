@@ -75,6 +75,21 @@ describe('acquireWriterLock', () => {
     expect(reason).toBe(WRITER_LOCK_REASONS.REJECTED);
   });
 
+  test('a request that calls back with a grant and then throws is not-held, and the grant is freed', async () => {
+    let freed = false;
+    const locks = {
+      request(name, options, callback) {
+        Promise.resolve(callback({ name, mode: 'exclusive' })).then(() => { freed = true; });
+        throw new Error('after callback');
+      },
+    };
+    const { held, reason } = await acquireWriterLock(locks, 'styx-mls:');
+    expect(held).toBe(false);
+    expect(reason).toBe(WRITER_LOCK_REASONS.REJECTED);
+    await Promise.resolve();
+    expect(freed).toBe(true);
+  });
+
   test('the source has exactly one held:true return (the granted path) and never steals', () => {
     const src = readFileSync(new URL('../src/lib/writer-lock.js', import.meta.url), 'utf8');
     expect(src.match(/held:\s*true/g)).toEqual(['held: true']);
