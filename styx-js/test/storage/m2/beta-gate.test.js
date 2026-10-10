@@ -67,20 +67,28 @@ function recordingPeer(locks, { ack = 'valid', report = 'ok' } = {}) {
   const peer = {
     events,
     pendingAck: null,
+    reports: [],
     reportHeld(r) {
       events.push(['reportHeld', r.type, r.lockName, r.epoch, locks.held.has(r.lockName)]);
+      peer.reports.push(r);
       if (report === 'throw') throw new Error('postMessage failed');
       if (report === 'reject') return Promise.reject(new Error('worker gone'));
+      if (report === 'never') return new Promise(() => {});
       return undefined;
     },
     withdrawHeld(r) {
       events.push(['withdrawHeld', r.type, r.lockName, r.epoch, locks.held.has(r.lockName)]);
-      const good = { type: M2_HELD_REPORT_TYPES.WITHDRAWN_ACK, lockName: r.lockName, epoch: r.epoch };
+      const good = { type: M2_HELD_REPORT_TYPES.WITHDRAWN_ACK, lockName: r.lockName, epoch: r.epoch, nonce: r.nonce };
       if (ack === 'valid') return Promise.resolve(good);
       if (ack === 'deferred') return new Promise((resolve) => { peer.pendingAck = () => resolve(good); });
       if (ack === 'reject') return Promise.reject(new Error('no ack'));
       if (ack === 'wrong-epoch') return Promise.resolve({ ...good, epoch: r.epoch + 1 });
       if (ack === 'wrong-type') return Promise.resolve({ ...good, type: 'M2_LOCK_HELD' });
+      if (ack === 'wrong-nonce') return Promise.resolve({ ...good, nonce: `${r.nonce}x` });
+      if (ack === 'no-nonce') return Promise.resolve({ type: good.type, lockName: good.lockName, epoch: good.epoch });
+      if (ack === 'throwing-getter') {
+        return Promise.resolve(Object.defineProperty({}, 'type', { get() { throw new Error('broken ack'); } }));
+      }
       if (ack === 'never') return new Promise(() => {});
       throw new Error(`unknown ack mode ${ack}`);
     },
@@ -180,6 +188,26 @@ describe('fail closed: request rejected', () => {
     const gate = await acquireM2BetaGate({ locks: { request() { throw new Error('SecurityError'); } }, peer });
     expectRefused(gate, M2_GATE_REFUSALS.REJECTED);
     expect(peer.events).toEqual([]);
+  });
+
+  test('request calls back with a grant and then throws: the grant is void and freed, entry refused', async () => {
+    const peer = recordingPeer(fakeLocks());
+    let resolvedHolder = null;
+    const locks = {
+      request(name, options, cb) {
+        const held = cb({ name, mode: 'exclusive' });
+        resolvedHolder = held; // the promise the gate returned to hold the lock
+        throw new Error('request failed after callback');
+      },
+    };
+    const gate = await acquireM2BetaGate({ locks, peer });
+    expectRefused(gate, M2_GATE_REFUSALS.REJECTED);
+    expect(peer.events).toEqual([]);
+    // The holder promise is settled, so a real lock manager would have freed the lock.
+    let settled = false;
+    resolvedHolder.then(() => { settled = true; });
+    await flush();
+    expect(settled).toBe(true);
   });
 
   test('request returns a rejected promise without calling back', async () => {
@@ -334,7 +362,10 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     const peer = recordingPeer(locks);
     const gate = await acquireM2BetaGate({ locks, peer });
     expect(gate.entered).toBe(true);
-    expect(peer.events).toEqual([['reportHeld', 'M2_LOCK_HELD', PRODUCT_LOCK, 1, true]]);
+    expect(peer.events).toEqual([['reportHeld', 'M2_LOCK_HELD', PRODUCT_LOCK, peer.reports[0].epoch, true]]);
+    expect(Number.isSafeInteger(peer.reports[0].epoch) && peer.reports[0].epoch > 0).toBe(true);
+    expect(peer.reports[0].nonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(Object.keys(peer.reports[0]).sort()).toEqual(['epoch', 'lockName', 'nonce', 'type']);
     await gate.release();
   });
 
@@ -346,7 +377,7 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     const p = gate.release().then(() => { done = true; });
     expect(gate.token.isHeld()).toBe(false);
     await flush();
-    expect(peer.events[1]).toEqual(['withdrawHeld', 'M2_LOCK_WITHDRAWN', PRODUCT_LOCK, 1, true]);
+    expect(peer.events[1]).toEqual(['withdrawHeld', 'M2_LOCK_WITHDRAWN', PRODUCT_LOCK, peer.reports[0].epoch, true]);
     // No ack yet: the lock is still held and release has not completed.
     await flush(20);
     expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
@@ -376,7 +407,7 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
   });
 
-  test.each(['reject', 'wrong-epoch', 'wrong-type'])('ack %s: the peer is terminated before the lock is freed', async (ack) => {
+  test.each(['reject', 'wrong-epoch', 'wrong-type', 'wrong-nonce', 'no-nonce', 'throwing-getter'])('ack %s: the peer is terminated before the lock is freed', async (ack) => {
     const locks = fakeLocks();
     const peer = recordingPeer(locks, { ack });
     const gate = await acquireM2BetaGate({ locks, peer });
@@ -394,7 +425,7 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     const p = gate.release();
     await flush(20);
     expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
-    expect(t.timers.map((x) => x.ms)).toEqual([1234]);
+    expect(t.timers.filter((x) => !x.cleared).map((x) => x.ms)).toEqual([1234]); // the report timer was cleared
     t.fireAll();
     await p;
     expect(peer.events.map((e) => e[0])).toEqual(['reportHeld', 'withdrawHeld', 'terminate']);
@@ -412,11 +443,73 @@ describe('held report and release ordering (act §3 "Port in the vault worker", 
     expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
   });
 
+  test('every acquisition has its own identity: an earlier acquisition\'s ack never satisfies a later one', async () => {
+    const locks = fakeLocks();
+    let replay = null;
+    const events = [];
+    const peer = {
+      reportHeld(r) { events.push(['held', r.epoch, r.nonce]); },
+      withdrawHeld(r) {
+        events.push(['withdraw', r.epoch, r.nonce]);
+        if (replay === null) replay = { type: M2_HELD_REPORT_TYPES.WITHDRAWN_ACK, lockName: r.lockName, epoch: r.epoch, nonce: r.nonce };
+        return replay; // the second release gets the first acquisition's ack
+      },
+      terminate() { events.push(['terminate', locks.held.has(PRODUCT_LOCK)]); },
+    };
+    const first = await acquireM2BetaGate({ locks, peer });
+    await first.release();
+    expect(events.map((e) => e[0])).toEqual(['held', 'withdraw']);
+    const second = await acquireM2BetaGate({ locks, peer });
+    expect(events[2][1]).not.toBe(events[0][1]);
+    expect(events[2][2]).not.toBe(events[0][2]);
+    await second.release();
+    expect(events.map((e) => e[0])).toEqual(['held', 'withdraw', 'held', 'withdraw', 'terminate']);
+    expect(events[4]).toEqual(['terminate', true]);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
+  });
+
+  test('a held report that never settles times out: the peer is terminated, the lock freed, entry refused', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks, { report: 'never' });
+    const t = manualTimers();
+    const p = acquireM2BetaGate({ locks, peer, setTimer: t.setTimer, clearTimer: t.clearTimer, reportTimeoutMs: 777 });
+    await flush(20);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
+    expect(t.timers.map((x) => x.ms)).toEqual([777]);
+    t.fireAll();
+    const gate = await p;
+    expectRefused(gate, M2_GATE_REFUSALS.REPORT_FAILED);
+    expect(peer.events.map((e) => e[0])).toEqual(['reportHeld', 'terminate']);
+    expect(peer.events[1]).toEqual(['terminate', true]);
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
+  });
+
+  test('a delivered held report clears its timer', async () => {
+    const locks = fakeLocks();
+    const t = manualTimers();
+    const gate = await acquireM2BetaGate({ locks, peer: recordingPeer(locks), setTimer: t.setTimer, clearTimer: t.clearTimer });
+    expect(gate.entered).toBe(true);
+    expect(t.timers.map((x) => x.cleared)).toEqual([true]);
+    await gate.release();
+  });
+
+  test('release is idempotent: a second call returns the same promise and only the first beforeFree runs', async () => {
+    const locks = fakeLocks();
+    const gate = await acquireM2BetaGate({ locks, peer: recordingPeer(locks) });
+    const calls = [];
+    const p1 = gate.release({ beforeFree: () => { calls.push('first'); } });
+    const p2 = gate.release({ beforeFree: () => { calls.push('second'); } });
+    expect(p2).toBe(p1);
+    await p1;
+    expect(calls).toEqual(['first']);
+  });
+
   test('no report is ever sent on a refusal path', async () => {
     const locks = fakeLocks();
     locks.held.set(PRODUCT_LOCK, { free: () => {} });
     const cases = [
       { locks: undefined }, { locks: { request() { throw new Error('x'); } } }, { locks }, { locks, dbName: 'styx-ledger' },
+      { locks: { request(name, options, cb) { cb({ name, mode: 'exclusive' }); throw new Error('after callback'); } } },
     ];
     for (const c of cases) {
       const peer = recordingPeer(locks);
@@ -505,7 +598,20 @@ describe('R-UX reset gate input is token.isHeld() (act §3 "R-UX reset gate")', 
 describe('static check: no literal lockHeld true outside tests', () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url)); // styx-js/
   const SKIP_DIRS = new Set(['node_modules', 'test', 'tests', 'e2e', 'dist', 'coverage', 'vendor', '.git', 'spikes']);
-  const LITERAL_TRUE = /["']?lockHeld["']?\s*:\s*(?:true\b|!0\b|!!1\b)/;
+  // Key, colon and value may be separated by any whitespace (newlines included) and comments.
+  const GAP = String.raw`(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*(?:\n|$))*`;
+  const LITERAL_TRUE_SRC = String.raw`["'\x60]?\blockHeld["'\x60]?` + GAP + ':' + GAP + String.raw`(?:true|!0|!!1|!!\s*1)\b`;
+  const LITERAL_TRUE = new RegExp(LITERAL_TRUE_SRC);
+  /** Every hit in a whole source text, reported as the full line where the key starts. */
+  const hitsIn = (text) => {
+    const out = [];
+    for (const m of text.matchAll(new RegExp(LITERAL_TRUE_SRC, 'g'))) {
+      const start = text.lastIndexOf('\n', m.index) + 1;
+      const end = text.indexOf('\n', m.index);
+      out.push(text.slice(start, end === -1 ? undefined : end));
+    }
+    return out;
+  };
 
   // The one pre-existing occurrence at base 4a587bc. It is the L-MARK marker input inside the
   // legacy re-establishment module, built only after that module's own lock gate (`lockHeldOf`),
@@ -532,7 +638,7 @@ describe('static check: no literal lockHeld true outside tests', () => {
     const hits = new Map();
     for (const dir of ['src', join('apps', 'chat', 'src')]) {
       for (const file of walk(join(root, dir), [])) {
-        const lines = readFileSync(file, 'utf8').split('\n').filter((line) => LITERAL_TRUE.test(line));
+        const lines = hitsIn(readFileSync(file, 'utf8'));
         if (lines.length) hits.set(relative(root, file), lines);
       }
     }
@@ -545,6 +651,22 @@ describe('static check: no literal lockHeld true outside tests', () => {
     }
     for (const s of ['lockHeld: token.isHeld()', 'lockHeld: recoveryLockHeld(gate.token)', 'lockHeld: false', 'lockHeldOf(input)', 'lockHeld: trueish']) {
       expect(LITERAL_TRUE.test(s)).toBe(false);
+    }
+  });
+
+  test('the whole-text scanner sees multiline and comment-separated literals', () => {
+    for (const text of [
+      'const input = { lockHeld:\n  true };',
+      'const input = {\n  lockHeld\n  :\n  true,\n};',
+      'f({ lockHeld: /* held */ true });',
+      'f({ lockHeld: // held\n true });',
+      'f({ "lockHeld"\t:\r\n!0 })',
+    ]) {
+      expect(hitsIn(text)).toHaveLength(1);
+    }
+    expect(hitsIn('a({ lockHeld: true }); b({ lockHeld: !0 });')).toHaveLength(2);
+    for (const text of ['f({ lockHeld: token.isHeld() })', 'f({ lockHeld:\n  recoveryLockHeld(t) })', 'f({ lockHeld: /* true */ false })']) {
+      expect(hitsIn(text)).toEqual([]);
     }
   });
 

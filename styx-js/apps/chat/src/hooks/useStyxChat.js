@@ -31,6 +31,7 @@ export function useStyxChat() {
   const subsRef = useRef([]);
   const lockReleaseRef = useRef(null);
   const m2GateRef = useRef(null); // the held M2 beta gate ({ token, release }) or null
+  const m2TeardownRef = useRef(null); // the pending M2 release of the last logout, awaited by unlock
   const typingTimers = useRef({});
   const notifierRef = useRef(null);
   const vaultSettingsRef = useRef(null);
@@ -111,6 +112,14 @@ export function useStyxChat() {
     }
     const ns = peerNamespace();
 
+    // A logout's M2 release (worker stop, then lock free) may still be running: finish it first, so
+    // this tab never meets its own `styx-m2:` lock and misreports "another tab".
+    const pendingTeardown = m2TeardownRef.current;
+    if (pendingTeardown) {
+      try { await pendingTeardown; } catch { /* the gate frees its lock in a finally */ }
+      if (m2TeardownRef.current === pendingTeardown) m2TeardownRef.current = null;
+    }
+
     // Become the single MLS writer for this profile, or refuse to start a writer.
     // A second tab that cannot get the lock must not construct a writable engine —
     // that is what corrupts mls:state.
@@ -126,9 +135,18 @@ export function useStyxChat() {
     // M2 beta (test-profile build only): one exclusive `styx-m2:<vault db>` lock, taken on the main
     // thread before the vault worker can receive any M2 request. Any refusal stops the whole entry,
     // with the same screens as the writer lock, and releases the writer lock first.
-    const m2BetaGate = await loadM2BetaGate();
+    let m2BetaGate;
+    let gate = null;
+    try {
+      m2BetaGate = await loadM2BetaGate();
+      if (m2BetaGate) gate = await m2BetaGate.acquireM2BetaGate({ locks: navigator.locks });
+    } catch (e) {
+      // A failed chunk load (or any throw) must not strand the legacy writer lock.
+      release();
+      lockReleaseRef.current = null;
+      throw e;
+    }
     if (m2BetaGate) {
-      const gate = await m2BetaGate.acquireM2BetaGate({ locks: navigator.locks });
       if (!gate.entered) {
         release();
         lockReleaseRef.current = null;
@@ -268,8 +286,15 @@ export function useStyxChat() {
     // (terminated) next, and only then is the `styx-m2:` lock freed. Tab close kills both together.
     const m2Gate = m2GateRef.current;
     m2GateRef.current = null;
-    if (m2Gate) void m2Gate.release({ beforeFree: stopVaultSettings });
-    else void stopVaultSettings();
+    if (m2Gate) {
+      const teardown = m2Gate.release({ beforeFree: stopVaultSettings });
+      m2TeardownRef.current = teardown;
+      void teardown.finally(() => {
+        if (m2TeardownRef.current === teardown) m2TeardownRef.current = null;
+      });
+    } else {
+      void stopVaultSettings();
+    }
     try { lockReleaseRef.current?.(); } catch { /* ignore */ }
     lockReleaseRef.current = null;
     setReady(false);

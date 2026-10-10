@@ -53,6 +53,19 @@ export const M2_HELD_REPORT_TYPES = Object.freeze({
 /** Default bound on waiting for the withdrawal acknowledgement before the peer is terminated. */
 export const DEFAULT_WITHDRAW_ACK_TIMEOUT_MS = 5000;
 
+/** Default bound on delivering the held report; on expiry the peer is terminated and entry refused. */
+export const DEFAULT_REPORT_TIMEOUT_MS = 5000;
+
+// Acquisition identity. Every held report and withdrawal of one acquisition carries the same
+// `epoch` (a per-realm counter) and `nonce` (random), and an acknowledgement must echo both, so an
+// acknowledgement from an earlier acquisition never satisfies a later one.
+let acquisitionCounter = 0;
+function freshNonce() {
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** A token that is never held: the input every refusal path exposes. */
 export const CLOSED_M2_TOKEN = Object.freeze({ isHeld: () => false });
 
@@ -107,17 +120,21 @@ function observe(ownership) {
  *   `reportHeld(report)` (may return a promise), `withdrawHeld(report)` → promise of the ack,
  *   `terminate()`. Without a peer nothing is reported, so the worker stays closed.
  * @param {number} [options.withdrawAckTimeoutMs]
+ * @param {number} [options.reportTimeoutMs]
  * @param {(fn: Function, ms: number) => any} [options.setTimer]
  * @param {(handle: any) => void} [options.clearTimer]
  * @param {() => void} [options.onLost]  called once if the held lock is lost without a release
  * @returns {Promise<{entered: boolean, reason: string|null, decision: object, token: {isHeld(): boolean},
- *   release: () => Promise<void>, lockName?: string}>}
+ *   release: (opts?: {beforeFree?: () => any}) => Promise<void>, lockName?: string}>}
+ *   `release` is idempotent: every call returns the first call's promise, and only the first call's
+ *   `beforeFree` runs.
  */
 export async function acquireM2BetaGate({
   locks,
   dbName = M2_PRODUCT_VAULT_DB_NAME,
   peer = null,
   withdrawAckTimeoutMs = DEFAULT_WITHDRAW_ACK_TIMEOUT_MS,
+  reportTimeoutMs = DEFAULT_REPORT_TIMEOUT_MS,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (handle) => clearTimeout(handle),
   onLost = () => {},
@@ -140,6 +157,8 @@ export async function acquireM2BetaGate({
   let reported = false;
   let peerClosed = false;
   let epoch = 0;
+  let nonce = '';
+  let invocationFailed = false;
   let requestSettled = Promise.resolve();
 
   const token = Object.freeze({ isHeld: () => phase === 'HELD' });
@@ -182,6 +201,13 @@ export async function acquireM2BetaGate({
         return new Promise((free) => { freeLock = free; });
       }]);
     } catch {
+      // The request threw. If it had already called back and granted, that grant is void: free it
+      // at once and refuse below (the grant promise may already have been settled as GRANTED).
+      invocationFailed = true;
+      if (phase === 'HELD') phase = 'NOT_GRANTED';
+      const free = freeLock;
+      freeLock = null;
+      if (typeof free === 'function') free();
       settle({ kind: 'REJECTED' });
       return;
     }
@@ -198,10 +224,11 @@ export async function acquireM2BetaGate({
     );
   });
 
-  if (grant.kind !== 'GRANTED') {
+  if (grant.kind !== 'GRANTED' || invocationFailed) {
     phase = 'NOT_GRANTED';
-    const reason = grant.kind === 'HELD_ELSEWHERE' ? M2_GATE_REFUSALS.HELD_ELSEWHERE : M2_GATE_REFUSALS.REJECTED;
-    return refusal(reason, observe(grant.kind === 'HELD_ELSEWHERE' ? 'HELD_BY_OTHER' : 'UNAVAILABLE'));
+    const elsewhere = grant.kind === 'HELD_ELSEWHERE' && !invocationFailed;
+    const reason = elsewhere ? M2_GATE_REFUSALS.HELD_ELSEWHERE : M2_GATE_REFUSALS.REJECTED;
+    return refusal(reason, observe(elsewhere ? 'HELD_BY_OTHER' : 'UNAVAILABLE'));
   }
 
   const decision = observe(token.isHeld() ? 'HELD_BY_SELF' : 'UNAVAILABLE');
@@ -215,7 +242,7 @@ export async function acquireM2BetaGate({
   async function withdrawThenTerminateOnFailure() {
     if (peer === null || peerClosed || !reported) return;
     reported = false;
-    const report = Object.freeze({ type: M2_HELD_REPORT_TYPES.WITHDRAWN, lockName: name, epoch });
+    const report = Object.freeze({ type: M2_HELD_REPORT_TYPES.WITHDRAWN, lockName: name, epoch, nonce });
     let timer = null;
     const timedOut = new Promise((resolve) => { timer = setTimer(() => resolve('TIMEOUT'), withdrawAckTimeoutMs); });
     let ack;
@@ -226,9 +253,15 @@ export async function acquireM2BetaGate({
     } finally {
       try { clearTimer(timer); } catch { /* ignore */ }
     }
-    const valid = ack !== null && typeof ack === 'object'
-      && ack.type === M2_HELD_REPORT_TYPES.WITHDRAWN_ACK && ack.lockName === name && ack.epoch === epoch;
-    if (!valid) terminatePeer();
+    let valid;
+    try {
+      valid = ack !== null && typeof ack === 'object'
+        && ack.type === M2_HELD_REPORT_TYPES.WITHDRAWN_ACK && ack.lockName === name
+        && ack.epoch === epoch && ack.nonce === nonce;
+    } catch {
+      valid = false; // a throwing acknowledgement is an invalid one
+    }
+    if (valid !== true) terminatePeer();
   }
 
   let releasing = null;
@@ -264,16 +297,25 @@ export async function acquireM2BetaGate({
   }
 
   if (peer !== null) {
-    epoch = 1;
-    const report = Object.freeze({ type: M2_HELD_REPORT_TYPES.HELD, lockName: name, epoch });
+    acquisitionCounter += 1;
+    epoch = acquisitionCounter;
+    nonce = freshNonce();
+    const report = Object.freeze({ type: M2_HELD_REPORT_TYPES.HELD, lockName: name, epoch, nonce });
+    let timer = null;
     try {
       reported = true;
-      await peer.reportHeld(report);
+      const timedOut = new Promise((resolve) => { timer = setTimer(() => resolve('TIMEOUT'), reportTimeoutMs); });
+      const delivered = await Promise.race([
+        Promise.resolve().then(() => peer.reportHeld(report)).then(() => 'DELIVERED'), timedOut,
+      ]);
+      if (delivered !== 'DELIVERED') throw new Error('held report timed out');
     } catch {
+      try { clearTimer(timer); } catch { /* ignore */ }
       terminatePeer(); // its state is unknown: never leave a worker that may believe it holds the lock
       await release();
       return refusal(M2_GATE_REFUSALS.REPORT_FAILED, observe('UNAVAILABLE'));
     }
+    try { clearTimer(timer); } catch { /* ignore */ }
     if (phase !== 'HELD') {
       // The lock was lost while the report was in flight.
       terminatePeer();
@@ -285,4 +327,3 @@ export async function acquireM2BetaGate({
   return Object.freeze({ entered: true, reason: null, decision, token, release, lockName: name });
 }
 
-export default acquireM2BetaGate;
