@@ -91,10 +91,10 @@ This format proves post-unlock record authenticity and complete-generation consi
       "ratification": "issue-323-comment-5890060894"
     },
     "cMut": {
-      "commit": "40a3dee0fcb297d6fe8efc8657a9bbe6098d099d",
-      "sha256": "6c2c045c5317d6893a0bd338e728f2cdc686237af5688925f9756c014deb3060",
-      "evidenceBundleSha256": "9d8bdb19b20728873ede932df2936dcc6db6dd44a072af57cf4d0320cbf56712",
-      "ratification": "issue-324-comment-5890545934"
+      "commit": "1e6cf6c551357db34f892fc418fa696091a1d8a3",
+      "sha256": "dcc732a3efec371617aafc43e5882f5985f0e523403bf4b54fb86ef9a050abc6",
+      "evidenceBundleSha256": "8d32685bdaba06ed78ed7fd1b5e1f68a492345cd1c0c65f1c818dd7336015ff1",
+      "ratification": "issue-324-owner-act-c-api-rr-dcc732a3"
     }
   },
   "versions": {
@@ -581,7 +581,8 @@ This format proves post-unlock record authenticity and complete-generation consi
       "PEER_UPDATE_APPLIED": 7,
       "CANDIDATE_SELECTED": 8,
       "RECONCILED_COMMITTED": 9,
-      "DUPLICATE_IGNORED": 10
+      "DUPLICATE_IGNORED": 10,
+      "RESTORED_EMPTY_SESSION": 11
     },
     "bool": {
       "false": 0,
