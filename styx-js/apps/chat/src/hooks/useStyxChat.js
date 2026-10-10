@@ -157,12 +157,13 @@ export function useStyxChat() {
 
   // Acquire both locks and start the chat. The attempt registers a controller in `activeRef`
   // before acquiring anything, so a logout (or unmount, or a newer attempt) reaches its resources
-  // at any point, even while a startup step is still pending:
-  // - at once: subscriptions off, chat destroyed, the M2 token revoked (`isHeld()` false), the vault
-  //   worker's stop started;
-  // - then, once the pending step has returned (nothing new can be acquired after that): withdraw
-  //   the held report (or terminate the peer), the worker stopped, the `styx-m2:` lock freed, and
-  //   the legacy writer lock freed last.
+  // at any point, even while a startup step is still pending. Teardown follows act §3:
+  // - at once: the M2 token revoked (`isHeld()` false), subscriptions off, chat destroyed;
+  // - then the gate withdraws the held report and awaits its acknowledgement (or terminates the
+  //   peer), and only after that starts the vault worker's stop (without the gate, the stop starts
+  //   at once);
+  // - once the pending step has returned (nothing new can be acquired after that) and the worker
+  //   is stopped, the `styx-m2:` lock is freed, and the legacy writer lock is freed last.
   async function startSession({ StyxChat, ns, password, alias, firstRun, stale }) {
     let gate = null;
     let gateReleasing = null;
@@ -176,15 +177,16 @@ export function useStyxChat() {
 
     const stopWorker = () => stopSession(settingsSession);
     const revokeNow = () => {
-      // First stop authorizing: `release()` turns `isHeld()` false synchronously; the lock itself
-      // is kept until the pending startup step has returned and the worker is stopped.
+      // First stop authorizing: `release()` turns `isHeld()` false synchronously. Its `beforeFree`
+      // runs after the withdrawal was acknowledged (or the peer terminated): it stops the worker,
+      // waits for the pending step, and stops whatever worker that step opened.
       if (gate && !gateReleasing) {
         const g = gate;
-        gateReleasing = g.release({ beforeFree: async () => { await bodySettled; await stopWorker(); } });
+        gateReleasing = g.release({ beforeFree: async () => { await stopWorker(); await bodySettled; await stopWorker(); } });
       }
       for (const off of subs.splice(0)) { try { off?.(); } catch { /* ignore */ } }
       try { chat?.destroy(); } catch { /* best-effort transport teardown */ }
-      if (settingsSession) void stopWorker();
+      if (settingsSession && !gate) void stopWorker();
     };
     const abort = () => {
       revokeNow();

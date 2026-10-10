@@ -843,8 +843,10 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     const { acquireWriterLock } = await import('../../../apps/chat/src/lib/writer-lock.js');
     const held = new Set();
     const freed = []; // lock names in the order they were physically freed
+    const requested = []; // lock names in the order they were requested
     const locks = {
       request(name, options, callback) {
+        requested.push(name);
         if (held.has(name)) return Promise.resolve(callback(null));
         held.add(name);
         return Promise.resolve().then(() => callback({ name, mode: options.mode })).finally(() => { held.delete(name); freed.push(name); });
@@ -875,7 +877,7 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     const hook = Function(...Object.keys(deps), `${source}\nreturn useStyxChat;`)(...Object.values(deps))();
     // useState call order in the hook: ready, fatalError, secondaryTab, unsupportedBrowser, ...
     const screen = () => ({ ready: ui[0], secondaryTab: ui[2], unsupportedBrowser: ui[3] });
-    return { hook, held, gates, locks, screen, freed };
+    return { hook, held, gates, locks, screen, freed, requested };
   }
 
   const baseChat = (state) => class {
@@ -976,8 +978,10 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     const unlocking = h.hook.unlock({ password: 'p' });
     await entered;
     h.hook.lock();
-    // Before the pending step returns: token revoked, chat and worker stopped, no subscription.
+    // Before the pending step returns: token revoked, chat destroyed, no subscription; the worker
+    // stop follows the gate's withdrawal step (no peer here: immediately after it).
     expect(h.gates[0].token.isHeld()).toBe(false);
+    await settle();
     expect(state).toEqual({ chatRunning: false, workerRunning: false, subs: 0, destroyed: true });
     // The physical M2 lock is kept until the pending step has returned.
     expect(h.held.has('styx-m2:styx-vault-default')).toBe(true);
@@ -1102,6 +1106,7 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     });
     await h.hook.unlock({ password: 'p' });
     h.hook.lock();
+    await settle();
     expect(heldAtStop).toBe(false);
     await drain();
     expect(h.held.size).toBe(0);
@@ -1150,5 +1155,63 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     await drain();
     expect(h.held.size).toBe(0);
     expect(h.freed).toEqual(['styx-m2:styx-vault-default', expect.stringMatching(/^styx-mls:/)]);
+  });
+
+  test('the M2 gate is requested after the MLS writer lock (successful unlock and gate refusal)', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const ok = await harness(baseChat(state));
+    await ok.hook.unlock({ password: 'p' });
+    expect(ok.requested).toEqual([expect.stringMatching(/^styx-mls:/), 'styx-m2:styx-vault-default']);
+    ok.hook.lock();
+    await drain();
+
+    const refused = await harness(baseChat(state));
+    refused.held.add('styx-m2:styx-vault-default');
+    await refused.hook.unlock({ password: 'p' });
+    expect(refused.requested).toEqual([expect.stringMatching(/^styx-mls:/), 'styx-m2:styx-vault-default']);
+  });
+
+  test('with a vault-worker peer, logout withdraws the report and awaits the ack before the worker stop starts', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const events = [];
+    let finishAck = null;
+    const peer = {
+      reportHeld() { events.push('held-report'); },
+      withdrawHeld(r) {
+        events.push('withdraw');
+        return new Promise((resolve) => {
+          finishAck = () => { events.push('ack'); resolve({ type: M2_HELD_REPORT_TYPES.WITHDRAWN_ACK, lockName: r.lockName, epoch: r.epoch, nonce: r.nonce }); };
+        });
+      },
+      terminate() { events.push('terminate'); },
+    };
+    const beta = await import('../../../src/storage/m2/beta-gate.js');
+    const h = await harness(baseChat(state), async () => {
+      state.workerRunning = true;
+      return { stop: () => { events.push('worker-stop'); state.workerRunning = false; } };
+    }, { loadGate: async () => ({ ...beta, acquireM2BetaGate: (options) => beta.acquireM2BetaGate({ ...options, peer }) }) });
+    await h.hook.unlock({ password: 'p' });
+    h.hook.lock();
+    await settle();
+    expect(events).toEqual(['held-report', 'withdraw']);
+    expect(state.workerRunning).toBe(true);
+    expect(h.held.has('styx-m2:styx-vault-default')).toBe(true);
+    finishAck();
+    await drain();
+    expect(events).toEqual(['held-report', 'withdraw', 'ack', 'worker-stop']);
+    expect(h.held.size).toBe(0);
+    expect(h.freed).toEqual(['styx-m2:styx-vault-default', expect.stringMatching(/^styx-mls:/)]);
+  });
+
+  test('App shows the "unsupported browser" screen for the hook flag, before the secondary-tab screen', () => {
+    const app = readFileSync(fileURLToPath(new URL('../../../apps/chat/src/App.jsx', import.meta.url)), 'utf8');
+    const unsupported = app.indexOf('if (chat.unsupportedBrowser) {');
+    const secondary = app.indexOf('if (chat.secondaryTab)');
+    expect(unsupported).toBeGreaterThan(-1);
+    expect(secondary).toBeGreaterThan(unsupported);
+    const block = app.slice(unsupported, secondary);
+    expect(block).toContain('Browser non supportato');
+    expect(block).toContain('Web Locks');
+    expect(block).not.toContain('onClick'); // a refusal, not a degraded mode: nothing to continue with
   });
 });
