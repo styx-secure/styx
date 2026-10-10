@@ -2,7 +2,7 @@
 // in one dedicated worker that the harness creates and that dies with its page. Port-neutral: it uses
 // only the port's public C-FMT/I-TXN interface and the public VaultDb reads.
 import { openVaultDb } from '/src/storage/vault-db.js';
-import { M2_KIND, decodeEnvelope, decodePlaintext } from '/src/storage/m2/session-codec.js';
+import { M2_KIND, decodeEnvelope, decodePlaintext, encodePlaintext } from '/src/storage/m2/session-codec.js';
 import {
   M2_OUTCOME, buildMutationEnvelope, classifyAuthority, mutationRow, reconcileIndeterminate, runMutation,
   validateCommitResultEvidence,
@@ -128,6 +128,43 @@ async function produceAfterCommit({ scenario, op = 1 }) {
   };
 }
 
+/**
+ * T9 CONTRADICT_* (obligation item 13, last bullet): an authenticated contradiction. With the SS hold
+ * kept after an ORIGINAL INDETERMINATE, the harness replaces the selector through the public port
+ * interface (sealed by the port, CAS on the stored envelope) with a selector that contradicts the hold:
+ * - CONTRADICT_RR_PARENT: RR, but the parent keyed root is not the hold's;
+ * - CONTRADICT_RR_CANDIDATE: RR, but the candidate keyed root is not the stored candidate's;
+ * - CONTRADICT_COMMITTED: names the candidate generation, but with a root its generation does not have.
+ * The producer must fail closed (never NOT_COMMITTED, COMMITTED or S024) and write nothing.
+ */
+async function contradict({ scenario, kind }) {
+  const hold = await port.readMemoryHold();
+  const { candidate } = mutationInput(scenario, M2_OUTCOME.INDETERMINATE, {
+    parent: 1n, generation: 2n, parentState: API[mutationRow(scenario).stateBefore], op: 1,
+  });
+  const flip = (b) => { const c = Uint8Array.from(b); c[0] ^= 0xff; return c; };
+  const committed = kind === 'CONTRADICT_COMMITTED';
+  const v = decodePlaintext(M2_KIND.GENERATION_SELECTOR, committed ? candidate.selectorBytes : candidate.holdSelectorBytes);
+  const fields = { CONTRADICT_RR_PARENT: ['keyedRoot'], CONTRADICT_RR_CANDIDATE: ['candidateKeyedRoot'], CONTRADICT_COMMITTED: ['keyedRoot', 'candidateKeyedRoot'] }[kind];
+  const bad = { ...v };
+  for (const f of fields) bad[f] = flip(v[f]);
+  const current = await port.readSelector();
+  const setup = await guarded(() => port.apply(Object.freeze({
+    index: 0, boundary: 'BEFORE_STAGING', kind: 'REPLACE_SELECTOR',
+    payload: { selectorBytes: encodePlaintext(M2_KIND.GENERATION_SELECTOR, bad), resolveHoldGeneration: null, expectedSelectorBytes: current.envelope },
+  })));
+  const before = (await readback({})).dbDigest;
+  arm({});
+  const p = await guarded(() => port.readbackEvidence({ hold }));
+  state.armed = false;
+  const after = await readback({});
+  return {
+    setup: setup.error ?? null, hadHold: hold !== null,
+    produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null, error: p.error ?? null,
+    before, after: after.dbDigest, trace: state.trace,
+  };
+}
+
 function arm({ plan = {}, fault = null, tamperAt = null } = {}) {
   Object.assign(state, { armed: true, fault, tamperAt, plan, trace: [], next: 0, reads: 0, faulted: false });
 }
@@ -229,9 +266,13 @@ async function readback({ parent = '1', candidate = '2' }) {
   return out;
 }
 
-const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, readback };
+const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, contradict, readback };
 self.onmessage = async (ev) => {
-  const { id, op, args } = ev.data;
+  // A dedicated worker only receives messages from the page that created it (same origin; the event
+  // origin is empty or ours). Anything else is ignored; an unknown op is answered with an error.
+  if (ev.origin !== '' && ev.origin !== self.location.origin) return;
+  const { id, op, args } = ev.data ?? {};
+  if (!Object.hasOwn(OPS, op)) { self.postMessage({ id, error: { code: 'UNKNOWN_OP', message: String(op) } }); return; }
   try {
     self.postMessage({ id, value: await OPS[op](args ?? {}) });
   } catch (e) {

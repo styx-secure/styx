@@ -280,8 +280,13 @@ export async function createPort({ db, context }) {
         let bound;
         try { bound = await db.get(NS, genKey(s.candidateGeneration)); } catch { return unavailable(); }
         if (bound === undefined) throw failed('AUTHENTICATION_FAILED', 'the bound candidate is missing');
-        const hold = (await openGeneration(s.candidateGeneration, bound)).mutationHold;
+        const cand = await openGeneration(s.candidateGeneration, bound);
+        const hold = cand.mutationHold;
         if (hold?.presence !== 1) throw failed('AUTHENTICATION_FAILED', 'the bound candidate carries no hold');
+        // The RR selector must bind exactly this candidate: its candidate tuple is the stored one.
+        if (!sameBytes(s.candidateKeyedRoot, cand.keyedRoot) || !sameBytes(s.candidateManifestCipherDigest, cand.manifestCipherDigest)) {
+          throw failed('EVIDENCE_MISMATCH', 'the RR selector does not bind exactly the stored candidate');
+        }
         if (memory !== null && !sameBytes(memory.operationIdentity, hold.operationIdentity)) {
           throw failed('EVIDENCE_MISMATCH', 'the memory hold is not the durable hold');
         }
@@ -301,7 +306,8 @@ export async function createPort({ db, context }) {
           return unavailable();
         }
         if (cand !== null && cand.resultEvidence !== null && BigInt(cand.generation) === s.generation
-          && sameBytes(cand.keyedRoot, s.keyedRoot) && sameBytes(cand.resultEvidence.operationIdentity, memory.operationIdentity)) {
+          && sameBytes(cand.keyedRoot, s.keyedRoot) && sameBytes(cand.manifestCipherDigest, s.manifestCipherDigest)
+          && sameBytes(cand.resultEvidence.operationIdentity, memory.operationIdentity)) {
           return evidenceOf(memory, OUTCOME.COMMITTED, true);
         }
       }

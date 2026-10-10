@@ -43,7 +43,9 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/hook') return hookHandler(url.searchParams.get('p'), res);
   if (url.pathname === '/') {
     res.setHeader('content-type', 'text/html');
-    return res.end('<!doctype html><meta charset="utf-8"><script type="module" src="/suite/page.mjs' + url.search + '"></script>');
+    // Constant document: the page reads its own `factory` parameter from location; nothing from the
+    // request is reflected into the HTML.
+    return res.end('<!doctype html><meta charset="utf-8"><script type="module" src="/suite/page.mjs"></script>');
   }
   const [root, rel] = url.pathname.startsWith('/src/') ? [SRC, url.pathname.slice(5)]
     : (url.pathname.startsWith('/suite/') ? [SUITE, url.pathname.slice(7)] : [null, null]);
@@ -293,8 +295,20 @@ async function restartReconcile(rows) {
 }
 
 async function faults(rows) {
-  // T9 on the port's terminal readback producer: six fixed cells per row, whatever the port reads.
+  // T9 on the port's terminal readback producer: nine fixed cells per row, whatever the port reads.
   for (const row of rows) {
+    for (const kind of ['CONTRADICT_RR_PARENT', 'CONTRADICT_RR_CANDIDATE', 'CONTRADICT_COMMITTED']) {
+      // An authenticated contradiction written through the port, with the SS hold kept.
+      tally.cells += 1;
+      fs.rmSync(PROFILE, { recursive: true, force: true });
+      const { ctx, page } = await launch();
+      await call(page, 'seed', { scenario: row });
+      const held = await call(page, 'original', { scenario: row, outcome: 'INDETERMINATE' });
+      if (held.error !== null) throw new Error(`INDETERMINATE setup failed: ${held.error.code}`);
+      const response = await call(page, 'contradict', { scenario: row, kind });
+      await closeHard(ctx);
+      record({ id: `${row}/T9/${kind}`, row, phase: 'T9', fault: kind, produced: response.produced, response: response.error?.code ?? null, failures: checkProducer(kind, null, response, null) });
+    }
     tally.cells += 1;
     {
       // PRODUCE_COMMITTED: the commit lands while its response is lost; the SS kept its hold.

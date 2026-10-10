@@ -97,6 +97,7 @@ export function checkUninterrupted({ row, outcome, phase }, response, rb) {
     if (outcome === 'NOT_COMMITTED') want(rb.candidatePresent === false, 'the candidate is discarded', CITE.NOT_COMMITTED);
     if (outcome === 'COMMITTED') want(rb.memoryHold === false, 'the hold is cleared by the local emission', CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.memoryHold === false, 'terminal NOT_COMMITTED leaves no memory hold', CITE.MEMORY_HOLD);
+    if (outcome === 'INDETERMINATE' && phase === 'RECONCILIATION') want(rb.memoryHold === true, 'a continued INDETERMINATE keeps the memory hold', CITE.MEMORY_HOLD);
   }
   if (outcome === 'COMMITTED' && HAS_OUTPUT(row)) {
     want(rb.escrowOutput === ESCROW_OUTPUT_HEX, `the committed generation keeps its OUTPUT_ESCROW (got ${rb.escrowOutput})`, CITE.ESCROW);
@@ -165,7 +166,8 @@ export function checkRestartReconcile({ row, outcome }, pre, response, rb, repea
   want(pre.lock === true, 'the fresh context re-acquired the writer lock released by context death', CITE.LOCK);
   want(pre.memoryHold === false, 'the fresh worker holds no memory hold', CITE.RESUME);
   want(authority(pre.classify) === 'COMPLETE_OLD+HELD', `relaunched readback ${authority(pre.classify)} is COMPLETE_OLD+HELD`, CITE.DURABLE_HOLD);
-  f.push(...checkUninterrupted({ row, outcome, phase: 'RECONCILIATION' }, response, rb));
+  // The memory hold was lost with the killed context; the durable kind-13 hold carries the reconciliation.
+  f.push(...checkUninterrupted({ row, outcome, phase: 'RECONCILIATION_AFTER_RESTART' }, response, rb));
   if (outcome === 'INDETERMINATE') {
     want(rb.selector?.envelope === pre.selector?.envelope && rb.dbDigest === pre.dbDigest, 'continued INDETERMINATE leaves the stored bytes unchanged', CITE.CONTINUED);
   } else {
@@ -188,6 +190,14 @@ export function checkProducer(kind, pre, response, rb) {
   const want = (ok, what, cite) => { if (!ok) f.push({ what, cite }); };
   const trace = response.trace ?? [];
   const output = response.result?.output ?? null;
+  if (kind.startsWith('CONTRADICT_')) {
+    want(response.setup === null && response.hadHold === true, `setup: the contradicting selector was written with the SS hold kept (${response.setup?.code ?? 'ok'})`, CITE.PRODUCER_TAMPER);
+    want(response.produced === null && ['EVIDENCE_MISMATCH', 'AUTHENTICATION_FAILED'].includes(response.error?.code),
+      `an authenticated contradiction fails closed, never NOT_COMMITTED, COMMITTED or S024 (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_TAMPER);
+    want(response.before === response.after, 'the producer writes nothing', CITE.PRODUCER_TAMPER);
+    want(!(response.trace ?? []).some((e) => e.ev === 'OPEN'), 'the producer opens no readwrite transaction', CITE.PRODUCER_TAMPER);
+    return f;
+  }
   if (kind === 'PRODUCE_COMMITTED') {
     want(response.setup === null && response.hadHold === true, `setup: the commit landed with the SS hold kept (${response.setup?.code ?? 'ok'})`, CITE.PRODUCER_COMMITTED);
     want(response.produced?.outcome === 1 && response.produced?.terminal === true, `the producer gives COMMITTED terminal (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_COMMITTED);
@@ -262,9 +272,9 @@ export function checkDebris({ outcome }, stage, data) {
   } else if (stage === 'SECOND') {
     f.push(...checkUninterrupted({ row: data.row, outcome, phase: 'ORIGINAL' }, data.response, data.rb));
     want(data.debrisDigest === data.debrisAfter, 'the debris generation is preserved byte-identical', CITE.DEBRIS);
-    const n = Array.isArray(data.rb.numbers) ? data.rb.numbers : [];
-    want(n.includes('2') && n.every((x) => ['1', '2', '3'].includes(x)) && n.includes('3') === (outcome !== 'NOT_COMMITTED'),
-      `after the second mutation the inventory ${JSON.stringify(n)} keeps 2, holds 3 iff not NOT_COMMITTED, nothing else`, CITE.NEVER_REUSE);
+    const n = Array.isArray(data.rb.numbers) ? data.rb.numbers.join(',') : JSON.stringify(data.rb.numbers);
+    const expected = outcome === 'NOT_COMMITTED' ? '1,2' : '1,2,3';
+    want(n === expected, `after the second mutation the inventory ${n} is exactly ${expected} (parent kept, debris kept, the new candidate iff not NOT_COMMITTED)`, CITE.NEVER_REUSE);
   }
   return f;
 }
