@@ -8,19 +8,19 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
 
 ```json
 {
-  "blindScenarioSetSha256": "7c0987a68a0dcf3cb0213e9f09da94feb0205d62e69626e6f30821bed7295445",
-  "clauseRegistrySha256": "0e05f02350979430f6ac553b9b68d20cee5392ed4b5d017db9c429a14d0baba0",
+  "blindScenarioSetSha256": "6895d01c3ff816a8ebbe6cf006f642c7fa3dc80ddac687f8cbf4d8ca114fb100",
+  "clauseRegistrySha256": "a62f7925c9cc6f295b250efba20b208af1f7b0223bad03585c3e742ba0b74789",
   "closed": true,
   "coverage": {
-    "clauseCount": 1837,
-    "coveredClauseCount": 1837,
+    "clauseCount": 1848,
+    "coveredClauseCount": 1848,
     "coveredPairCount": 133,
     "pairCount": 133,
-    "scenarioCount": 1837,
+    "scenarioCount": 1848,
     "uncoveredClauses": [],
     "uncoveredPairs": []
   },
-  "inputManifestSha256": "38bb5975f3fd723aabf165eebda3f16883a99e3f564b61051ec1f68cc2a3a873",
+  "inputManifestSha256": "a197bd2c9a380d6eace73f3d59267d584e0b8884a69378d52f8199016cc88137",
   "nonClaims": [
     "No implementation conformance",
     "No browser or IndexedDB behavior",
@@ -45,9 +45,9 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "IMPLEMENTATION_ONLY": 0,
       "MISSING_FROM_IMPLEMENTATION_TABLE": 0,
       "SEMANTIC_CONFLICT": 0,
-      "UNMAPPED": 1636
+      "UNMAPPED": 1637
     },
-    "externalListSha256": "3e6c260e148abbecf1764c87f8f820ae574b573c341b431d66cb28f41277bcf8",
+    "externalListSha256": "3c7fbb85d3efbf22b8fc398f2476addfc56b9962e9365a8a08c9655024786a6b",
     "status": "OWNER_RECONCILIATION_REQUIRED"
   },
   "scenarioIdRule": "OSC- plus first 16 lowercase hex of SHA-256 over canonical scenario content excluding id",
@@ -607,6 +607,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /response/outputBySuccessCode and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-82995a9e5e9e"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"RESTORED_EMPTY_SESSION\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}.",
+        "The observed abstract result matches canonical clause SHA-256 9c55b4d44580a43977e69b9b6adb6e6c9f28c25336108000590ad37a33bdb6d3."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"RESTORED_EMPTY_SESSION\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-04a9c1dd2d4a0799",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"RESTORED_EMPTY_SESSION\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}.",
+        "Reject unless clause key CL-CAPI-82995a9e5e9e and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /response/outputBySuccessCode.",
+        "Canonical clause content is {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"RESTORED_EMPTY_SESSION\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /stateMatrix/6 and then minimally violate one stated field.",
       "clauses": [
         "CL-CAPI-732c85c6236d"
@@ -882,31 +907,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /decisionRows/2 and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CAPI-497f0b08a465"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}.",
-        "The observed abstract result matches canonical clause SHA-256 51c225008d29985ea24535253e485de35bdd3407a5aed471878cdabb530fa7ad."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-058cecc46b3d0977",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}.",
-        "Reject unless clause key CL-CAPI-497f0b08a465 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /decisionRows/2.",
-        "Canonical clause content is {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /dispatchRows/12 and then minimally violate one stated field.",
       "clauses": [
         "CL-CREC-99755aa33721"
@@ -979,6 +979,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-API clause at /withinLevelErrorOrder/P04.",
         "Canonical clause content is [\"UNSUPPORTED_OPERATION\"]."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /decisionRows/29 and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-86994049d9ac"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"condition\":\"C-REST RESTORED_RECONCILIATION_REQUIRED, and the SS/RS restore facts carry an authenticated selector-bound INDETERMINATE hold that passes the I-RESTART loader\",\"namedDisposition\":\"INDETERMINATE\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate the restored record set, load the authenticated selector-bound hold and re-expose it with the same reconciliationRef; start no new commit\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"INDETERMINATE\",\"scenario\":\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\",\"stateAfterOnNamedDisposition\":\"RECONCILIATION_REQUIRED\",\"stateBefore\":\"EMPTY\"}.",
+        "The observed abstract result matches canonical clause SHA-256 620774ef944b44b5340ba1b6ef740a9c0f2ebbadde3d5ab912b7d55e80649e36."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"condition\":\"C-REST RESTORED_RECONCILIATION_REQUIRED, and the SS/RS restore facts carry an authenticated selector-bound INDETERMINATE hold that passes the I-RESTART loader\",\"namedDisposition\":\"INDETERMINATE\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate the restored record set, load the authenticated selector-bound hold and re-expose it with the same reconciliationRef; start no new commit\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"INDETERMINATE\",\"scenario\":\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\",\"stateAfterOnNamedDisposition\":\"RECONCILIATION_REQUIRED\",\"stateBefore\":\"EMPTY\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-05dca950018a2164",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"condition\":\"C-REST RESTORED_RECONCILIATION_REQUIRED, and the SS/RS restore facts carry an authenticated selector-bound INDETERMINATE hold that passes the I-RESTART loader\",\"namedDisposition\":\"INDETERMINATE\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate the restored record set, load the authenticated selector-bound hold and re-expose it with the same reconciliationRef; start no new commit\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"INDETERMINATE\",\"scenario\":\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\",\"stateAfterOnNamedDisposition\":\"RECONCILIATION_REQUIRED\",\"stateBefore\":\"EMPTY\"}.",
+        "Reject unless clause key CL-CAPI-86994049d9ac and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /decisionRows/29.",
+        "Canonical clause content is {\"condition\":\"C-REST RESTORED_RECONCILIATION_REQUIRED, and the SS/RS restore facts carry an authenticated selector-bound INDETERMINATE hold that passes the I-RESTART loader\",\"namedDisposition\":\"INDETERMINATE\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate the restored record set, load the authenticated selector-bound hold and re-expose it with the same reconciliationRef; start no new commit\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"INDETERMINATE\",\"scenario\":\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\",\"stateAfterOnNamedDisposition\":\"RECONCILIATION_REQUIRED\",\"stateBefore\":\"EMPTY\"}."
       ]
     },
     {
@@ -4514,31 +4539,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /rules/restore and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CAPI-3141e9532ac0"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure\".",
-        "The observed abstract result matches canonical clause SHA-256 612c0c5b6b350f39425abccd36b8811fd36616eb963b410bcda045b9fbe3f87f."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure\".",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-167372283b0e10d1",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure\".",
-        "Reject unless clause key CL-CAPI-3141e9532ac0 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /rules/restore.",
-        "Canonical clause content is \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure\"."
-      ]
-    },
-    {
       "action": "Submit the prohibited or malformed abstract case defined at /negativeCases/3.",
       "clauses": [
         "CL-CBIND-0a65c7e00e0f"
@@ -6707,6 +6707,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /rules/restartAssumption and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-f0eb0a8e8218"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"consequences\":[\"Every relaunch therefore starts the adapter at EMPTY and reaches BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 again.\",\"Within one worker, RESTORE in RECONCILIATION_REQUIRED stays the BLIND_ID_78337A9A0744BC9C10AEDFEAC7E94AFC reject, because AP already holds the reference from S030.\",\"A shared worker or a service worker is out of scope.\"],\"statement\":\"Assumption, stated explicitly: in M2 the adapter, the I-TXN driver and the port run in the existing dedicated vault worker, which dies with its page; the M2 worker runtime is deferred to M3.\"}.",
+        "The observed abstract result matches canonical clause SHA-256 7226f1971ca18a7a81048cc9c7ab38fa887f13099712a86660f8d67dc4322f05."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"consequences\":[\"Every relaunch therefore starts the adapter at EMPTY and reaches BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 again.\",\"Within one worker, RESTORE in RECONCILIATION_REQUIRED stays the BLIND_ID_78337A9A0744BC9C10AEDFEAC7E94AFC reject, because AP already holds the reference from S030.\",\"A shared worker or a service worker is out of scope.\"],\"statement\":\"Assumption, stated explicitly: in M2 the adapter, the I-TXN driver and the port run in the existing dedicated vault worker, which dies with its page; the M2 worker runtime is deferred to M3.\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-21a0dfcbee61f9df",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"consequences\":[\"Every relaunch therefore starts the adapter at EMPTY and reaches BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 again.\",\"Within one worker, RESTORE in RECONCILIATION_REQUIRED stays the BLIND_ID_78337A9A0744BC9C10AEDFEAC7E94AFC reject, because AP already holds the reference from S030.\",\"A shared worker or a service worker is out of scope.\"],\"statement\":\"Assumption, stated explicitly: in M2 the adapter, the I-TXN driver and the port run in the existing dedicated vault worker, which dies with its page; the M2 worker runtime is deferred to M3.\"}.",
+        "Reject unless clause key CL-CAPI-f0eb0a8e8218 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /rules/restartAssumption.",
+        "Canonical clause content is {\"consequences\":[\"Every relaunch therefore starts the adapter at EMPTY and reaches BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 again.\",\"Within one worker, RESTORE in RECONCILIATION_REQUIRED stays the BLIND_ID_78337A9A0744BC9C10AEDFEAC7E94AFC reject, because AP already holds the reference from S030.\",\"A shared worker or a service worker is out of scope.\"],\"statement\":\"Assumption, stated explicitly: in M2 the adapter, the I-TXN driver and the port run in the existing dedicated vault worker, which dies with its page; the M2 worker runtime is deferred to M3.\"}."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /lifecycleMatrix/344 and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-f32737dd0fda"
@@ -6904,6 +6929,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-RET clause at /lifecycleMatrix/190.",
         "Canonical clause content is {\"condition\":\"AMBIGUOUS_OR_INCOMPLETE_EVIDENCE_RETAINS_OLD_COMPLETE_SET\",\"event\":\"COMPACTION_INTERRUPTION\",\"material\":\"LOSING_CANDIDATE_EVIDENCE\",\"transition\":\"BLOCK\"}."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /response/byKind and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-1a70170f6fc7"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\",\"RESTORED_EMPTY_SESSION\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}.",
+        "The observed abstract result matches canonical clause SHA-256 368d261ff384ef4c6b3d7d91b96eb42c34370e689c4ae0298e8485a3b4f4bd3a."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\",\"RESTORED_EMPTY_SESSION\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-2325457097b1a120",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\",\"RESTORED_EMPTY_SESSION\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}.",
+        "Reject unless clause key CL-CAPI-1a70170f6fc7 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /response/byKind.",
+        "Canonical clause content is {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\",\"RESTORED_EMPTY_SESSION\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}."
       ]
     },
     {
@@ -7664,31 +7714,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-API clause at /decisionRows/9.",
         "Canonical clause content is {\"condition\":\"framing epoch distance is 0 through 5; SS authentication succeeds; replay identity is unseen\",\"namedDisposition\":\"APPLICATION_OPENED\",\"operation\":\"OPEN_APPLICATION\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"commit the complete logical mutation and return the closed tri-state\",\"SS\":\"authenticate and stage the complete session transition; apply it only after RS returns COMMITTED\",\"TR\":\"ABSENT\"},\"persistence\":\"RS_TRI_STATE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_1E771A16CFD2456F7803993C63523B14\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"ACTIVE\"}."
-      ]
-    },
-    {
-      "action": "Submit the conforming abstract case defined at /decisionRows/3 and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CAPI-b257ea588ef4"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
-        "The observed abstract result matches canonical clause SHA-256 1154d636078bd18ce0173ae364360dbce55665eef78586963f5d9baade00698c."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-275ff10dd95b8749",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
-        "Reject unless clause key CL-CAPI-b257ea588ef4 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /decisionRows/3.",
-        "Canonical clause content is {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}."
       ]
     },
     {
@@ -10070,31 +10095,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /compatibilityRegistry/valueRegistries and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CREST-251b979b2046"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}}.",
-        "The observed abstract result matches canonical clause SHA-256 c30e88969c45b0e87dd5b8b71afa078caf68e0e67fa4d66ce981cb81f915ba72."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-3400f06e4194ae2e",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}}.",
-        "Reject unless clause key CL-CREST-251b979b2046 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-REST clause at /compatibilityRegistry/valueRegistries.",
-        "Canonical clause content is {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}}."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /lifecycleMatrix/227 and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-ba4185354d48"
@@ -10167,31 +10167,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-REC clause at /restoreResults/16.",
         "Canonical clause content is \"PARTIAL_GENERATION\"."
-      ]
-    },
-    {
-      "action": "Submit the conforming abstract case defined at /response/outputBySuccessCode and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CAPI-aae47c73d6c0"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}.",
-        "The observed abstract result matches canonical clause SHA-256 1c072f6d28a5fa07d5a3e2f47e4e408076f16ba843f4532bf308078865842748."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-345d9f9fb61f4c7a",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}.",
-        "Reject unless clause key CL-CAPI-aae47c73d6c0 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /response/outputBySuccessCode.",
-        "Canonical clause content is {\"APPLICATION_OPENED\":[\"applicationBytes\"],\"APPLICATION_PROTECTED\":[\"protectedApplicationBytes\"],\"CANDIDATE_SELECTED\":[\"selectedCandidateRef\"],\"CREATED\":[\"embeddedTreeWelcome\"],\"DUPLICATE_IGNORED\":[],\"JOINED\":[],\"PEER_UPDATE_APPLIED\":[],\"RECONCILED_COMMITTED\":[\"originalSuccessCode\",\"originalOutput\"],\"RESTORED\":[],\"SELF_UPDATED\":[\"protectedCommitBytes\"]}."
       ]
     },
     {
@@ -12234,6 +12209,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /rules/restoreReexposure and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-e25972fbaae9"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 re-exposes an existing durable hold after a restart: it emits commitOutcome INDETERMINATE, originalStateBefore and the reconciliationRef of that hold, enters RECONCILIATION_REQUIRED, starts no new uncertain commit, issues no RS commit request, and writes, releases or clears nothing. Its response is a prior INDETERMINATE response emitted by SS in the sense of RECONCILE_INDETERMINATE\".",
+        "The observed abstract result matches canonical clause SHA-256 25a34816b1cf14dcb1a2f2d35b7c55cae6d7c0d60e29fca4ffc6b340848bd292."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 re-exposes an existing durable hold after a restart: it emits commitOutcome INDETERMINATE, originalStateBefore and the reconciliationRef of that hold, enters RECONCILIATION_REQUIRED, starts no new uncertain commit, issues no RS commit request, and writes, releases or clears nothing. Its response is a prior INDETERMINATE response emitted by SS in the sense of RECONCILE_INDETERMINATE\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-3ef938d5d462c15a",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 re-exposes an existing durable hold after a restart: it emits commitOutcome INDETERMINATE, originalStateBefore and the reconciliationRef of that hold, enters RECONCILIATION_REQUIRED, starts no new uncertain commit, issues no RS commit request, and writes, releases or clears nothing. Its response is a prior INDETERMINATE response emitted by SS in the sense of RECONCILE_INDETERMINATE\".",
+        "Reject unless clause key CL-CAPI-e25972fbaae9 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /rules/restoreReexposure.",
+        "Canonical clause content is \"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 re-exposes an existing durable hold after a restart: it emits commitOutcome INDETERMINATE, originalStateBefore and the reconciliationRef of that hold, enters RECONCILIATION_REQUIRED, starts no new uncertain commit, issues no RS commit request, and writes, releases or clears nothing. Its response is a prior INDETERMINATE response emitted by SS in the sense of RECONCILE_INDETERMINATE\"."
+      ]
+    },
+    {
       "action": "Make the competing conditions in /faultPhaseOrder/11 applicable simultaneously and select only the higher-priority result.",
       "clauses": [
         "CL-CREC-3a4030108b0b"
@@ -13498,6 +13498,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /rules/restore and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-a9820d31b02f"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure. For exactly one exact-profile M2 candidate, the C-REST classification of its authenticated authority selects the row: RESTORED_ACTIVE is BLIND_ID_95FF06321F17CB5070353DB86371D422; RESTORED_EMPTY is BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D RESTORED_EMPTY_SESSION with state EMPTY and no output; RESTORED_RECONCILIATION_REQUIRED whose authenticated selector-bound INDETERMINATE hold passes the I-RESTART loader is BLIND_ID_0BE33C40D01F404A1A8925CF042493C2; a hold that fails the loader is the fail-closed AUTHENTICATED_STATE_INCONSISTENT of BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96. No other C-REST success reaches a RESTORE row\".",
+        "The observed abstract result matches canonical clause SHA-256 72029b33f7a7c506039f50782f2889e943694f0a4916902bb8af549387b1f87d."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure. For exactly one exact-profile M2 candidate, the C-REST classification of its authenticated authority selects the row: RESTORED_ACTIVE is BLIND_ID_95FF06321F17CB5070353DB86371D422; RESTORED_EMPTY is BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D RESTORED_EMPTY_SESSION with state EMPTY and no output; RESTORED_RECONCILIATION_REQUIRED whose authenticated selector-bound INDETERMINATE hold passes the I-RESTART loader is BLIND_ID_0BE33C40D01F404A1A8925CF042493C2; a hold that fails the loader is the fail-closed AUTHENTICATED_STATE_INCONSISTENT of BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96. No other C-REST success reaches a RESTORE row\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-46b5a457f8bd8d24",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure. For exactly one exact-profile M2 candidate, the C-REST classification of its authenticated authority selects the row: RESTORED_ACTIVE is BLIND_ID_95FF06321F17CB5070353DB86371D422; RESTORED_EMPTY is BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D RESTORED_EMPTY_SESSION with state EMPTY and no output; RESTORED_RECONCILIATION_REQUIRED whose authenticated selector-bound INDETERMINATE hold passes the I-RESTART loader is BLIND_ID_0BE33C40D01F404A1A8925CF042493C2; a hold that fails the loader is the fail-closed AUTHENTICATED_STATE_INCONSISTENT of BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96. No other C-REST success reaches a RESTORE row\".",
+        "Reject unless clause key CL-CAPI-a9820d31b02f and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /rules/restore.",
+        "Canonical clause content is \"RS classifies the complete stored set into mutually exclusive cases: no session material; only legacy or tuple/version-drifted session records; exactly one exact-profile M2 candidate with no additional nonlegacy candidate; or multiple/mixed nonlegacy candidates. Preserved legacy bytes beside exactly one exact-profile M2 candidate are ignored and never make that candidate incompatible. SS and RS synchronously revalidate the exact candidate before RESTORED; decoded bytes are never a public state and remain non-authoritative on any failure. For exactly one exact-profile M2 candidate, the C-REST classification of its authenticated authority selects the row: RESTORED_ACTIVE is BLIND_ID_95FF06321F17CB5070353DB86371D422; RESTORED_EMPTY is BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D RESTORED_EMPTY_SESSION with state EMPTY and no output; RESTORED_RECONCILIATION_REQUIRED whose authenticated selector-bound INDETERMINATE hold passes the I-RESTART loader is BLIND_ID_0BE33C40D01F404A1A8925CF042493C2; a hold that fails the loader is the fail-closed AUTHENTICATED_STATE_INCONSISTENT of BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96. No other C-REST success reaches a RESTORE row\"."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /lifecycleMatrix/116 and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-e4f3a3945d99"
@@ -13776,31 +13801,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-FMT clause at /crashModel/0.",
         "Canonical clause content is {\"apiState\":\"ORIGINAL\",\"classification\":\"NO_RS_REQUEST\",\"id\":\"BEFORE_STAGING\",\"output\":\"NONE\",\"readbackByMemory\":{\"LOST\":[\"COMPLETE_OLD\"],\"RETAINED\":[\"COMPLETE_OLD\"]}}."
-      ]
-    },
-    {
-      "action": "Submit the conforming abstract case defined at /guidance/compatibleBuild and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CREST-5c8f6ab854b4"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content \"Identify the exact reader profile CFMT_EXACT_9DACE4A0 and preserve all bytes.\".",
-        "The observed abstract result matches canonical clause SHA-256 44ee3f9f2f0cf0a36ea186480dea7d0bb48af8cb5e69121e8699a8aa8b4aa5f6."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content \"Identify the exact reader profile CFMT_EXACT_9DACE4A0 and preserve all bytes.\".",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-483f753204581126",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content \"Identify the exact reader profile CFMT_EXACT_9DACE4A0 and preserve all bytes.\".",
-        "Reject unless clause key CL-CREST-5c8f6ab854b4 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-REST clause at /guidance/compatibleBuild.",
-        "Canonical clause content is \"Identify the exact reader profile CFMT_EXACT_9DACE4A0 and preserve all bytes.\"."
       ]
     },
     {
@@ -15214,31 +15214,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /prose/70 and then minimally violate one stated field.",
-      "clauses": [
-        "PROSE-CAPI-70-beec7a52cb93"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}.",
-        "The observed abstract result matches canonical clause SHA-256 5bff4016ec7c442c6a32d987b0373ede15cb3cc95fccdaa1b784618ee03f5bd3."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-4eda01547f912185",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}.",
-        "Reject unless clause key PROSE-CAPI-70-beec7a52cb93 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /prose/70.",
-        "Canonical clause content is {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /recoveryFactMapping/0 and then minimally violate one stated field.",
       "clauses": [
         "CL-CFMT-b32bfe068f50"
@@ -15511,31 +15486,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-FMT clause at /keyPackageLifecycle/states.",
         "Canonical clause content is [\"UNCONSUMED\",\"RESERVED\",\"CONSUMED\",\"INVALID\"]."
-      ]
-    },
-    {
-      "action": "Submit the conforming abstract case defined at /request/derivedByOperation and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CAPI-f8d3598fd646"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}.",
-        "The observed abstract result matches canonical clause SHA-256 36f4dfbab86101bec35c8c6ede1d70ccce70c90e42ac2ddfe2ea02b0a2f950b0."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-50af871720d5f00c",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}.",
-        "Reject unless clause key CL-CAPI-f8d3598fd646 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /request/derivedByOperation.",
-        "Canonical clause content is {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}."
       ]
     },
     {
@@ -19321,31 +19271,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /prose/66 and then minimally violate one stated field.",
-      "clauses": [
-        "PROSE-CAPI-66-c2a6eb10ab8d"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}.",
-        "The observed abstract result matches canonical clause SHA-256 08c129e312df2c55545aa9447ffdffa557198e70225ef3b666a2a9822bd3f9b9."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-671dcc18f948a230",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}.",
-        "Reject unless clause key PROSE-CAPI-66-c2a6eb10ab8d and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /prose/66.",
-        "Canonical clause content is {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /reconciliation/continuedIndeterminate and then minimally violate one stated field.",
       "clauses": [
         "CL-CREC-bada14ad872e"
@@ -21780,6 +21705,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /compatibilityRegistry/valueRegistries and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CREST-900cc6ba1d8a"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}}.",
+        "The observed abstract result matches canonical clause SHA-256 1312f524275bbea1e369968df8742fd331cc797c01e7f2a2fcf5fc6c9a9dc751."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-766e3f48df968a9f",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}}.",
+        "Reject unless clause key CL-CREST-900cc6ba1d8a and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-REST clause at /compatibilityRegistry/valueRegistries.",
+        "Canonical clause content is {\"apiState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"bool\":{\"false\":0,\"true\":1},\"commitOutcome\":{\"COMMITTED\":1,\"INDETERMINATE\":3,\"NOT_COMMITTED\":2},\"fieldTags\":\"For each recordKinds entry, orderedFields is numbered consecutively from tag 1; no other tag is valid.\",\"keyPackageLifecycle\":{\"CONSUMED\":3,\"INVALID\":4,\"RESERVED\":2,\"UNCONSUMED\":1},\"operation\":{\"APPLY_PEER_UPDATE\":7,\"CREATE\":1,\"JOIN_WELCOME\":3,\"OPEN_APPLICATION\":5,\"PROTECT_APPLICATION\":4,\"RECONCILE_INDETERMINATE\":8,\"RESTORE\":2,\"SELF_UPDATE\":6},\"outputKind\":{\"APPLICATION_BYTES\":4,\"EMBEDDED_TREE_WELCOME\":2,\"NONE\":1,\"PROTECTED_APPLICATION_BYTES\":3,\"PROTECTED_COMMIT_BYTES\":5,\"SELECTED_CANDIDATE_REF\":6},\"scenario\":{\"BLIND_ID_0A518E7821797FDEC020624228D30600\":4,\"BLIND_ID_165EEE71F2AAFE707EFB83FB012BF81D\":7,\"BLIND_ID_2A3998B43934234FC10BCB695B1A7DF4\":5,\"BLIND_ID_675E05AF08B657E8643785A2082FAC08\":3,\"BLIND_ID_84230B1D4C8CDD9E459D7A56E2D8FB38\":2,\"BLIND_ID_AB5B53D263B13BA321CB940457DECE4C\":1,\"BLIND_ID_BF409D2A391195F23511AA5FD464241C\":6},\"selectorState\":{\"ACTIVE\":2,\"EMPTY\":1,\"RECONCILIATION_REQUIRED\":3},\"slotState\":{\"BOUND\":3,\"EMPTY\":1,\"ISSUANCE_HELD\":2,\"RECONCILIATION_REQUIRED\":4},\"successCode\":{\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}}."
+      ]
+    },
+    {
       "action": "Make both pair inputs at /precedencePairs/17 applicable together and evaluate the prescribed combined disposition.",
       "clauses": [
         "CL-CAPI-02a42f168604",
@@ -22987,6 +22937,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-FMT clause at /negativeCases/6.",
         "Canonical clause content is \"AAD_CONTEXT_SESSION_PROFILE_KIND_VERSION_GENERATION_SUBSTITUTION\"."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /rules/reconciliationReferenceForm and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-21b581a3c402"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"the emitted reconciliationRef is exactly \\\"I-SM-HOLD:\\\" followed by the unpadded base64url encoding of the 32-byte kind-13 reconciliationReference, 53 characters in total; the original INDETERMINATE emission and BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 use the same function, so the two emissions are byte-equal; the 32-byte reference reaches the adapter only as an SS/RS-owned observation fact; an AP echo that is not exactly this form, or whose decoded bytes differ from the held reference, is RECONCILIATION_REFERENCE_MISMATCH (BLIND_ID_848348A37ECC2AF4577DF50A56776352) with no mutation\".",
+        "The observed abstract result matches canonical clause SHA-256 34f3fd02a6d1dd950b0c693c76b2d6744655468531f88fc1afe7f21809df47f1."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"the emitted reconciliationRef is exactly \\\"I-SM-HOLD:\\\" followed by the unpadded base64url encoding of the 32-byte kind-13 reconciliationReference, 53 characters in total; the original INDETERMINATE emission and BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 use the same function, so the two emissions are byte-equal; the 32-byte reference reaches the adapter only as an SS/RS-owned observation fact; an AP echo that is not exactly this form, or whose decoded bytes differ from the held reference, is RECONCILIATION_REFERENCE_MISMATCH (BLIND_ID_848348A37ECC2AF4577DF50A56776352) with no mutation\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-7fa18a866afe3f22",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"the emitted reconciliationRef is exactly \\\"I-SM-HOLD:\\\" followed by the unpadded base64url encoding of the 32-byte kind-13 reconciliationReference, 53 characters in total; the original INDETERMINATE emission and BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 use the same function, so the two emissions are byte-equal; the 32-byte reference reaches the adapter only as an SS/RS-owned observation fact; an AP echo that is not exactly this form, or whose decoded bytes differ from the held reference, is RECONCILIATION_REFERENCE_MISMATCH (BLIND_ID_848348A37ECC2AF4577DF50A56776352) with no mutation\".",
+        "Reject unless clause key CL-CAPI-21b581a3c402 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /rules/reconciliationReferenceForm.",
+        "Canonical clause content is \"the emitted reconciliationRef is exactly \\\"I-SM-HOLD:\\\" followed by the unpadded base64url encoding of the 32-byte kind-13 reconciliationReference, 53 characters in total; the original INDETERMINATE emission and BLIND_ID_0BE33C40D01F404A1A8925CF042493C2 use the same function, so the two emissions are byte-equal; the 32-byte reference reaches the adapter only as an SS/RS-owned observation fact; an AP echo that is not exactly this form, or whose decoded bytes differ from the held reference, is RECONCILIATION_REFERENCE_MISMATCH (BLIND_ID_848348A37ECC2AF4577DF50A56776352) with no mutation\"."
       ]
     },
     {
@@ -25916,6 +25891,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /codeToResultKind/RESTORED_EMPTY_SESSION and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-c4c0898cc25f"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"SUCCESS\".",
+        "The observed abstract result matches canonical clause SHA-256 10855c7ff70842f1b5b4c20c4c059d0e356f11c7df96e1fd97c26eeb7d427423."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"SUCCESS\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-8fd05da068731583",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"SUCCESS\".",
+        "Reject unless clause key CL-CAPI-c4c0898cc25f and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /codeToResultKind/RESTORED_EMPTY_SESSION.",
+        "Canonical clause content is \"SUCCESS\"."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /compactionRule/partialSurvivorAuthority and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-909148272431"
@@ -28831,31 +28831,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /valueRegistries/successCode and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CFMT-ca91ee7db4f6"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}.",
-        "The observed abstract result matches canonical clause SHA-256 87c7488e9bdf3c0e71e7f5a907131cc9c6affde121121cdab13b27d6ab89a40a."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-9fc8875eeccb297a",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}.",
-        "Reject unless clause key CL-CFMT-ca91ee7db4f6 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-FMT clause at /valueRegistries/successCode.",
-        "Canonical clause content is {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"SELF_UPDATED\":6}."
-      ]
-    },
-    {
       "action": "Submit the prohibited or malformed abstract case defined at /negativeCases/47.",
       "clauses": [
         "CL-CBIND-8156dd8c1b98"
@@ -30282,6 +30257,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /successCodeEnum/10 and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-15ee05cdbefc"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"RESTORED_EMPTY_SESSION\".",
+        "The observed abstract result matches canonical clause SHA-256 ecde80e3f16a47d71b6190b2c042dfc5c4c4a41c07f3258d77b85c3e679e11a5."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"RESTORED_EMPTY_SESSION\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-a80729f1604d7e33",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"RESTORED_EMPTY_SESSION\".",
+        "Reject unless clause key CL-CAPI-15ee05cdbefc and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /successCodeEnum/10.",
+        "Canonical clause content is \"RESTORED_EMPTY_SESSION\"."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /reachableConditionRows/2 and then minimally violate one stated field.",
       "clauses": [
         "CL-CREC-f5f8bea4de65"
@@ -30304,6 +30304,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-REC clause at /reachableConditionRows/2.",
         "Canonical clause content is {\"authority\":\"SELECTED_AUTHORITY\",\"disposition\":\"CONTINUE_EMPTY\",\"legacyPresent\":false,\"resetEligible\":false,\"result\":\"RESTORED_EMPTY\"}."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /decisionRows/2 and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-34f0a3e53dff"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency; C-REST classifies its authenticated authority RESTORED_ACTIVE\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}.",
+        "The observed abstract result matches canonical clause SHA-256 5945418953eb92784ce87b7873cc97c2b3106bce1f51bedf98036184e6c7b0aa."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency; C-REST classifies its authenticated authority RESTORED_ACTIVE\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-a837ac9db1283493",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency; C-REST classifies its authenticated authority RESTORED_ACTIVE\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}.",
+        "Reject unless clause key CL-CAPI-34f0a3e53dff and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /decisionRows/2.",
+        "Canonical clause content is {\"condition\":\"RS supplies exactly one exact-profile M2 candidate and no additional nonlegacy session candidate; separately preserved legacy bytes are ignored; SS and RS owning-layer revalidation succeeds for binding, authentication and internal consistency; C-REST classifies its authenticated authority RESTORED_ACTIVE\",\"namedDisposition\":\"RESTORED\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_95FF06321F17CB5070353DB86371D422\",\"stateAfterOnNamedDisposition\":\"ACTIVE\",\"stateBefore\":\"EMPTY\"}."
       ]
     },
     {
@@ -30704,6 +30729,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-BIND clause at /issuanceRules/localReference.",
         "Canonical clause content is \"fresh nonzero 32-byte SS CSPRNG value, distinct from the MLS KeyPackageRef; RS maps it one-to-one to the canonical MLS KeyPackageRef and complete private record; it never crosses the bootstrap boundary\"."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /prose/66 and then minimally violate one stated field.",
+      "clauses": [
+        "PROSE-CAPI-66-918fb0aa722d"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"text\":\"`RESTORE` returns only `SUCCESS` (`RESTORED` or `RESTORED_EMPTY_SESSION`), `INDETERMINATE` (`BLIND_ID_0BE33C40D01F404A1A8925CF042493C2` only) or `REJECTED`; it never returns `NO_CHANGE` or `NOT_COMMITTED`.\"}.",
+        "The observed abstract result matches canonical clause SHA-256 e3ae8e26cba842175e3607c000a6dba02c2fa391d682650acdecca72657ab58d."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"text\":\"`RESTORE` returns only `SUCCESS` (`RESTORED` or `RESTORED_EMPTY_SESSION`), `INDETERMINATE` (`BLIND_ID_0BE33C40D01F404A1A8925CF042493C2` only) or `REJECTED`; it never returns `NO_CHANGE` or `NOT_COMMITTED`.\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-aa7ab0276ab2f2a6",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"text\":\"`RESTORE` returns only `SUCCESS` (`RESTORED` or `RESTORED_EMPTY_SESSION`), `INDETERMINATE` (`BLIND_ID_0BE33C40D01F404A1A8925CF042493C2` only) or `REJECTED`; it never returns `NO_CHANGE` or `NOT_COMMITTED`.\"}.",
+        "Reject unless clause key PROSE-CAPI-66-918fb0aa722d and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /prose/66.",
+        "Canonical clause content is {\"text\":\"`RESTORE` returns only `SUCCESS` (`RESTORED` or `RESTORED_EMPTY_SESSION`), `INDETERMINATE` (`BLIND_ID_0BE33C40D01F404A1A8925CF042493C2` only) or `REJECTED`; it never returns `NO_CHANGE` or `NOT_COMMITTED`.\"}."
       ]
     },
     {
@@ -32773,31 +32823,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /compatibleBuild/readerProfile and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CREC-039a2c771802"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content \"CFMT_EXACT_9DACE4A0\".",
-        "The observed abstract result matches canonical clause SHA-256 90781127b82096fd359f380eab0960d97531b8c3491d4d8d4d13fd66333259dd."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content \"CFMT_EXACT_9DACE4A0\".",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-b6046faccc9a1d77",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content \"CFMT_EXACT_9DACE4A0\".",
-        "Reject unless clause key CL-CREC-039a2c771802 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-REC clause at /compatibleBuild/readerProfile.",
-        "Canonical clause content is \"CFMT_EXACT_9DACE4A0\"."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /byteGrammar/outerFields and then minimally violate one stated field.",
       "clauses": [
         "CL-CBIND-01d4f2e47cf5"
@@ -32820,6 +32845,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-BIND clause at /byteGrammar/outerFields.",
         "Canonical clause content is [{\"length\":32,\"name\":\"localContextId\",\"order\":1,\"tag\":1},{\"length\":32,\"name\":\"secureSessionIdentity\",\"order\":2,\"tag\":2},{\"length\":306,\"name\":\"productProfile\",\"order\":3,\"tag\":3}]."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /rules/restoreFacts and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-13edc1aee416"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"restoreClassification, the authenticated selector-bound INDETERMINATE hold and its 32-byte reconciliationReference are SS/RS-owned observation facts of RESTORE, never AP input. From the hold SS rebuilds the complete reconciliation snapshot it would have held after the original INDETERMINATE response, including originalStateBefore, the operation identity and, for BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7, selectedCandidateRef. AP cannot supply, select or alter any of them\".",
+        "The observed abstract result matches canonical clause SHA-256 22230c114a1318eba8c8daa57c385cc5d8aa9830d04979eaa2fbc20e6b506a59."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"restoreClassification, the authenticated selector-bound INDETERMINATE hold and its 32-byte reconciliationReference are SS/RS-owned observation facts of RESTORE, never AP input. From the hold SS rebuilds the complete reconciliation snapshot it would have held after the original INDETERMINATE response, including originalStateBefore, the operation identity and, for BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7, selectedCandidateRef. AP cannot supply, select or alter any of them\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-b67d89025c61a3d6",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"restoreClassification, the authenticated selector-bound INDETERMINATE hold and its 32-byte reconciliationReference are SS/RS-owned observation facts of RESTORE, never AP input. From the hold SS rebuilds the complete reconciliation snapshot it would have held after the original INDETERMINATE response, including originalStateBefore, the operation identity and, for BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7, selectedCandidateRef. AP cannot supply, select or alter any of them\".",
+        "Reject unless clause key CL-CAPI-13edc1aee416 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /rules/restoreFacts.",
+        "Canonical clause content is \"restoreClassification, the authenticated selector-bound INDETERMINATE hold and its 32-byte reconciliationReference are SS/RS-owned observation facts of RESTORE, never AP input. From the hold SS rebuilds the complete reconciliation snapshot it would have held after the original INDETERMINATE response, including originalStateBefore, the operation identity and, for BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7, selectedCandidateRef. AP cannot supply, select or alter any of them\"."
       ]
     },
     {
@@ -34483,6 +34533,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /rules/operationIdentityForm and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-cb25715e57f2"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"appliesToScenarios\":[\"BLIND_ID_5C53320717119C57B5D346AA752D281E\",\"BLIND_ID_93ED9500C79BE5B602027831145D4AC7\",\"BLIND_ID_6A2C7CCFB8D691776F5957BD4907A2DC\",\"BLIND_ID_1E771A16CFD2456F7803993C63523B14\",\"BLIND_ID_3CFA8D52C0469FA02C57F258BEB93381\",\"BLIND_ID_3FC080EA791BFFDC345DAA08EFBD720C\",\"BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7\"],\"form\":\"unpadded base64url encoding of the 32-byte SS/RS operation identity: exactly 43 characters, canonical, decoding to nonzero bytes\",\"origin\":\"SS_RS only; never AP\",\"replaces\":\"the free string bounded by MAX_OPERATION_IDENTITY_CHARS = 246\",\"violation\":\"an identity longer than 43 characters exceeds the structural bound and is VALUE_OUT_OF_RANGE (BLIND_ID_471A728D2559FD3CF1B9DAC163C98B6A) at P06, as the replaced bound was; any other non-conforming identity, that is one of at most 43 characters that is shorter, outside the base64url alphabet, non-canonical or decoding to all-zero bytes, is a defect of an SS_RS fact and is FAIL_CLOSED_INTERNAL (BLIND_ID_7BE7FD079E51480BB987D6B3E90C20C9) under C-MUT section 3; both are detected when the MutationEnvelope is formed, strictly before any RS commit request: no commit request is sent and nothing is held\"}.",
+        "The observed abstract result matches canonical clause SHA-256 151ba67c6b1e9118a46c70c0e32a82c8e4e492de3543cb5eaff2fb5898157a9e."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"appliesToScenarios\":[\"BLIND_ID_5C53320717119C57B5D346AA752D281E\",\"BLIND_ID_93ED9500C79BE5B602027831145D4AC7\",\"BLIND_ID_6A2C7CCFB8D691776F5957BD4907A2DC\",\"BLIND_ID_1E771A16CFD2456F7803993C63523B14\",\"BLIND_ID_3CFA8D52C0469FA02C57F258BEB93381\",\"BLIND_ID_3FC080EA791BFFDC345DAA08EFBD720C\",\"BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7\"],\"form\":\"unpadded base64url encoding of the 32-byte SS/RS operation identity: exactly 43 characters, canonical, decoding to nonzero bytes\",\"origin\":\"SS_RS only; never AP\",\"replaces\":\"the free string bounded by MAX_OPERATION_IDENTITY_CHARS = 246\",\"violation\":\"an identity longer than 43 characters exceeds the structural bound and is VALUE_OUT_OF_RANGE (BLIND_ID_471A728D2559FD3CF1B9DAC163C98B6A) at P06, as the replaced bound was; any other non-conforming identity, that is one of at most 43 characters that is shorter, outside the base64url alphabet, non-canonical or decoding to all-zero bytes, is a defect of an SS_RS fact and is FAIL_CLOSED_INTERNAL (BLIND_ID_7BE7FD079E51480BB987D6B3E90C20C9) under C-MUT section 3; both are detected when the MutationEnvelope is formed, strictly before any RS commit request: no commit request is sent and nothing is held\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-bf33530b7eeb6407",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"appliesToScenarios\":[\"BLIND_ID_5C53320717119C57B5D346AA752D281E\",\"BLIND_ID_93ED9500C79BE5B602027831145D4AC7\",\"BLIND_ID_6A2C7CCFB8D691776F5957BD4907A2DC\",\"BLIND_ID_1E771A16CFD2456F7803993C63523B14\",\"BLIND_ID_3CFA8D52C0469FA02C57F258BEB93381\",\"BLIND_ID_3FC080EA791BFFDC345DAA08EFBD720C\",\"BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7\"],\"form\":\"unpadded base64url encoding of the 32-byte SS/RS operation identity: exactly 43 characters, canonical, decoding to nonzero bytes\",\"origin\":\"SS_RS only; never AP\",\"replaces\":\"the free string bounded by MAX_OPERATION_IDENTITY_CHARS = 246\",\"violation\":\"an identity longer than 43 characters exceeds the structural bound and is VALUE_OUT_OF_RANGE (BLIND_ID_471A728D2559FD3CF1B9DAC163C98B6A) at P06, as the replaced bound was; any other non-conforming identity, that is one of at most 43 characters that is shorter, outside the base64url alphabet, non-canonical or decoding to all-zero bytes, is a defect of an SS_RS fact and is FAIL_CLOSED_INTERNAL (BLIND_ID_7BE7FD079E51480BB987D6B3E90C20C9) under C-MUT section 3; both are detected when the MutationEnvelope is formed, strictly before any RS commit request: no commit request is sent and nothing is held\"}.",
+        "Reject unless clause key CL-CAPI-cb25715e57f2 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /rules/operationIdentityForm.",
+        "Canonical clause content is {\"appliesToScenarios\":[\"BLIND_ID_5C53320717119C57B5D346AA752D281E\",\"BLIND_ID_93ED9500C79BE5B602027831145D4AC7\",\"BLIND_ID_6A2C7CCFB8D691776F5957BD4907A2DC\",\"BLIND_ID_1E771A16CFD2456F7803993C63523B14\",\"BLIND_ID_3CFA8D52C0469FA02C57F258BEB93381\",\"BLIND_ID_3FC080EA791BFFDC345DAA08EFBD720C\",\"BLIND_ID_F9B394FC6BEE5B0C399CB4A14F55CFB7\"],\"form\":\"unpadded base64url encoding of the 32-byte SS/RS operation identity: exactly 43 characters, canonical, decoding to nonzero bytes\",\"origin\":\"SS_RS only; never AP\",\"replaces\":\"the free string bounded by MAX_OPERATION_IDENTITY_CHARS = 246\",\"violation\":\"an identity longer than 43 characters exceeds the structural bound and is VALUE_OUT_OF_RANGE (BLIND_ID_471A728D2559FD3CF1B9DAC163C98B6A) at P06, as the replaced bound was; any other non-conforming identity, that is one of at most 43 characters that is shorter, outside the base64url alphabet, non-canonical or decoding to all-zero bytes, is a defect of an SS_RS fact and is FAIL_CLOSED_INTERNAL (BLIND_ID_7BE7FD079E51480BB987D6B3E90C20C9) under C-MUT section 3; both are detected when the MutationEnvelope is formed, strictly before any RS commit request: no commit request is sent and nothing is held\"}."
+      ]
+    },
+    {
       "action": "Submit the prohibited or malformed abstract case defined at /negativeCases/13.",
       "clauses": [
         "CL-CFMT-25bb394e51f0"
@@ -36091,31 +36166,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Submit the conforming abstract case defined at /response/byKind and then minimally violate one stated field.",
-      "clauses": [
-        "CL-CAPI-84d669993e6d"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}.",
-        "The observed abstract result matches canonical clause SHA-256 d2b3566efe6c364e27b375473e11eca444109a5273dd28a25979872b0f117b11."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-c99986582316e23c",
-      "kind": "POSITIVE",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}.",
-        "Reject unless clause key CL-CAPI-84d669993e6d and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-API clause at /response/byKind.",
-        "Canonical clause content is {\"INDETERMINATE\":{\"commitOutcome\":\"INDETERMINATE\",\"optional\":[],\"required\":[\"commitOutcome\",\"reconciliationRef\",\"originalStateBefore\"]},\"NOT_COMMITTED\":{\"commitOutcome\":\"NOT_COMMITTED\",\"optional\":[],\"required\":[\"commitOutcome\"]},\"NO_CHANGE\":{\"allowedCodes\":[\"DUPLICATE_IGNORED\"],\"optional\":[],\"required\":[\"successCode\"]},\"REJECTED\":{\"allowedCodes\":[\"UNKNOWN_FIELD\",\"INVALID_REQUEST\",\"UNKNOWN_VALUE\",\"UNSUPPORTED_API_VERSION\",\"UNSUPPORTED_PROFILE\",\"BINDING_MISMATCH\",\"UNSUPPORTED_OPERATION\",\"SESSION_ALREADY_EXISTS\",\"NO_ACTIVE_SESSION\",\"NO_STORED_SESSION\",\"STORED_SESSION_INCOMPATIBLE\",\"RECONCILIATION_REQUIRED\",\"NO_RECONCILIATION_PENDING\",\"RECONCILIATION_REFERENCE_MISMATCH\",\"UNSUPPORTED_ONBOARDING\",\"WELCOME_NO_MATCHING_KEY_PACKAGE\",\"UNSUPPORTED_UPDATE_FORM\",\"UNSUPPORTED_COMMIT_SHAPE\",\"KEY_PACKAGE_ALREADY_CONSUMED\",\"AUTHENTICATION_FAILED\",\"AUTHENTICATED_STATE_INCONSISTENT\",\"EPOCH_OUTSIDE_RETAINED_WINDOW\",\"FUTURE_EPOCH\",\"VALUE_OUT_OF_RANGE\",\"FAIL_CLOSED_INTERNAL\"],\"optional\":[],\"required\":[\"error\"],\"valueFree\":true},\"SUCCESS\":{\"allowedCodes\":[\"CREATED\",\"RESTORED\",\"JOINED\",\"APPLICATION_PROTECTED\",\"APPLICATION_OPENED\",\"SELF_UPDATED\",\"PEER_UPDATE_APPLIED\",\"CANDIDATE_SELECTED\",\"RECONCILED_COMMITTED\"],\"commitOutcomeIfPresent\":\"COMMITTED\",\"optional\":[\"output\",\"commitOutcome\"],\"required\":[\"successCode\"]}}."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /lockResetRule/resetEffect and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-78a71fcecc07"
@@ -36263,6 +36313,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-FMT clause at /algorithms/integerEndian.",
         "Canonical clause content is \"big\"."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /compatibleBuild/readerProfile and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CREC-406e40f92112"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"CFMT_EXACT_9FF945E1\".",
+        "The observed abstract result matches canonical clause SHA-256 c6a3c95f09bf226487ff708d2d5f01c5a2c0fb868c92a8fd31a7e8144f7c1511."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"CFMT_EXACT_9FF945E1\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-cae3f43c86b7b178",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"CFMT_EXACT_9FF945E1\".",
+        "Reject unless clause key CL-CREC-406e40f92112 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-REC clause at /compatibleBuild/readerProfile.",
+        "Canonical clause content is \"CFMT_EXACT_9FF945E1\"."
       ]
     },
     {
@@ -36674,6 +36749,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Exercise the exact, adjacent-below, and adjacent-above abstract boundary cases defined at /buildMatrix/1.",
+      "clauses": [
+        "CL-CREST-110638e5716a"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "The observed abstract result matches canonical clause SHA-256 ae47acc1629f11d9258810ff88ec8374ff3d36a9bff0081bd3212def9f4dddfe."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-cd57434916e7ea12",
+      "kind": "BOUNDARY",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "Reject unless clause key CL-CREST-110638e5716a and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-REST clause at /buildMatrix/1.",
+        "Canonical clause content is {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /enums/owner and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-780ce7a13287"
@@ -37074,31 +37174,6 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Exercise the exact, adjacent-below, and adjacent-above abstract boundary cases defined at /buildMatrix/1.",
-      "clauses": [
-        "CL-CREST-a9081c7bf9f3"
-      ],
-      "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
-        "The observed abstract result matches canonical clause SHA-256 d791bd47f8e9825359c82d3e5513acdc1f071285c170a4436d1d11fd77db7075."
-      ],
-      "forbidden": [
-        "Any observation not entailed by canonical clause content {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
-        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
-      ],
-      "id": "OSC-cfd0870b51993ae6",
-      "kind": "BOUNDARY",
-      "oracle": [
-        "Compare every named input and result field with canonical content {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
-        "Reject unless clause key CL-CREST-a9081c7bf9f3 and every cited pair operand are independently satisfied."
-      ],
-      "pairs": [],
-      "preconditions": [
-        "Use only the abstract ratified C-REST clause at /buildMatrix/1.",
-        "Canonical clause content is {\"browserClass\":\"FIREFOX\",\"buildId\":\"M2_WEB_FIREFOX_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}."
-      ]
-    },
-    {
       "action": "Submit the conforming abstract case defined at /lifecycleMatrix/364 and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-2e6877264097"
@@ -37378,28 +37453,53 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
-      "action": "Exercise the exact, adjacent-below, and adjacent-above abstract boundary cases defined at /buildMatrix/0.",
+      "action": "Submit the conforming abstract case defined at /response/resultSurfaceByOperation and then minimally violate one stated field.",
       "clauses": [
-        "CL-CREST-81382b628ad6"
+        "CL-CAPI-2dc803e5377c"
       ],
       "expected": [
-        "The abstract observation is exactly the behavior entailed by canonical clause content {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
-        "The observed abstract result matches canonical clause SHA-256 633705edd2cee3f14adf6c387a1dc3512727c43da70c33ffb8ea4d50708b6437."
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"RESTORE\":{\"INDETERMINATE\":[\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\"],\"REJECTED\":\"ERROR_CODES_OF_APPLICABLE_RESTORE_ROWS\",\"SUCCESS\":[\"RESTORED\",\"RESTORED_EMPTY_SESSION\"],\"excludedKinds\":[\"NO_CHANGE\",\"NOT_COMMITTED\"]}}.",
+        "The observed abstract result matches canonical clause SHA-256 bdd5ffdf2a15910174f8031b0f55e5dc6f65bb547960ae55b47245de116035a7."
       ],
       "forbidden": [
-        "Any observation not entailed by canonical clause content {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "Any observation not entailed by canonical clause content {\"RESTORE\":{\"INDETERMINATE\":[\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\"],\"REJECTED\":\"ERROR_CODES_OF_APPLICABLE_RESTORE_ROWS\",\"SUCCESS\":[\"RESTORED\",\"RESTORED_EMPTY_SESSION\"],\"excludedKinds\":[\"NO_CHANGE\",\"NOT_COMMITTED\"]}}.",
         "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
       ],
-      "id": "OSC-d14c65b0c2986150",
-      "kind": "BOUNDARY",
+      "id": "OSC-d14e1cd413447b25",
+      "kind": "POSITIVE",
       "oracle": [
-        "Compare every named input and result field with canonical content {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
-        "Reject unless clause key CL-CREST-81382b628ad6 and every cited pair operand are independently satisfied."
+        "Compare every named input and result field with canonical content {\"RESTORE\":{\"INDETERMINATE\":[\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\"],\"REJECTED\":\"ERROR_CODES_OF_APPLICABLE_RESTORE_ROWS\",\"SUCCESS\":[\"RESTORED\",\"RESTORED_EMPTY_SESSION\"],\"excludedKinds\":[\"NO_CHANGE\",\"NOT_COMMITTED\"]}}.",
+        "Reject unless clause key CL-CAPI-2dc803e5377c and every cited pair operand are independently satisfied."
       ],
       "pairs": [],
       "preconditions": [
-        "Use only the abstract ratified C-REST clause at /buildMatrix/0.",
-        "Canonical clause content is {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9DACE4A0\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}."
+        "Use only the abstract ratified C-API clause at /response/resultSurfaceByOperation.",
+        "Canonical clause content is {\"RESTORE\":{\"INDETERMINATE\":[\"BLIND_ID_0BE33C40D01F404A1A8925CF042493C2\"],\"REJECTED\":\"ERROR_CODES_OF_APPLICABLE_RESTORE_ROWS\",\"SUCCESS\":[\"RESTORED\",\"RESTORED_EMPTY_SESSION\"],\"excludedKinds\":[\"NO_CHANGE\",\"NOT_COMMITTED\"]}}."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /decisionRows/3 and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-9b89c30cb1be"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor, or C-REST RESTORED_RECONCILIATION_REQUIRED whose hold fails the I-RESTART loader\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
+        "The observed abstract result matches canonical clause SHA-256 50db207082fcad3df5e64fb1ddb558f54ec64b55a376495bb7f1c6abbf450d48."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor, or C-REST RESTORED_RECONCILIATION_REQUIRED whose hold fails the I-RESTART loader\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-d15fc62ed5bc98ac",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor, or C-REST RESTORED_RECONCILIATION_REQUIRED whose hold fails the I-RESTART loader\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
+        "Reject unless clause key CL-CAPI-9b89c30cb1be and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /decisionRows/3.",
+        "Canonical clause content is {\"condition\":\"RS-supplied record set has authenticated local inconsistency, including a regressed coarse external anchor, or C-REST RESTORED_RECONCILIATION_REQUIRED whose hold fails the I-RESTART loader\",\"namedDisposition\":\"AUTHENTICATED_STATE_INCONSISTENT\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed record before re-establishing ACTIVE\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P08\",\"resultKindOnNamedDisposition\":\"REJECTED\",\"scenario\":\"BLIND_ID_7C5EED3BDDBC279A65105A7C4728CB96\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}."
       ]
     },
     {
@@ -38154,6 +38254,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-RET clause at /enums/minimum.",
         "Canonical clause content is [\"WHILE_AUTHORITATIVE\",\"CURRENT_PLUS_FIVE_PAST_EPOCH_RULE\",\"WHILE_CURRENT_OR_PAST_EPOCH_IS_ACCEPTABLE\",\"WHILE_ANY_STATE_HOLD_RESULT_OR_RESTORE_FACT_REFERENCES_IT\",\"WHILE_AUTHORITY_OR_RECOVERY_CLASSIFICATION_REFERENCES_IT\",\"UNTIL_AUTHENTICATED_TERMINAL_CLASSIFICATION_AND_CLEARING\",\"UNTIL_TERMINAL_CLASSIFICATION_AND_NO_RECOVERY_REFERENCE\",\"UNTIL_C_MUT_CLEARING_EVENT_AND_REPLAY_CLASSIFICATION_COMPLETE\",\"UNTIL_AUTHENTICATED_TERMINAL_CLASSIFICATION_AND_C_MUT_CLEARING_EVENT\",\"UNTIL_CAPI_S016_INVALIDATION_OR_CAPI_S017_TERMINATION\",\"WHILE_SELECTION_ELIGIBILITY_OR_UNRESOLVED_OPERATION_CAN_REFERENCE_IT\",\"MOST_RECENT_UNTIL_SUPERSEDED_BY_OWNER_DECISION_5892675163_RETENTION_COMPACTION\",\"UNTIL_DUPLICATE_CONFLICTING_REPLAY_AND_RESTART_CLASSIFICATION_NO_LONGER_NEEDS_IT\",\"UNTIL_TERMINAL_CLASSIFICATION_AND_C_MUT_CLEARING_EVENT\",\"UNTIL_COMMITTED_CONSUMPTION_AND_NO_ACTIVE_OR_HELD_MUTATION_REFERENCE\",\"WHILE_ELIGIBILITY_AUDIT_OR_REFERENCE_CLOSURE_NEEDS_IT\",\"WHILE_REUSE_PREVENTION_RESULT_OR_RESTART_CLASSIFICATION_NEEDS_IT\",\"WHILE_ANY_LIVE_SESSION_NAMESPACE_MATERIAL_REQUIRES_IT\",\"UNTIL_EXPLICIT_DESTRUCTIVE_RESET_INVALIDATES_OR_REMOVES_IT\",\"WHILE_LOGICAL_ROLE_OR_REFERENCE_IS_LIVE\",\"UNTIL_DIAGNOSTIC_OWNER_POLICY_PERMITS_LOGICAL_DELETION\",\"AS_REQUIRED_BY_SEPARATE_LEGACY_OWNER\"]."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /valueRegistries/successCode and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CFMT-ae0b64e65932"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}.",
+        "The observed abstract result matches canonical clause SHA-256 8e0c7f54d587f04700d6d4b6bed036bc5571e600d00f5963451e49ae72e3b56b."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-d5973c5e1631abab",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}.",
+        "Reject unless clause key CL-CFMT-ae0b64e65932 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-FMT clause at /valueRegistries/successCode.",
+        "Canonical clause content is {\"APPLICATION_OPENED\":5,\"APPLICATION_PROTECTED\":4,\"CANDIDATE_SELECTED\":8,\"CREATED\":1,\"DUPLICATE_IGNORED\":10,\"JOINED\":3,\"PEER_UPDATE_APPLIED\":7,\"RECONCILED_COMMITTED\":9,\"RESTORED\":2,\"RESTORED_EMPTY_SESSION\":11,\"SELF_UPDATED\":6}."
       ]
     },
     {
@@ -39794,6 +39919,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /prose/72 and then minimally violate one stated field.",
+      "clauses": [
+        "PROSE-CAPI-72-ef867ecaa3b8"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}.",
+        "The observed abstract result matches canonical clause SHA-256 5bff4016ec7c442c6a32d987b0373ede15cb3cc95fccdaa1b784618ee03f5bd3."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-df3d6621e6849494",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}.",
+        "Reject unless clause key PROSE-CAPI-72-ef867ecaa3b8 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /prose/72.",
+        "Canonical clause content is {\"text\":\"`COMMITTED` applies it once and emits success; interrupted response emission retains reconciliation evidence and never changes that commit into `REJECTED`.\"}."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /enums/blocker and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-fda8f5f1339c"
@@ -40274,6 +40424,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-REC clause at /authorityRules/RESTORED_RECONCILIATION_REQUIRED.",
         "Canonical clause content is \"EXACT_C_REST_SELECTED_ORIGINAL_AUTHORITY_WITH_CANDIDATE_NON_AUTHORITATIVE\"."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /request/derivedByOperation and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-bee402c04ca2"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\",\"restoreClassification from RS under C-REST\",\"authenticated selector-bound INDETERMINATE hold from SS/RS when restoreClassification is RESTORED_RECONCILIATION_REQUIRED\",\"reconciliationReference32 from the authenticated kind-13 hold\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}.",
+        "The observed abstract result matches canonical clause SHA-256 aff7145a2a9baa707485ca4bb4f5efea79166dbfbe4d45de2197718ed64647c6."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\",\"restoreClassification from RS under C-REST\",\"authenticated selector-bound INDETERMINATE hold from SS/RS when restoreClassification is RESTORED_RECONCILIATION_REQUIRED\",\"reconciliationReference32 from the authenticated kind-13 hold\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-e16fa70ebf924914",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\",\"restoreClassification from RS under C-REST\",\"authenticated selector-bound INDETERMINATE hold from SS/RS when restoreClassification is RESTORED_RECONCILIATION_REQUIRED\",\"reconciliationReference32 from the authenticated kind-13 hold\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}.",
+        "Reject unless clause key CL-CAPI-bee402c04ca2 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /request/derivedByOperation.",
+        "Canonical clause content is {\"APPLY_PEER_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"authenticationFacts\",\"parentStateRef\",\"immediately preceding eligible candidate\",\"witness and priority facts\"],\"CREATE\":[\"memberIdentity\",\"peerIdentity\",\"proposalFree\",\"profileFacts\"],\"JOIN_WELCOME\":[\"framedKeyPackageRef from SS/RS\",\"memberIdentity\",\"peerIdentity\",\"profileFacts\"],\"OPEN_APPLICATION\":[\"messageEpoch\",\"replayIdentity\",\"authenticationFacts\"],\"PROTECT_APPLICATION\":[\"session ratchet mutation\"],\"RECONCILE_INDETERMINATE\":[\"rsCommitOutcome from RS\",\"originalStateBefore from held SS state\"],\"RESTORE\":[\"restoredLogicalSession from RS\",\"profileFacts\",\"bindingFacts\",\"restoreClassification from RS under C-REST\",\"authenticated selector-bound INDETERMINATE hold from SS/RS when restoreClassification is RESTORED_RECONCILIATION_REQUIRED\",\"reconciliationReference32 from the authenticated kind-13 hold\"],\"SELF_UPDATE\":[\"proposalFree\",\"committerIdentity\",\"protectedCommitBytes\"]}."
       ]
     },
     {
@@ -42116,6 +42291,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Exercise the exact, adjacent-below, and adjacent-above abstract boundary cases defined at /buildMatrix/0.",
+      "clauses": [
+        "CL-CREST-6393f14961d0"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "The observed abstract result matches canonical clause SHA-256 9d8af33ae60bbe40e1731606d38f460484120c07c733fe48f78bc059523f51b1."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-ea4b73818f25edc0",
+      "kind": "BOUNDARY",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}.",
+        "Reject unless clause key CL-CREST-6393f14961d0 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-REST clause at /buildMatrix/0.",
+        "Canonical clause content is {\"browserClass\":\"CHROMIUM\",\"buildId\":\"M2_WEB_CHROMIUM_STANDARD\",\"cFmtDocumentSha256\":\"9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e\",\"openMlsRevision\":\"09e92777dba0528d3d29e2e5e681b7e91637c7be\",\"readerProfile\":\"CFMT_EXACT_9FF945E1\",\"runtimeClass\":\"BROWSER_STANDARD_NON_PRIVATE_NON_EVICTED\",\"ss0Ciphersuite\":{\"ianaId\":\"0x0001\",\"name\":\"MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519\"},\"ss0GateADecisionsSha256\":\"235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07\",\"versions\":{\"envelope\":1,\"format\":1,\"keySchedule\":1,\"manifest\":1,\"plaintext\":1,\"recordKey\":1,\"upstreamBinding\":0,\"upstreamMutationTable\":1},\"wasmArtifactPath\":\"styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm\",\"wasmArtifactSha256\":\"fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e\"}."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /mutationFaultByFamily/associationFields and then minimally violate one stated field.",
       "clauses": [
         "CL-CREST-fc74ae2eac81"
@@ -42317,6 +42517,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-API clause at /nonClaims/2.",
         "Canonical clause content is \"No persisted byte layout, record/key version value, HKDF label, AAD encoding, storage layout or migration.\"."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /prose/68 and then minimally violate one stated field.",
+      "clauses": [
+        "PROSE-CAPI-68-e81283f9b785"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}.",
+        "The observed abstract result matches canonical clause SHA-256 08c129e312df2c55545aa9447ffdffa557198e70225ef3b666a2a9822bd3f9b9."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-eba7d9986a8bd851",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}.",
+        "Reject unless clause key PROSE-CAPI-68-e81283f9b785 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /prose/68.",
+        "Canonical clause content is {\"text\":\"An unknown internal cause strictly before any RS commit request is `FAIL_CLOSED_INTERNAL`; once a commit request may have reached RS, an absent/failed/unknown outcome is `INDETERMINATE`, never `REJECTED`.\"}."
       ]
     },
     {
@@ -44338,6 +44563,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       ]
     },
     {
+      "action": "Submit the conforming abstract case defined at /decisionRows/30 and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CAPI-48993639f2d6"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content {\"condition\":\"C-REST RESTORED_EMPTY\",\"namedDisposition\":\"RESTORED_EMPTY_SESSION\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed EMPTY authority; establish no session\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
+        "The observed abstract result matches canonical clause SHA-256 28f97ed3e121d49bf50d27efd850f4d94b595ae497ec2dc45978a5f17fc82771."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content {\"condition\":\"C-REST RESTORED_EMPTY\",\"namedDisposition\":\"RESTORED_EMPTY_SESSION\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed EMPTY authority; establish no session\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-f48e7df2ba295cf8",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content {\"condition\":\"C-REST RESTORED_EMPTY\",\"namedDisposition\":\"RESTORED_EMPTY_SESSION\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed EMPTY authority; establish no session\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}.",
+        "Reject unless clause key CL-CAPI-48993639f2d6 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-API clause at /decisionRows/30.",
+        "Canonical clause content is {\"condition\":\"C-REST RESTORED_EMPTY\",\"namedDisposition\":\"RESTORED_EMPTY_SESSION\",\"operation\":\"RESTORE\",\"ownership\":{\"AP\":\"opaque request/output only; no identity, role, authority, causality, freshness or business meaning inferred\",\"RS\":\"supply the complete stored record set and keyed-root/authenticity evidence; perform no write\",\"SS\":\"synchronously authenticate and revalidate the exact committed EMPTY authority; establish no session\",\"TR\":\"ABSENT\"},\"persistence\":\"NONE\",\"precedenceLevel\":\"P10\",\"resultKindOnNamedDisposition\":\"SUCCESS\",\"scenario\":\"BLIND_ID_53CAE3B3C5EF2196C51F4F7467549B5D\",\"stateAfterOnNamedDisposition\":\"EMPTY\",\"stateBefore\":\"EMPTY\"}."
+      ]
+    },
+    {
       "action": "Submit the conforming abstract case defined at /lifecycleMatrix/315 and then minimally violate one stated field.",
       "clauses": [
         "CL-CRET-58f9159846e0"
@@ -46028,6 +46278,31 @@ This document is the blind, clause-derived O-SCEN scenario set. Scenario identif
       "preconditions": [
         "Use only the abstract ratified C-FMT clause at /generationCommit/retainedHoldLookup.",
         "Canonical clause content is \"only SS reconciliation of the one unresolved hold retained in SS memory, whether AP reaches it through RECONCILE_INDETERMINATE or SS acts on retained internal reconciliation evidence under C-MUT, while the fixed selector names the hold parent as authority without binding a candidate, MAY derive the candidate generation and exact manifest key from the retained hold record key under holdLocatorRule and perform one point lookup of that manifest and the records it lists; SS memory retains the hold together with the record key under which it was written; no scan, enumeration, counter comparison or inference is permitted to locate the candidate, no second fixed locator exists, and the lookup confers no authority; the located generation MUST validate as complete, MUST store its MUTATION_HOLD under exactly the retained record key, that stored hold MUST equal the retained hold, its parentGeneration and parentKeyedRoot MUST equal the selector generation and keyedRoot, and its COMMIT_RESULT MUST satisfy originalAuthorityMatch; any mismatch rejects with the hold unchanged; authority then changes only through one atomic GENERATION_SELECTOR replacement under C-MUT terminal rules; a storage-only reader never derives or follows a hold locator that the selector does not bind\"."
+      ]
+    },
+    {
+      "action": "Submit the conforming abstract case defined at /guidance/compatibleBuild and then minimally violate one stated field.",
+      "clauses": [
+        "CL-CREST-10f6fca82256"
+      ],
+      "expected": [
+        "The abstract observation is exactly the behavior entailed by canonical clause content \"Identify the exact reader profile CFMT_EXACT_9FF945E1 and preserve all bytes.\".",
+        "The observed abstract result matches canonical clause SHA-256 bd405d11f4a4e4acc6c17450085db166687cce722717e1e766a17258377d2c25."
+      ],
+      "forbidden": [
+        "Any observation not entailed by canonical clause content \"Identify the exact reader profile CFMT_EXACT_9FF945E1 and preserve all bytes.\".",
+        "Any implementation, browser, storage, cryptographic, freshness, erasure, delivery, or UX claim not stated by the clause."
+      ],
+      "id": "OSC-fe6022fd91edd9bc",
+      "kind": "POSITIVE",
+      "oracle": [
+        "Compare every named input and result field with canonical content \"Identify the exact reader profile CFMT_EXACT_9FF945E1 and preserve all bytes.\".",
+        "Reject unless clause key CL-CREST-10f6fca82256 and every cited pair operand are independently satisfied."
+      ],
+      "pairs": [],
+      "preconditions": [
+        "Use only the abstract ratified C-REST clause at /guidance/compatibleBuild.",
+        "Canonical clause content is \"Identify the exact reader profile CFMT_EXACT_9FF945E1 and preserve all bytes.\"."
       ]
     },
     {
