@@ -111,6 +111,15 @@ export default function App() {
     );
   }
 
+  if (chat.unsupportedBrowser) {
+    return (
+      <div className="fatal">
+        <h1>Browser non supportato</h1>
+        <p>Questo browser non offre il blocco tra schede (Web Locks) necessario per proteggere lo stato cifrato, quindi Styx non può avviarsi in sicurezza. Usa un browser aggiornato che lo supporti.</p>
+      </div>
+    );
+  }
+
   if (chat.secondaryTab) {
     return (
       <div className="fatal">

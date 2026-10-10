@@ -13,6 +13,14 @@ import { PushRegistrar } from 'styx-js';
 
 const PAGE = 20;
 
+// M2 single-tab beta guard (owner act m2-rescope-c-reduced §3, #317 comment 6091950328). Only the
+// stage-gated `test-profile` build carries the M2 beta, so only that build loads the guard. The
+// condition is a literal, compile-time foldable token: stage-off bundles drop the dynamic import.
+const M2_BETA_STAGE = Boolean(import.meta.env) && import.meta.env.VITE_VAULT_STAGE === 'test-profile';
+const loadM2BetaGate = M2_BETA_STAGE
+  ? () => import('../../../../src/storage/m2/beta-gate.js')
+  : async () => null;
+
 // Delivery-state ordering. A receipt that arrives out of order (e.g. a delayed
 // 'delivered' after 'read') must never downgrade the tick.
 const STATE_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, failed: 1 };
@@ -22,6 +30,7 @@ export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
   const lockReleaseRef = useRef(null);
+  const m2GateRef = useRef(null); // the held M2 beta gate ({ token, release }) or null
   const typingTimers = useRef({});
   const notifierRef = useRef(null);
   const vaultSettingsRef = useRef(null);
@@ -30,6 +39,7 @@ export function useStyxChat() {
   const [ready, setReady] = useState(false);
   const [fatalError, setFatalError] = useState(null);
   const [secondaryTab, setSecondaryTab] = useState(false);
+  const [unsupportedBrowser, setUnsupportedBrowser] = useState(false);
   const [me, setMe] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [messagesByContact, setMessagesByContact] = useState({});
@@ -104,9 +114,40 @@ export function useStyxChat() {
     // Become the single MLS writer for this profile, or refuse to start a writer.
     // A second tab that cannot get the lock must not construct a writable engine —
     // that is what corrupts mls:state.
-    const { held, release } = await acquireWriterLock(navigator.locks, `styx-mls:${ns}`);
-    if (!held) { setSecondaryTab(true); return; }
+    const { held, reason, release } = await acquireWriterLock(navigator.locks, `styx-mls:${ns}`);
+    if (!held) {
+      // Fail closed: no Web Locks is an "unsupported browser" refusal, never a degraded writer.
+      if (reason === 'unsupported') setUnsupportedBrowser(true);
+      else setSecondaryTab(true);
+      return;
+    }
     lockReleaseRef.current = release;
+
+    // M2 beta (test-profile build only): one exclusive `styx-m2:<vault db>` lock, taken on the main
+    // thread before the vault worker can receive any M2 request. Any refusal stops the whole entry,
+    // with the same screens as the writer lock, and releases the writer lock first.
+    const m2BetaGate = await loadM2BetaGate();
+    if (m2BetaGate) {
+      const gate = await m2BetaGate.acquireM2BetaGate({ locks: navigator.locks });
+      if (!gate.entered) {
+        release();
+        lockReleaseRef.current = null;
+        if (gate.reason === m2BetaGate.M2_GATE_REFUSALS.UNSUPPORTED) setUnsupportedBrowser(true);
+        else setSecondaryTab(true);
+        return;
+      }
+      m2GateRef.current = gate;
+    }
+
+    // Release order: the M2 gate first (withdraw the held report, then free the lock), then the
+    // legacy writer lock. Callers stop the vault worker before calling this.
+    const releaseLocks = async () => {
+      const gate = m2GateRef.current;
+      m2GateRef.current = null;
+      try { await gate?.release(); } catch { /* the gate frees its lock in a finally */ }
+      release();
+      lockReleaseRef.current = null;
+    };
 
     const chat = new StyxChat();
     let identity;
@@ -117,8 +158,7 @@ export function useStyxChat() {
     } catch (e) {
       // Web Locks are not reentrant: without releasing here, the retry after a
       // failed init would find OUR OWN lock held and misreport "secondary tab".
-      release();
-      lockReleaseRef.current = null;
+      await releaseLocks();
       throw e;
     }
     if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
@@ -126,8 +166,7 @@ export function useStyxChat() {
         await chat.setAlias(alias.trim());
       } catch (e) {
         try { chat.destroy(); } catch { /* best-effort pre-network teardown */ }
-        release();
-        lockReleaseRef.current = null;
+        await releaseLocks();
         throw e;
       }
     }
@@ -159,8 +198,7 @@ export function useStyxChat() {
       vaultSettingsRef.current = null;
       try { await stop?.(); } catch { /* bounded worker teardown */ }
       try { chat.destroy(); } catch { /* best-effort transport teardown */ }
-      release();
-      lockReleaseRef.current = null;
+      await releaseLocks();
       throw e;
     }
     chatRef.current = chat;
@@ -226,7 +264,12 @@ export function useStyxChat() {
     subsRef.current = [];
     try { chatRef.current?.destroy?.(); } catch { /* ignore */ }
     chatRef.current = null;
-    void stopVaultSettings();
+    // M2 gate release order (act §3): `isHeld()` turns false at once, the vault worker is stopped
+    // (terminated) next, and only then is the `styx-m2:` lock freed. Tab close kills both together.
+    const m2Gate = m2GateRef.current;
+    m2GateRef.current = null;
+    if (m2Gate) void m2Gate.release({ beforeFree: stopVaultSettings });
+    else void stopVaultSettings();
     try { lockReleaseRef.current?.(); } catch { /* ignore */ }
     lockReleaseRef.current = null;
     setReady(false);
@@ -343,7 +386,7 @@ export function useStyxChat() {
   };
 
   return {
-    ready, fatalError, secondaryTab, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
+    ready, fatalError, secondaryTab, unsupportedBrowser, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
     vaultPreferences, setThemePreference, dismissInstallHint, stopVaultSettings, destroyVaultSettings,
