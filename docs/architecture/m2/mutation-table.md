@@ -80,7 +80,7 @@ Injected failure strictly before the commit point leaves the complete original m
 
 ## 9. No-mutation coverage
 
-The `noMutationRows` record covers every C-API row whose persistence is `NONE`: all 16 state-matrix rows, all 25 error-definition rows, and all 22 decision rows. Each preserves C-API precedence, result kind, state, and output rules. `RESTORE` performs no new mutation; restart/readback classification belongs to C-REST/C-REC. CAPI-S011 is an exact duplicate `NO_CHANGE` with no plaintext and no transition. CAPI-S020 through CAPI-S024 and CAPI-S028 resolve or inspect the one existing hold and never create a new commit request.
+The `noMutationRows` record covers every C-API row whose persistence is `NONE`: all 16 state-matrix rows, all 25 error-definition rows, and all 24 decision rows. Each preserves C-API precedence, result kind, state, and output rules. `RESTORE` performs no new mutation; restart/readback classification belongs to C-REST/C-REC. CAPI-S011 is an exact duplicate `NO_CHANGE` with no plaintext and no transition. CAPI-S020 through CAPI-S024 and CAPI-S028 resolve or inspect the one existing hold and never create a new commit request. CAPI-S030 re-exposes an existing authenticated hold after a restart and CAPI-S031 reports a restored `EMPTY` authority; both write, release and clear nothing.
 
 ## 10. F-WASM evidence boundary
 
@@ -137,9 +137,9 @@ The SHA-256 of this final document and the SHA-256 of the external evidence bund
     "exactBase": "e1538ef9c070e463a8256872a3fd0882c424e2ef",
     "cApi": {
       "path": "docs/architecture/m2/adapter-contract.md",
-      "commit": "00ae21802396b85f36acea703060f140f40f6407",
-      "sha256": "b77d39fbb412b0eba3a579ebf6053408186a4c11f0de07b8727b4e1147305ad9",
-      "ratification": "issue-319-comment-5886838783"
+      "commit": "786a71779b5b1fd538ab6c5d6967564042bf184b",
+      "sha256": "0afd0f21dbaaaab721a269ee92bd8792e5ea83485e609257a37c03850acc3871",
+      "ratification": "issue-319-owner-act-c-api-rr-0afd0f21"
     },
     "fWasm": {
       "commit": "bc20e9273b9ae437a6416745b52793ea36ecbc76",
@@ -180,7 +180,7 @@ The SHA-256 of this final document and the SHA-256 of the external evidence bund
     "operation": ["CREATE", "RESTORE", "JOIN_WELCOME", "PROTECT_APPLICATION", "OPEN_APPLICATION", "SELF_UPDATE", "APPLY_PEER_UPDATE", "RECONCILE_INDETERMINATE"],
     "commitOutcome": ["COMMITTED", "NOT_COMMITTED", "INDETERMINATE"],
     "resultKind": ["SUCCESS", "NO_CHANGE", "NOT_COMMITTED", "INDETERMINATE", "REJECTED"],
-    "successCode": ["CREATED", "RESTORED", "JOINED", "APPLICATION_PROTECTED", "APPLICATION_OPENED", "SELF_UPDATED", "PEER_UPDATE_APPLIED", "CANDIDATE_SELECTED", "RECONCILED_COMMITTED", "DUPLICATE_IGNORED"],
+    "successCode": ["CREATED", "RESTORED", "JOINED", "APPLICATION_PROTECTED", "APPLICATION_OPENED", "SELF_UPDATED", "PEER_UPDATE_APPLIED", "CANDIDATE_SELECTED", "RECONCILED_COMMITTED", "DUPLICATE_IGNORED", "RESTORED_EMPTY_SESSION"],
     "errorCode": ["UNKNOWN_FIELD", "INVALID_REQUEST", "UNKNOWN_VALUE", "UNSUPPORTED_API_VERSION", "UNSUPPORTED_PROFILE", "BINDING_MISMATCH", "UNSUPPORTED_OPERATION", "SESSION_ALREADY_EXISTS", "NO_ACTIVE_SESSION", "NO_STORED_SESSION", "STORED_SESSION_INCOMPATIBLE", "RECONCILIATION_REQUIRED", "NO_RECONCILIATION_PENDING", "RECONCILIATION_REFERENCE_MISMATCH", "UNSUPPORTED_ONBOARDING", "WELCOME_NO_MATCHING_KEY_PACKAGE", "UNSUPPORTED_UPDATE_FORM", "UNSUPPORTED_COMMIT_SHAPE", "KEY_PACKAGE_ALREADY_CONSUMED", "AUTHENTICATION_FAILED", "AUTHENTICATED_STATE_INCONSISTENT", "EPOCH_OUTSIDE_RETAINED_WINDOW", "FUTURE_EPOCH", "VALUE_OUT_OF_RANGE", "FAIL_CLOSED_INTERNAL"],
     "component": ["SESSION_TRANSITION", "BINDING_METADATA", "REPLAY_RETENTION_STATE", "AUTHENTICATED_MANIFEST_UPDATE", "COMMIT_RESULT_EVIDENCE", "KEY_PACKAGE_CONSUMPTION", "OUTPUT_ESCROW", "SELECTION_METADATA", "RETAINED_PARENT_REFERENCE", "LOSING_CANDIDATE_EVIDENCE"],
     "componentDisposition": ["CHANGED", "UNCHANGED", "CHANGED_OR_UNCHANGED_BY_SELECTED_CANDIDATE", "CREATED", "CONSUMED", "HELD", "ESTABLISHED", "INVALIDATED", "RETAINED_NON_AUTHORITATIVE", "INVALIDATE_PRIOR_AND_RETAIN_CURRENT_NON_AUTHORITATIVE", "TERMINATED"],
@@ -437,10 +437,12 @@ The SHA-256 of this final document and the SHA-256 of the external evidence bund
       {"scenario":"CAPI-S026","operation":"RESTORE","stateBefore":"EMPTY","disposition":"STORED_SESSION_INCOMPATIBLE","resultKind":"REJECTED","stateAfter":"EMPTY"},
       {"scenario":"CAPI-S027","operation":"JOIN_WELCOME","stateBefore":"EMPTY","disposition":"WELCOME_NO_MATCHING_KEY_PACKAGE","resultKind":"REJECTED","stateAfter":"EMPTY"},
       {"scenario":"CAPI-S028","operation":"RECONCILE_INDETERMINATE","stateBefore":"RECONCILIATION_REQUIRED","disposition":"RECONCILIATION_REFERENCE_MISMATCH","resultKind":"REJECTED","stateAfter":"RECONCILIATION_REQUIRED"},
-      {"scenario":"CAPI-S029","operation":"RESTORE","stateBefore":"EMPTY","disposition":"AUTHENTICATED_STATE_INCONSISTENT","resultKind":"REJECTED","stateAfter":"EMPTY"}
+      {"scenario":"CAPI-S029","operation":"RESTORE","stateBefore":"EMPTY","disposition":"AUTHENTICATED_STATE_INCONSISTENT","resultKind":"REJECTED","stateAfter":"EMPTY"},
+      {"scenario":"CAPI-S030","operation":"RESTORE","stateBefore":"EMPTY","disposition":"INDETERMINATE","resultKind":"INDETERMINATE","stateAfter":"RECONCILIATION_REQUIRED"},
+      {"scenario":"CAPI-S031","operation":"RESTORE","stateBefore":"EMPTY","disposition":"RESTORED_EMPTY_SESSION","resultKind":"SUCCESS","stateAfter":"EMPTY"}
     ],
     "decisionRowCommon": {"newRsCommit":"NONE","newMutation":"NONE","newEscrow":"NONE"},
-    "counts": {"stateMatrix":16,"errorDefinitions":25,"decisionRows":22,"total":63}
+    "counts": {"stateMatrix":16,"errorDefinitions":25,"decisionRows":24,"total":65}
   },
   "restore": {
     "newMutation": "NONE",
