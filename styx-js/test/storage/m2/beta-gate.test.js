@@ -838,7 +838,7 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
   const settle = async () => { for (let i = 0; i < 200; i += 1) await Promise.resolve(); };
   const drain = () => new Promise((resolve) => { setTimeout(resolve, 20); });
 
-  async function harness(Chat, openVaultSettings = async () => null, { loadGate: loadGateOverride, locksApi } = {}) {
+  async function harness(Chat, openVaultSettings = async () => null, { loadGate: loadGateOverride, locksApi, getStyxChat } = {}) {
     const beta = await import('../../../src/storage/m2/beta-gate.js');
     const { acquireWriterLock } = await import('../../../apps/chat/src/lib/writer-lock.js');
     const held = new Set();
@@ -862,7 +862,7 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
       useCallback: (fn) => fn, useEffect: () => {},
       useRef: (current) => ({ current }),
       useState: (value) => { const i = setterIndex; setterIndex += 1; ui[i] = value; return [value, (v) => { ui[i] = v; }]; },
-      getStyxChat: async () => Chat, acquireWriterLock,
+      getStyxChat: getStyxChat ?? (async () => Chat), acquireWriterLock,
       peerNamespace: () => '', getRelays: () => [], getBridgeUrl: () => '', transportOptions: () => ({}),
       browserNotifier: () => ({ notifyIncoming() {} }), openVaultSettings, PushRegistrar: class {},
       loadGate: loadGateOverride ?? (async () => ({
@@ -1066,5 +1066,28 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     expect(h.held.size).toBe(0);
     expect(h.gates[0].token.isHeld()).toBe(false);
     expect(h.screen().ready).toBe(false);
+  });
+
+  test('a logout while the chat module is still loading retires the attempt: nothing starts, no lock', async () => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const Chat = baseChat(state);
+    let finishGet;
+    let loads = 0;
+    const h = await harness(Chat, undefined, {
+      getStyxChat: () => { loads += 1; return loads > 1 ? Promise.resolve(Chat) : new Promise((resolve) => { finishGet = () => resolve(Chat); }); },
+    });
+    const unlocking = h.hook.unlock({ password: 'p' });
+    await settle();
+    h.hook.lock();
+    finishGet();
+    await expect(unlocking).resolves.toBeUndefined();
+    await drain();
+    expect(state.chatRunning).toBe(false);
+    expect(h.held.size).toBe(0);
+    expect(h.screen().ready).toBe(false);
+    await expect(h.hook.unlock({ password: 'p' })).resolves.toEqual({ pubkey: 'probe' });
+    h.hook.lock();
+    await drain();
+    expect(h.held.size).toBe(0);
   });
 });
