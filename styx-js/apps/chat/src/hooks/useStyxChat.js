@@ -45,7 +45,6 @@ const advances = (from, to) => (STATE_RANK[to] ?? -1) > (STATE_RANK[from] ?? -1)
 
 export function useStyxChat() {
   const chatRef = useRef(null);
-  const subsRef = useRef([]);
   const activeRef = useRef(null); // the active startup/session controller ({ abort }) or null
   const attemptRef = useRef(0); // startup attempt counter: a logout or a newer attempt makes older ones stale
   const busyRef = useRef(null); // work still retiring (an attempt, a logout's ordered release), awaited by unlock
@@ -303,7 +302,6 @@ export function useStyxChat() {
       // Success, and still current: publish what this attempt owns (the controller stays in
       // `activeRef`; a logout tears all of it down through `abort`).
       chatRef.current = started;
-      subsRef.current = subs.filter(Boolean); // onPairing is absent on the mock
       vaultSettingsRef.current = settingsSession;
       setVaultPreferences(preferences);
       setMe(started.me || identity);
@@ -352,7 +350,6 @@ export function useStyxChat() {
   function retireActive() {
     const controller = activeRef.current;
     activeRef.current = null;
-    subsRef.current = [];
     chatRef.current = null;
     vaultSettingsRef.current = null;
     if (!controller) return;

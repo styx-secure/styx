@@ -842,11 +842,12 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     const beta = await import('../../../src/storage/m2/beta-gate.js');
     const { acquireWriterLock } = await import('../../../apps/chat/src/lib/writer-lock.js');
     const held = new Set();
+    const freed = []; // lock names in the order they were physically freed
     const locks = {
       request(name, options, callback) {
         if (held.has(name)) return Promise.resolve(callback(null));
         held.add(name);
-        return Promise.resolve().then(() => callback({ name, mode: options.mode })).finally(() => held.delete(name));
+        return Promise.resolve().then(() => callback({ name, mode: options.mode })).finally(() => { held.delete(name); freed.push(name); });
       },
     };
     Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: locksApi === undefined ? locks : locksApi } });
@@ -874,7 +875,7 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     const hook = Function(...Object.keys(deps), `${source}\nreturn useStyxChat;`)(...Object.values(deps))();
     // useState call order in the hook: ready, fatalError, secondaryTab, unsupportedBrowser, ...
     const screen = () => ({ ready: ui[0], secondaryTab: ui[2], unsupportedBrowser: ui[3] });
-    return { hook, held, gates, locks, screen };
+    return { hook, held, gates, locks, screen, freed };
   }
 
   const baseChat = (state) => class {
@@ -1126,5 +1127,28 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
     expect(opens).toBe(0);
     expect(state).toEqual({ chatRunning: false, workerRunning: false, subs: 0, destroyed: true });
     expect(h.held.size).toBe(0);
+  });
+
+  test.each([['after a completed unlock', false], ['during a pending startup step', true]])('logout frees the M2 gate before the MLS writer lock (%s)', async (_label, pending) => {
+    const state = { chatRunning: false, workerRunning: false, subs: 0 };
+    const Base = baseChat(state);
+    let finishList;
+    let listEntered;
+    const entered = new Promise((resolve) => { listEntered = resolve; });
+    class Chat extends Base {
+      listContacts() {
+        if (!pending) return Promise.resolve([]);
+        return new Promise((resolve) => { finishList = () => resolve([]); listEntered(); });
+      }
+    }
+    const h = await harness(Chat, async () => { state.workerRunning = true; return { stop: () => { state.workerRunning = false; } }; });
+    const unlocking = h.hook.unlock({ password: 'p' });
+    if (pending) await entered; else await unlocking;
+    h.hook.lock();
+    if (pending) finishList();
+    await unlocking;
+    await drain();
+    expect(h.held.size).toBe(0);
+    expect(h.freed).toEqual(['styx-m2:styx-vault-default', expect.stringMatching(/^styx-mls:/)]);
   });
 });
