@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import {
   ROWS, OUTCOMES, PHASES, KILL_KINDS, checkUninterrupted, checkKilled, checkResumed, checkSurvives,
-  checkRestartReconcile, checkFault, checkPutThrow, checkDebris, endStates, CITE,
+  checkRestartReconcile, checkFault, checkPutThrow, checkDelayedWriter, checkDebris, endStates, CITE,
 } from './suite/expectations.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +129,7 @@ async function runArmed(cell, { killAt = null, killKind = null, plan = {}, fault
   fs.rmSync(PROFILE, { recursive: true, force: true });
   let { ctx, page } = await launch();
   await setup(page, cell);
+  const snap = await call(page, 'snapshot', {}); // kept by the harness, outside the context it kills
   const points = [];
   let killed = null;
   hookHandler = (p, res) => {
@@ -147,12 +148,12 @@ async function runArmed(cell, { killAt = null, killKind = null, plan = {}, fault
   if (killAt === null && response?.crashed === undefined) {
     const rb = await call(page, 'readback', {});
     await closeHard(ctx);
-    return { points, killed, response, rb, ctx: null };
+    return { points, killed, response, rb, snap, ctx: null };
   }
   await closeHard(ctx);
   ({ ctx, page } = await launch());
   const rb = await call(page, 'readback', {});
-  return { points, killed, response, rb, ctx, page };
+  return { points, killed, response, rb, snap, ctx, page };
 }
 
 function txPlan(trace) {
@@ -198,6 +199,13 @@ async function killMatrix(rows) {
         resumed = await call(r.page, 'reconcile', { scenario: row, outcome });
         const rb2 = await call(r.page, 'readback', {});
         failures.push(...checkResumed(cell, resumed, rb2));
+      }
+      if (committed.has(point) && got === final && r.snap !== null && r.rb.selector?.envelope !== r.snap.envelope) {
+        // T6b CAS: the landed commit changed the stored selector bytes, so a delayed writer holding the
+        // bytes its plan read before the operation is refused and changes nothing.
+        const delayed = await call(r.page, 'delayedReplace', { snap: r.snap });
+        const after = await call(r.page, 'readback', {});
+        failures.push(...checkDelayedWriter(point, delayed, r.rb.dbDigest, after.dbDigest));
       }
       if (committed.has(point) && got === final) { // T6b: the classified state survives another restart
         await closeHard(r.ctx);
@@ -284,14 +292,16 @@ async function faults(rows) {
       record({ id: `${row}/T9/${fault}${tamperAt === null ? '' : `@${tamperAt}`}`, row, phase: 'T9', fault, tamperAt, applicable: touched, response: response.result?.reconciliation ?? response.error?.code, failures });
     }
   }
-  // T6b mutant: a put throws mid-enqueue during the original COMMITTED write.
-  for (const row of rows) {
+  // T6b mutant: a put throws mid-enqueue during the original write, for every outcome.
+  for (const row of rows) for (const outcome of OUTCOMES) {
     tally.cells += 1;
-    const cell = { row, outcome: 'COMMITTED', phase: 'ORIGINAL' };
+    const cell = { row, outcome, phase: 'ORIGINAL' };
     const r = await runArmed(cell, { fault: 'PUT_THROW' });
     const applied = (r.response.trace ?? []).some((e) => e.ev === 'FAULT' && e.fault === 'PUT_THROW');
-    const failures = applied ? checkPutThrow(r.response, r.rb) : [{ what: 'PUT_THROW: the fault was injected', cite: CITE.PUT_THROW }];
-    record({ id: `${row}/T6b/PUT_THROW`, ...cell, phase: 'T6b', response: r.response.error?.code ?? 'success', failures });
+    const writes = (r.response.trace ?? []).some((e) => e.ev === 'REQ');
+    const failures = applied ? checkPutThrow(r.response, r.rb)
+      : (writes ? [{ what: 'PUT_THROW: the fault was injected', cite: CITE.PUT_THROW }] : []);
+    record({ id: `${row}/T6b/PUT_THROW/${outcome}`, ...cell, phase: 'T6b', applicable: applied, response: r.response.error?.code ?? 'success', failures });
   }
 }
 

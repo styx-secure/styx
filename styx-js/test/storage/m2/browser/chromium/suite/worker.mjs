@@ -82,6 +82,25 @@ async function seedDebris({ scenario, outcome }) {
   return 'debris';
 }
 
+/** The stored selector envelope, kept by the harness outside the context it will kill. */
+async function snapshot() {
+  const s = await port.readSelector();
+  return s === null ? null : { envelope: hex(s.envelope), plaintext: hex(s.plaintext) };
+}
+
+/**
+ * A delayed writer (T6b CAS): a REPLACE_SELECTOR carrying the envelope bytes its plan read before the
+ * operation, sent through the public port interface after the authority changed.
+ */
+async function delayedReplace({ snap }) {
+  const bytes = (h) => Uint8Array.from(h.match(/../g), (x) => parseInt(x, 16));
+  const r = await guarded(() => port.apply(Object.freeze({
+    index: 0, boundary: 'BEFORE_STAGING', kind: 'REPLACE_SELECTOR',
+    payload: { selectorBytes: bytes(snap.plaintext), resolveHoldGeneration: null, expectedSelectorBytes: bytes(snap.envelope) },
+  })));
+  return { error: r.error ?? null };
+}
+
 function arm({ plan = {}, fault = null, tamperAt = null } = {}) {
   Object.assign(state, { armed: true, fault, tamperAt, plan, trace: [], next: 0, reads: 0, faulted: false });
 }
@@ -166,7 +185,7 @@ async function readback({ parent = '1', candidate = '2' }) {
   return out;
 }
 
-const OPS = { init, seed, seedDebris, arm, original, reconcile, readback };
+const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, readback };
 self.onmessage = async (ev) => {
   const { id, op, args } = ev.data;
   try {

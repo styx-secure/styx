@@ -40,6 +40,8 @@ export const CITE = Object.freeze({
   READ_FAIL: 'C-REC §8 and C-REST §9 (a readback that cannot complete fails closed with the store byte-preserved and nothing emitted); C-MUT §6 (the hold is left unchanged)',
   TAMPER: 'C-REST §9 / C-FMT §4 (an AEAD authentication failure fails closed, bytes preserved, nothing emitted); C-MUT §6 (any mismatch leaves the hold unchanged)',
   PUT_THROW: 'C-MUT §8 (abort and exception before the commit point leave the complete original authority; failure before the commit point exposes no output)',
+  NO_EARLY_HOLD: 'B-CHR obligation v2 item 6 (no memory hold is retained before the complete of the transaction whose selector binds the held candidate); C-MUT §5 NOT_COMMITTED',
+  CAS: 'B-CHR obligation v2 item 10 (every REPLACE_SELECTOR carries expectedSelectorBytes; on any difference no write and SELECTOR_PRECONDITION_FAILED; every completed authority write changes the stored bytes); restart design T6b',
 });
 
 const authority = (classify) => (classify && !classify.error ? `${classify.authority}${classify.held ? '+HELD' : ''}` : `ERROR(${classify?.error?.code ?? '?'})`);
@@ -150,12 +152,23 @@ export function checkFault(fault, pre, response, rb) {
   return f;
 }
 
-/** T6b mutant: a put throws mid-enqueue during the original COMMITTED write. */
+/** T6b mutant: a put throws mid-enqueue during the original write. */
 export function checkPutThrow(response, rb) {
   const f = [];
   if (response.error === null) f.push({ what: 'PUT_THROW: the operation fails', cite: CITE.PUT_THROW });
   if ((response.result?.output ?? null) !== null) f.push({ what: 'PUT_THROW: no output', cite: CITE.PUT_THROW });
   if (authority(rb.classify) !== 'COMPLETE_OLD') f.push({ what: `PUT_THROW: readback ${authority(rb.classify)} is COMPLETE_OLD`, cite: CITE.PUT_THROW });
+  if (rb.memoryHold !== false) f.push({ what: 'PUT_THROW: no memory hold is retained after the abort', cite: CITE.NO_EARLY_HOLD });
+  return f;
+}
+
+/** T6b CAS: a delayed writer with the selector bytes its plan read is refused after the authority changed. */
+export function checkDelayedWriter(point, response, before, after) {
+  const f = [];
+  if (response.error?.code !== 'SELECTOR_PRECONDITION_FAILED') {
+    f.push({ what: `after ${point}: a delayed REPLACE_SELECTOR is refused with SELECTOR_PRECONDITION_FAILED (got ${response.error?.code ?? 'success'})`, cite: CITE.CAS });
+  }
+  if (after !== before) f.push({ what: `after ${point}: the refused delayed write changed nothing`, cite: CITE.CAS });
   return f;
 }
 
