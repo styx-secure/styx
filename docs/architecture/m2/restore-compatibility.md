@@ -10,7 +10,7 @@ It specifies no restore implementation, transaction, migration, rewrite, repair,
 
 ## 2. Frozen input
 
-The only format authority is `docs/architecture/m2/storage-format.md` at `697e257ab106fa67c144f8fbbcde5c68ed4359c3`, SHA-256 `9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `5d514cb45fb54f3c7877fbb02f9716aa40b965b019db55548e730effc932f28b`; access is not required. The input remains external and read-only. Drift is BLOCK.
+The only format authority is `docs/architecture/m2/storage-format.md` at `5086398490289e4be5d9d3b89309a0fc94cac7ba`, SHA-256 `9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `cc6354a818f834384cd997df2c1f393e8ae44b002cf0f15dd8f677ce50507cc8`; access is not required. The input remains external and read-only. Drift is BLOCK.
 
 The exact readable profile is the conjunction copied under `compatibilityRegistry`: all eight versions, algorithms and widths, big-endian integers, framing and zero-salt rules, four 32-byte HKDF outputs, magic/domain/label strings, key/envelope/AAD/plaintext/manifest/selector grammar, all 17 kind IDs and versions, bounds, registries, mappings, generation rules, crash boundaries, vectors, negative classes, and non-claims. ProductProfile is exactly 306 bytes as stated by C-FMT; its layout remains C-BIND-owned and is not independently accepted here. Compatibility is equality, never a range, minimum, semver rule, downgrade, or partial recognition. Unknown, future, missing, mixed, or downgraded versions are `UNSUPPORTED_VERSION`; other profile mismatches are `INCOMPATIBLE_FORMAT`.
 
@@ -46,7 +46,7 @@ The located candidate is a complete immutable unselected generation. Its `MUTATI
 
 Legacy inventory is disjoint. Legacy envelopes, ciphersuites, identifiers, records, and provider states are never decoded as M2, compared against selected SS-0, copied into M2, or used as fallback. Valid M2 plus legacy uses the M2 result with `LEGACY_PRESENT`; invalid M2 plus legacy keeps the M2 failure with that flag. All bytes remain preserved and visible re-establishment guidance may be shown. The legacy shipping ciphersuite at an M2 locator is rejected as incompatible legacy-shaped M2 input without comparing it to SS-0.
 
-Compatible-build guidance identifies reader profile `CFMT_EXACT_9DACE4A0` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
+Compatible-build guidance identifies reader profile `CFMT_EXACT_9FF945E1` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
 
 ## 9. Corruption, diagnostics, and immutability
 
@@ -91,10 +91,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "issue": 332,
     "card": "C-REST",
     "exactBase": "e1538ef9c070e463a8256872a3fd0882c424e2ef",
-    "cFmtCommit": "697e257ab106fa67c144f8fbbcde5c68ed4359c3",
+    "cFmtCommit": "5086398490289e4be5d9d3b89309a0fc94cac7ba",
     "cFmtPath": "docs/architecture/m2/storage-format.md",
-    "cFmtSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
-    "cFmtEvidenceBundleSha256": "5d514cb45fb54f3c7877fbb02f9716aa40b965b019db55548e730effc932f28b"
+    "cFmtSha256": "9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e",
+    "cFmtEvidenceBundleSha256": "cc6354a818f834384cd997df2c1f393e8ae44b002cf0f15dd8f677ce50507cc8"
   },
   "compatibilityRegistry": {
     "versions": {
@@ -581,7 +581,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "PEER_UPDATE_APPLIED": 7,
         "CANDIDATE_SELECTED": 8,
         "RECONCILED_COMMITTED": 9,
-        "DUPLICATE_IGNORED": 10
+        "DUPLICATE_IGNORED": 10,
+        "RESTORED_EMPTY_SESSION": 11
       },
       "bool": {
         "false": 0,
@@ -1495,8 +1496,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
   },
   "buildMatrix": [
     {
-      "readerProfile": "CFMT_EXACT_9DACE4A0",
-      "cFmtDocumentSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
+      "readerProfile": "CFMT_EXACT_9FF945E1",
+      "cFmtDocumentSha256": "9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -1520,8 +1521,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "browserClass": "CHROMIUM"
     },
     {
-      "readerProfile": "CFMT_EXACT_9DACE4A0",
-      "cFmtDocumentSha256": "9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b",
+      "readerProfile": "CFMT_EXACT_9FF945E1",
+      "cFmtDocumentSha256": "9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -2049,7 +2050,7 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "automaticReset": false
   },
   "guidance": {
-    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_9DACE4A0 and preserve all bytes.",
+    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_9FF945E1 and preserve all bytes.",
     "destructiveReset": "Explicit, separate, irreversible, never automatic; not implemented here.",
     "passwordChange": "Re-wrap the same Root Storage Key; not migration or repair.",
     "legacy": "Visible re-establishment guidance only; preserve all bytes."
