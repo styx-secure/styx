@@ -1235,7 +1235,7 @@ describe('reviewer-confirmed defects — targeted regressions', () => {
     const hold = {
       presence: 1,
       resultStatus: 2,
-      parentGeneration: BigInt(v.generation),
+      parentGeneration: BigInt(v.generation) - 1n,
       parentKeyedRoot: hex(v.keyedRootHex),
       operationIdentity: new Uint8Array(32).fill(0x5a),
     };
@@ -1266,13 +1266,13 @@ describe('reviewer-confirmed defects — targeted regressions', () => {
   test('the selected unresolved hold must name the selector authority', async () => {
     const wrong = await asyncCodeOf(() => run({
       selected: facts(v, {
-        mutationHold: { presence: 1, resultStatus: 3, parentGeneration: 99n, parentKeyedRoot: new Uint8Array(32).fill(0xee) },
+        mutationHold: { presence: 1, resultStatus: 3, parentGeneration: BigInt(v.generation), parentKeyedRoot: hex(v.keyedRootHex) },
       }),
     }));
     expect(wrong).toBe('PARENT_MISMATCH');
     const right = await run({
       selected: facts(v, {
-        mutationHold: { presence: 1, resultStatus: 3, parentGeneration: BigInt(v.generation), parentKeyedRoot: hex(v.keyedRootHex) },
+        mutationHold: { presence: 1, resultStatus: 3, parentGeneration: BigInt(v.generation) - 1n, parentKeyedRoot: new Uint8Array(32).fill(0xee) },
       }),
     });
     expect(right.authority).toBe('SELECTED');

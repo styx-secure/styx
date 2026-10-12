@@ -854,7 +854,7 @@ export function mutationSteps(input) {
     if (outcome === M2_OUTCOME.COMMITTED) {
       push('AFTER_DURABLE_COMMIT_BEFORE_RESPONSE', 'REPLACE_SELECTOR', {
         selectorBytes: requireBytes(selectorBytes, 'candidate.selectorBytes'),
-        resolveHoldGeneration: generation,
+        resolveHoldGeneration: null,
         ...cas,
       });
       push('AFTER_AUTHORITY_SELECTION_BEFORE_OUTPUT_RESPONSE', 'CONFIRM_AUTHORITY', { generation });
@@ -882,7 +882,7 @@ export function mutationSteps(input) {
   } else if (outcome === M2_OUTCOME.COMMITTED) {
     push('DURING_RECONCILIATION', 'REPLACE_SELECTOR', {
       selectorBytes: requireBytes(selectorBytes, 'candidate.selectorBytes'),
-      resolveHoldGeneration: generation,
+      resolveHoldGeneration: null,
       ...cas,
     });
     // Every row ends the reconciliation with the local emission call: it is the step that releases
@@ -1062,6 +1062,13 @@ export async function runMutation(input) {
   if (authenticated.outcome !== outcome) {
     fail(CODE.EVIDENCE_MISMATCH, 'authenticated commit-result evidence does not carry the requested outcome');
   }
+  // KIND13-RESOLVE change 1 (C-FMT historicalHoldRule, row F8), ORIGINAL path: before any write, a
+  // canonical present kind-13 record the candidate stages must satisfy the record-derived conjuncts
+  // against the candidate's own authenticated COMMIT_RESULT. The selection never tombstones it, so a
+  // record that is not this mutation's own hold would otherwise become selected authority.
+  const candidateHoldProblem = presentHoldProblem(
+    candidate.records, candidate.resultEvidence, candidate.generation, candidate.manifestKey);
+  if (candidateHoldProblem !== null) fail(CODE.EVIDENCE_MISMATCH, candidateHoldProblem);
 
   const memoryHold = holdRecordFacts(await storage.readMemoryHold());
   if (memoryHold !== null) {
@@ -1102,6 +1109,9 @@ export async function runMutation(input) {
       fail(CODE.STALE_PARENT,
         'the stored selector names a physical generation that is not the candidate parent');
     }
+    // KIND13-RESOLVE change 2: the stored selected parent is read through the trusted reader before any
+    // write; a present hold that is not that generation's own historical hold is PARTIAL_APPLICATION.
+    generationFactsFromStorage(await storage.readGeneration(current.generation), current.generation, manifestRootKey);
   }
   // Rule-only hold locator, debris rule: an unbound candidate generation left by a crash is preserved,
   // non-authoritative debris and its generation number is never reused. A candidate that would stage
@@ -1173,6 +1183,7 @@ function generationFactsFromStorage(value, generation, manifestRootKey) {
     partial(`generation ${generation} declares a keyed root that its own manifest does not produce`);
   }
   sidecarHoldMatchesRecord(records, value.mutationHold, generation);
+  presentHoldBelongsToGeneration(records, value.resultEvidence, generation, manifestKey);
   return {
     generation,
     records,
@@ -1221,6 +1232,54 @@ function sidecarHoldMatchesRecord(records, sidecar, generation) {
     const b = truth[k];
     if (!((a instanceof Uint8Array || b instanceof Uint8Array) ? equal(a, b) : a === b)) refuse();
   }
+}
+
+// KIND13-RESOLVE change 2 (C-FMT historicalHoldRule, row F8): the record-derived conjuncts of a canonical
+// present kind-13 record in a stored generation. It must be stored under a canonical kind-13 record key
+// whose writeGeneration is that generation and from which holdLocatorRule derives that generation's own
+// manifest key; its parentGeneration must be strictly lower; and it must be the hold of that generation's
+// own mutation (storedResultMatchesHold against its own COMMIT_RESULT). Derived from the authenticated
+// record, never from the mutationHold projection. A non-canonical (filler) plaintext is outside the rule
+// (B-CHR item 12). The manifest binding-digest leg stays with the trusted reader (row B4). Returns the
+// problem, or null for a tombstone, a non-canonical plaintext or valid historical evidence.
+function presentHoldProblem(records, resultEvidence, generation, manifestKey) {
+  const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  if (record === undefined) return null;
+  let authenticated;
+  try { authenticated = decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext); } catch { return null; }
+  if (authenticated.presence !== 1) return null;
+  let key;
+  try { key = decodeRecordKey(record.recordKey); } catch { return `generation ${generation} stores its kind-13 record under a non-canonical key`; }
+  if (key.recordKind !== M2_KIND.MUTATION_HOLD) return `generation ${generation} stores its kind-13 record under a non-kind-13 key`;
+  if (key.writeGeneration !== generation) return `generation ${generation} stores a present hold whose record key derives generation ${key.writeGeneration}`;
+  const derived = encodeManifestKey({
+    localContextId: key.localContextId, scope: key.scope,
+    secureSessionIdentity: key.secureSessionIdentity, writeGeneration: key.writeGeneration,
+  });
+  if (manifestKey === null || !equal(derived, manifestKey)) {
+    return `generation ${generation} stores a present hold whose record key does not derive its manifest key`;
+  }
+  const held = holdRecordFacts(authenticated, 'authenticated mutationHold');
+  if (!(held.parentGeneration < generation)) return `generation ${generation} stores a present hold that does not name an earlier parent`;
+  if (resultEvidence === null || resultEvidence === undefined || !storedResultMatchesHold(resultEvidence, held)) {
+    return `generation ${generation} stores a present hold that its own commit result does not identify`;
+  }
+  return null;
+}
+
+function presentHoldBelongsToGeneration(records, resultEvidence, generation, manifestKey) {
+  const problem = presentHoldProblem(records, resultEvidence, generation, manifestKey);
+  if (problem !== null) partial(problem);
+}
+
+// The record-derived kind-13 hold of a list of records (C-FMT /recordKinds[13]), or null.
+function recordDerivedHold(records) {
+  const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  if (record === undefined) return null;
+  let authenticated;
+  try { authenticated = decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext); } catch { return null; }
+  if (authenticated.presence !== 1) return null;
+  return holdRecordFacts(authenticated, 'authenticated mutationHold');
 }
 
 // The complete C-FMT kind-13 MUTATION_HOLD record a stored generation carries, or null when the port
@@ -1396,7 +1455,12 @@ async function repeatCommittedEmission(storage, manifestRootKey, held, evidence,
   } catch (e) {
     partial(`the stored selector is not consistent with the generation it names: ${e.message}`);
   }
-  if (selected.mutationHold !== null && selected.mutationHold.presence !== 0) notPending();
+  // KIND13-RESOLVE change 3 (rows M1, M2, R1): the committed candidate keeps its own present hold as
+  // historical evidence; the repeat proceeds only when it is the held hold, compared record-derived.
+  if (selected.mutationHold !== null && selected.mutationHold.presence !== 0) {
+    const recordHold = recordDerivedHold(selected.records);
+    if (!sameHold(recordHold !== null ? recordHold : selected.holdRecord, held)) notPending();
+  }
   if (!storedResultMatchesHold(selected.resultEvidence, held)) notPending();
   if (evidence.outcome !== M2_OUTCOME.COMMITTED) {
     fail(CODE.EVIDENCE_MISMATCH,
@@ -1453,7 +1517,8 @@ async function retainedHoldTarget(storage, manifestRootKey, storedSelector, sele
   } catch (e) {
     partial(`the stored selector is not consistent with the generation it names: ${e.message}`);
   }
-  if (parent.mutationHold !== null && parent.mutationHold.presence !== 0) notPending('the selected generation carries a present hold');
+  // KIND13-RESOLVE change 4: a parent whose selected hold is historical evidence is not refused here;
+  // both layers of change 2 (generationFactsFromStorage, validateAuthority) validated it above.
   if (!equal(held.parentKeyedRoot, selector.keyedRoot)) notPending('the hold parent root is not the selected root');
   const stored = await storage.readGeneration(held.candidateGeneration);
   if (stored === null || stored === undefined) notPending('no generation is stored at the derived locator');
@@ -1641,13 +1706,14 @@ export async function reconcileIndeterminate(input) {
   );
   const selectorBytes = encodePlaintext(M2_KIND.GENERATION_SELECTOR,
     sameTupleSelector(candidate, SELECTOR_STATE.ACTIVE));
-  // The located or bound candidate must validate as the complete prospective authority, with its hold
-  // terminally resolved, before the selector is replaced or any escrow is emitted.
+  // The located or bound candidate must validate as the complete prospective authority, with its real
+  // stored hold (KIND13-RESOLVE change 1: never an imagined tombstone; the present hold becomes
+  // historical evidence once selected), before the selector is replaced or any escrow is emitted.
   try {
     validateAuthority({
       selector: selectorBytes,
       manifestRootKey,
-      selected: authorityTuple({ ...candidate, mutationHold: holdFacts({ presence: 0 }) }),
+      selected: authorityTuple(candidate),
       candidate: null,
     });
   } catch (e) {

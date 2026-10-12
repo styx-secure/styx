@@ -439,13 +439,15 @@ export function validateAuthority(input) {
   let candidateRoot = null;
   if (tupleSame) {
     if (candidate !== null) fail(CODE.CANDIDATE_MISMATCH, 'a separate candidate is present although the selector declares none');
-    // The selector names the selected generation itself as authority, so a present unresolved hold
-    // must name that same physical generation and root.
+    // C-FMT historicalHoldRule (KIND13-RESOLVE #468, row F8): unresolved is decided by the authenticated
+    // selector alone. A present hold in the selected generation is historical evidence of the mutation
+    // that produced it, so its parent must be strictly lower than that generation; a self- or later
+    // parent is a non-candidate hold and rejects. Its parentKeyedRoot is not compared with the selector.
+    // This layer sees only the four hold facts; the record-derived conjuncts (record-key derivation and
+    // association with the generation's own COMMIT_RESULT) are checked by the I-TXN reader.
     if (selected.hold !== null && selected.hold.presence === 1
-        && selected.hold.resultStatus === COMMIT_OUTCOME_INDETERMINATE
-        && (selected.hold.parentGeneration !== selector.generation
-          || !equal(selected.hold.parentKeyedRoot, selector.keyedRoot))) {
-      fail(CODE.PARENT_MISMATCH, 'selected unresolved hold parent does not match the selector physical authority');
+        && !(selected.hold.parentGeneration < selector.generation)) {
+      fail(CODE.PARENT_MISMATCH, 'a present hold in the selected generation does not name an earlier parent');
     }
     return Object.freeze({
       authority: 'SELECTED',
@@ -458,10 +460,14 @@ export function validateAuthority(input) {
     });
   }
 
-  // A separate candidate: selected MUTATION_HOLD must be a tombstone and the candidate hold must be present.
+  // A separate candidate: the candidate hold must be present and is the one unresolved mutation. The
+  // selected MUTATION_HOLD is a tombstone or historical evidence (parent strictly lower, row F8).
   if (candidate === null) fail(CODE.CANDIDATE_MISMATCH, 'selector names a separate candidate that was not supplied');
-  if (selected.hold === null || selected.hold.presence !== 0) {
-    fail(CODE.CANDIDATE_MISMATCH, 'selected generation MUTATION_HOLD is not a tombstone');
+  if (selected.hold === null) {
+    fail(CODE.CANDIDATE_MISMATCH, 'selected generation MUTATION_HOLD is missing');
+  }
+  if (selected.hold.presence === 1 && !(selected.hold.parentGeneration < selector.generation)) {
+    fail(CODE.CANDIDATE_MISMATCH, 'a present hold in the selected generation does not name an earlier parent');
   }
   if (candidate.hold === null || candidate.hold.presence !== 1) {
     fail(CODE.CANDIDATE_MISMATCH, 'candidate generation MUTATION_HOLD is not present');

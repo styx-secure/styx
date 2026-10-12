@@ -4,7 +4,7 @@ import {
 } from '../../../src/storage/m2/session-codec.js';
 import {
   computeKeyedRoot, ciphertextDigest, encodeManifest, encodeManifestKey, manifestEntry,
-  manifestKeyDigest,
+  manifestKeyDigest, validateAuthority,
 } from '../../../src/storage/m2/session-root.js';
 import {
   M2TxnError, M2_OUTCOME, M2_TXN, buildMutationEnvelope, classifyAuthority, mutationRow,
@@ -1290,11 +1290,22 @@ describe('runMutation outcomes', () => {
       candidateManifestKeyDigest: manifestKeyDigest(decoyKey),
       candidateManifestCipherDigest: NEW.manifestCipherDigest, candidateKeyedRoot: NEW.keyedRoot,
     });
+    // Residual 4 of the I-TXN-FIX ratification (#457 comment 6077036050): a valid memory hold is supplied,
+    // so the change-5 locator-coincidence branch itself is reached and is the only possible refusal.
+    const retained = store.memoryHold;
+    const selectorBefore = hex(store.selector);
+    const applied = store.applied.length;
     await expect(reconcileIndeterminate({
-      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      storage: store, manifestRootKey: ROOT_KEY, hold: retained,
       evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED, { terminal: true }),
-      reference: holdRecordFor('CAPI-S001').reconciliationReference,
-    })).rejects.toThrow(/does not derive the candidate|must be present/);
+      reference: retained.reconciliationReference,
+    })).rejects.toMatchObject({
+      code: 'EVIDENCE_MISMATCH',
+      message: 'the retained hold record key does not derive the candidate the stored selector binds; the hold is left unchanged',
+    });
+    expect(store.applied.length).toBe(applied);
+    expect(hex(store.selector)).toBe(selectorBefore);
+    expect(store.memoryHold).toBe(retained);
   });
 
   test('a stored result whose expected original state is not the held original state is an evidence mismatch', async () => {
@@ -1302,12 +1313,26 @@ describe('runMutation outcomes', () => {
       faults: [{ boundary: 'AFTER_INDETERMINATE', kind: 'REPLACE_SELECTOR', mode: 'AFTER', remaining: 1 }],
     });
     expect(store.memoryHold).not.toBeNull();
-    store.memoryHold = { ...store.memoryHold, originalApiState: { marker: 'tampered' } };
+    // Residual 5 of the I-TXN-FIX ratification (#457 comment 6077036050): the memory hold and the
+    // reconciliation evidence are valid; only the bound candidate's STORED COMMIT_RESULT names another
+    // original state, so the expectedOriginalState leg of storedResultMatchesHold is what refuses.
+    const bound = store.generations.get(NEW_GENERATION);
+    expect(bound.resultEvidence.expectedOriginalState).toBe(1);
+    bound.resultEvidence = { ...bound.resultEvidence, expectedOriginalState: 2 };
+    const retained = store.memoryHold;
+    const selectorBefore = hex(store.selector);
+    const applied = store.applied.length;
     await expect(reconcileIndeterminate({
-      storage: store, manifestRootKey: ROOT_KEY, hold: null,
+      storage: store, manifestRootKey: ROOT_KEY, hold: retained,
       evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED, { terminal: true }),
-      reference: holdRecordFor('CAPI-S001').reconciliationReference,
-    })).rejects.toThrow(/original/i);
+      reference: retained.reconciliationReference,
+    })).rejects.toMatchObject({
+      code: 'EVIDENCE_MISMATCH',
+      message: 'the bound candidate\'s stored commit result does not identify the held mutation; nothing is selected or discarded and the hold is left unchanged',
+    });
+    expect(store.applied.length).toBe(applied);
+    expect(hex(store.selector)).toBe(selectorBefore);
+    expect(store.memoryHold).toBe(retained);
   });
 
   test('a stale parent is refused strictly before the RS request, leaving nothing durable', async () => {
@@ -1393,8 +1418,9 @@ describe('reconcileIndeterminate', () => {
         expect(added.map((a) => a.kind)).not.toContain(kind);
       }
       expect((await classify(store)).authority).toBe('COMPLETE_NEW');
-      // The atomic selector replacement tombstones the candidate's retained hold on every row.
-      expect(store.generations.get(NEW_GENERATION).mutationHold.presence).toBe(0);
+      // KIND13-RESOLVE (rows F3, F6, T1): selection resolves the hold by the selector alone; the selected
+      // generation keeps its present hold as historical evidence and nothing is tombstoned.
+      expect(store.generations.get(NEW_GENERATION).mutationHold.presence).toBe(1);
       // Every row ends the reconciliation with the local emission call, which releases the retained
       // response hold. A row with no escrow releases nothing but still resolves the hold.
       expect(added.filter((a) => a.kind === 'RELEASE_ESCROW')).toHaveLength(1);
@@ -1847,6 +1873,629 @@ describe('determinism', () => {
     const a = await digestOf();
     const b = await digestOf();
     expect(a).toBe(b);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// KIND13-RESOLVE (#468, option c): canonical kind-13 MUTATION_HOLD records. The kind-13 record is
+// immutable and stays present; "unresolved" is decided by the authenticated selector alone; a present
+// hold in the selected generation is historical evidence (C-FMT historicalHoldRule, row F8). Every
+// fixture here stages the real 21-field v2 kind-13 plaintext under its canonical record key (never
+// filler), and the port derives its `mutationHold` projection from that stored record (amended F3).
+// ---------------------------------------------------------------------------------------------
+
+describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', () => {
+  const K13 = M2_KIND.MUTATION_HOLD;
+  const SELECTOR_KIND = M2_KIND.GENERATION_SELECTOR;
+  const OPERATIONS = ['CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
+    'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE'];
+  const OUTPUT_KINDS = ['NONE', 'EMBEDDED_TREE_WELCOME', 'PROTECTED_APPLICATION_BYTES',
+    'APPLICATION_BYTES', 'PROTECTED_COMMIT_BYTES', 'SELECTED_CANDIDATE_REF'];
+  const SUCCESS_CODES = ['CREATED', 'RESTORED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED',
+    'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED',
+    'DUPLICATE_IGNORED'];
+  const MEMORY = ['RETAINED', 'LOST'];
+  // The ratified kind-13 v2 layout stores heldOutputDigest/heldOutputReference as b32, while C-MUT
+  // requires them null for a NONE output (KIND_NONE_REQUIRES_DIGEST_AND_REFERENCE_NULL). A present
+  // canonical kind-13 record therefore exists only for the rows with an output; for the two NONE rows
+  // (CAPI-S006, CAPI-S016) no canonical hold plaintext can be encoded at all (pinned below, a residual
+  // owned by the KIND13-DOCS / C-FMT cascade, not by this card).
+  const HOLD_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind !== 'NONE');
+  const NONE_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind === 'NONE');
+  const tomb = (kind) => encodePlaintext(kind, { presence: 0 });
+  const stateCode = (s) => (s === 'EMPTY' ? 1 : 2);
+
+  function keyFor(generation, kind, scope = 2, localContextId = LOCAL) {
+    return encodeRecordKey({
+      scope, localContextId, secureSessionIdentity: scope === 1 ? null : SESSION_ID,
+      writeGeneration: generation, recordKind: kind,
+    });
+  }
+
+  // A complete canonical generation: fifteen records, every one a canonical plaintext; kind 13 is the
+  // supplied canonical MUTATION_HOLD plaintext (or a canonical tombstone).
+  function canonGeneration(generation, { scope = 2, k13 = null } = {}) {
+    const records = DATA_KINDS.map((kind) => {
+      const plaintext = kind === K13 && k13 !== null ? k13 : tomb(kind);
+      const recordKey = keyFor(generation, kind, scope);
+      const ciphertext = Uint8Array.from(plaintext, (b, i) => b ^ ((0x5a + i + kind) & 0xff));
+      return { recordKey, recordKind: kind, plaintext, ciphertext, tag: bytesOf(16, kind + Number(generation)) };
+    }).sort((a, b) => Buffer.compare(Buffer.from(a.recordKey), Buffer.from(b.recordKey)));
+    const manifestBytes = encodeManifest(records.map((r) => manifestEntry({
+      recordKey: r.recordKey,
+      recordKind: r.recordKind,
+      ciphertextDigest: ciphertextDigest({
+        recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag,
+      }),
+    })));
+    const manifestKey = encodeManifestKey({
+      localContextId: LOCAL, scope, secureSessionIdentity: scope === 1 ? null : SESSION_ID, writeGeneration: generation,
+    });
+    return {
+      generation,
+      records,
+      manifestKey,
+      manifestBytes,
+      manifestCipherDigest: bytesOf(32, Number(generation) + 0x90),
+      keyedRoot: computeKeyedRoot({ manifestRootKey: ROOT_KEY, manifestKey, generation, manifestBytes }),
+      sessionBindingDigest: scope === 1 ? null : BINDING_DIGEST,
+    };
+  }
+
+  const selfSelector = (g, state) => encodePlaintext(SELECTOR_KIND, sameTupleSelector(g, state));
+  function boundSelector(parent, candidate) {
+    return encodePlaintext(SELECTOR_KIND, {
+      presence: 1,
+      generation: parent.generation,
+      manifestKeyDigest: manifestKeyDigest(parent.manifestKey),
+      manifestCipherDigest: parent.manifestCipherDigest,
+      keyedRoot: parent.keyedRoot,
+      state: 3,
+      candidateGeneration: candidate.generation,
+      candidateManifestKey: candidate.manifestKey,
+      candidateManifestKeyDigest: manifestKeyDigest(candidate.manifestKey),
+      candidateManifestCipherDigest: candidate.manifestCipherDigest,
+      candidateKeyedRoot: candidate.keyedRoot,
+    });
+  }
+
+  function envelopeAt(scenario, seed, parent) {
+    const row = mutationRow(scenario);
+    return buildMutationEnvelope({
+      operationIdentity: { value: bytesOf(32, seed), assignedBy: 'SS_RS', fresh: true, reusable: false, apRequestIdEqual: false },
+      operation: row.operation,
+      scenario,
+      originalApiState: row.stateBefore,
+      originalAuthority: { digest: parent.keyedRoot, reference: bytesOf(32, seed + 1) },
+      bindingProfileIdentity: { bindingRef: bytesOf(32, 0x04), profile: bytesOf(32, 0x05) },
+      candidate: { digest: bytesOf(32, seed + 2), reference: bytesOf(32, seed + 3) },
+      componentSet: { digest: bytesOf(32, seed + 4), reference: bytesOf(32, seed + 5), entries: row.components.map((c) => ({ ...c })) },
+      heldOutput: row.outputKind === 'NONE'
+        ? { kind: 'NONE', digest: null, reference: null }
+        : { kind: row.outputKind, digest: bytesOf(32, seed + 6), reference: bytesOf(32, seed + 7) },
+      expectedSuccess: { code: row.successCode, stateAfter: row.stateAfterCommitted },
+      reconciliationIdentity: { reference: bytesOf(32, seed + 8), owner: 'SS_RS' },
+    });
+  }
+
+  // The complete kind-13 record I-TXN writes for this envelope (buildHold), field for field.
+  function canonicalHold(envelope, parent) {
+    return {
+      presence: 1,
+      operationIdentity: envelope.operationIdentity.value,
+      operation: OPERATIONS.indexOf(envelope.operation) + 1,
+      scenario: M2_TXN.SCENARIOS.indexOf(envelope.scenario) + 1,
+      originalApiState: stateCode(envelope.originalApiState),
+      originalAuthorityDigest: envelope.originalAuthority.digest,
+      originalAuthorityReference: envelope.originalAuthority.reference,
+      bindingRef: envelope.bindingProfileIdentity.bindingRef,
+      profileDigest: envelope.bindingProfileIdentity.profile,
+      candidateDigest: envelope.candidate.digest,
+      candidateReference: envelope.candidate.reference,
+      componentSetDigest: envelope.componentSet.digest,
+      componentSetReference: envelope.componentSet.reference,
+      heldOutputKind: OUTPUT_KINDS.indexOf(envelope.heldOutput.kind) + 1,
+      heldOutputDigest: envelope.heldOutput.digest,
+      heldOutputReference: envelope.heldOutput.reference,
+      expectedSuccessCode: SUCCESS_CODES.indexOf(envelope.expectedSuccess.code) + 1,
+      expectedStateAfter: stateCode(envelope.expectedSuccess.stateAfter),
+      reconciliationReference: envelope.reconciliationIdentity.reference,
+      resultStatus: M2_OUTCOME.INDETERMINATE,
+      parentGeneration: parent.generation,
+      parentKeyedRoot: parent.keyedRoot,
+    };
+  }
+
+  // One mutation from `parent` to `generation`: envelope, canonical hold, the staged generation and the
+  // runMutation candidate. `k13` chooses the staged kind-13 record: the canonical hold or a tombstone.
+  function mutationOf(scenario, seed, parent, generation, outcome, { k13 = 'HOLD', holdTweak = {}, parentState = null } = {}) {
+    const envelope = envelopeAt(scenario, seed, parent);
+    const row = mutationRow(scenario);
+    const hold = { ...canonicalHold(envelope, parent), ...holdTweak };
+    const staged = canonGeneration(generation, { k13: k13 === 'HOLD' ? encodePlaintext(K13, hold) : null });
+    const escrow = row.outputKind === 'NONE' ? null : {
+      kind: row.outputKind, digest: envelope.heldOutput.digest, reference: envelope.heldOutput.reference,
+      output: bytesOf(24, seed + 0x40),
+    };
+    const candidate = {
+      ...staged,
+      parentGeneration: parent.generation,
+      parentKeyedRoot: parent.keyedRoot,
+      escrow,
+      resultEvidence: evidenceFor(envelope, outcome),
+      selectorBytes: selfSelector(staged, 2),
+      holdSelectorBytes: boundSelector(parent, staged),
+      parentSelectorBytes: selfSelector(parent, parentState ?? stateCode(row.stateBefore)),
+    };
+    return { scenario, envelope, row, hold, staged, candidate, escrow };
+  }
+
+  /**
+   * A port whose `mutationHold` projection is derived from the authenticated kind-13 record of the
+   * generation (amended F3: no sidecar). WRITE_HOLD sets only the SS memory hold; the record bytes are
+   * immutable. With `sidecar`, a separately stored projection overrides the derived one (F3 control).
+   */
+  function derivedPort() {
+    let writes = 0;
+    const seal = (plaintext) => {
+      writes += 1;
+      const out = new Uint8Array(plaintext.length + 4);
+      out.set(plaintext);
+      new DataView(out.buffer).setUint32(plaintext.length, writes);
+      return out;
+    };
+    const pending = new Map();
+    const port = {
+      generations: new Map(), selector: null, envelope: null, memoryHold: null, applied: [], faults: [],
+    };
+    const takeFault = (kind, mode) => {
+      const f = port.faults.find((x) => x.kind === kind && x.mode === mode && x.remaining > 0);
+      if (f === undefined) return;
+      f.remaining -= 1;
+      throw new Error(`injected crash ${mode} ${kind}`);
+    };
+    port.store = (g, { escrow = null, resultEvidence = null, sidecar } = {}) => {
+      port.generations.set(g.generation, {
+        generation: g.generation, records: g.records, manifestKey: g.manifestKey, manifestBytes: g.manifestBytes,
+        manifestCipherDigest: g.manifestCipherDigest, keyedRoot: g.keyedRoot, sessionBindingDigest: g.sessionBindingDigest,
+        escrow, resultEvidence, sidecar,
+      });
+      return port;
+    };
+    port.select = (selector) => {
+      port.selector = Uint8Array.prototype.slice.call(selector);
+      port.envelope = seal(port.selector);
+      return port;
+    };
+    port.apply = async (step) => {
+      port.applied.push({ kind: step.kind, boundary: step.boundary, payload: step.payload });
+      takeFault(step.kind, 'BEFORE');
+      const p = step.payload;
+      if (step.kind === 'STAGE_DATA') {
+        if (!pending.has(p.generation)) pending.set(p.generation, new Map());
+        pending.get(p.generation).set(p.recordKind, {
+          recordKey: p.recordKey, recordKind: p.recordKind, plaintext: p.plaintext, ciphertext: p.ciphertext, tag: p.tag,
+        });
+      } else if (step.kind === 'STAGE_MANIFEST') {
+        port.generations.set(p.generation, {
+          generation: p.generation, records: [...(pending.get(p.generation)?.values() ?? [])], manifestKey: p.manifestKey,
+          manifestBytes: p.manifestBytes, manifestCipherDigest: p.manifestCipherDigest, keyedRoot: p.keyedRoot,
+          sessionBindingDigest: p.sessionBindingDigest, escrow: null, resultEvidence: null,
+        });
+      } else if (step.kind === 'STAGE_EVIDENCE') {
+        port.generations.get(p.generation).resultEvidence = p.evidence;
+      } else if (step.kind === 'STAGE_ESCROW') {
+        port.generations.get(p.generation).escrow = p.escrow;
+      } else if (step.kind === 'WRITE_HOLD') {
+        port.memoryHold = { ...p.hold, recordKey: p.holdRecordKey };
+      } else if (step.kind === 'CLEAR_CANDIDATE') {
+        port.generations.delete(p.generation);
+        pending.delete(p.generation);
+        port.memoryHold = null;
+      } else if (step.kind === 'REPLACE_SELECTOR') {
+        checkSelectorPrecondition(p, port.envelope);
+        port.selector = Uint8Array.prototype.slice.call(p.selectorBytes);
+        port.envelope = seal(port.selector);
+      } else if (step.kind === 'RELEASE_ESCROW') {
+        port.memoryHold = null;
+      }
+      takeFault(step.kind, 'AFTER');
+    };
+    port.readSelector = async () => (port.selector === null ? null : {
+      plaintext: Uint8Array.prototype.slice.call(port.selector),
+      envelope: Uint8Array.prototype.slice.call(port.envelope),
+    });
+    port.readGeneration = async (n) => {
+      const g = port.generations.get(n);
+      if (g === undefined) return null;
+      const record = g.records.find((r) => r.recordKind === K13);
+      const decoded = decodePlaintext(K13, record.plaintext);
+      const derived = decoded.presence === 1 ? { ...decoded } : { presence: 0 };
+      return {
+        generation: g.generation, records: g.records, manifestKey: g.manifestKey, manifestBytes: g.manifestBytes,
+        manifestCipherDigest: g.manifestCipherDigest, keyedRoot: g.keyedRoot, sessionBindingDigest: g.sessionBindingDigest,
+        mutationHold: g.sidecar === undefined ? derived : g.sidecar, escrow: g.escrow, resultEvidence: g.resultEvidence,
+      };
+    };
+    port.readMemoryHold = async () => port.memoryHold;
+    port.readGenerationNumbers = async () => [...new Set([...port.generations.keys(), ...pending.keys()])];
+    return port;
+  }
+
+  const k13Of = (port, n) => decodePlaintext(K13, port.generations.get(n).records.find((r) => r.recordKind === K13).plaintext);
+  const runIt = (port, m, outcome = m.candidate.resultEvidence.outcome) => runMutation({
+    storage: port, manifestRootKey: ROOT_KEY, envelope: m.envelope, candidate: m.candidate, outcome,
+  });
+  const classifyAt = (port, oldGeneration, newGeneration) => classifyAuthority({
+    storage: port, manifestRootKey: ROOT_KEY, oldGeneration, newGeneration,
+  });
+  function reconcileIt(port, m, outcome, memory) {
+    if (memory === 'LOST') port.memoryHold = null;
+    return reconcileIndeterminate({
+      storage: port,
+      manifestRootKey: ROOT_KEY,
+      hold: memory === 'LOST' ? null : port.memoryHold,
+      evidence: evidenceFor(m.envelope, outcome, outcome === M2_OUTCOME.INDETERMINATE ? { terminal: false } : {}),
+      reference: m.envelope.reconciliationIdentity.reference,
+    });
+  }
+  const codeOf = (promise) => promise.then(() => 'OK', (e) => e.code ?? e.message);
+  const selectorWrites = (port, from = 0) => port.applied.slice(from).filter((a) => a.kind === 'REPLACE_SELECTOR');
+
+  // Generation 1: the canonical parent of a row (pre-session scope for an EMPTY origin), selected alone.
+  function parentFor(scenario) {
+    const row = mutationRow(scenario);
+    const parent = canonGeneration(1n, { scope: row.stateBefore === 'EMPTY' ? 1 : 2 });
+    const port = derivedPort().store(parent).select(selfSelector(parent, stateCode(row.stateBefore)));
+    return { parent, port };
+  }
+
+  // INDETERMINATE first mutation: the bound candidate carries its canonical present kind-13 hold.
+  async function heldFirst(scenario) {
+    const { parent, port } = parentFor(scenario);
+    const m = mutationOf(scenario, 0x30, parent, 2n, M2_OUTCOME.INDETERMINATE);
+    const result = await runIt(port, m);
+    expect(result.commitOutcome).toBe('INDETERMINATE');
+    expect(port.memoryHold).not.toBeNull();
+    expect(k13Of(port, 2n).presence).toBe(1);
+    return { parent, port, m };
+  }
+
+  // Generation 2 selected as authority while carrying its own historical kind-13 evidence.
+  async function historicalAuthority(scenario, memory) {
+    const held = await heldFirst(scenario);
+    const outcome = await reconcileIt(held.port, held.m, M2_OUTCOME.COMMITTED, memory);
+    expect(outcome.reconciliation).toBe('RECONCILED_COMMITTED');
+    expect(k13Of(held.port, 2n).presence).toBe(1);
+    expect((await classifyAt(held.port, 1n, 2n)).authority).toBe('COMPLETE_NEW');
+    return held;
+  }
+
+  describe('every RS_TRI_STATE row, memory RETAINED and LOST', () => {
+    test('the rows without an output cannot carry a canonical present kind-13 hold (C-FMT b32 vs C-MUT null)', () => {
+      expect(NONE_ROWS).toEqual(['CAPI-S006', 'CAPI-S016']);
+      for (const scenario of NONE_ROWS) {
+        const parent = canonGeneration(1n, { scope: mutationRow(scenario).stateBefore === 'EMPTY' ? 1 : 2 });
+        const hold = canonicalHold(envelopeAt(scenario, 0x30, parent), parent);
+        expect(hold.heldOutputDigest).toBeNull();
+        expect(() => encodePlaintext(K13, hold)).toThrow(/heldOutputDigest has wrong byte width/);
+      }
+    });
+    test.each(HOLD_ROWS)('%s: INDETERMINATE, then COMMITTED reconciliation classifies COMPLETE_NEW', async (scenario) => {
+      for (const memory of MEMORY) {
+        const { port, m } = await heldFirst(scenario);
+        const held = await classifyAt(port, 1n, 2n);
+        expect(held).toMatchObject({ authority: 'COMPLETE_OLD', held: true });
+        const before = port.applied.length;
+        const outcome = await reconcileIt(port, m, M2_OUTCOME.COMMITTED, memory);
+        expect(outcome).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', authority: 'COMPLETE_NEW', holds: 0 });
+        expect(outcome.output === null ? null : hex(outcome.output)).toBe(m.escrow === null ? null : hex(m.escrow.output));
+        const classification = await classifyAt(port, 1n, 2n);
+        expect(classification).toMatchObject({ authority: 'COMPLETE_NEW', generation: 2n, held: false });
+        // Resolution by selector alone: the kind-13 record is untouched and present, nothing is tombstoned.
+        expect(k13Of(port, 2n)).toMatchObject({ presence: 1, parentGeneration: 1n });
+        expect(selectorWrites(port, before)).toHaveLength(1);
+        for (const w of selectorWrites(port)) expect(w.payload.resolveHoldGeneration).toBeNull();
+        expect(port.memoryHold).toBeNull();
+      }
+    });
+
+    test.each(HOLD_ROWS)('%s: INDETERMINATE, then terminal NOT_COMMITTED reconciliation classifies COMPLETE_OLD', async (scenario) => {
+      for (const memory of MEMORY) {
+        const { port, m } = await heldFirst(scenario);
+        const outcome = await reconcileIt(port, m, M2_OUTCOME.NOT_COMMITTED, memory);
+        expect(outcome).toMatchObject({ reconciliation: 'NOT_COMMITTED', authority: 'COMPLETE_OLD', output: null, holds: 0 });
+        expect(await classifyAt(port, 1n, 2n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 1n, held: false });
+        expect(await port.readGeneration(2n)).toBeNull();
+        for (const w of selectorWrites(port)) expect(w.payload.resolveHoldGeneration).toBeNull();
+      }
+    });
+
+    test.each(M2_TXN.SCENARIOS)('%s: original COMMITTED with a canonical present hold or a tombstone classifies COMPLETE_NEW', async (scenario) => {
+      for (const k13 of HOLD_ROWS.includes(scenario) ? ['HOLD', 'TOMB'] : ['TOMB']) {
+        const { port } = parentFor(scenario);
+        const m = mutationOf(scenario, 0x30, port.generations.get(1n), 2n, M2_OUTCOME.COMMITTED, { k13 });
+        const result = await runIt(port, m);
+        expect(result).toMatchObject({ commitOutcome: 'COMMITTED', generation: 2n, holds: 0 });
+        expect(await classifyAt(port, 1n, 2n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 2n, held: false });
+        expect(k13Of(port, 2n).presence).toBe(k13 === 'HOLD' ? 1 : 0);
+        expect(selectorWrites(port)).toHaveLength(1);
+        expect(selectorWrites(port)[0].payload.resolveHoldGeneration).toBeNull();
+      }
+    });
+  });
+
+  test.each(HOLD_ROWS)('%s: an interrupted committed emission stays COMPLETE_NEW and repeats until the local emission succeeds', async (scenario) => {
+    const { port, m } = await heldFirst(scenario);
+    port.faults = [{ kind: 'RELEASE_ESCROW', mode: 'BEFORE', remaining: 1 }];
+    await expect(reconcileIt(port, m, M2_OUTCOME.COMMITTED, 'RETAINED')).rejects.toThrow(/injected crash BEFORE RELEASE_ESCROW/);
+    expect(await classifyAt(port, 1n, 2n)).toMatchObject({ authority: 'COMPLETE_NEW', held: false });
+    expect(port.memoryHold).not.toBeNull();
+    // A new mutation is refused as before while the memory/response hold is outstanding.
+    const next = mutationOf('CAPI-S014', 0x60, port.generations.get(2n), 3n, M2_OUTCOME.COMMITTED);
+    const refusedAt = port.applied.length;
+    expect(await codeOf(runIt(port, next))).toBe('BLIND_RETRY');
+    expect(port.applied.length).toBe(refusedAt);
+    // The retry performs only the outstanding emission, with the same escrow bytes, and writes no selector.
+    const retryAt = port.applied.length;
+    const retry = await reconcileIt(port, m, M2_OUTCOME.COMMITTED, 'RETAINED');
+    expect(retry).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', authority: 'COMPLETE_NEW', holds: 0 });
+    expect(retry.output === null ? null : hex(retry.output)).toBe(m.escrow === null ? null : hex(m.escrow.output));
+    expect(port.applied.slice(retryAt).map((a) => a.kind)).toEqual(['RELEASE_ESCROW']);
+    expect(port.memoryHold).toBeNull();
+    // Then a new mutation is accepted from the authority carrying historical evidence.
+    expect((await runIt(port, next)).commitOutcome).toBe('COMMITTED');
+    expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 3n });
+  });
+
+  describe('from an authority that carries historical hold evidence', () => {
+    test.each(HOLD_ROWS)('%s first: the next COMMITTED mutation classifies COMPLETE_NEW', async (scenario) => {
+      for (const memory of MEMORY) {
+        const { port } = await historicalAuthority(scenario, memory);
+        const next = mutationOf('CAPI-S014', 0x60, port.generations.get(2n), 3n, M2_OUTCOME.COMMITTED);
+        expect((await runIt(port, next)).commitOutcome).toBe('COMMITTED');
+        expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 3n, held: false });
+        expect(k13Of(port, 2n).presence).toBe(1);
+        expect(k13Of(port, 3n).presence).toBe(1);
+      }
+    });
+
+    test.each(HOLD_ROWS)('%s first: the next INDETERMINATE mutation binds and reconciles both ways', async (scenario) => {
+      for (const memory of MEMORY) {
+        for (const terminal of [M2_OUTCOME.COMMITTED, M2_OUTCOME.NOT_COMMITTED]) {
+          const { port } = await historicalAuthority(scenario, 'RETAINED');
+          const next = mutationOf('CAPI-S009', 0x60, port.generations.get(2n), 3n, M2_OUTCOME.INDETERMINATE);
+          expect((await runIt(port, next)).commitOutcome).toBe('INDETERMINATE');
+          expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 2n, held: true });
+          const outcome = await reconcileIt(port, next, terminal, memory);
+          if (terminal === M2_OUTCOME.COMMITTED) {
+            expect(outcome.reconciliation).toBe('RECONCILED_COMMITTED');
+            expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 3n, held: false });
+          } else {
+            expect(outcome.reconciliation).toBe('NOT_COMMITTED');
+            expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 2n, held: false });
+          }
+          for (const w of selectorWrites(port)) expect(w.payload.resolveHoldGeneration).toBeNull();
+        }
+      }
+    });
+  });
+
+  describe('retained-hold lookup over a historical authority (defensive path, not a B3-1 crash state)', () => {
+    // The binding selector replacement and its recovery bind both fail: the next candidate is durable
+    // but unbound, and the SS memory still retains its hold together with the stored record key.
+    async function unboundOverHistorical() {
+      const { port } = await historicalAuthority('CAPI-S014', 'RETAINED');
+      const next = mutationOf('CAPI-S014', 0x60, port.generations.get(2n), 3n, M2_OUTCOME.INDETERMINATE);
+      port.faults = [{ kind: 'REPLACE_SELECTOR', mode: 'BEFORE', remaining: 2 }];
+      await expect(runIt(port, next)).rejects.toThrow(/injected crash BEFORE REPLACE_SELECTOR/);
+      expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 2n, held: false });
+      expect(port.memoryHold).not.toBeNull();
+      expect(await port.readGeneration(3n)).not.toBeNull();
+      return { port, next };
+    }
+
+    test('matching COMMITTED and terminal NOT_COMMITTED evidence reconcile through the derived point lookup', async () => {
+      for (const terminal of [M2_OUTCOME.COMMITTED, M2_OUTCOME.NOT_COMMITTED]) {
+        const { port, next } = await unboundOverHistorical();
+        const outcome = await reconcileIt(port, next, terminal, 'RETAINED');
+        if (terminal === M2_OUTCOME.COMMITTED) {
+          expect(outcome).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', authority: 'COMPLETE_NEW' });
+          expect(hex(outcome.output)).toBe(hex(next.escrow.output));
+          expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 3n });
+        } else {
+          expect(outcome).toMatchObject({ reconciliation: 'NOT_COMMITTED', authority: 'COMPLETE_OLD', output: null });
+          expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 2n });
+          expect(await port.readGeneration(3n)).toBeNull();
+        }
+        expect(port.memoryHold).toBeNull();
+      }
+    });
+
+    test('a mismatched retained/stored hold or parent root fails closed with no write and no output', async () => {
+      const tweaks = [
+        ['heldOutputDigest', bytesOf(32, 0x77)],
+        ['parentKeyedRoot', bytesOf(32, 0x78)],
+      ];
+      for (const [field, value] of tweaks) {
+        const { port, next } = await unboundOverHistorical();
+        port.memoryHold = { ...port.memoryHold, [field]: value };
+        const selector = hex(port.selector);
+        const applied = port.applied.length;
+        expect(await codeOf(reconcileIt(port, next, M2_OUTCOME.COMMITTED, 'RETAINED'))).toBe('NO_RECONCILIATION_PENDING');
+        expect(port.applied.length).toBe(applied);
+        expect(hex(port.selector)).toBe(selector);
+        expect(port.memoryHold).not.toBeNull();
+        expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 2n });
+      }
+    });
+
+    test('with the memory hold LOST the unbound generation stays debris and the next number exceeds it', async () => {
+      const { port } = await unboundOverHistorical();
+      port.memoryHold = null;
+      const next = mutationOf('CAPI-S014', 0x60, port.generations.get(2n), 3n, M2_OUTCOME.COMMITTED);
+      expect(await codeOf(reconcileIt(port, next, M2_OUTCOME.COMMITTED, 'LOST'))).toBe('NO_RECONCILIATION_PENDING');
+      expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 2n, held: false });
+      expect(await port.readGeneration(3n)).not.toBeNull();
+      const applied = port.applied.length;
+      expect(await codeOf(runIt(port, next))).toBe('STALE_PARENT');
+      expect(port.applied.length).toBe(applied);
+      const after = mutationOf('CAPI-S014', 0x70, port.generations.get(2n), 4n, M2_OUTCOME.COMMITTED);
+      expect((await runIt(port, after)).commitOutcome).toBe('COMMITTED');
+      expect(await classifyAt(port, 2n, 4n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 4n });
+    });
+  });
+
+  describe('negative: a present selected hold that is not historical evidence fails closed', () => {
+    // Generation 2 selected alone, its kind-13 record the canonical hold of its own mutation unless tweaked.
+    function selectedWith({ holdTweak = {}, k13 = 'HOLD', sidecar } = {}) {
+      const parent = canonGeneration(1n);
+      const m = mutationOf('CAPI-S014', 0x30, parent, 2n, M2_OUTCOME.COMMITTED, { holdTweak, k13 });
+      const staged = m.staged;
+      const port = derivedPort().store(parent)
+        .store(staged, { escrow: m.escrow, resultEvidence: m.candidate.resultEvidence, sidecar })
+        .select(selfSelector(staged, 2));
+      return { port, m, staged, parent };
+    }
+
+    test('the tombstone and the generation\'s own historical hold validate', async () => {
+      for (const k13 of ['TOMB', 'HOLD']) {
+        const { port } = selectedWith({ k13 });
+        expect(await classifyAt(port, 1n, 2n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 2n });
+      }
+    });
+
+    test('a parent that is the selected generation or a later one is PARTIAL_APPLICATION', async () => {
+      for (const parentGeneration of [2n, 3n]) {
+        const { port } = selectedWith({ holdTweak: { parentGeneration } });
+        const error = await classifyAt(port, 1n, 2n).then(() => null, (e) => e);
+        expect(error.code).toBe('PARTIAL_APPLICATION');
+        expect(error.message).toMatch(/does not name an earlier parent/);
+      }
+    });
+
+    test('a kind-13 record stored under a key that does not derive the selected generation fails closed', async () => {
+      // Another generation, local context, session or scope. The merged manifest layer refuses each
+      // before the record-derived conjunct is reached (HISTORICAL_SUBSET / CONTEXT_MISMATCH); the
+      // conjunct in session-transaction.js is defence in depth for a reader that bypasses that layer.
+      const foreign = [
+        keyFor(5n, K13),
+        keyFor(2n, K13, 2, new Uint8Array(32).fill(0x22)),
+        encodeRecordKey({ scope: 2, localContextId: LOCAL, secureSessionIdentity: new Uint8Array(32).fill(0x42), writeGeneration: 2n, recordKind: K13 }),
+        keyFor(2n, K13, 1),
+      ];
+      const parent = canonGeneration(1n);
+      const m = mutationOf('CAPI-S014', 0x30, parent, 2n, M2_OUTCOME.COMMITTED);
+      for (const k13Key of foreign) {
+        const records = m.staged.records.map((r) => (r.recordKind === K13 ? { ...r, recordKey: k13Key } : r))
+          .sort((a, b) => Buffer.compare(Buffer.from(a.recordKey), Buffer.from(b.recordKey)));
+        const manifestBytes = encodeManifest(records.map((r) => manifestEntry({
+          recordKey: r.recordKey, recordKind: r.recordKind,
+          ciphertextDigest: ciphertextDigest({ recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag }),
+        })));
+        const stored = { ...m.staged, records, manifestBytes };
+        const port = derivedPort().store(parent)
+          .store(stored, { escrow: m.escrow, resultEvidence: m.candidate.resultEvidence })
+          .select(selfSelector(stored, 2));
+        expect(await codeOf(classifyAt(port, 1n, 2n))).toMatch(/^(HISTORICAL_SUBSET|CONTEXT_MISMATCH|PARTIAL_APPLICATION)$/);
+        // And on the ORIGINAL path a candidate staging it is refused before any write.
+        const original = parentFor('CAPI-S014');
+        const error = await runIt(original.port, { ...m, candidate: { ...m.candidate, records, manifestBytes } }).then(() => null, (e) => e);
+        expect(error).not.toBeNull();
+        expect(original.port.applied).toHaveLength(0);
+      }
+    });
+
+    const GROUPS = [
+      ['operation identity', { operationIdentity: bytesOf(32, 0xc1) }],
+      ['original authority digest', { originalAuthorityDigest: bytesOf(32, 0xc2) }],
+      ['original authority reference', { originalAuthorityReference: bytesOf(32, 0xc3) }],
+      ['candidate digest', { candidateDigest: bytesOf(32, 0xc4) }],
+      ['candidate reference', { candidateReference: bytesOf(32, 0xc5) }],
+      ['component-set digest', { componentSetDigest: bytesOf(32, 0xc6) }],
+      ['component-set reference', { componentSetReference: bytesOf(32, 0xc7) }],
+      ['binding', { bindingRef: bytesOf(32, 0xc8) }],
+      ['profile', { profileDigest: bytesOf(32, 0xc9) }],
+      ['original state', { originalApiState: 1 }],
+    ];
+    test.each(GROUPS)('a hold its generation\'s own COMMIT_RESULT does not identify (%s) is PARTIAL_APPLICATION', async (_label, holdTweak) => {
+      const { port } = selectedWith({ holdTweak });
+      const error = await classifyAt(port, 1n, 2n).then(() => null, (e) => e);
+      expect(error.code).toBe('PARTIAL_APPLICATION');
+      expect(error.message).toMatch(/its own commit result does not identify/);
+    });
+
+    test('validateAuthority: a self or later parent rejects without and with a candidate; a lower parent with any root is accepted', async () => {
+      const { staged } = selectedWith();
+      const four = (parentGeneration, parentKeyedRoot = staged.keyedRoot) => ({
+        presence: 1, resultStatus: M2_OUTCOME.INDETERMINATE, parentGeneration, parentKeyedRoot,
+      });
+      const tuple = (g, mutationHold) => ({
+        generation: g.generation, manifestKey: g.manifestKey, manifestBytes: g.manifestBytes,
+        manifestCipherDigest: g.manifestCipherDigest, keyedRoot: g.keyedRoot, mutationHold,
+        sessionBindingDigest: g.sessionBindingDigest,
+      });
+      const alone = (hold) => codeOf(Promise.resolve().then(() => validateAuthority({
+        selector: selfSelector(staged, 2), manifestRootKey: ROOT_KEY, selected: tuple(staged, hold), candidate: null,
+      })));
+      expect(await alone(four(2n))).toBe('PARENT_MISMATCH');
+      expect(await alone(four(3n))).toBe('PARENT_MISMATCH');
+      expect(await alone(four(1n, bytesOf(32, 0xee)))).toBe('OK');
+      expect(await alone({ presence: 0 })).toBe('OK');
+      const next = mutationOf('CAPI-S014', 0x60, staged, 3n, M2_OUTCOME.INDETERMINATE);
+      const bound = (hold) => codeOf(Promise.resolve().then(() => validateAuthority({
+        selector: boundSelector(staged, next.staged), manifestRootKey: ROOT_KEY,
+        selected: tuple(staged, hold), candidate: tuple(next.staged, four(2n)),
+      })));
+      expect(await bound(four(2n))).toBe('CANDIDATE_MISMATCH');
+      expect(await bound(four(3n))).toBe('CANDIDATE_MISMATCH');
+      expect(await bound(four(1n, bytesOf(32, 0xee)))).toBe('OK');
+      expect(await bound({ presence: 0 })).toBe('OK');
+    });
+
+    test('control (F3): a tombstone sidecar projection beside a present record is refused', async () => {
+      const { port } = selectedWith({ sidecar: { presence: 0 } });
+      const error = await classifyAt(port, 1n, 2n).then(() => null, (e) => e);
+      expect(error.code).toBe('PARTIAL_APPLICATION');
+      expect(error.message).toMatch(/differs from its authenticated kind-13 record/);
+    });
+  });
+
+  describe('negative, ORIGINAL path: a candidate staging a hold that is not its own', () => {
+    test.each([
+      ['a foreign operation identity', { operationIdentity: bytesOf(32, 0x99) }],
+      ['a self-parent', { parentGeneration: 2n }],
+    ])('a COMMITTED candidate with %s is EVIDENCE_MISMATCH before any write', async (_label, holdTweak) => {
+      const { port, parent } = parentFor('CAPI-S014');
+      const m = mutationOf('CAPI-S014', 0x30, parent, 2n, M2_OUTCOME.COMMITTED, { holdTweak });
+      const selector = hex(port.selector);
+      const error = await runIt(port, m).then(() => null, (e) => e);
+      expect(error.code).toBe('EVIDENCE_MISMATCH');
+      expect(port.applied).toHaveLength(0);
+      expect(port.applied.map((a) => a.kind)).not.toContain('RELEASE_ESCROW');
+      expect(hex(port.selector)).toBe(selector);
+      expect(await classifyAt(port, 1n, 2n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 1n });
+    });
+  });
+
+  test('negative: a new mutation over a selected parent whose present hold fails the record-derived conjuncts is refused before any write', async () => {
+    for (const parentKind of ['TOMB', 'UNASSOCIATED']) {
+      const g1 = canonGeneration(1n);
+      const first = mutationOf('CAPI-S014', 0x31, g1, 2n, M2_OUTCOME.COMMITTED, { k13: parentKind === 'TOMB' ? 'TOMB' : 'HOLD' });
+      // UNASSOCIATED: the parent's stored COMMIT_RESULT belongs to another mutation than its kind-13 hold.
+      const foreign = envelopeAt('CAPI-S014', 0x51, g1);
+      const port = derivedPort()
+        .store(first.staged, { escrow: first.escrow, resultEvidence: evidenceFor(parentKind === 'TOMB' ? first.envelope : foreign, M2_OUTCOME.COMMITTED) })
+        .select(selfSelector(first.staged, 2));
+      const next = mutationOf('CAPI-S014', 0x60, first.staged, 3n, M2_OUTCOME.COMMITTED);
+      if (parentKind === 'TOMB') {
+        expect((await runIt(port, next)).commitOutcome).toBe('COMMITTED');
+      } else {
+        const error = await runIt(port, next).then(() => null, (e) => e);
+        expect(error.code).toBe('PARTIAL_APPLICATION');
+        expect(port.applied).toHaveLength(0);
+      }
+    }
   });
 });
 
