@@ -19,6 +19,7 @@ import {
 } from '../../../src/storage/m2/beta-gate.js';
 import { evaluateLockAction } from '../../../src/storage/m2/session-lock.js';
 import { createVault } from '../../../src/storage/vault.js';
+import { VaultCryptoErrorCodes } from '../../../src/crypto/vault-errors.js';
 import { FakeVaultDb, seededBytes } from '../../support/fake-vault-db.js';
 
 const PRODUCT_LOCK = 'styx-m2:styx-vault-default';
@@ -705,6 +706,78 @@ describe('R-UX reset gate input is token.isHeld() (act §3 "R-UX reset gate")', 
       currentPassword: PW, newPassword: 'beta-gate-pass-2', profile: 'mobile-low-memory',
     });
     expect(rewrap.reject).toBe('LOCKED_ELSEWHERE');
+  });
+
+  // Contract #461 acceptance: "the R-UX gates accept with a held token". The two success paths
+  // below run the real vault methods with the gate's input while the token is held (peer-reported
+  // acquisition), and assert the accepted result and its storage effect, not only a non-refusal.
+  test('held token → confirmRecoveryReset after MANIFEST_INVALID succeeds: ATOMIC_RESET, vault destroyed', async () => {
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks);
+    const gate = await acquireM2BetaGate({ locks, peer });
+    expect(gate.entered).toBe(true);
+    const db = new FakeVaultDb();
+    const v = createVault({ db, deriveKek, randomBytes: seededBytes(11), todayIso: () => '2026-10-10' });
+    await v.createVault(PW, { profile: 'mobile-low-memory' });
+    await v.putRecord('canary', 'r1', { n: 1 });
+
+    expect(gate.token.isHeld()).toBe(true);
+    const begun = await v.beginRecoveryReset({ restoreResult: 'MANIFEST_INVALID', lockHeld: recoveryLockHeld(gate.token) });
+    expect(begun.confirmation).toBeDefined();
+    expect(gate.token.isHeld()).toBe(true);
+    const done = await v.confirmRecoveryReset({
+      restoreResult: 'MANIFEST_INVALID', lockHeld: recoveryLockHeld(gate.token),
+      confirmed: true, disclosure: true, confirmation: begun.confirmation,
+    });
+    expect(done).toEqual({
+      accepted: true,
+      agreement: { authorityIdentity: 'UNCHANGED', disposition: 'ACTION_RESULT', firstFailingPhase: 'NONE', markerState: 'UNCHANGED' },
+      outcome: 'ATOMIC_RESET',
+      state: 'UNINITIALIZED',
+    });
+    expect(db.destroyed).toBe(1);
+    expect((await v.status()).initialized).toBe(false);
+    // The lock was held throughout and only the held report reached the peer.
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
+    expect(peer.events.map((e) => e[0])).toEqual(['reportHeld']);
+    await gate.release();
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
+  });
+
+  test('held token → recoveryChangePassword on RESTORED_ACTIVE succeeds: re-wrapped, new password unlocks, records kept', async () => {
+    const PW2 = 'beta-gate-pass-2';
+    const locks = fakeLocks();
+    const peer = recordingPeer(locks);
+    const gate = await acquireM2BetaGate({ locks, peer });
+    expect(gate.entered).toBe(true);
+    const db = new FakeVaultDb();
+    const v = createVault({ db, deriveKek, randomBytes: seededBytes(11), todayIso: () => '2026-10-10' });
+    await v.createVault(PW, { profile: 'mobile-low-memory' });
+    await v.putRecord('canary', 'r1', { n: 1 });
+    const recordsBefore = JSON.stringify([...db.stores.get('canary')]);
+    const wrappedBefore = db.wrapper().wrappedRootKey;
+
+    expect(gate.token.isHeld()).toBe(true);
+    const out = await v.recoveryChangePassword({
+      restoreResult: 'RESTORED_ACTIVE', lockHeld: recoveryLockHeld(gate.token),
+      currentPassword: PW, newPassword: PW2, profile: 'mobile-low-memory',
+    });
+    expect(out).toEqual({
+      accepted: true,
+      agreement: { authorityIdentity: 'UNCHANGED', disposition: 'PASSWORD_REWRAP', firstFailingPhase: 'NONE', markerState: 'UNCHANGED' },
+      effect: 'ATOMIC_WRAPPER_REPLACEMENT_ONLY',
+      state: 'UNLOCKED',
+    });
+    expect(db.destroyed).toBe(0);
+    expect(db.wrapper().wrappedRootKey).not.toEqual(wrappedBefore);
+    expect(JSON.stringify([...db.stores.get('canary')])).toBe(recordsBefore);
+    const reopened = createVault({ db, deriveKek, randomBytes: seededBytes(12), todayIso: () => '2026-10-10' });
+    await expect(reopened.unlock(PW)).rejects.toMatchObject({ code: VaultCryptoErrorCodes.WRONG_PASSWORD });
+    await reopened.unlock(PW2);
+    expect((await reopened.getRecord('canary', 'r1')).value).toEqual({ n: 1 });
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(true);
+    await gate.release();
+    expect(locks.held.has(PRODUCT_LOCK)).toBe(false);
   });
 
   test('a refused gate exposes a token whose input is false, so confirm is refused too', async () => {
