@@ -10,7 +10,7 @@ It implements nothing, imports no legacy state, releases no output, deletes no b
 
 ## 2. Frozen inputs and ownership
 
-The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `1e6cf6c551357db34f892fc418fa696091a1d8a3`, SHA-256 `dcc732a3efec371617aafc43e5882f5985f0e523403bf4b54fb86ef9a050abc6`; C-FMT `docs/architecture/m2/storage-format.md` at `5086398490289e4be5d9d3b89309a0fc94cac7ba`, SHA-256 `9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `c669e0361f746186af008a88ea17d6b6c968be9c`, SHA-256 `d60c67ec96e294be4f4c526693f2c7a3b0d86237ec433a2007a299c6d167701a`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
+The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `a7f09ab0e3f0aec9f9a3e8088ee5ab383db7b28e`, SHA-256 `f37915f11d178aefe2918d457d29eeb345c0ec508087cc2527e7c1a9d223059c`; C-FMT `docs/architecture/m2/storage-format.md` at `021d6a67b97416a7e35814b745ba3124deaac69e`, SHA-256 `bd94aed08e57a8348157095fda660b189dbc444864b8ba8427630f2659d8d13d`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `94db69c744a05cbd6dbb9885d8830b2d2c19cbb0`, SHA-256 `4894991c5fcaaae613ddc630eb5277c7f96e9f946a33b0555af8ede300146848`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
 
 Every transition and invariant is classified in `dependencyCoverage`. `DEPENDENCY_DERIVED` facts are only those entailed by the cited exact fields. `C_REC_OWNED` rules are authorized recovery consequences whose consumed dependency preconditions are cited and unchanged. A missing or insufficient field is BLOCK; prose or an evidence bundle cannot fill it.
 
@@ -22,7 +22,7 @@ Recovery begins only with one complete C-REST result and its reachable condition
 
 ## 4. Indeterminate reconciliation
 
-For `RESTORED_RECONCILIATION_REQUIRED`, the sole operation is `RECONCILE_INDETERMINATE`. The `reconciliation` record restates without extension the exact C-MUT fields cited by owner decision `5906058719`: original terminal COMMITTED selects complete new authority and resolves the hold, retaining internal evidence after interrupted emission but creating no AP reconciliation row without a previously emitted reference; original terminal NOT_COMMITTED restores complete old authority, discards escrow and resolves the hold. After a prior INDETERMINATE, matching COMMITTED selects the staged candidate once, retains the response hold until the adapter-local response-emission call succeeds, and returns the original success code and committed original output; matching terminal NOT_COMMITTED discards candidate and escrow and clears the hold when the no-output response is formed; continued INDETERMINATE leaves the hold unchanged and emits no output; interrupted committed reconciliation may return the same escrow again and clears only on local emission success, never AP receipt acknowledgement.
+For `RESTORED_RECONCILIATION_REQUIRED`, the sole operation is `RECONCILE_INDETERMINATE`. The `reconciliation` record restates without extension the exact C-MUT fields cited by owner decision `5906058719`: original terminal COMMITTED selects complete new authority and resolves the hold, retaining internal evidence after interrupted emission but creating no AP reconciliation row without a previously emitted reference; original terminal NOT_COMMITTED restores complete old authority, discards escrow and resolves the hold. After a prior INDETERMINATE, matching COMMITTED selects the staged candidate once, retains the response hold until the adapter-local response-emission call succeeds, and returns the original success code and committed original output; matching terminal NOT_COMMITTED discards candidate and escrow and clears the hold when the no-output response is formed; continued INDETERMINATE leaves the hold unchanged and emits no output; interrupted committed reconciliation may return the same escrow again and clears only on local emission success, never AP receipt acknowledgement. Historical kind-13 evidence in selected authority neither reopens an unresolved mutation nor creates AP output-replay eligibility. Here "resolves the hold" means resolution by authenticated selection alone and never a tombstone write or rewrite of the kind-13 record.
 
 The exact outcome rows and eight related crash-boundary identifiers are copied. C-REC adds no terminal rule, exposes no candidate evidence, retries no original mutation, regenerates no output, consumes no KeyPackage, and permits no unrelated state-changing operation. Authority, hold, candidate, escrow and repeat behavior are exactly C-MUT's rules; C-FMT and C-REST remain fail-closed preconditions.
 
@@ -30,7 +30,7 @@ The exact outcome rows and eight related crash-boundary identifiers are copied. 
 
 For the M2 recovery surface, password re-wrap requires successful wrapper authentication and `RESTORED_ACTIVE` or `RESTORED_EMPTY`. This owned precondition neither grants nor removes the existing vault password-change facility for `NO_M2_STATE` or `LEGACY_ONLY`. It atomically replaces only the wrapper around the same Root Storage Key; every M2 byte and fact remains identical. A crash leaves the old or new valid wrapper. Re-wrap is unavailable during reconciliation. Wrong or forgotten credentials permit no re-wrap, reset-by-default, salvage, migration or record oracle; there is no forgotten-password recovery.
 
-`INCOMPATIBLE_BUILD` has only `SHOW_COMPATIBLE_BUILD`: identify reader profile `CFMT_EXACT_9FF945E1`, preserve and stop, and read or change no byte. A feature flag, acknowledgement or partial match cannot widen eligibility. It is not reset-eligible.
+`INCOMPATIBLE_BUILD` has only `SHOW_COMPATIBLE_BUILD`: identify reader profile `CFMT_EXACT_BD94AED0`, preserve and stop, and read or change no byte. A feature flag, acknowledgement or partial match cannot widen eligibility. It is not reset-eligible.
 
 ## 6. Legacy coexistence and re-establishment
 
@@ -91,27 +91,27 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
     "dependencies": [
       {
         "card": "C-MUT",
-        "commit": "1e6cf6c551357db34f892fc418fa696091a1d8a3",
+        "commit": "a7f09ab0e3f0aec9f9a3e8088ee5ab383db7b28e",
         "path": "docs/architecture/m2/mutation-table.md",
-        "sha256": "dcc732a3efec371617aafc43e5882f5985f0e523403bf4b54fb86ef9a050abc6",
-        "evidenceBundleSha256": "8d32685bdaba06ed78ed7fd1b5e1f68a492345cd1c0c65f1c818dd7336015ff1",
-        "ratification": "issue-324-owner-act-c-api-rr-dcc732a3"
+        "sha256": "f37915f11d178aefe2918d457d29eeb345c0ec508087cc2527e7c1a9d223059c",
+        "evidenceBundleSha256": "d55e2304284aebcfdb4efe584a890a991ca0aca3aa5b7af894a27e72f4d9f5cf",
+        "ratification": "issue-324-owner-act-kind13-docs-f37915f1"
       },
       {
         "card": "C-FMT",
-        "commit": "5086398490289e4be5d9d3b89309a0fc94cac7ba",
+        "commit": "021d6a67b97416a7e35814b745ba3124deaac69e",
         "path": "docs/architecture/m2/storage-format.md",
-        "sha256": "9ff945e1f5ec6807def18362ca23c5117740f7c0fa52dc65a7b9ede963249e9e",
-        "evidenceBundleSha256": "cc6354a818f834384cd997df2c1f393e8ae44b002cf0f15dd8f677ce50507cc8",
-        "ratification": "issue-319-owner-act-c-api-rr-9ff945e1"
+        "sha256": "bd94aed08e57a8348157095fda660b189dbc444864b8ba8427630f2659d8d13d",
+        "evidenceBundleSha256": "237bc09eaff7e3f7576b281f08507d9c8991f50d9bbcedfe89c1221df7a94484",
+        "ratification": "issue-468-owner-act-kind13-docs-bd94aed0"
       },
       {
         "card": "C-REST",
-        "commit": "c669e0361f746186af008a88ea17d6b6c968be9c",
+        "commit": "94db69c744a05cbd6dbb9885d8830b2d2c19cbb0",
         "path": "docs/architecture/m2/restore-compatibility.md",
-        "sha256": "d60c67ec96e294be4f4c526693f2c7a3b0d86237ec433a2007a299c6d167701a",
-        "evidenceBundleSha256": "c2ee8a88ef4852b7c0a41f378cc835ce0a9290d216245a9652018b7fe13599a8",
-        "ratification": "issue-319-owner-act-c-api-rr-9ff945e1"
+        "sha256": "4894991c5fcaaae613ddc630eb5277c7f96e9f946a33b0555af8ede300146848",
+        "evidenceBundleSha256": "ae943ad95f28698accd593e5cf660ac864ee8df45d31e97a734e7a0758194dd5",
+        "ratification": "issue-468-owner-act-kind13-docs-bd94aed0"
       }
     ]
   },
@@ -841,7 +841,7 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
   "compatibleBuild": {
     "result": "INCOMPATIBLE_BUILD",
     "disposition": "SHOW_COMPATIBLE_BUILD",
-    "readerProfile": "CFMT_EXACT_9FF945E1",
+    "readerProfile": "CFMT_EXACT_BD94AED0",
     "preserveAndStop": true,
     "readsOrMutatesBytes": false,
     "resetEligible": false
