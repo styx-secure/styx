@@ -1898,8 +1898,12 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
   // The ratified kind-13 v2 layout stores heldOutputDigest/heldOutputReference as b32, while C-MUT
   // requires them null for a NONE output (KIND_NONE_REQUIRES_DIGEST_AND_REFERENCE_NULL). A present
   // canonical kind-13 record therefore exists only for the rows with an output; for the two NONE rows
-  // (CAPI-S006, CAPI-S016) no canonical hold plaintext can be encoded at all (pinned below, a residual
-  // owned by the KIND13-DOCS / C-FMT cascade, not by this card).
+  // (CAPI-S006, CAPI-S016) no canonical hold plaintext can be encoded at all. Owner disposition of
+  // finding R3 on #468 (issue comment 6123056674): those two rows are excluded from this card's
+  // INDETERMINATE matrix and deferred to a codec/format card; this is a temporary deferral, not a
+  // waiver. Fail-closed behaviour stays required and is pinned below: encoding a present hold throws,
+  // and an INDETERMINATE request staging a tombstone is EVIDENCE_MISMATCH before any write. Their
+  // C-API INDETERMINATE obligations remain outstanding and are not met by this refusal.
   const HOLD_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind !== 'NONE');
   const NONE_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind === 'NONE');
   const tomb = (kind) => encodePlaintext(kind, { presence: 0 });
@@ -2180,6 +2184,22 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
         expect(hold.heldOutputDigest).toBeNull();
         expect(() => encodePlaintext(K13, hold)).toThrow(/heldOutputDigest has wrong byte width/);
       }
+    });
+    // #468 R3 disposition (comment 6123056674): fail closed, no waiver beyond that deferral.
+    test.each(['CAPI-S006', 'CAPI-S016'])('%s (NONE output, deferred by the #468 R3 disposition): an INDETERMINATE request staging a tombstone is EVIDENCE_MISMATCH before any write', async (scenario) => {
+      expect(NONE_ROWS).toContain(scenario);
+      const { port, parent } = parentFor(scenario);
+      const m = mutationOf(scenario, 0x30, parent, 2n, M2_OUTCOME.INDETERMINATE, { k13: 'TOMB' });
+      const selector = hex(port.selector);
+      const error = await runIt(port, m).then(() => null, (e) => e);
+      expect(error).not.toBeNull();
+      expect(error.code).toBe('EVIDENCE_MISMATCH');
+      expect(error.message).toBe('the candidate\'s staged kind-13 record is not the present hold this INDETERMINATE request writes');
+      expect(port.applied).toHaveLength(0);
+      expect(port.memoryHold).toBeNull();
+      expect(hex(port.selector)).toBe(selector);
+      expect(await port.readGeneration(2n)).toBeNull();
+      expect(await classifyAt(port, 1n, 2n)).toMatchObject({ authority: 'COMPLETE_OLD', generation: 1n, held: false });
     });
     test.each(HOLD_ROWS)('%s: INDETERMINATE, then COMMITTED reconciliation classifies COMPLETE_NEW', async (scenario) => {
       for (const memory of MEMORY) {
