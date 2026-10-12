@@ -2546,10 +2546,15 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
 
     test('the same parent fault with memory LOST is refused before any decision', async () => {
       const { port, next } = await boundOver('UNASSOCIATED');
+      const selector = hex(port.selector);
       const applied = port.applied.length;
       const error = await reconcileIt(port, next, M2_OUTCOME.COMMITTED, 'LOST').then(() => null, (e) => e);
       expect(error.code).toBe('PARTIAL_APPLICATION');
+      // The historical-association rule itself refuses (at the base the old physical-parent rule did).
+      expect(error.message).toMatch(/generation 2 stores a present hold that its own commit result does not identify/);
       expect(port.applied.length).toBe(applied);
+      expect(hex(port.selector)).toBe(selector);
+      expect(port.memoryHold).toBeNull();
     });
 
     test('control: a valid historical parent reconciles COMMITTED with memory RETAINED', async () => {
