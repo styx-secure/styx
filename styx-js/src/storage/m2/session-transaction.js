@@ -1069,6 +1069,17 @@ export async function runMutation(input) {
   const candidateHoldProblem = presentHoldProblem(
     candidate.records, candidate.resultEvidence, candidate.generation, candidate.manifestKey);
   if (candidateHoldProblem !== null) fail(CODE.EVIDENCE_MISMATCH, candidateHoldProblem);
+  // Amended F3 (row T1): WRITE_HOLD must agree with the staged kind-13 envelope. A candidate eligible for
+  // an uncertain outcome whose kind-13 record is a canonical plaintext must stage exactly the present hold
+  // this request writes (all 21 fields), never a tombstone or another hold. A non-canonical (filler)
+  // plaintext keeps the #457 behaviour (B-CHR item 12).
+  if (outcome === M2_OUTCOME.INDETERMINATE) {
+    const staged = canonicalHoldRecord(candidate.records);
+    if (staged !== undefined && !sameHold(staged, buildHold(envelope, candidate))) {
+      fail(CODE.EVIDENCE_MISMATCH,
+        'the candidate\'s staged kind-13 record is not the present hold this INDETERMINATE request writes');
+    }
+  }
 
   const memoryHold = holdRecordFacts(await storage.readMemoryHold());
   if (memoryHold !== null) {
@@ -1278,6 +1289,17 @@ function recordDerivedHold(records) {
   if (record === undefined) return null;
   let authenticated;
   try { authenticated = decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext); } catch { return null; }
+  if (authenticated.presence !== 1) return null;
+  return holdRecordFacts(authenticated, 'authenticated mutationHold');
+}
+
+// The canonical kind-13 record of a list of records: the record-derived present hold, null for a
+// canonical tombstone, or undefined when there is no canonical kind-13 plaintext (filler, B-CHR item 12).
+function canonicalHoldRecord(records) {
+  const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  if (record === undefined) return undefined;
+  let authenticated;
+  try { authenticated = decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext); } catch { return undefined; }
   if (authenticated.presence !== 1) return null;
   return holdRecordFacts(authenticated, 'authenticated mutationHold');
 }
@@ -1663,6 +1685,30 @@ export async function reconcileIndeterminate(input) {
       fail(CODE.EVIDENCE_MISMATCH,
         'the bound candidate\'s stored commit result does not identify the held mutation; nothing is '
         + 'selected or discarded and the hold is left unchanged');
+    }
+    // KIND13-RESOLVE change 1 (rows F3, T1): the candidate's real stored hold, never an imagined one.
+    // A canonical kind-13 record in the bound candidate must be exactly the held hold.
+    const staged = canonicalHoldRecord(bound.records);
+    if (staged !== undefined && !sameHold(staged, held)) {
+      fail(CODE.EVIDENCE_MISMATCH,
+        'the bound candidate\'s stored kind-13 record is not the held hold; nothing is selected or '
+        + 'discarded and the hold is left unchanged');
+    }
+    // KIND13-RESOLVE change 2 (rows F1, F4, F8): the selected parent the bound selector names is read
+    // through the trusted reader and the stored selector must validate as one consistent authority with
+    // the bound candidate before evidence selects or discards anything. The retained lookup validates
+    // its parent in retainedHoldTarget; the durable hold was validated in durableHeldEnvelope.
+    if (target === selector.candidateGeneration && selector.candidateGeneration !== selector.generation) {
+      const parent = generationFactsFromStorage(
+        await storage.readGeneration(selector.generation), selector.generation, manifestRootKey,
+      );
+      try {
+        validateAuthority({
+          selector: storedSelector, manifestRootKey, selected: authorityTuple(parent), candidate: authorityTuple(bound),
+        });
+      } catch (e) {
+        partial(`the stored selector is not consistent with the generations it binds: ${e.message}`);
+      }
     }
   }
 

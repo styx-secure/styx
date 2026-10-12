@@ -2463,6 +2463,21 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
 
   describe('negative, ORIGINAL path: a candidate staging a hold that is not its own', () => {
     test.each([
+      ['a canonical tombstone', { k13: 'TOMB' }],
+      ['a present hold whose reconciliation reference is not the request', { holdTweak: { reconciliationReference: bytesOf(32, 0x77) } }],
+      ['a present hold whose held output is not the request', { holdTweak: { heldOutputReference: bytesOf(32, 0x78) } }],
+    ])('an INDETERMINATE candidate staging %s is EVIDENCE_MISMATCH before any write (amended F3: WRITE_HOLD agrees with the staged record)', async (_label, opts) => {
+      const { port, parent } = parentFor('CAPI-S014');
+      const m = mutationOf('CAPI-S014', 0x30, parent, 2n, M2_OUTCOME.INDETERMINATE, opts);
+      const selector = hex(port.selector);
+      const error = await runIt(port, m).then(() => null, (e) => e);
+      expect(error.code).toBe('EVIDENCE_MISMATCH');
+      expect(error.message).toBe('the candidate\'s staged kind-13 record is not the present hold this INDETERMINATE request writes');
+      expect(port.applied).toHaveLength(0);
+      expect(port.memoryHold).toBeNull();
+      expect(hex(port.selector)).toBe(selector);
+    });
+    test.each([
       ['a foreign operation identity', { operationIdentity: bytesOf(32, 0x99) }],
       ['a self-parent', { parentGeneration: 2n }],
     ])('a COMMITTED candidate with %s is EVIDENCE_MISMATCH before any write', async (_label, holdTweak) => {
@@ -2496,6 +2511,64 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
         expect(port.applied).toHaveLength(0);
       }
     }
+  });
+
+  describe('negative, bound reconciliation: the selected parent and the bound candidate\'s stored hold are validated before any decision', () => {
+    // Generation 2 selected (its own historical hold), generation 3 bound by an INDETERMINATE mutation.
+    async function boundOver(parentFault) {
+      const g1 = canonGeneration(1n);
+      const first = mutationOf('CAPI-S014', 0x31, g1, 2n, M2_OUTCOME.COMMITTED);
+      const foreign = envelopeAt('CAPI-S014', 0x51, g1);
+      const port = derivedPort()
+        .store(first.staged, { escrow: first.escrow, resultEvidence: evidenceFor(first.envelope, M2_OUTCOME.COMMITTED) })
+        .select(selfSelector(first.staged, 2));
+      const next = mutationOf('CAPI-S014', 0x60, first.staged, 3n, M2_OUTCOME.INDETERMINATE);
+      expect((await runIt(port, next)).commitOutcome).toBe('INDETERMINATE');
+      if (parentFault === 'UNASSOCIATED') {
+        // The selected parent's stored COMMIT_RESULT no longer identifies its kind-13 hold (stored state fault).
+        port.generations.get(2n).resultEvidence = evidenceFor(foreign, M2_OUTCOME.COMMITTED);
+      }
+      return { port, next };
+    }
+
+    test.each(['COMMITTED', 'NOT_COMMITTED'])('%s with memory RETAINED over a parent whose present hold its own commit result does not identify is PARTIAL_APPLICATION with no write and no output', async (outcome) => {
+      const { port, next } = await boundOver('UNASSOCIATED');
+      const retained = port.memoryHold;
+      const selector = hex(port.selector);
+      const applied = port.applied.length;
+      const error = await reconcileIt(port, next, M2_OUTCOME[outcome], 'RETAINED').then(() => null, (e) => e);
+      expect(error.code).toBe('PARTIAL_APPLICATION');
+      expect(error.message).toMatch(/generation 2 stores a present hold that its own commit result does not identify/);
+      expect(port.applied.length).toBe(applied);
+      expect(hex(port.selector)).toBe(selector);
+      expect(port.memoryHold).toBe(retained);
+    });
+
+    test('the same parent fault with memory LOST is refused before any decision', async () => {
+      const { port, next } = await boundOver('UNASSOCIATED');
+      const applied = port.applied.length;
+      const error = await reconcileIt(port, next, M2_OUTCOME.COMMITTED, 'LOST').then(() => null, (e) => e);
+      expect(error.code).toBe('PARTIAL_APPLICATION');
+      expect(port.applied.length).toBe(applied);
+    });
+
+    test('control: a valid historical parent reconciles COMMITTED with memory RETAINED', async () => {
+      const { port, next } = await boundOver(null);
+      const outcome = await reconcileIt(port, next, M2_OUTCOME.COMMITTED, 'RETAINED');
+      expect(outcome).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', authority: 'COMPLETE_NEW' });
+      expect(await classifyAt(port, 2n, 3n)).toMatchObject({ authority: 'COMPLETE_NEW', generation: 3n });
+    });
+
+    test('a retained hold that is not the bound candidate\'s stored kind-13 record is EVIDENCE_MISMATCH with no write', async () => {
+      const { port, next } = await boundOver(null);
+      // The SS memory copy differs from the stored record only in a field outside RESULT_HOLD_PAIRS.
+      port.memoryHold = { ...port.memoryHold, heldOutputReference: bytesOf(32, 0x79) };
+      const applied = port.applied.length;
+      const error = await reconcileIt(port, next, M2_OUTCOME.COMMITTED, 'RETAINED').then(() => null, (e) => e);
+      expect(error.code).toBe('EVIDENCE_MISMATCH');
+      expect(error.message).toMatch(/stored kind-13 record is not the held hold/);
+      expect(port.applied.length).toBe(applied);
+    });
   });
 });
 

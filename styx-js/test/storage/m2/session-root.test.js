@@ -1263,7 +1263,7 @@ describe('reviewer-confirmed defects — targeted regressions', () => {
     }
   });
 
-  test('the selected unresolved hold must name the selector authority', async () => {
+  test('a selected present hold must name a strictly earlier parent (row F8: historical evidence, root not compared)', async () => {
     const wrong = await asyncCodeOf(() => run({
       selected: facts(v, {
         mutationHold: { presence: 1, resultStatus: 3, parentGeneration: BigInt(v.generation), parentKeyedRoot: hex(v.keyedRootHex) },
