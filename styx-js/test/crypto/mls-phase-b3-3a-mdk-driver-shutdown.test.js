@@ -3,23 +3,29 @@
 // scripts written to a private temporary directory; event-order cases use a stub ChildProcess. Real-peer cases
 // use the constructor seam `drainTimeoutMs` (BOUND), so every case settles well inside Jest's default 5 s timeout.
 // Every case carries its own short deadline, so at a driver without the seams it fails fast instead of hanging.
+// Stub cases with the bound BS assert the phase boundaries (acknowledgement B, kill plus drain 2 x B, live plus
+// drain near 3 x B); the real-peer cases are smoke tests with an upper bound and a small scheduling slack.
 import { spawn as spawnProcess } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
+import { B33A_ERROR } from '../../spikes/marmot-phase-b3-3a/b3-3a-canonical.mjs';
 import { MdkB33aProcess } from '../../spikes/marmot-phase-b3-3a/b3-3a-mdk-driver.mjs';
 
 const ACK = '{"id":1,"ok":true,"result":{"checkpointed":true}}';
 const QUARANTINED = '{"id":1,"ok":false,"error":{"code":"mdk_peer_quarantined","details":null,'
   + '"message":"quarantined"}}';
-const BOUND = 300;
+const BOUND = 300; // real-peer cases
+const BS = 200; // stub phase cases
+const SLACK = 250; // scheduling slack for upper bounds
+const ACK_RESPONSE = { id: 1, ok: true, result: { checkpointed: true } };
 const FAKES = {
   'ack-exit0': `read line\nprintf '%s\\n' '${ACK}'\nexit 0`,
   'ack-exit3': `read line\nprintf '%s\\n' '${ACK}'\nexit 3`,
-  'ack-holder': `read line\nprintf '%s\\n' '${ACK}'\n(sleep 3) &\nexit 0`,
+  'ack-holder': `read line\nprintf '%s\\n' '${ACK}'\n(exec sleep 3) &\necho $! > "$0.pid"\nexit 0`,
   'ack-live': `read line\nprintf '%s\\n' '${ACK}'\nexec sleep 3`,
   dead: 'exit 0',
   'quarantine-closed-stdin': `read line\nexec 0<&-\nprintf '%s\\n' '${QUARANTINED}'\nsleep 0.2\nexit 0`,
@@ -30,6 +36,7 @@ const FAKES = {
 let fakes;
 let uncaught = [];
 const onUncaught = (error) => { uncaught.push(error); };
+const onUnhandled = (reason) => { uncaught.push(reason instanceof Error ? reason : new Error(`unhandled: ${reason}`)); };
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const flush = async () => { for (let i = 0; i < 5; i += 1) await new Promise((r) => { setImmediate(r); }); };
 
@@ -40,9 +47,11 @@ beforeAll(() => {
     chmodSync(join(fakes, `${name}.sh`), 0o700);
   }
   process.on('uncaughtException', onUncaught);
+  process.on('unhandledRejection', onUnhandled);
 });
 afterAll(() => {
   process.off('uncaughtException', onUncaught);
+  process.off('unhandledRejection', onUnhandled);
   rmSync(fakes, { recursive: true, force: true });
 });
 beforeEach(() => { uncaught = []; });
@@ -99,7 +108,11 @@ class StubChild extends EventEmitter {
     });
   }
 
-  kill(signal) { this.killed.push(signal); return true; }
+  kill(signal) {
+    this.killed.push(signal);
+    if (this.killError) this.emit('error', this.killError);
+    return !this.killError;
+  }
 
   respond(value) { this.stdout.write(`${JSON.stringify(value)}\n`); }
 
@@ -117,10 +130,10 @@ class StubChild extends EventEmitter {
     await flush();
   }
 }
-function stubPeer() {
+function stubPeer(options = {}) {
   const stub = new StubChild();
   let used = false;
-  const peer = new MdkB33aProcess('stub-mdk-peer', { spawn: () => { used = true; return stub; } });
+  const peer = new MdkB33aProcess('stub-mdk-peer', { ...options, spawn: () => { used = true; return stub; } });
   if (!used) throw new Error('driver did not use the injected spawn');
   return { peer, stub };
 }
@@ -174,36 +187,46 @@ describe('B3.3a MDK driver shutdown (C-MDKDRV-SHUTDOWN)', () => {
     await expect(withDeadline(peer.close(), 4000)).resolves.toBeUndefined();
   });
 
-  test('ack then exit 0, a descendant holds stdout open: close() rejects within the drain bound', async () => {
+  test('ack then exit 0, a descendant holds stdout open: close() rejects at the drain bound after exit', async () => {
     const started = Date.now();
-    const error = await rejection(withDeadline(realPeer('ack-holder').peer.close(), 2000));
-    expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 300 ms/);
-    expect(error.code).toBe('mdk_peer_shutdown_timeout');
-    expect(Date.now() - started).toBeGreaterThanOrEqual(BOUND - 20);
+    const holderPid = join(fakes, 'ack-holder.sh.pid');
+    try {
+      const error = await rejection(withDeadline(realPeer('ack-holder').peer.close(), 3 * BOUND + 500));
+      expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 300 ms/);
+      expect(error.code).toBe('mdk_peer_shutdown_timeout');
+      const elapsed = Date.now() - started;
+      expect(elapsed).toBeGreaterThanOrEqual(BOUND - 20);
+      expect(elapsed).toBeLessThan(BOUND + SLACK);
+    } finally {
+      if (existsSync(holderPid)) {
+        try { process.kill(Number(readFileSync(holderPid, 'utf8')), 'SIGKILL'); } catch { /* already gone */ }
+        rmSync(holderPid, { force: true });
+      }
+    }
   });
 
-  test('ack but the peer stays alive: it is killed and close() rejects within 2 x the bound', async () => {
+  test('ack but the peer stays alive: killed after the live bound, close() rejects (smoke, bound 3 x B)', async () => {
     const handle = realPeer('ack-live');
     const started = Date.now();
-    const error = await rejection(withDeadline(handle.peer.close(), 2500));
+    const error = await rejection(withDeadline(handle.peer.close(), 3 * BOUND + 500));
     expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 300 ms/);
     expect(error.code).toBe('mdk_peer_shutdown_timeout');
     expect(handle.child.signalCode).toBe('SIGKILL');
     const elapsed = Date.now() - started;
     expect(elapsed).toBeGreaterThanOrEqual(BOUND - 20);
-    expect(elapsed).toBeLessThan(3 * BOUND + 1000);
+    expect(elapsed).toBeLessThan(2 * BOUND + SLACK); // immediate ack: live bound, then a prompt exit after SIGKILL
   });
 
-  test('live peer never acknowledges: killed after the bound, close() rejects within 3 x the bound', async () => {
+  test('live peer never acknowledges: killed after the bound, close() rejects (smoke, bound 2 x B)', async () => {
     const handle = realPeer('silent-live');
     const started = Date.now();
-    const error = await rejection(withDeadline(handle.peer.close(), 2500));
+    const error = await rejection(withDeadline(handle.peer.close(), 3 * BOUND + 500));
     expect(error.message).toMatch(/^MDK peer did not acknowledge checkpoint_and_exit within 300 ms/);
     expect(error.code).toBe('mdk_peer_shutdown_timeout');
     expect(handle.child.signalCode).toBe('SIGKILL');
     const elapsed = Date.now() - started;
     expect(elapsed).toBeGreaterThanOrEqual(BOUND - 20);
-    expect(elapsed).toBeLessThan(3 * BOUND + 1000);
+    expect(elapsed).toBeLessThan(2 * BOUND + SLACK);
   });
 
   test('stub child: exit before the ack is read does not reject; close() resolves after stdio closes', async () => {
@@ -277,6 +300,7 @@ describe('B3.3a MDK driver shutdown (C-MDKDRV-SHUTDOWN)', () => {
     const notRunning = await rejection(peer.request('hello'));
     expect(notRunning.code).toBe('mdk_peer_not_running');
   });
+
   test('stub child: an error answer on a live peer kills it at once; close() rejects with that error', async () => {
     const { peer, stub } = stubPeer();
     const closing = rejection(peer.close());
@@ -322,5 +346,149 @@ describe('B3.3a MDK driver shutdown (C-MDKDRV-SHUTDOWN)', () => {
     for (const drainTimeoutMs of [0, -1, 1.5, '300', Number.NaN]) {
       expect(() => new MdkB33aProcess('stub-mdk-peer', { spawn, drainTimeoutMs })).toThrow(TypeError);
     }
+  });
+  test('stub phases: no acknowledgement and SIGKILL ignored: ack timeout at B, drain expiry at 2 x B', async () => {
+    const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+    const started = Date.now();
+    const closing = rejection(peer.close());
+    await sleep(BS - 60);
+    expect(stub.killed).toEqual([]);
+    await sleep(120);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    expect(await state(closing)).toBe('pending');
+    const error = await withDeadline(closing, 2 * BS + 500);
+    const elapsed = Date.now() - started;
+    expect(error.message).toMatch(/^MDK peer did not acknowledge checkpoint_and_exit within 200 ms/);
+    expect(error.code).toBe('mdk_peer_shutdown_timeout');
+    expect(elapsed).toBeGreaterThanOrEqual(2 * BS - 20);
+    expect(elapsed).toBeLessThan(2 * BS + SLACK);
+    // A late acknowledgement and a late stream closure keep the rejection; close() returns the same promise.
+    stub.respond(ACK_RESPONSE);
+    stub.exit(null, 'SIGKILL');
+    await stub.closeStdio(null, 'SIGKILL');
+    expect(await rejection(peer.close())).toBe(error);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    expect(stub.written).toEqual([{ id: 1, op: 'checkpoint_and_exit' }]);
+  });
+
+  test('stub phases: acknowledgement near B, then live and drain expiry near 3 x B', async () => {
+    const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+    const started = Date.now();
+    const closing = rejection(peer.close());
+    await sleep(BS - 40);
+    stub.respond(ACK_RESPONSE);
+    const acked = Date.now();
+    await sleep(BS - 60);
+    expect(stub.killed).toEqual([]);
+    await sleep(120);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    expect(await state(closing)).toBe('pending');
+    const error = await withDeadline(closing, 3 * BS + 500);
+    const elapsed = Date.now() - started;
+    expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 200 ms/);
+    expect(error.code).toBe('mdk_peer_shutdown_timeout');
+    expect(Date.now() - acked).toBeGreaterThanOrEqual(2 * BS - 20);
+    expect(elapsed).toBeGreaterThanOrEqual(3 * BS - 60);
+    expect(elapsed).toBeLessThan(3 * BS + SLACK);
+    stub.exit(null, 'SIGKILL');
+    await stub.closeStdio(null, 'SIGKILL');
+    expect(await rejection(peer.close())).toBe(error);
+    expect(stub.killed).toEqual(['SIGKILL']);
+  });
+
+  test('stub child: a late acknowledgement after its bound is ignored; a concurrent request gets the exit', async () => {
+    const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+    const other = rejection(peer.request('public_projection'));
+    const closing = rejection(peer.close());
+    await flush();
+    expect(stub.written).toEqual([{ id: 1, op: 'public_projection' }, { id: 2, op: 'checkpoint_and_exit' }]);
+    await sleep(BS + 50);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    stub.respond({ id: 2, ok: true, result: { checkpointed: true } });
+    await flush();
+    expect(await state(other)).toBe('pending');
+    stub.exit(null, 'SIGKILL');
+    await stub.closeStdio(null, 'SIGKILL');
+    const otherError = await withDeadline(other, 1000);
+    expect(otherError.code).toBe('mdk_peer_exited');
+    const error = await withDeadline(closing, 1000);
+    expect(error.message).toMatch(/^MDK peer did not acknowledge checkpoint_and_exit within 200 ms/);
+  });
+
+  test('stub child: an error on a live child during close(): killed once, close() rejects with it', async () => {
+    const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+    const closing = rejection(peer.close());
+    await flush();
+    const eperm = Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+    const started = Date.now();
+    stub.emit('error', eperm);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    const error = await withDeadline(closing, BS + 500);
+    const elapsed = Date.now() - started;
+    expect(error).toBe(eperm);
+    expect(elapsed).toBeGreaterThanOrEqual(BS - 20);
+    expect(elapsed).toBeLessThan(BS + SLACK);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    expect(await rejection(peer.request('hello'))).toBe(eperm);
+    expect(stub.written).toEqual([{ id: 1, op: 'checkpoint_and_exit' }]);
+  });
+
+  test('stub child: an error on a live child before close(), kill also fails: no write, no recursion, bounded', async () => {
+    const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+    stub.killError = Object.assign(new Error('kill EPERM again'), { code: 'EPERM' });
+    const first = Object.assign(new Error('child EPERM'), { code: 'EPERM' });
+    stub.emit('error', first);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    const error = await rejection(withDeadline(peer.close(), BS + 500));
+    expect(error).toBe(first);
+    expect(stub.killed).toEqual(['SIGKILL']);
+    expect(stub.written).toEqual([]);
+  });
+
+  test('stub child: failed spawn and no close event: close() rejects with the spawn error at the bound', async () => {
+    const stub = new StubChild();
+    stub.pid = undefined;
+    const peer = new MdkB33aProcess('stub-mdk-peer', { spawn: () => stub, drainTimeoutMs: BS });
+    const enoent = Object.assign(new Error('spawn stub-mdk-peer ENOENT'), { code: 'ENOENT' });
+    const started = Date.now();
+    stub.emit('error', enoent);
+    const error = await rejection(withDeadline(peer.close(), BS + 500));
+    const elapsed = Date.now() - started;
+    expect(error).toBe(enoent);
+    expect(elapsed).toBeGreaterThanOrEqual(BS - 20);
+    expect(elapsed).toBeLessThan(BS + SLACK);
+    expect(stub.written).toEqual([]);
+    expect(stub.killed).toEqual([]);
+  });
+
+  test('stub child: an invalid answer to checkpoint_and_exit on a live peer kills it; close() rejects invalid', async () => {
+    for (const raw of ['not-json', JSON.stringify({ id: 1, ok: true })]) {
+      const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+      const closing = rejection(peer.close());
+      await flush();
+      stub.stdout.write(`${raw}\n`);
+      await flush();
+      expect(stub.killed).toEqual(['SIGKILL']);
+      stub.exit(null, 'SIGKILL');
+      await stub.closeStdio(null, 'SIGKILL');
+      const error = await withDeadline(closing, 1000);
+      expect(error.code).toBe(B33A_ERROR.INVALID);
+    }
+  });
+
+  test('stub child: a write failure on a live peer kills it; close() rejects with the write error', async () => {
+    const { peer, stub } = stubPeer({ drainTimeoutMs: BS });
+    const epipe = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
+    stub.stdin.write = (chunk, callback) => {
+      process.nextTick(() => { callback(epipe); stub.stdin.emit('error', epipe); });
+      return false;
+    };
+    const closing = rejection(peer.close());
+    await flush();
+    expect(stub.killed).toEqual(['SIGKILL']);
+    stub.exit(null, 'SIGKILL');
+    await stub.closeStdio(null, 'SIGKILL');
+    const error = await withDeadline(closing, 1000);
+    expect(error).toBe(epipe);
   });
 });
