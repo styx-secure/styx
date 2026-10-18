@@ -13,7 +13,9 @@ const DEFAULT_BINARY = resolve(
   directory, '..', 'marmot-phase-b3', 'mdk-peer', 'target', 'debug', 'styx-b3-mdk-peer',
 );
 const RPC_TIMEOUT_MS = 60_000;
-// Shutdown policy. Bound for stdio to close after `exit`, and for an acknowledged peer to exit.
+// Shutdown policy. Default bound for each close() phase: the checkpoint_and_exit acknowledgement, a live peer's
+// exit after it, and stdio closure after exit or SIGKILL. The constructor seam `drainTimeoutMs` overrides it
+// (tests). Worst case for close() to settle: 3 x the bound (15 s by default).
 const DRAIN_TIMEOUT_MS = 5_000;
 // close() after a terminating error (the peer announced its own exit) resolves on exit 0.
 const CLOSE_RESOLVES_AFTER_TERMINATING_ERROR = true;
@@ -55,8 +57,14 @@ export class MdkB33aProcess {
   #drainTimedOut = false; // persistent: a later stream closure cannot turn this into success
   #settle;
   #settled; // resolves once shutdown is complete (stdio closed) or failed (bound exceeded)
+  #drainTimeoutMs;
+  #closing; // memoized close(): one shutdown, one write at most, the same settled outcome for every caller
 
-  constructor(binary = DEFAULT_BINARY, { spawn = spawnProcess } = {}) {
+  constructor(binary = DEFAULT_BINARY, { spawn = spawnProcess, drainTimeoutMs = DRAIN_TIMEOUT_MS } = {}) {
+    if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs < 1) {
+      throw new TypeError('drainTimeoutMs must be a positive safe integer');
+    }
+    this.#drainTimeoutMs = drainTimeoutMs;
     this.#settled = new Promise((resolveSettled) => { this.#settle = resolveSettled; });
     this.#child = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
     createInterface({ input: this.#child.stdout, crlfDelay: Infinity })
@@ -68,6 +76,7 @@ export class MdkB33aProcess {
     this.#child.on('error', (error) => {
       this.#spawnError = error;
       this.#rejectAll(error);
+      if (this.#child.pid === undefined) this.#armDrain(); // spawn failure: bound the wait for 'close' too
     });
     // A write to a peer that closed its stdin (EPIPE) must reach the pending requests, never the process.
     this.#child.stdin.on('error', (error) => { this.#rejectAll(error); });
@@ -91,7 +100,9 @@ export class MdkB33aProcess {
       `MDK peer exited code=${code} signal=${signal}${reason}; stderr=${this.#stderr}`);
   }
 
-  // Bounded drain: if stdio is not closed within DRAIN_TIMEOUT_MS, fail closed and settle shutdown as failed.
+  // Bounded drain: if stdio is not closed within the bound, fail closed and settle shutdown as failed. The timer
+  // is unref'd: until it fires, the child's stdio pipes and process handle keep the event loop alive (a real
+  // child that has not closed stdio still holds them), so the unref only stops a finished shutdown from holding it.
   #armDrain() {
     if (this.#drainTimer !== undefined || this.#stdioClosed) return;
     this.#drainTimer = setTimeout(() => {
@@ -99,13 +110,26 @@ export class MdkB33aProcess {
       this.#drainTimedOut = true;
       this.#rejectAll(this.#exit ? this.#exitedError() : this.#timeoutError());
       this.#settle();
-    }, DRAIN_TIMEOUT_MS);
+    }, this.#drainTimeoutMs);
     this.#drainTimer.unref?.();
   }
 
   #timeoutError() {
     return typedError(PEER_SHUTDOWN_TIMEOUT, 'MDK peer did not finish shutdown (exit and stdio close) '
-      + `within ${DRAIN_TIMEOUT_MS} ms; stderr=${this.#stderr}`);
+      + `within ${this.#drainTimeoutMs} ms; stderr=${this.#stderr}`);
+  }
+
+  #ackTimeoutError() {
+    return typedError(PEER_SHUTDOWN_TIMEOUT, 'MDK peer did not acknowledge checkpoint_and_exit '
+      + `within ${this.#drainTimeoutMs} ms; stderr=${this.#stderr}`);
+  }
+
+  // SIGKILL a child that is still alive, then bound the drain from now. Every close() failure path with a live
+  // child, and an acknowledged peer that outlives the bound, ends here.
+  #kill() {
+    if (this.#exit || this.#stdioClosed) return;
+    this.#child.kill('SIGKILL');
+    this.#armDrain();
   }
 
   #rejectAll(error) {
@@ -161,6 +185,10 @@ export class MdkB33aProcess {
   }
 
   request(op, fields = {}) {
+    return this.#send(op, fields, RPC_TIMEOUT_MS);
+  }
+
+  #send(op, fields, timeoutMs, timeoutError) {
     if (this.#spawnError) return Promise.reject(this.#spawnError);
     if (this.#exit || this.#stdioClosed || this.#drainTimedOut || !this.#child.stdin.writable) {
       return Promise.reject(typedError(PEER_NOT_RUNNING,
@@ -170,10 +198,14 @@ export class MdkB33aProcess {
     return new Promise((resolvePromise, reject) => {
       const timer = setTimeout(() => {
         this.#pending.delete(id);
+        if (timeoutError) {
+          reject(timeoutError());
+          return;
+        }
         const error = new Error(`MDK peer timed out during ${op}; stderr=${this.#stderr}`);
         error.code = B33A_ERROR.INVALID;
         reject(error);
-      }, RPC_TIMEOUT_MS);
+      }, timeoutMs);
       this.#pending.set(id, { reject, resolve: resolvePromise, timer });
       this.#child.stdin.write(`${JSON.stringify({ ...fields, id, op })}\n`, (error) => {
         if (error) {
@@ -186,27 +218,37 @@ export class MdkB33aProcess {
   }
 
   // Acknowledged, complete, bounded shutdown. Settles only after exit and stdio closure (or the bound), so the
-  // next peer never overlaps this one on the same database.
-  async close() {
+  // next peer never overlaps this one on the same database. Idempotent: every call returns the same promise.
+  close() {
+    this.#closing ??= this.#shutdown();
+    return this.#closing;
+  }
+
+  async #shutdown() {
     let failure;
     if (!this.#acknowledged && !this.#terminatingError && !this.#exit
       && !this.#stdioClosed && !this.#spawnError) {
       try {
-        await this.request('checkpoint_and_exit');
+        // Bounded: a live peer that never answers fails after the bound, not after the 60 s RPC timeout.
+        await this.#send('checkpoint_and_exit', {}, this.#drainTimeoutMs, () => this.#ackTimeoutError());
         this.#acknowledged = true;
       } catch (error) { failure = error; }
     }
     this.#child.stdin.end();
-    if (!this.#exit && !this.#stdioClosed) {
-      // Acknowledged (or announced) but still alive: bound the wait, then kill. The drain bound then starts.
-      const liveTimer = setTimeout(() => {
-        if (this.#exit || this.#stdioClosed) return;
-        this.#drainTimedOut = true;
-        this.#child.kill('SIGKILL');
-        this.#armDrain();
-      }, DRAIN_TIMEOUT_MS);
-      liveTimer.unref?.();
-      this.#settled.finally(() => clearTimeout(liveTimer));
+    if (!this.#exit && !this.#stdioClosed && !this.#spawnError) {
+      if (failure) {
+        // Failure path (no acknowledgement, write failure, error or invalid response) with a live child: kill now.
+        this.#kill();
+      } else {
+        // Acknowledged (or announced) but still alive: bound the wait, then kill. The drain bound then starts.
+        const liveTimer = setTimeout(() => {
+          if (this.#exit || this.#stdioClosed) return;
+          this.#drainTimedOut = true;
+          this.#kill();
+        }, this.#drainTimeoutMs);
+        liveTimer.unref?.();
+        this.#settled.finally(() => clearTimeout(liveTimer));
+      }
     }
     await this.#settled;
     if (this.#spawnError) throw this.#spawnError;

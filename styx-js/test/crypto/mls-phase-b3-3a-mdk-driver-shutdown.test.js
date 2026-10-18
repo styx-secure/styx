@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Deterministic shutdown tests for the B3.3a MDK spike driver (C-MDKDRV-SHUTDOWN). Fake peers are tiny shell
-// scripts written to a private temporary directory; event-order cases use a stub ChildProcess.
+// scripts written to a private temporary directory; event-order cases use a stub ChildProcess. Real-peer cases
+// use the constructor seam `drainTimeoutMs` (BOUND), so every case settles well inside Jest's default 5 s timeout.
+// Every case carries its own short deadline, so at a driver without the seams it fails fast instead of hanging.
 import { spawn as spawnProcess } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,14 +15,16 @@ import { MdkB33aProcess } from '../../spikes/marmot-phase-b3-3a/b3-3a-mdk-driver
 const ACK = '{"id":1,"ok":true,"result":{"checkpointed":true}}';
 const QUARANTINED = '{"id":1,"ok":false,"error":{"code":"mdk_peer_quarantined","details":null,'
   + '"message":"quarantined"}}';
+const BOUND = 300;
 const FAKES = {
   'ack-exit0': `read line\nprintf '%s\\n' '${ACK}'\nexit 0`,
   'ack-exit3': `read line\nprintf '%s\\n' '${ACK}'\nexit 3`,
-  'ack-holder': `read line\nprintf '%s\\n' '${ACK}'\n(sleep 8) &\nexit 0`,
-  'ack-live': `read line\nprintf '%s\\n' '${ACK}'\nsleep 8\nexit 0`,
+  'ack-holder': `read line\nprintf '%s\\n' '${ACK}'\n(sleep 3) &\nexit 0`,
+  'ack-live': `read line\nprintf '%s\\n' '${ACK}'\nexec sleep 3`,
   dead: 'exit 0',
   'quarantine-closed-stdin': `read line\nexec 0<&-\nprintf '%s\\n' '${QUARANTINED}'\nsleep 0.2\nexit 0`,
   silent: 'read line\nexit 0',
+  'silent-live': 'read line\nexec sleep 3',
 };
 
 let fakes;
@@ -51,6 +55,7 @@ afterEach(async () => {
 function realPeer(name) {
   const handle = {};
   handle.peer = new MdkB33aProcess(join(fakes, `${name}.sh`), {
+    drainTimeoutMs: BOUND,
     spawn: (...args) => { handle.child = spawnProcess(...args); return handle.child; },
   });
   return handle;
@@ -171,21 +176,35 @@ describe('B3.3a MDK driver shutdown (C-MDKDRV-SHUTDOWN)', () => {
 
   test('ack then exit 0, a descendant holds stdout open: close() rejects within the drain bound', async () => {
     const started = Date.now();
-    const error = await rejection(withDeadline(realPeer('ack-holder').peer.close(), 7000));
-    expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 5000 ms/);
+    const error = await rejection(withDeadline(realPeer('ack-holder').peer.close(), 2000));
+    expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 300 ms/);
     expect(error.code).toBe('mdk_peer_shutdown_timeout');
-    expect(Date.now() - started).toBeGreaterThanOrEqual(4900);
-  }, 15_000);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(BOUND - 20);
+  });
 
   test('ack but the peer stays alive: it is killed and close() rejects within 2 x the bound', async () => {
     const handle = realPeer('ack-live');
     const started = Date.now();
-    const error = await rejection(withDeadline(handle.peer.close(), 12_000));
-    expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 5000 ms/);
+    const error = await rejection(withDeadline(handle.peer.close(), 2500));
+    expect(error.message).toMatch(/^MDK peer did not finish shutdown \(exit and stdio close\) within 300 ms/);
     expect(error.code).toBe('mdk_peer_shutdown_timeout');
     expect(handle.child.signalCode).toBe('SIGKILL');
-    expect(Date.now() - started).toBeGreaterThanOrEqual(4900);
-  }, 20_000);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(BOUND - 20);
+    expect(elapsed).toBeLessThan(3 * BOUND + 1000);
+  });
+
+  test('live peer never acknowledges: killed after the bound, close() rejects within 3 x the bound', async () => {
+    const handle = realPeer('silent-live');
+    const started = Date.now();
+    const error = await rejection(withDeadline(handle.peer.close(), 2500));
+    expect(error.message).toMatch(/^MDK peer did not acknowledge checkpoint_and_exit within 300 ms/);
+    expect(error.code).toBe('mdk_peer_shutdown_timeout');
+    expect(handle.child.signalCode).toBe('SIGKILL');
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeGreaterThanOrEqual(BOUND - 20);
+    expect(elapsed).toBeLessThan(3 * BOUND + 1000);
+  });
 
   test('stub child: exit before the ack is read does not reject; close() resolves after stdio closes', async () => {
     const { peer, stub } = stubPeer();
@@ -257,5 +276,51 @@ describe('B3.3a MDK driver shutdown (C-MDKDRV-SHUTDOWN)', () => {
     expect(error.code).toBe('mdk_peer_exited');
     const notRunning = await rejection(peer.request('hello'));
     expect(notRunning.code).toBe('mdk_peer_not_running');
+  });
+  test('stub child: an error answer on a live peer kills it at once; close() rejects with that error', async () => {
+    const { peer, stub } = stubPeer();
+    const closing = rejection(peer.close());
+    await flush();
+    expect(stub.written).toEqual([{ id: 1, op: 'checkpoint_and_exit' }]);
+    stub.respond({ id: 1, ok: false, error: { code: 'engine_busy', details: null, message: 'busy' } });
+    await flush();
+    expect(stub.killed).toEqual(['SIGKILL']);
+    stub.exit(null, 'SIGKILL');
+    await stub.closeStdio(null, 'SIGKILL');
+    const error = await withDeadline(closing, 1000);
+    expect(error.code).toBe('engine_busy');
+    expect(error.message).toBe('busy');
+  });
+
+  test('stub child: close() is idempotent: one write, one promise, the same outcome', async () => {
+    const ok = stubPeer();
+    const first = ok.peer.close();
+    const second = ok.peer.close();
+    expect(second).toBe(first);
+    await flush();
+    ok.stub.respond({ id: 1, ok: true, result: { checkpointed: true } });
+    ok.stub.exit(0, null);
+    await ok.stub.closeStdio(0, null);
+    await expect(withDeadline(first, 1000)).resolves.toBeUndefined();
+    await expect(ok.peer.close()).resolves.toBeUndefined();
+    expect(ok.stub.written).toEqual([{ id: 1, op: 'checkpoint_and_exit' }]);
+
+    const bad = stubPeer();
+    const firstBad = rejection(bad.peer.close());
+    await flush();
+    bad.stub.exit(0, null);
+    await bad.stub.closeStdio(0, null);
+    const error = await withDeadline(firstBad, 1000);
+    expect(error.code).toBe('mdk_peer_exited');
+    const again = await rejection(withDeadline(bad.peer.close(), 1000));
+    expect(again).toBe(error);
+    expect(bad.stub.written).toEqual([{ id: 1, op: 'checkpoint_and_exit' }]);
+  });
+
+  test('constructor seam: drainTimeoutMs must be a positive safe integer', () => {
+    const spawn = () => { throw new Error('must validate before spawning'); };
+    for (const drainTimeoutMs of [0, -1, 1.5, '300', Number.NaN]) {
+      expect(() => new MdkB33aProcess('stub-mdk-peer', { spawn, drainTimeoutMs })).toThrow(TypeError);
+    }
   });
 });
