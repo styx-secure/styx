@@ -101,10 +101,14 @@ Governance work does not authorize product changes. Do not start PR-3 or decide
 cryptography, persisted formats, migrations or vault architecture unless a
 separate approved technical Issue explicitly authorizes that work.
 
-The active freeze, permitted protocol-only artifact classes and exit gates are
-defined by `docs/protocol/protocol-hardening-plan.md`. A task contract cannot
-silently bypass that plan. Issue #266 / merged PR #267 completed bounded C0.3
-transcript/K evidence only; implementation alignment, demo, product and
+The protocol-hardening phase defined by
+`docs/protocol/protocol-hardening-plan.md` is complete (owner decision,
+2026-10-19, below); SDK, transport, delivery and demo work is the main track
+under normal contracts, and cryptographic changes keep their human gate.
+Contracts and independent review apply to code and contracts entering the
+repository; prototypes and demos stay outside it and run from their Kanban
+card (`AGENTS.md`, "Authority"). Historical record: Issue #266 / merged PR #267
+completed bounded C0.3 transcript/K evidence only; implementation alignment, demo, product and
 sensitive use remain `NO-GO`.
 
 <!-- styx-protocol-phase-exit-status:v1:start -->
@@ -113,3 +117,12 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+**Phase update (owner decision, 2026-10-19).** The protocol-hardening phase is
+complete. SDK, transport, delivery and demo work is now the main track and needs
+no separate authorisation beyond its normal contract. It still follows the v1
+contract, the scope check and every human gate in `AGENTS.md`: cryptographic
+code and test vectors, persisted formats, migrations and vault architecture keep
+their human gate, and prototypes may call and wire the MLS engine but never
+modify it. The `BOUNDED_GO` phase-exit block is kept unchanged as the historical
+Issue #287 record; this update does not change the status of US-001 through
+US-008.
