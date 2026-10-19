@@ -35,7 +35,7 @@ content out of reach of the infrastructure in between:
 
 **Why it matters:** whistleblowers, journalists and the people who handle their cases need to work
 over infrastructure that anyone can run, without trusting whoever runs it with their words. This
-delivery layer is the base for Flegias, a confidential casework channel for whistleblowers and case
+delivery layer is the base for Flegias, a casework channel for whistleblowers and case
 handlers, and our Milestone 4 goal.
 
 *Limits, in one line: synthetic data; a prototype test harness, not yet the SDK client (that run is
