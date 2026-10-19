@@ -1,6 +1,9 @@
 # Styx application-protocol hardening plan
 
-> **Status:** active protocol-hardening and ratification phase, 30 August 2026.
+> **Status:** completed. The protocol-hardening phase ended on 2026-10-19 by
+> owner decision; SDK, transport and delivery work is now the main track (see
+> the phase update in section 11). Originally: active
+> protocol-hardening and ratification phase, 30 August 2026.
 >
 > This document governs the order of protocol work. It is not a protocol
 > specification, security proof, implementation authorization or readiness
@@ -622,6 +625,15 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+**Phase update (owner decision, 2026-10-19).** The protocol-hardening phase is
+complete. SDK, transport, delivery and demo work is now the main track and needs
+no separate authorisation beyond its normal contract. It still follows the v1
+contract, the scope check and every human gate in `AGENTS.md`: cryptographic
+code and test vectors, persisted formats, migrations and vault architecture keep
+their human gate, and prototypes may call and wire the MLS engine but never
+modify it. The `BOUNDED_GO` phase-exit block is kept unchanged as the historical
+Issue #287 record; this update does not change the status of US-001 through
+US-008.
 
 <!-- styx-c03-h1h2-package-a:v4:hardening:start -->
 ### C0.3/K H1/H2 Package A

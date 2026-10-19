@@ -12,6 +12,15 @@
 > code, cryptography, persisted formats, migrations, or vault changes.
 
 ## Active planning gate
+**Phase update (owner decision, 2026-10-19).** The protocol-hardening phase is
+complete. SDK, transport, delivery and demo work is now the main track and needs
+no separate authorisation beyond its normal contract. It still follows the v1
+contract, the scope check and every human gate in `AGENTS.md`: cryptographic
+code and test vectors, persisted formats, migrations and vault architecture keep
+their human gate, and prototypes may call and wire the MLS engine but never
+modify it. The `BOUNDED_GO` phase-exit block is kept unchanged as the historical
+Issue #287 record; this update does not change the status of US-001 through
+US-008.
 
 The [application-protocol hardening plan](../protocol/protocol-hardening-plan.md)
 currently freezes new product and runtime implementation. Protocol decisions,

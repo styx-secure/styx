@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="9fc14ba66a53e4cd7546bb435556e8604ed4ad082df51b77cc53e3ac423a5921" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="fcd29beface61b09e70ee5bd11f42713d483bd016f83fb8f9ef82d7cfbe0d549" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -12,6 +12,15 @@
 > crittografia, formati persistenti, migrazioni o modifiche al vault.
 
 ## Gate di pianificazione attivo
+**Aggiornamento di fase (decisione del proprietario, 2026-10-19).** La fase di
+hardening del protocollo è conclusa. Il lavoro su SDK, trasporto, consegna e demo
+è ora il filone principale e non richiede un'autorizzazione separata oltre al suo
+contratto normale. Resta soggetto al contratto v1, allo scope check e a ogni gate
+umano di `AGENTS.md`: codice crittografico e test vector, formati persistiti,
+migrazioni e architettura del vault mantengono il loro gate umano, e i prototipi
+possono chiamare e collegare il motore MLS ma mai modificarlo. Il blocco di uscita
+`BOUNDED_GO` resta invariato come registro storico della Issue #287;
+questo aggiornamento non cambia lo stato di US-001--US-008.
 
 Il [piano di hardening del protocollo applicativo](../protocol/protocol-hardening-plan.md)
 congela attualmente le nuove implementazioni di prodotto e runtime. Le decisioni

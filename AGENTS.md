@@ -22,11 +22,18 @@ executor/persona, independent reviewers, human gates, base branch and base SHA.
 Missing or ambiguous data blocks execution. MUCC stories have their own
 executability condition, defined under "Execution lanes" below.
 
-The active protocol-hardening freeze and its ordered exit gates are defined in
-`docs/protocol/protocol-hardening-plan.md`. No task contract or MUCC story may
-silently bypass that plan: any permitted protocol increment must fit its freeze
-boundary, and product/runtime work remains paused until the recorded exit gate
-is satisfied.
+**Where contracts and review apply (owner decision, 2026-10-19).** The v1
+contract Issue and independent review are required for code and contracts
+entering this repository; the `Agent scope evidence (observation)` check keeps
+enforcing the contract on every pull request, unchanged. Prototypes and demos
+stay outside the repository and run from their Kanban card, with automatic
+checks and a controller check against the raw evidence. They may call and wire
+the MLS engine but never modify it; anything they need from the repository
+enters it only through a contract task.
+The protocol-hardening plan, `docs/protocol/protocol-hardening-plan.md`, is a
+completed phase (see the phase update at the end of this document). Its
+normative protocol decisions stay binding; SDK, transport, delivery and product
+work is no longer paused by it.
 
 ## Execution lanes
 
@@ -50,7 +57,8 @@ Namespace discipline is load-bearing: a contract task must never use a
 
 Every other rule in this document — permissions, human-gate areas, isolation,
 PR lifecycle, independent review and fail-closed behaviour — applies to both
-lanes unchanged. Lane references:
+lanes unchanged; contracts and review cover what enters the repository, as
+stated under "Authority". Lane references:
 `docs/governance/adr/ADR-0006-adopt-mucc-multidev.md`,
 `docs/governance/mucc-migration/migration-plan.md`,
 `docs/governance/mucc-migration/ruleset-proposal.md`.
@@ -133,7 +141,9 @@ Implementer and reviewer must be different identities and execution contexts.
 The reviewer starts from the Issue, diff and normative repository documents,
 uses a clean read-only context, never modifies the reviewed branch, and reports
 severity, evidence, path and required action. Fixes are re-verified. Agent review
-is evidence, never a replacement for human approval.
+is evidence, never a replacement for human approval. This applies to code and
+contracts entering the repository; prototypes and demos kept outside it follow
+the note under "Authority".
 
 ## Fail closed
 
@@ -200,3 +210,12 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+**Phase update (owner decision, 2026-10-19).** The protocol-hardening phase is
+complete. SDK, transport, delivery and demo work is now the main track and needs
+no separate authorisation beyond its normal contract. It still follows the v1
+contract, the scope check and every human gate in `AGENTS.md`: cryptographic
+code and test vectors, persisted formats, migrations and vault architecture keep
+their human gate, and prototypes may call and wire the MLS engine but never
+modify it. The `BOUNDED_GO` phase-exit block is kept unchanged as the historical
+Issue #287 record; this update does not change the status of US-001 through
+US-008.
