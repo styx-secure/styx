@@ -7,7 +7,8 @@
 //
 // Env: ROLE, IDENTITY_FILE, IDENTITY_PASSPHRASE (>=12 chars), RELAYS (comma list),
 //      INVITEE (inviter only), MESSAGES (default 3), OUT (JSON result path),
-//      KEYPACKAGE_EVENT (optional, invitee: wait on an already published KP)
+//      KEYPACKAGE_EVENT (optional, invitee: wait on an already published KP),
+//      REPLY_AFTER_ALL=1 (invitee: reply only once all N messages arrived)
 //      SCENES=1 (inviter only): demo scenes -- message 1 normal; relay R1 dropped on
 //      this host, message 2; this host's network stalls (R2, R3 black-holed), message 3
 //      times out and is retried after the network returns. Faults are injected here, in
@@ -201,10 +202,11 @@ if (ROLE === 'inviter' && SCENES) {
   log('replies received', received.length, okReplies ? '' : '(timeout)');
 } else {
   let answered = 0;
-  // reply to each message as it arrives
+  // reply to each message as it arrives, or (REPLY_AFTER_ALL=1) only once all N arrived
   const t1 = Date.now();
+  const gate = () => env.REPLY_AFTER_ALL !== '1' || received.length >= N;
   while (answered < N && Date.now() - t1 < 300000) {
-    if (received.length > answered) {
+    if (received.length > answered && gate()) {
       const m = received[answered]; answered += 1;
       await sendAndTrack(`synthetic reply ${answered} to "${m.text.slice(0, 26)}"`);
     } else await new Promise((r) => setTimeout(r, 200));
