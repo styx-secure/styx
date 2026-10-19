@@ -36,6 +36,7 @@ if __name__ == "__main__":
         raise RuntimeError("no trusted standard-library import path remains")
 
 import argparse
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -43,6 +44,7 @@ import re
 import ssl
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -57,6 +59,11 @@ MANEXADA_ID = 314148709
 MAX_PROVIDER_BYTES = 256 * 1024
 ISSUE_API_URL = "https://api.github.com/repos/styx-secure/styx/issues/287"
 PR_NUMBER = 288
+# The certified candidate: the commit on `main` that carries the recorded
+# BOUNDED_GO phase exit (PR #288, squash-merged onto BASE_SHA). Later heads add
+# legitimate files under the frozen prefixes, so a reproducible proof of the
+# recorded verdict must read this commit, not whatever tree is checked out.
+CANDIDATE_SHA = "fc7d15356f2299e9acd8a106f46d6631d0c66b74"
 CANONICAL_REPORT_PATH = Path("docs/protocol/review/phase-exit/phase-exit-report.json")
 REGISTRY_PATH = Path("tools/protocol-phase-exit/exit-registry.json")
 ALLOWED_CHANGED_PATHS = {
@@ -582,6 +589,30 @@ def require_ancestor(repo: Path, ancestor: str, descendant: str, message: str) -
     require(result.returncode == 0, message)
 
 
+@contextlib.contextmanager
+def candidate_checkout(repo: Path, revision: str):
+    """Yield a clean, detached, throw-away checkout of one exact commit.
+
+    The checkout is a `--shared` clone of `repo` (objects are read through
+    alternates, `repo` itself is never written) in a private temporary
+    directory that is removed on exit. Nothing is executed inside it, so it can
+    hold no build or bytecode residue: every tree-reading check sees exactly the
+    committed bytes of `revision` and nothing else.
+    """
+    require(re.fullmatch(r"[0-9a-f]{40}", revision) is not None, "candidate must be a full commit identity")
+    commit = resolve_commit(repo, revision)
+    require(commit == revision, "candidate does not resolve to itself")
+    with tempfile.TemporaryDirectory(prefix="styx-phase-exit-") as directory:
+        checkout = Path(directory).resolve() / "candidate"
+        run_git(repo, "clone", "--quiet", "--shared", "--no-checkout", str(repo), str(checkout))
+        run_git(checkout, "-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--detach", commit)
+        require(resolve_commit(checkout, "HEAD") == commit, "candidate checkout HEAD mismatch")
+        require(
+            not run_git(checkout, "status", "--porcelain=v1", "--untracked-files=all"),
+            "candidate checkout is not clean",
+        )
+        yield checkout
+
 def phase_b_changed_paths(repo: Path, phase: str, final: str) -> set[str]:
     raw = run_git(repo, "diff", "--name-status", "--no-renames", phase, final)
     changed: set[str] = set()
@@ -799,9 +830,23 @@ def frozen_paths(repo: Path) -> list[str]:
     return paths
 
 
+def is_bytecode_residue(path: str) -> bool:
+    """True for an untracked CPython bytecode cache file (`__pycache__/*.pyc`).
+
+    Importing or testing any frozen Python module writes such files next to it;
+    they are never part of the frozen Base set and are not drift. Only untracked
+    paths are filtered: a committed `__pycache__` file would still count.
+    """
+    parts = path.split("/")
+    return len(parts) >= 2 and parts[-2] == "__pycache__" and parts[-1].endswith(".pyc")
+
+
 def frozen_manifest(repo: Path) -> tuple[str, dict[str, str]]:
     paths = frozen_paths(repo)
-    tracked = set(run_git(repo, "ls-files", "--cached", "--others", "--exclude-standard", "--", *FROZEN_PREFIXES, *sorted(FROZEN_LITERAL_FILES)).decode().splitlines())
+    selectors = (*FROZEN_PREFIXES, *sorted(FROZEN_LITERAL_FILES))
+    tracked = set(run_git(repo, "ls-files", "--cached", "--", *selectors).decode().splitlines())
+    untracked = run_git(repo, "ls-files", "--others", "--exclude-standard", "--", *selectors).decode().splitlines()
+    tracked.update(path for path in untracked if not is_bytecode_residue(path))
     require(tracked == set(paths), "frozen path set drift")
     mapping: dict[str, str] = {}
     lines: list[str] = []
@@ -1027,6 +1072,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--approval-provider-output", type=Path)
     parser.add_argument("--approval-provider-raw-output", type=Path)
     parser.add_argument("--refresh-canonical-report", action="store_true")
+    parser.add_argument(
+        "--candidate", default=CANDIDATE_SHA,
+        help="exact commit whose clean checkout is verified (default: the recorded phase-exit commit)",
+    )
     return parser.parse_args(argv)
 
 
@@ -1043,65 +1092,89 @@ def main(argv: list[str] | None = None) -> int:
         require((args.approval_review_id is None) == (args.approval_provider_output is None), "approval output arguments incomplete")
         require((args.approval_review_id is None) == (args.approval_provider_raw_output is None), "approval raw-output arguments incomplete")
         repo = args.repo_root.resolve(strict=True)
-        report = build_report(repo)
         if args.refresh_canonical_report:
+            # Phase-A executor path: deliberately reads and rewrites the
+            # checked-out working tree, exactly as before.
             require(args.verdict_comment_id is None and args.approval_review_id is None, "refresh cannot resolve provider gates")
-            refresh_canonical_report(repo, args.output, report)
-        else:
-            verify_candidate_scope(repo)
-            verify_committed_report(repo, report)
-            store_external_report(repo, args.output, report)
-        if args.verdict_comment_id is not None:
-            require(args.phase_a_head is not None, "Phase-A HEAD required")
-            require(args.phase_a_report_sha256 is not None, "Phase-A report digest required")
-            require(args.provider_output is not None, "provider output required")
-            require(args.provider_raw_output is not None, "provider raw output required")
-            require(args.issue_provider_raw_output is not None, "Issue provider raw output required")
-            issue, issue_raw = fetch_provider_json(ISSUE_API_URL)
-            store_external_bytes(repo, args.issue_provider_raw_output, issue_raw)
-            issue_result = validate_issue_provider(issue)
-            url = verdict_url(args.verdict_comment_id)
-            comment, raw = fetch_provider_json(url)
-            store_external_bytes(repo, args.provider_raw_output, raw)
-            result = validate_verdict_comment(
-                comment,
-                comment_id=args.verdict_comment_id,
-                phase_a_head=args.phase_a_head,
-                report_sha=args.phase_a_report_sha256,
-                frozen_sha=report["frozen_manifest_sha256"],
-                audit_sha=report["first_parent_audit_sha256"],
-                eligibility=report["eligibility"],
-            )
-            validate_provider_heads(
-                repo,
-                phase_a_head=args.phase_a_head,
-                phase_a_report_sha256=args.phase_a_report_sha256,
-                final_head=args.final_head,
-                final_report=report,
-                verdict=result["verdict"] if args.final_head is not None else None,
-            )
-            result.update(issue_result)
-            result["issue_provider_response_sha256"] = sha256(issue_raw)
-            result["provider_response_sha256"] = sha256(raw)
-            store_external_report(repo, args.provider_output, result)
-        if args.approval_review_id is not None:
-            require(args.final_head is not None, "final HEAD required")
-            require(args.approval_provider_output is not None, "approval provider output required")
-            require(args.approval_provider_raw_output is not None, "approval provider raw output required")
-            if args.verdict_comment_id is None:
-                raise ExitError("approval verification requires the provider-bound Phase-A verdict")
-            url = approval_url(args.approval_review_id)
-            review, raw = fetch_provider_json(url)
-            store_external_bytes(repo, args.approval_provider_raw_output, raw)
-            result = validate_approval_review(
-                review, review_id=args.approval_review_id, final_head=args.final_head,
-            )
-            result["approval_provider_response_sha256"] = sha256(raw)
-            store_external_report(repo, args.approval_provider_output, result)
+            refresh_canonical_report(repo, args.output, build_report(repo))
+            return 0
+        # Every ordinary verification reads one exact commit in a clean,
+        # throw-away checkout, never the caller's working tree: the provider
+        # final HEAD or Phase-A HEAD when those are being verified, otherwise
+        # the recorded candidate.
+        target = args.final_head or args.phase_a_head or args.candidate
+        with candidate_checkout(repo, target) as tree:
+            verify_checkout(repo, tree, args)
     except (ExitError, OSError, ValueError, json.JSONDecodeError) as error:
         print(f"phase_exit_failure={error}", file=sys.stderr)
         return 2
     return 0
+
+
+def verify_checkout(repo: Path, tree: Path, args: argparse.Namespace) -> None:
+    """Run the unchanged phase-exit checks against the clean checkout `tree`.
+
+    External evidence is still written relative to the caller's `repo` and
+    must lie outside both `repo` and `tree`.
+    """
+    for output in (
+        args.output, args.provider_output, args.provider_raw_output,
+        args.issue_provider_raw_output, args.approval_provider_output,
+        args.approval_provider_raw_output,
+    ):
+        if output is not None:
+            external_target(tree, output)
+    report = build_report(tree)
+    verify_candidate_scope(tree)
+    verify_committed_report(tree, report)
+    store_external_report(repo, args.output, report)
+    if args.verdict_comment_id is not None:
+        require(args.phase_a_head is not None, "Phase-A HEAD required")
+        require(args.phase_a_report_sha256 is not None, "Phase-A report digest required")
+        require(args.provider_output is not None, "provider output required")
+        require(args.provider_raw_output is not None, "provider raw output required")
+        require(args.issue_provider_raw_output is not None, "Issue provider raw output required")
+        issue, issue_raw = fetch_provider_json(ISSUE_API_URL)
+        store_external_bytes(repo, args.issue_provider_raw_output, issue_raw)
+        issue_result = validate_issue_provider(issue)
+        url = verdict_url(args.verdict_comment_id)
+        comment, raw = fetch_provider_json(url)
+        store_external_bytes(repo, args.provider_raw_output, raw)
+        result = validate_verdict_comment(
+            comment,
+            comment_id=args.verdict_comment_id,
+            phase_a_head=args.phase_a_head,
+            report_sha=args.phase_a_report_sha256,
+            frozen_sha=report["frozen_manifest_sha256"],
+            audit_sha=report["first_parent_audit_sha256"],
+            eligibility=report["eligibility"],
+        )
+        validate_provider_heads(
+            tree,
+            phase_a_head=args.phase_a_head,
+            phase_a_report_sha256=args.phase_a_report_sha256,
+            final_head=args.final_head,
+            final_report=report,
+            verdict=result["verdict"] if args.final_head is not None else None,
+        )
+        result.update(issue_result)
+        result["issue_provider_response_sha256"] = sha256(issue_raw)
+        result["provider_response_sha256"] = sha256(raw)
+        store_external_report(repo, args.provider_output, result)
+    if args.approval_review_id is not None:
+        require(args.final_head is not None, "final HEAD required")
+        require(args.approval_provider_output is not None, "approval provider output required")
+        require(args.approval_provider_raw_output is not None, "approval provider raw output required")
+        if args.verdict_comment_id is None:
+            raise ExitError("approval verification requires the provider-bound Phase-A verdict")
+        url = approval_url(args.approval_review_id)
+        review, raw = fetch_provider_json(url)
+        store_external_bytes(repo, args.approval_provider_raw_output, raw)
+        result = validate_approval_review(
+            review, review_id=args.approval_review_id, final_head=args.final_head,
+        )
+        result["approval_provider_response_sha256"] = sha256(raw)
+        store_external_report(repo, args.approval_provider_output, result)
 
 
 if __name__ == "__main__":

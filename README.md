@@ -2,12 +2,44 @@
 
 **Secure infrastructure for sensitive work.**
 
-> ⚠️ **EXPERIMENTAL SOFTWARE** — Styx is under active development and has **not** completed an
-> independent security audit. Do not use current builds for sensitive, high-risk, or life-critical
-> use. The browser profile is also weaker against an adversary that controls the web origin. See
-> the [approved vision](specs/01-vision.md), the
-> [current project brief](docs/PROJECT_BRIEF.md), and the bounded
-> [Phase B verdict](docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md).
+> ⚠️ **Experimental software.** Styx is under active development and has **not** completed an
+> independent security audit. Do not use current builds for sensitive, high-risk, or life-critical use.
+
+## Latest progress — October 2026
+
+[![Recorded test run: on the left, what the relay operator sees with TLS removed (MLS ciphertext); on the right, the text the recipient reads after decryption](docs/media/2026-10-m3-test-run.png)](https://styxsecure.org/#progress)
+
+▶ **[Watch the 100-second test run](https://styxsecure.org/#progress)** ·
+[download the MP4](docs/media/2026-10-m3-test-run.mp4) (2.9 MB, synthetic data, every scene labelled
+with its run)
+
+Styx now carries encrypted messages between real machines across the open internet, and keeps their
+content out of reach of the infrastructure in between:
+
+- **End-to-end encrypted messaging across networks.** Two machines on different networks exchanged
+  messages over three public Nostr relays, each message encrypted by Styx's own MLS engine.
+- **The relay operator sees only ciphertext.** With TLS removed using our own session keys, which is
+  exactly what a relay operator receives, the content is MLS ciphertext, byte-identical at both
+  ends. Only a group member reads the text.
+- **Delivery that survives failures.** We cut off a relay and stalled the sender's network; Styx
+  queued the message, retried it, delivered it and got the recipient's signed receipt back.
+- **An outside attacker got nothing through.** A simulated attacker on a server outside both
+  networks, reading everything on the public relays but holding no group key, replayed a message,
+  tampered with one, injected one of her own and forged a delivery receipt. Nothing she published
+  reached the application.
+- **Ahead of plan.** Milestone 1 is [complete](https://github.com/styx-secure/styx/pull/303).
+  [Milestone 2](https://github.com/styx-secure/styx/issues/313) is at 31 of 41 tasks, with all
+  1,514 tests of its 18 suites passing on its integration branch.
+  [Milestone 3](https://github.com/styx-secure/styx/issues/400) started early, and its delivery
+  modules are already running in the recording above.
+
+**Why it matters:** whistleblowers, journalists and the people who handle their cases need to work
+over infrastructure that anyone can run, without trusting whoever runs it with their words. This
+delivery layer is the base for Flegias, a casework channel for whistleblowers and case
+handlers, and our Milestone 4 goal.
+
+*Limits, in one line: synthetic data; a prototype test harness, not yet the SDK client (that run is
+next); one sample per attack, with the forged-receipt test on a single machine; pre-audit code.*
 
 ## Mission
 
@@ -20,7 +52,7 @@ It is intended for human-rights and civil-society teams, journalists, safeguardi
 trusted intermediaries, and developers building casework, evidence, coordination, or other
 sensitive applications.
 
-The first product vertical is **Flegias**: a planned case-management application intended to let a
+The lead product vertical is **Flegias**: a planned case-management application intended to let a
 person open and continue a confidential case without providing an email address, phone number, or
 ordinary account. This can support abuse, harassment, discrimination, whistleblowing, safeguarding,
 and other sensitive casework, but the software cannot replace trained handlers, legal and privacy
@@ -38,12 +70,19 @@ review, safeguarding procedures, or emergency channels.
   and a closed adversarial mutation registry. This completes corpus construction only. It does not
   establish implementation conformance, protocol completion, or product readiness; C0.3 remains
   `NO-GO` for implementation alignment, demo, product, and sensitive use.
+- **Now being built:** authenticated persistence of the MLS session in the encrypted browser vault
+  ([Milestone 2](https://github.com/styx-secure/styx/issues/313): 31 of 41 tasks complete or
+  approved, including all seven design contracts; 16 components integrated on the
+  `m2/integration` branch, where all 1,514 tests of its 18 suites pass; browser and fault-injection
+  testing, pending fixes and a closing security review remain), and the SDK and reliable-delivery
+  layer, now partly built ([Milestone 3 early lane](https://github.com/styx-secure/styx/issues/400):
+  SDK, delivery and preview contracts ratified; queue, retry, multi-relay and receipt modules
+  integrated on `m3/integration`). Neither branch is on `main` yet, and integrating the vault into
+  the main application is still to come.
 - **Not yet a complete product:** completion and ratification of the language-neutral application
-  protocol, supported session integration, a reusable SDK and reliable delivery,
-  metadata-minimizing case routing, anonymous return capability, organizational workflow,
-  distribution assurance, a targeted independent review of a bounded high-risk scope, and any
-  separately approved exercise or pilot remain future work. Isolated development candidates are
-  not counted here until they pass their recorded gates and merge.
+  protocol, the SDK client itself, metadata-minimizing case routing, an accountless return channel,
+  organizational workflow, distribution assurance, a targeted independent review of a bounded
+  high-risk scope, and any separately approved exercise or pilot remain future work.
 - **Current technical direction:** Marmot is the preferred compatibility target for the
   MLS-over-Nostr session profile. At the exact OpenMLS, Marmot and MDK revisions recorded in the
   final Phase B report, Styx interoperated with the pinned MDK peer in an isolated synthetic
@@ -69,7 +108,8 @@ live high-risk pilot.
 
 Current transports expose routing, timing, size, and relationship metadata. E2EE also does not
 protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
-controlled by the adversary. No current build offers a universal anonymity guarantee.
+controlled by the adversary; the browser profile is weaker against such an adversary (see the
+bounded [Phase B verdict](docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)). No current build offers a universal anonymity guarantee.
 
 > *In Greek mythology, the River Styx marked a boundary and the gods swore solemn oaths upon its waters. The project uses that image to represent explicit trust boundaries in digital systems—not a promise of invulnerability.*
 
