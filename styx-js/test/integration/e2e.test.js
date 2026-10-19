@@ -22,7 +22,11 @@ beforeAll(() => {
 });
 
 function createConfig() {
-  return new LedgerConfig({ logLevel: LogLevel.NONE });
+  // Unit E2E: never touch the public Nostr relays. The production default in
+  // LedgerConfig is unchanged; this suite injects an empty relay list so
+  // pairing runs entirely in-process and the suite cannot hang on a public
+  // relay (e.g. `nos.lol`) and trip the jest hook timeout.
+  return new LedgerConfig({ logLevel: LogLevel.NONE, relayUrls: [] });
 }
 
 function createLedger(overrides = {}) {

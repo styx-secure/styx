@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import importlib.util
 import json
@@ -20,22 +21,70 @@ assert SPEC.loader is not None
 sys.modules[SPEC.name] = verify
 SPEC.loader.exec_module(verify)
 
+# Every tree-reading test runs against a clean, throw-away checkout of the
+# recorded candidate (verify.CANDIDATE_SHA, the squash merge of PR #288 that
+# carries the BOUNDED_GO phase exit), never against the caller's working tree.
+# The verifier code under test is still the one loaded from ROOT above.
+#
+# PR #288 was squash-merged, so on `main` the candidate's first parent is
+# BASE_SHA itself, which predates the canonical report. The provider-bound heads
+# are therefore the ones the live gates recorded on the PR branch: the Phase-A
+# HEAD named by verdict comment 5482518791 and the final HEAD approved by review
+# 5070295549. The final HEAD has exactly the candidate's tree, which the tests
+# assert. Those commits live on refs/heads/task/287-protocol-phase-exit (and
+# refs/pull/288/head); a clone without them fails closed with a fetch hint.
+PHASE_A_HEAD = "033cb89947ec9e1ac4c6565bcfe825d4de861049"
+FINAL_HEAD = "2fcd1e0ed41ea23765c1f1a3b911a35875711997"
+PR_BRANCH_COMMIT = "12e22220f9521f303d655e190d1e7b070628b997"
+FETCH_HINT = (
+    "commit missing from this clone; fetch the PR #288 history with "
+    "`git fetch origin refs/heads/task/287-protocol-phase-exit` "
+    "or `git fetch origin refs/pull/288/head`"
+)
+
+_CHECKOUTS = contextlib.ExitStack()
+CANDIDATE: Path = ROOT
+
+
+def setUpModule():
+    global CANDIDATE
+    CANDIDATE = _CHECKOUTS.enter_context(verify.candidate_checkout(ROOT, verify.CANDIDATE_SHA))
+
+
+def tearDownModule():
+    _CHECKOUTS.close()
+
+
+def require_commit(revision: str) -> str:
+    try:
+        return verify.resolve_commit(ROOT, revision)
+    except verify.ExitError as error:
+        raise AssertionError(f"{revision}: {FETCH_HINT}") from error
+
+
+def git(repo: Path, *args: str) -> bytes:
+    return subprocess.run(
+        ("git", "-C", str(repo), "-c", "user.name=phase-exit-test",
+         "-c", "user.email=phase-exit-test@invalid", "-c", "commit.gpgsign=false", *args),
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ).stdout
+
 
 class VerifyTests(unittest.TestCase):
     def test_first_parent_identity_is_exact(self):
-        commits = verify.first_parent_commits(ROOT)
+        commits = verify.first_parent_commits(CANDIDATE)
         self.assertEqual(24, len(commits))
         self.assertEqual(verify.FREEZE_SHA, commits[0])
         self.assertEqual(verify.BASE_SHA, commits[-1])
 
     def test_base_pins_and_frozen_manifest(self):
-        verify.verify_base_pins(ROOT)
-        digest, mapping = verify.frozen_manifest(ROOT)
+        verify.verify_base_pins(CANDIDATE)
+        digest, mapping = verify.frozen_manifest(CANDIDATE)
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
         self.assertGreater(len(mapping), 100)
 
     def test_registry_is_closed(self):
-        registry = verify.load_registry(ROOT)
+        registry = verify.load_registry(CANDIDATE)
         self.assertEqual([f"EXIT-{index:02d}" for index in range(1, 12)], [item["id"] for item in registry["conditions"]])
         registered = {
             evidence_id
@@ -49,7 +98,7 @@ class VerifyTests(unittest.TestCase):
         )
 
     def test_conditional_exclusion_citations_fail_closed(self):
-        record = copy.deepcopy(verify.load_registry(ROOT)["conditions"][0])
+        record = copy.deepcopy(verify.load_registry(CANDIDATE)["conditions"][0])
         hostile_values = (
             ("file", "docs/protocol/styx-secure-session-v0-decisions.md"),
             ("heading", "## 5. Selected v0 contract"),
@@ -60,11 +109,11 @@ class VerifyTests(unittest.TestCase):
             hostile = copy.deepcopy(record)
             hostile["excluded_claims"][0][key] = value
             with self.subTest(key=key), self.assertRaises(verify.ExitError):
-                verify.validate_excluded_claims(ROOT, hostile)
+                verify.validate_excluded_claims(CANDIDATE, hostile)
 
     def test_report_is_bounded_and_deterministic(self):
-        first = verify.canonical_bytes(verify.build_report(ROOT))
-        second = verify.canonical_bytes(verify.build_report(ROOT))
+        first = verify.canonical_bytes(verify.build_report(CANDIDATE))
+        second = verify.canonical_bytes(verify.build_report(CANDIDATE))
         self.assertEqual(first, second)
         report = json.loads(first)
         self.assertEqual("ELIGIBLE_FOR_BOUNDED_GO", report["eligibility"])
@@ -80,7 +129,7 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual("ELIGIBLE_FOR_GO", verify.mechanical_eligibility(["PASS"]))
 
     def test_digest_substitution_and_duplicate_evidence_fail_closed(self):
-        registry = verify.load_registry(ROOT)
+        registry = verify.load_registry(CANDIDATE)
         record = copy.deepcopy(registry["conditions"][2])
         observed = dict(record["expected_evidence_sha256"])
         observed["protocol_plan"] = "0" * 64
@@ -93,7 +142,7 @@ class VerifyTests(unittest.TestCase):
     def test_missing_registered_input_fails_closed(self):
         with mock.patch.dict(verify.EVIDENCE_PATHS, {"missing_fixture": ("not/present",)}):
             with self.assertRaises(verify.ExitError):
-                verify.evidence_digest(ROOT, "missing_fixture", "0" * 64, "1" * 64)
+                verify.evidence_digest(CANDIDATE, "missing_fixture", "0" * 64, "1" * 64)
 
     def test_committed_report_substitution_fails_closed(self):
         report = {"schema": "test", "eligibility": "ELIGIBLE_FOR_BOUNDED_GO"}
@@ -141,9 +190,9 @@ class VerifyTests(unittest.TestCase):
         first = next(iter(pins))
         pins[first] = "0" * 64
         with mock.patch.object(verify, "PINNED_BASE_BLOBS", pins), self.assertRaises(verify.ExitError):
-            verify.verify_base_pins(ROOT)
+            verify.verify_base_pins(CANDIDATE)
         with mock.patch.object(verify, "FIRST_PARENT_SHA256", "0" * 64), self.assertRaises(verify.ExitError):
-            verify.first_parent_commits(ROOT)
+            verify.first_parent_commits(CANDIDATE)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "x").write_bytes(b"observed")
@@ -161,8 +210,8 @@ class VerifyTests(unittest.TestCase):
                 verify.frozen_manifest(root)
             plan = root / "docs/protocol/protocol-hardening-plan.md"
             plan.parent.mkdir(parents=True)
-            plan.write_bytes((ROOT / "docs/protocol/protocol-hardening-plan.md").read_bytes())
-            commits = verify.first_parent_commits(ROOT)
+            plan.write_bytes((CANDIDATE / "docs/protocol/protocol-hardening-plan.md").read_bytes())
+            commits = verify.first_parent_commits(CANDIDATE)
             verify.audit_identity(root, commits)
             plan.write_bytes(plan.read_bytes().replace(commits[0].encode(), b"0" * 40, 1))
             with self.assertRaises(verify.ExitError):
@@ -170,7 +219,7 @@ class VerifyTests(unittest.TestCase):
 
     def test_unknown_evidence_fails_closed(self):
         with self.assertRaises(verify.ExitError):
-            verify.evidence_digest(ROOT, "unknown", "0" * 64, "1" * 64)
+            verify.evidence_digest(CANDIDATE, "unknown", "0" * 64, "1" * 64)
 
     def test_verdict_monotonicity(self):
         self.assertTrue(verify.monotone_verdict("ELIGIBLE_FOR_GO", "GO"))
@@ -258,38 +307,45 @@ class VerifyTests(unittest.TestCase):
                 verify.validate_approval_review(hostile, review_id=review_id, final_head="a" * 40)
 
     def test_provider_heads_are_derived_from_git(self):
-        head = verify.resolve_commit(ROOT, "HEAD")
-        status_document = verify.run_git(ROOT, "show", f"{head}:AGENTS.md")
-        if verify.status_block("AGENTS.md", "PENDING") in status_document:
-            phase = head
-            final = None
-            verdict = None
-        else:
+        # Historical note, kept on purpose: at the candidate this test derived
+        # the Phase-A HEAD as `HEAD^`. On the PR branch that was the real Phase-A
+        # commit, but PR #288 was squash-merged, so on `main` `fc7d153^` is
+        # BASE_SHA, where the canonical report does not exist yet, and the test
+        # already failed at the candidate itself (`git show BASE:report` fails).
+        # It now uses the provider-bound heads recorded by the live gates instead
+        # of guessing them from the topology, and proves the approved final HEAD
+        # carries exactly the candidate tree.
+        phase = require_commit(PHASE_A_HEAD)
+        final = require_commit(FINAL_HEAD)
+        self.assertEqual(
+            git(ROOT, "rev-parse", f"{verify.CANDIDATE_SHA}^{{tree}}"),
+            git(ROOT, "rev-parse", f"{final}^{{tree}}"),
+        )
+        with verify.candidate_checkout(ROOT, final) as tree:
+            status_document = verify.run_git(tree, "show", f"{final}:AGENTS.md")
             observed = [
                 value for value in ("GO", "BOUNDED_GO", "NO_GO")
                 if verify.status_block("AGENTS.md", value) in status_document
             ]
-            self.assertEqual(1, len(observed))
-            phase = verify.resolve_commit(ROOT, f"{head}^")
-            final = head
+            self.assertEqual(["BOUNDED_GO"], observed)
             verdict = observed[0]
-        committed = verify.run_git(ROOT, "show", f"{phase}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
-        digest = verify.sha256(committed)
-        report = json.loads(verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))
-        self.assertEqual((phase, final), verify.validate_provider_heads(
-            ROOT, phase_a_head=phase, phase_a_report_sha256=digest, final_head=final,
-            final_report=report, verdict=verdict,
-        ))
-        for hostile_phase, report_digest, hostile_final in (
-            (phase, "0" * 64, final),
-            (verify.FREEZE_SHA, digest, final),
-            (phase, digest, verify.BASE_SHA),
-        ):
-            with self.subTest(phase=hostile_phase, final=hostile_final), self.assertRaises(verify.ExitError):
-                verify.validate_provider_heads(
-                    ROOT, phase_a_head=hostile_phase, phase_a_report_sha256=report_digest,
-                    final_head=hostile_final, final_report=report, verdict=verdict,
-                )
+            committed = verify.run_git(tree, "show", f"{phase}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
+            digest = verify.sha256(committed)
+            report = json.loads(verify.run_git(tree, "show", f"{final}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))
+            self.assertEqual((phase, final), verify.validate_provider_heads(
+                tree, phase_a_head=phase, phase_a_report_sha256=digest, final_head=final,
+                final_report=report, verdict=verdict,
+            ))
+            for hostile_phase, report_digest, hostile_final in (
+                (phase, "0" * 64, final),
+                (verify.FREEZE_SHA, digest, final),
+                (phase, digest, verify.BASE_SHA),
+            ):
+                with self.subTest(phase=hostile_phase, final=hostile_final), self.assertRaises(verify.ExitError):
+                    verify.validate_provider_heads(
+                        tree, phase_a_head=hostile_phase, phase_a_report_sha256=report_digest,
+                        final_head=hostile_final, final_report=report, verdict=verdict,
+                    )
 
     def test_status_document_transition_is_an_exact_replacement(self):
         path = "AGENTS.md"
@@ -307,7 +363,7 @@ class VerifyTests(unittest.TestCase):
 
     def test_phase_exit_readme_keeps_operational_status_only_in_versioned_block(self):
         path = "docs/protocol/review/phase-exit/README.md"
-        document = (ROOT / path).read_bytes()
+        document = (CANDIDATE / path).read_bytes()
         verify.validate_phase_neutral_status_prose(path, document)
         for stale in (
             b"This directory contains the deterministic Phase-A report for Issue #287.",
@@ -321,15 +377,15 @@ class VerifyTests(unittest.TestCase):
                 ))
 
     def test_phase_b_transition_rejects_code_and_semantic_changes(self):
-        head = verify.resolve_commit(ROOT, "HEAD")
-        report = json.loads(verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))
+        head = verify.CANDIDATE_SHA
+        report = json.loads(verify.run_git(CANDIDATE, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))
         with self.assertRaises(verify.ExitError):
-            verify.phase_b_changed_paths(ROOT, "12e22220f9521f303d655e190d1e7b070628b997", head)
+            verify.phase_b_changed_paths(CANDIDATE, require_commit(PR_BRANCH_COMMIT), head)
         hostile = copy.deepcopy(report)
         hostile["non_authorizations"].remove("sdk")
         with self.assertRaises(verify.ExitError):
             verify.validate_phase_b_report_transition(report, hostile)
-        registry = json.loads((ROOT / verify.REGISTRY_PATH).read_text(encoding="utf-8"))
+        registry = json.loads((CANDIDATE / verify.REGISTRY_PATH).read_text(encoding="utf-8"))
         hostile_registry = copy.deepcopy(registry)
         hostile_registry["conditions"][0]["residual_risks"] = []
         with self.assertRaises(verify.ExitError):
@@ -421,6 +477,80 @@ class VerifyTests(unittest.TestCase):
 
     def test_canonical_json_has_no_insignificant_whitespace(self):
         self.assertEqual(b'{"a":2,"z":1}\n', verify.canonical_bytes({"z": 1, "a": 2}))
+
+    def test_candidate_checkout_is_the_exact_clean_commit(self):
+        self.assertEqual(verify.CANDIDATE_SHA, verify.resolve_commit(CANDIDATE, "HEAD"))
+        self.assertEqual(b"", verify.run_git(CANDIDATE, "status", "--porcelain=v1", "--untracked-files=all"))
+        self.assertNotEqual(ROOT.resolve(), CANDIDATE.resolve())
+        for hostile in ("HEAD", "fc7d153", "0" * 40):
+            with self.subTest(revision=hostile), self.assertRaises(verify.ExitError):
+                with verify.candidate_checkout(ROOT, hostile):
+                    pass
+
+    def test_injected_frozen_change_at_candidate_is_detected(self):
+        # Inject a change into the candidate's frozen set and require the
+        # verifier to refuse it: byte drift in a frozen file, a new untracked
+        # file under a frozen prefix, and the same drift committed on top.
+        frozen = verify.frozen_paths(CANDIDATE)
+        target = next(path for path in frozen if path.startswith("tools/causal-flow-simulator/"))
+        with verify.candidate_checkout(ROOT, verify.CANDIDATE_SHA) as tree:
+            verify.frozen_manifest(tree)
+            original = (tree / target).read_bytes()
+            (tree / target).write_bytes(original + b"\n")
+            with self.assertRaisesRegex(verify.ExitError, "frozen byte drift"):
+                verify.frozen_manifest(tree)
+            (tree / target).write_bytes(original)
+            verify.frozen_manifest(tree)
+            extra = tree / "conformance/injected.txt"
+            extra.write_bytes(b"injected\n")
+            with self.assertRaisesRegex(verify.ExitError, "frozen path set drift"):
+                verify.frozen_manifest(tree)
+            extra.unlink()
+            (tree / target).write_bytes(original + b"\n")
+            git(tree, "commit", "--quiet", "--no-verify", "-am", "inject frozen drift")
+            with self.assertRaisesRegex(verify.ExitError, "frozen byte drift"):
+                verify.frozen_manifest(tree)
+
+    def test_bytecode_residue_is_not_frozen_drift(self):
+        python_file = next(
+            path for path in verify.frozen_paths(CANDIDATE)
+            if path.startswith("tools/causal-flow-simulator/") and path.endswith(".py")
+        )
+        with verify.candidate_checkout(ROOT, verify.CANDIDATE_SHA) as tree:
+            cache = tree / Path(python_file).parent / "__pycache__"
+            cache.mkdir(exist_ok=True)
+            (cache / (Path(python_file).stem + ".cpython-314.pyc")).write_bytes(b"\x00bytecode")
+            nested = tree / "conformance/__pycache__"
+            nested.mkdir(exist_ok=True)
+            (nested / "x.cpython-312.pyc").write_bytes(b"\x00")
+            self.assertEqual(verify.frozen_manifest(CANDIDATE), verify.frozen_manifest(tree))
+            # Only bytecode inside __pycache__ is residue; anything else there
+            # is still drift.
+            (cache / "notes.txt").write_bytes(b"not bytecode\n")
+            with self.assertRaisesRegex(verify.ExitError, "frozen path set drift"):
+                verify.frozen_manifest(tree)
+        self.assertTrue(verify.is_bytecode_residue("conformance/__pycache__/a.cpython-314.pyc"))
+        for path in ("conformance/a.pyc", "conformance/__pycache__/a.py", "__pycache__", "conformance/__pycache__"):
+            with self.subTest(path=path):
+                self.assertFalse(verify.is_bytecode_residue(path))
+
+    def test_cli_verifies_the_candidate_not_the_working_tree(self):
+        # The documented ordinary verification, run from whatever is checked
+        # out at ROOT, reproduces the committed canonical report of the
+        # candidate byte for byte and leaves ROOT untouched.
+        before = verify.run_git(ROOT, "status", "--porcelain=v1", "--untracked-files=all")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "phase-exit-report.json"
+            self.assertEqual(0, verify.main([
+                "--repo-root", str(ROOT), "--base", verify.BASE_SHA, "--output", str(output),
+            ]))
+            committed = verify.run_git(ROOT, "show", f"{verify.CANDIDATE_SHA}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
+            self.assertEqual(committed, output.read_bytes())
+            self.assertEqual(2, verify.main([
+                "--repo-root", str(ROOT), "--base", verify.BASE_SHA,
+                "--output", str(Path(directory) / "base.json"), "--candidate", verify.BASE_SHA,
+            ]))
+        self.assertEqual(before, verify.run_git(ROOT, "status", "--porcelain=v1", "--untracked-files=all"))
 
 
 if __name__ == "__main__":

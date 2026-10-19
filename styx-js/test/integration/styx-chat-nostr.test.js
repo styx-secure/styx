@@ -84,6 +84,12 @@ describe('StyxChat over a real Nostr relay', () => {
     await bob.confirmPairing({ contactPubkey: alice.me.pubkey });
 
     // Alice's alias reached Bob encrypted (intro), not via the cleartext welcome.
+    // The intro travels over the relay after the pairing is confirmed, so wait
+    // on the observable condition instead of a fixed sleep.
+    await waitUntil(async () => {
+      const c = (await bob.listContacts()).find((x) => x.pubkey === alice.me.pubkey);
+      return Boolean(c && c.alias === 'Alice');
+    });
     const bobsAlice = (await bob.listContacts()).find((c) => c.pubkey === alice.me.pubkey);
     expect(bobsAlice.alias).toBe('Alice');
 

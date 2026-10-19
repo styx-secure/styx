@@ -108,6 +108,41 @@ jobs:
         run: |
           set -euo pipefail
           sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 /home/mverde
+      - name: Start the pinned strfry relay
+        working-directory: styx-js
+        run: |
+          set -euo pipefail
+          # The pinned strfry image refuses to start when its NOFILES hard limit
+          # is below 524288 ("Unable to set NOFILES limit to 524288, exceeds max
+          # of 65536"), which is the runner's default container limit. Raise the
+          # daemon's own limit first: containers created afterwards inherit it.
+          for P in $(pgrep -x dockerd || true) $(pgrep -f containerd || true); do
+            sudo prlimit --nofile=1048576:1048576 --pid "$P" || true
+            sudo prlimit --pid "$P" --nofile || true
+          done
+          printf 'services:\n  strfry:\n    ulimits:\n      nofile:\n        soft: 524288\n        hard: 524288\n' > /tmp/relay-override.yml
+          cat /tmp/relay-override.yml
+          docker compose -f docker-compose.test.yml -f /tmp/relay-override.yml up -d
+          # A TCP accept is not readiness: docker's userland proxy answers the
+          # published port as soon as the container is created, even when the
+          # relay inside dies on startup — which is exactly how a NOFILES
+          # startup failure first hid behind a green probe. Require a real HTTP
+          # answer from the relay itself.
+          ready=0
+          code=none
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+              "http://127.0.0.1:17777/" || true)
+            if [ "$code" = "101" ] || [ "$code" = "200" ]; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            echo "::error::pinned strfry relay did not answer on 127.0.0.1:17777 (last http code: $code)"
+            docker compose -f docker-compose.test.yml ps || true
+            docker compose -f docker-compose.test.yml logs --tail 80 || true
+            exit 1
+          fi
+          echo "pinned strfry relay answers on 127.0.0.1:17777 (http $code)"
       - name: Unit + app tests
         working-directory: styx-js
         env:
@@ -115,6 +150,8 @@ jobs:
           B33B2A_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
           B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
           RUSTUP_TOOLCHAIN: 1.97.1
+          NOSTR_RELAY: ws://127.0.0.1:17777
+          REQUIRE_RELAY: '1'
         run: |
           npm ci
           npm test -- --runInBand --testTimeout=20000
@@ -207,6 +244,10 @@ jobs:
           find dist-vault-test/assets -type f -name 'vault-identity-*.js' | grep -q .
           grep -rl 'styxchat:styx:identity\|IDENTITY_SYNC_VERIFIED' dist-vault-test/ | grep -q .
           rm -rf dist-vault-test
+      - name: Stop the pinned strfry relay
+        if: always()
+        working-directory: styx-js
+        run: docker compose -f docker-compose.test.yml down -v || true
 
   vault-db-probes:
     name: Vault browser probes

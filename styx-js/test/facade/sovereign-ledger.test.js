@@ -25,7 +25,9 @@ beforeAll(() => {
 
 function createLedger(overrides = {}) {
   return new SovereignLedger({
-    config: new LedgerConfig({ logLevel: LogLevel.NONE, ...overrides.config }),
+    // Unit suite: inject an empty relay list so confirmPairing never reaches the
+    // public Nostr relays. The production default in LedgerConfig is unchanged.
+    config: new LedgerConfig({ logLevel: LogLevel.NONE, relayUrls: [], ...overrides.config }),
     ledgerStore: overrides.ledgerStore || new MemoryLedgerStore(),
     peerStore: overrides.peerStore || new MemoryPeerStore(),
     keyStore: overrides.keyStore || new MemoryKeyStore(),
