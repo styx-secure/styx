@@ -35,8 +35,33 @@ const REQUIRE_RELAY = process.env.REQUIRE_RELAY === '1';
 // Polyfill WebSocket for Node.js
 globalThis.WebSocket = WebSocket;
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+// Condition wait with a bounded deadline: poll `cond()` until it holds instead
+// of sleeping a fixed number of milliseconds. `deadline` is an absolute
+// Date.now() value shared by every wait of one test, so the test as a whole
+// stays bounded. On expiry it throws, naming what was awaited and the observed
+// state (`detail()`), so a slow or absent relay fails loudly, never as a pass.
+async function waitUntil(what, cond, deadline, detail = () => '') {
+  for (;;) {
+    if (await cond()) return;
+    if (Date.now() >= deadline) {
+      const d = detail();
+      throw new Error('timed out waiting for ' + what + ' on ' + RELAY_URL + (d ? ' (' + d + ')' : ''));
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+// Record the relay's NIP-01 answers (EOSE per subscription, OK per event id)
+// on a pool, so tests wait on what the relay actually said.
+function relayAnswers(pool) {
+  const eose = new Set();
+  const ok = new Map();
+  pool.messages.on('message', ({ data }) => {
+    if (!Array.isArray(data)) return;
+    if (data[0] === 'EOSE') eose.add(data[1]);
+    if (data[0] === 'OK') ok.set(data[1], { accepted: data[2], reason: data[3] });
+  });
+  return { eose, ok };
 }
 
 let relayAvailable = false;
@@ -114,16 +139,22 @@ describe('RelayPool (real relay)', () => {
 
     const messages = [];
     pool.messages.on('message', (msg) => messages.push(msg));
-    pool.subscribe('sub-' + Date.now(), { kinds: [30078], limit: 1 });
+    const subId = 'sub-' + Date.now();
+    pool.subscribe(subId, { kinds: [30078], limit: 1 });
 
-    await sleep(500);
-    // strfry sends EOSE after subscription
+    // strfry sends EOSE after subscription: wait for it instead of sleeping.
+    const deadline = Date.now() + 4000;
+    await waitUntil('EOSE for ' + subId,
+      () => messages.some((m) => m.data[0] === 'EOSE' && m.data[1] === subId), deadline,
+      () => messages.length + ' relay messages seen');
     expect(messages.length).toBeGreaterThanOrEqual(0);
   });
 
   test('publishAndVerify confirms persistence on real relay', async () => {
     if (skipIfNoRelay()) return;
+    const deadline = Date.now() + 8000;
     pool = new RelayPool([RELAY_URL]);
+    const answers = relayAnswers(pool);
     await pool.connectAll();
 
     // Create and sign a valid event
@@ -131,6 +162,14 @@ describe('RelayPool (real relay)', () => {
     const nostrPub = bytesToHex(schnorr.getPublicKey(nostrPriv));
     const { sha256 } = await import('@noble/hashes/sha256');
 
+    // The pinned relay runs with rejectEventsOlderThanSeconds = 0: it answers
+    // ["OK", id, false, "invalid: created_at too early"] to any event whose
+    // created_at second has already ended when the relay ingests it. Stamping
+    // late in a second on a loaded runner therefore loses the event, and no
+    // verification budget can recover it. Wait (bounded) until the clock is in
+    // the first half of a second, then stamp, sign and publish with no await
+    // in between, leaving >= 500 ms for ingestion.
+    await waitUntil('the first half of a wall-clock second', () => Date.now() % 1000 < 500, deadline);
     const event = {
       pubkey: nostrPub,
       created_at: Math.floor(Date.now() / 1000),
@@ -143,7 +182,13 @@ describe('RelayPool (real relay)', () => {
     event.id = bytesToHex(idBytes);
     event.sig = bytesToHex(schnorr.sign(idBytes, nostrPriv));
 
-    const result = await pool.publishAndVerify(event, 5000);
+    // Verification budget = whatever is left of this test's deadline; it ends
+    // as soon as the relay returns the stored event. The relay's own OK verdict
+    // is checked first, so a rejection fails at once and prints its reason.
+    const verifying = pool.publishAndVerify(event, Math.max(0, deadline - Date.now()));
+    await waitUntil('the relay OK for event ' + event.id, () => answers.ok.has(event.id), deadline);
+    expect(answers.ok.get(event.id)).toEqual({ accepted: true, reason: '' });
+    const result = await verifying;
     expect(result.sent).toBe(1);
     expect(result.verified).toBe(true);
   }, 10000);
@@ -153,7 +198,10 @@ describe('RelayPool (real relay)', () => {
     pool = new RelayPool([RELAY_URL]);
     await pool.connectAll();
     await pool.disconnectAll();
-    await sleep(100);
+    // Wait (bounded) until no connection of the pool is open any more.
+    await waitUntil('all relay connections to close', () => pool.connectedCount === 0,
+      Date.now() + 4000, () => pool.connectedCount + ' still open');
+    expect(pool.connectedCount).toBe(0);
   });
 
   test('connectAll with mixed valid/invalid relays', async () => {
@@ -205,13 +253,16 @@ describe('NostrTransport (real relay)', () => {
 
     const poolA = new RelayPool([RELAY_URL]);
     const poolB = new RelayPool([RELAY_URL]);
+    const answersA = relayAnswers(poolA);
+    const answersB = relayAnswers(poolB);
     transportA = new NostrTransport(poolA, new StyxEncryptor(encKey, encKey), nostrPubA, tagB, nostrPrivA);
     transportB = new NostrTransport(poolB, new StyxEncryptor(encKey, encKey), nostrPubB, nostrPubA, nostrPrivB, tagB);
 
+    const deadline = Date.now() + 12000;
+    // B's subscription is live once the relay has answered it with EOSE.
     await transportB.connect();
-    await sleep(300);
+    await waitUntil("EOSE for B's subscription", () => answersB.eose.size > 0, deadline);
     await transportA.connect();
-    await sleep(300);
 
     const receivedByB = [];
     transportB.onMessage((msg) => receivedByB.push(msg));
@@ -223,8 +274,13 @@ describe('NostrTransport (real relay)', () => {
       payload: new Uint8Array([42, 99, 7]),
     });
 
+    // send() stamps created_at and publishes synchronously; the pinned relay
+    // rejects an event whose created_at second has ended before ingestion
+    // (see the publishAndVerify test), so send early in a second.
+    await waitUntil('the first half of a wall-clock second', () => Date.now() % 1000 < 500, deadline);
     await transportA.send(msg);
-    await sleep(2000);
+    await waitUntil('B to receive ' + msg.id, () => receivedByB.length >= 1, deadline,
+      () => 'relay OK answers to A: ' + JSON.stringify([...answersA.ok.values()]));
 
     expect(receivedByB.length).toBeGreaterThanOrEqual(1);
     expect(receivedByB[0].id).toBe(msg.id);

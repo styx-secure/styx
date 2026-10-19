@@ -159,6 +159,15 @@ class O10OutcomeTaxonomyTests(unittest.TestCase):
         with self.assertRaises(ScopeError):
             validate_validator_delta(self.base_validator, drift)
 
+    def test_c03_reconciliation_count_drift_is_rejected(self) -> None:
+        drift = self.actual_validator.replace(
+            '            "mutations": 522,',
+            '            "mutations": 521,',
+            1,
+        )
+        with self.assertRaises(ScopeError):
+            validate_validator_delta(self.base_validator, drift)
+
     def test_exact_main_and_function_registration_pass(self) -> None:
         hashes = validate_validator_delta(self.base_validator, self.actual_validator)
         self.assertEqual(len(hashes), 3)

@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styxsecure.org/schema/app-core-iface-0-positive-carrier-inventory-v1.schema.json",
+  "title": "APP-CORE-IFACE-0 positive carrier inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "inventoryVersion",
+    "status",
+    "interfaceSchemaSha256",
+    "oneOfArmSetSha256",
+    "objectSchemaPointerSetSha256",
+    "caseCount",
+    "cases"
+  ],
+  "properties": {
+    "inventoryVersion": {
+      "const": "APP-CORE-IFACE-0-POSITIVE-CARRIERS-V1"
+    },
+    "status": {
+      "enum": ["PRE_RATIFICATION_CANDIDATE", "RATIFIED"]
+    },
+    "interfaceSchemaSha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "oneOfArmSetSha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "objectSchemaPointerSetSha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "caseCount": {
+      "type": "integer",
+      "minimum": 12,
+      "maximum": 144
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 144,
+      "items": {
+        "$ref": "#/$defs/CarrierCase"
+      }
+    }
+  },
+  "$defs": {
+    "Sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "StableId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"
+    },
+    "RelativeRegularFile": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//)[A-Za-z0-9._/-]+$"
+    },
+    "JsonPointer": {
+      "type": "string",
+      "pattern": "^(?:|/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*?)$"
+    },
+    "OperationV0": {
+      "enum": [
+        "DESCRIBE_PROFILE",
+        "VALIDATE_TRANSCRIPT",
+        "EVALUATE_GENESIS",
+        "REPLAY_CONTEXT",
+        "EVALUATE_CANDIDATE",
+        "EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    "ReferenceExecutionReportV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportVersion",
+        "contractManifestSha256",
+        "canonicalJsonSourceSha256",
+        "referenceSourceSetSha256",
+        "toolchainSha256",
+        "requestCaseId",
+        "responseCaseId",
+        "operation",
+        "requestCarrierSha256",
+        "responseCarrierSha256",
+        "requestValidation",
+        "referenceEvaluation",
+        "responseReleaseValidation"
+      ],
+      "properties": {
+        "reportVersion": {
+          "const": "APP-CORE-IFACE-0-REFERENCE-EXECUTION-V1"
+        },
+        "contractManifestSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "canonicalJsonSourceSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "referenceSourceSetSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "toolchainSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "requestCaseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "responseCaseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "operation": {
+          "$ref": "#/$defs/OperationV0"
+        },
+        "requestCarrierSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "responseCarrierSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "requestValidation": {
+          "const": "PASS"
+        },
+        "referenceEvaluation": {
+          "const": "COMPLETED"
+        },
+        "responseReleaseValidation": {
+          "const": "PASS"
+        }
+      }
+    },
+    "OneOfArm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["oneOfPointer", "armIndex"],
+      "properties": {
+        "oneOfPointer": {
+          "$ref": "#/$defs/JsonPointer"
+        },
+        "armIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      }
+    },
+    "CarrierCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId",
+        "direction",
+        "operation",
+        "sourceKind",
+        "releasePhase",
+        "carrierFile",
+        "carrierSha256",
+        "carrierOctets",
+        "positiveObservationId",
+        "coveredObjectSchemaPointers",
+        "coveredOneOfArms"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "direction": {
+          "enum": ["REQUEST", "RESPONSE"]
+        },
+        "operation": {
+          "$ref": "#/$defs/OperationV0"
+        },
+        "sourceKind": {
+          "enum": ["CLOSED_REQUEST_FIXTURE", "WITHHELD_REFERENCE_OUTPUT"]
+        },
+        "releasePhase": {
+          "enum": ["PRE_FREEZE_BLIND_INPUT", "POST_FREEZE_ORACLE_RELEASE"]
+        },
+        "requestCaseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "referenceExecutionReportSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "carrierFile": {
+          "$ref": "#/$defs/RelativeRegularFile"
+        },
+        "carrierSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "carrierOctets": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967275
+        },
+        "positiveObservationId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "coveredObjectSchemaPointers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/JsonPointer"
+          }
+        },
+        "coveredOneOfArms": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/OneOfArm"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"direction": {"const": "REQUEST"}},
+            "required": ["direction"]
+          },
+          "then": {
+            "properties": {
+              "sourceKind": {"const": "CLOSED_REQUEST_FIXTURE"},
+              "releasePhase": {"const": "PRE_FREEZE_BLIND_INPUT"}
+            },
+            "not": {
+              "anyOf": [
+                {"required": ["requestCaseId"]},
+                {"required": ["referenceExecutionReportSha256"]}
+              ]
+            }
+          },
+          "else": {
+            "properties": {
+              "sourceKind": {"const": "WITHHELD_REFERENCE_OUTPUT"},
+              "releasePhase": {"const": "POST_FREEZE_ORACLE_RELEASE"}
+            },
+            "required": ["requestCaseId", "referenceExecutionReportSha256"]
+          }
+        }
+      ]
+    }
+  }
+}

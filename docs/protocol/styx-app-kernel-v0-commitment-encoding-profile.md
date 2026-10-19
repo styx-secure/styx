@@ -407,9 +407,10 @@ The mandatory work order is:
    lengths, presence octets and trailing data without attacker-sized
    allocation;
 2. derive the protocol/profile suite and local O-08 limits, then compare the
-   carried suite, class, shape and profile-relative closed-set membership;
-3. validate exact container lengths, shape/presence consistency and every
-   geometry equation using checked non-wrapping arithmetic;
+   carried suite, class and shape;
+3. validate exact container lengths, shape/presence consistency and predicates
+   1–7 using checked non-wrapping arithmetic, then compare profile-relative
+   closed-set membership;
 4. reject any declared length, count, depth or aggregate-work value outside the
    active limits before signature work, graph traversal, fetch or payload-sized
    allocation;
@@ -423,8 +424,18 @@ checks. This ordering selects no O-08 number and no O-11 decoder.
 Structural rejection sites include unknown protocol/domain/suite/class/shape,
 unsupported implementation, carried-suite mismatch, invalid randomizer width,
 invalid container length, inconsistent shape/presence, geometry outside the
-authenticated profile, arithmetic overflow, impossible chunk count/final
+representable grammar, arithmetic overflow, impossible chunk count/final
 length, malformed/truncated/overlong input and extra preimage octets.
+
+A geometry that satisfies predicates 1–7 but uses a chunk size outside the
+authenticated O-08 closed set is not structurally malformed. It is a supported-
+profile admission failure and selects `CURRENT_OBJECT_OUT_OF_PROFILE` as fixed
+by the C0.3 R6 reconciliation.
+
+The contrary sentence retained verbatim in frozen §4 is historical O-06c
+evidence, not the current classification rule. R6 and this later verification
+section supersede that sentence without rewriting the bytes protected by the
+O-06c frozen-section gate.
 
 Binding observations leave the event structurally valid and include missing
 content/opening, supplied-length mismatch, commitment mismatch, target

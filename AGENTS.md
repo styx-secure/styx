@@ -22,6 +22,12 @@ executor/persona, independent reviewers, human gates, base branch and base SHA.
 Missing or ambiguous data blocks execution. MUCC stories have their own
 executability condition, defined under "Execution lanes" below.
 
+The active protocol-hardening freeze and its ordered exit gates are defined in
+`docs/protocol/protocol-hardening-plan.md`. No task contract or MUCC story may
+silently bypass that plan: any permitted protocol increment must fit its freeze
+boundary, and product/runtime work remains paused until the recorded exit gate
+is satisfied.
+
 ## Execution lanes
 
 Since ADR-0006 the repository runs two execution lanes:
@@ -149,7 +155,7 @@ melos run test:all
 melos run coverage:check
 ```
 
-`packages/themis_survey` is Flutter and, when touched, is tested from its own
+`packages/flegias_survey` is Flutter and, when touched, is tested from its own
 directory with `flutter test`.
 
 JavaScript/PWA:
@@ -187,3 +193,10 @@ only after successful change detection.
 - The product remains experimental while documented H1/H2 blockers are open.
 
 This governance policy does not authorize PR-3 or any product change.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->

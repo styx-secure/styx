@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="7c65270456a9b13c4b1506e79d49050c176969c8f9432fcc7da1c6c5ee632194" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="9fc14ba66a53e4cd7546bb435556e8604ed4ad082df51b77cc53e3ac423a5921" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -17,8 +17,12 @@ Il [piano di hardening del protocollo applicativo](../protocol/protocol-hardenin
 congela attualmente le nuove implementazioni di prodotto e runtime. Le decisioni
 di protocollo, la riconciliazione del threat model, le evidenze avversariali e la
 conformità language-neutral hanno priorità finché non passano gli exit gate
-ratificati dagli esseri umani. La Issue #233 / PR #234 resta evidenza
-sperimentale isolata, C0.3 resta `NO-GO` e questa roadmap non aggira il gate.
+ratificati dagli esseri umani. La Issue #266 / PR #267 mergiata ha completato
+un bounded evidence GO per l'esatto corpus transcript/K D4 e il relativo
+pacchetto di evidenze. C0.3 resta comunque `NO-GO` per allineamento
+dell'implementazione, demo, prodotto e uso sensibile. Può procedere soltanto un
+incremento SS-0 con contratto separato e limitato alle classi di artefatti di
+protocollo permesse dal piano; questa roadmap non aggira il gate.
 
 ## 1. Metodo e legenda
 
@@ -366,3 +370,10 @@ L'azione attiva è eseguire il piano di hardening del protocollo nel relativo
 ordine di dipendenza. Ogni decisione continua a diventare una Issue approvata,
 con threat model, non-goal, test e rollback; l'integrazione di prodotto riprende
 solo dopo il verdetto di uscita del piano e tramite contratti separati.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Stato dell'uscita dall'hardening del protocollo: `BOUNDED_GO`. Il freeze generale del
+protocollo termina solo per lavori autorizzati separatamente dalla sezione 9 del piano di
+hardening. La Issue #287 non autorizza di per se stessa adapter, persistenza autenticata,
+SDK, trasporto/consegna, prodotto, demo, deployment o uso sensibile; US-001--US-008 restano sospese.
+<!-- styx-protocol-phase-exit-status:v1:end -->

@@ -1,6 +1,6 @@
 # Styx project brief
 
-> **Status:** public project and funding brief, updated 29 August 2026.
+> **Status:** public project and funding brief, updated 30 August 2026.
 >
 > Styx is experimental, has not completed an independent security audit, and
 > is not ready for sensitive, high-risk, or life-critical use. This brief
@@ -25,12 +25,21 @@ resumes.
 
 The canonical [protocol-hardening plan](protocol/protocol-hardening-plan.md)
 defines the freeze boundary, authority order, review bundle and exit gates.
-Issue #233 / PR #234 remain isolated experimental evidence and are not treated
-as ratified protocol semantics. Issue #264 constructs the separately contracted,
-synthetic-only C0.3 conformance corpus with independent Python/JavaScript replay
-and a closed adversarial mutation registry. This completes corpus construction
-only: C0.3 remains `NO-GO` for implementation alignment, demo, product
-deployment and sensitive use.
+Issue #233 / PR #234 are ratified historical protocol evidence within their
+stated bounds. Issue #264 constructed the first separately contracted,
+synthetic-only C0.3 corpus. Issue #266 / merged PR #267 then reconciled that
+corpus with layered transcript/K/AP semantics at an exact tree shared by the
+reviewed candidate and `main`. Independent Python/JavaScript replay, connected
+authority graphs, a closed adversarial mutation registry and an oracle-free
+clean-room reader agree on the bounded public transcript/K observations.
+
+That result is a human-ratified **bounded evidence GO** for the exact D4 corpus
+and evidence package only. It is not implementation conformance and does not
+lift the active freeze: C0.3 remains `NO-GO` for implementation alignment,
+public demo, product deployment and sensitive use. A separately contracted
+SS-0 protocol increment may operate only on the protocol-artifact classes
+already allowed by the hardening plan; adapter, wire, storage, persistence,
+transport, corpus and product work remain paused.
 
 ## Mission
 
@@ -41,14 +50,14 @@ collaboration, verifiable state transitions, offline operation, and redundant
 delivery without making a central service the authoritative record or giving
 delivery infrastructure access to application content.
 
-The first vertical, **Themis**, is intended to let a person open and continue a
+The first vertical, **Flegias**, is intended to let a person open and continue a
 confidential case without providing an email address, telephone number, or
 ordinary account, while authorized organizations manage follow-up, roles,
 evidence, retention, and continuity through verifiable encrypted state.
 
 Styx is not a general-purpose messenger. The reference chat exists to exercise
 pairing, encrypted sessions, persistence, interoperability, and failure
-diagnostics. Product work is driven by the reusable substrate and Themis.
+diagnostics. Product work is driven by the reusable substrate and Flegias.
 
 ## Problem
 
@@ -91,7 +100,7 @@ client or transport:
 
 | Layer | Responsibility | Current direction |
 |---|---|---|
-| Product vertical | Workflow, roles, policy, and user experience | Themis first; reference chat minimal |
+| Product vertical | Workflow, roles, policy, and user experience | Flegias first; reference chat minimal |
 | Styx application protocol | Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance | Language-neutral specification and vectors are to become authoritative |
 | Secure-session profile | Membership, epochs, continuous group key agreement, convergence, and confidential delivery | Bounded exact-pin Styx/MDK direct-MLS proof complete; supported adapter and Nostr-envelope integration remain future work |
 | Runtime profile | Key custody, encrypted storage, workers, notifications, distribution, and platform integration | Browser PWA first; signed native profiles are a future higher-assurance option |
@@ -104,14 +113,14 @@ feature line is frozen.
 
 Nostr is a replaceable store-and-forward transport, not the application
 identity or database. MLS, through the pinned OpenMLS implementation, supplies
-secure-session primitives but not Themis workflow semantics. Marmot is the
+secure-session primitives but not Flegias workflow semantics. Marmot is the
 preferred MLS-over-Nostr compatibility target. Phase B demonstrated a bounded
 isolated direct-MLS profile against exact pinned OpenMLS, Marmot and MDK
 revisions; it did not establish general Marmot conformance, Nostr-envelope
 interoperability or product activation. No upstream project has endorsed or
 certified Styx.
 
-## Themis: first vertical
+## Flegias: first vertical
 
 The planned text-first flow is deliberately narrower than a consumer
 messenger. A reporter would create a fresh case context and a high-entropy
@@ -190,11 +199,11 @@ persistence, retention/compaction, transport and runtime boundaries.
 
 ## What remains
 
-- construct the authorized language-neutral Styx application-protocol
-  adversarial corpus; then, under a separate approved contract, build a third
-  implementation from the specification, obtain
-  the explicit protocol-hardening exit verdict, extract independent Dart cases,
-  and keep parallel product implementation frozen until that verdict;
+- preserve the completed language-neutral C0.3 adversarial corpus; then, under
+  separate approved contracts, define the remaining SS-0 semantics and bounded
+  adversarial evidence, obtain independent implementation agreement and the
+  explicit protocol-hardening exit verdict, and keep parallel product
+  implementation frozen until that verdict;
 - turn the completed bounded secure-session proof into a separately versioned,
   supported adapter only after selecting and testing authenticated product
   persistence, retention/compaction, transport and runtime boundaries;
@@ -230,7 +239,7 @@ independent review, exact tests, and human gate.
 | 1. Application protocol and conformance | **Active protocol-hardening freeze:** versioned language-neutral objects, transitions, error rules, adversarial scenarios, and reusable vectors; Dart cases extracted before its feature freeze | The [hardening exit gates](protocol/protocol-hardening-plan.md#8-exit-gates) pass; independent implementations execute the applicable corpus; divergences are resolved in the specification rather than hidden in ports |
 | 2. Secure-session interoperability decision | **Bounded evidence complete:** preserve the staged-commit, identity, KeyPackage, Welcome, traffic, self-update, retained-window and two-candidate convergence proofs; next define a separately supported adapter without relabelling the isolated harness as product code | Reproducible exact-pin evidence and the [final bounded GO](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md); no general-conformance or product claim |
 | 3. Minimum SDK and reliable delivery | Data-only application interfaces, context separation, persistent outbox, ACK states, retry, idempotency, deduplication, and crash recovery | Tests demonstrate offline recovery and never label relay publication as recipient or human receipt |
-| 4. Anonymous-case capability and Themis alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |
+| 4. Anonymous-case capability and Flegias alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |
 | 5. Distribution and deployment assurance | Verifiable artifacts and updates, stricter browser release controls, a native high-assurance profile decision, and reproducible relay/deployment guidance | Independent artifact comparison, update/rollback tests, metadata data-flow evidence, and continuity drills |
 | 6. Targeted independent review, remediation, and gated field decision | Contractually bounded review of the highest-risk Styx-authored scope, finding disposition, retest and operational procedures; a synthetic/non-sensitive exercise or later pilot only after separate readiness gates | No unresolved blocking finding within the reviewed scope; reviewed residual risks; trained operators; and an explicit GO/NO-GO decision before any broader field use |
 
@@ -270,7 +279,7 @@ themselves demonstrate safety, anonymity, adoption, or readiness.
   recipient taking a screenshot, or prevent identification through content.
 - Deletion and pruning cannot guarantee physical erasure from flash, browser
   storage, backups, screenshots, or third-party replicas.
-- Themis does not currently exist as a complete application. Its anonymous
+- Flegias does not currently exist as a complete application. Its anonymous
   capability, metadata profile, operator controls, and deployment procedure are
   proposed work.
 - The completed Phase B work is exact-pin isolated interoperability and
@@ -310,3 +319,10 @@ compatibility or use does not imply endorsement.
 - [Final exact-pin Phase B interoperability verdict](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)
 - [Current chat security report](security/2026-07-10-styx-chat-security-report.md)
 - [Repository governance](../AGENTS.md)
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->

@@ -17,14 +17,108 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import dumps, load, store  # noqa: E402
 import generate_corpus  # noqa: E402
 from corpus_model import semantic_observation_digest  # noqa: E402
-from validate_corpus import ValidationError, _walk_hygiene, validate  # noqa: E402
+from validate_corpus import SCHEMAS, ValidationError, _walk_hygiene, validate  # noqa: E402
 
 
 class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 501)
+        self.assertEqual(report["mutations"], 522)
+
+    def test_every_v1_corpus_schema_identifier_fails_closed(self) -> None:
+        for name in sorted(SCHEMAS):
+            with self.subTest(name=name):
+                temporary, target = self._mutated_corpus()
+                self.addCleanup(temporary.cleanup)
+                document = load(target / name)
+                document["schema"] = document["schema"].replace("/v2", "/v1")
+                store(target / name, document)
+                with self.assertRaisesRegex(ValidationError, "schema mismatch"):
+                    validate(REPO, target)
+
+    def test_v1_manifest_format_version_fails_closed(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        manifest = load(target / "manifest.json")
+        manifest["corpusFormatVersion"] = 1
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(ValidationError, "corpus format version mismatch"):
+            validate(REPO, target)
+
+    def test_o10_source_rows_have_exact_explicit_witnesses(self) -> None:
+        rows = load(CORPUS / "manifest.json")["coverage"]["o10"]["sourceRows"]
+        self.assertEqual(len(rows), 102)
+        produced = [row for row in rows if row["disposition"] == "PRODUCED"]
+        self.assertEqual(len(produced), 31)
+        self.assertTrue(all(row["witnesses"] for row in produced))
+        self.assertTrue(
+            all(not row["witnesses"] for row in rows if row["disposition"] != "PRODUCED")
+        )
+        chunk_count = next(
+            row for row in produced
+            if row["rowId"] == "O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL"
+        )
+        self.assertEqual(
+            chunk_count["witnesses"],
+            [{
+                "inputId": "inv-resource-chunk-count",
+                "jointSourceRowIds": [
+                    "O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL",
+                    "O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL",
+                ],
+                "scenarioId": "scenario-vector-inv-resource-chunk-count",
+            }],
+        )
+        unresolved = [
+            row
+            for row in produced
+            if row["primary"] == "UNRESOLVABLE_CREDENTIAL"
+        ]
+        self.assertEqual(len(unresolved), 2)
+        self.assertTrue(
+            all(
+                row["witnesses"][0]["scenarioId"]
+                == "k-hostile-revoke-unknown-target"
+                and row["witnesses"][0]["inputKAdmissionRecordId"]
+                == "k-hostile-revoke-unknown-target"
+                for row in unresolved
+            )
+        )
+        structural = {
+            row["rowId"]: row["witnesses"][0]
+            for row in produced
+            if row["rowId"] in {
+                "BASE:STRUCTURAL_REJECTION:00",
+                "BASE:STRUCTURAL_REJECTION:01",
+            }
+        }
+        self.assertEqual(
+            structural["BASE:STRUCTURAL_REJECTION:00"][
+                "inputKAdmissionRecordId"
+            ],
+            "k-hostile-self-rotation-event",
+        )
+        self.assertEqual(
+            structural["BASE:STRUCTURAL_REJECTION:01"][
+                "inputKAdmissionRecordId"
+            ],
+            "k-hostile-revoke-noncausal-target-event",
+        )
+
+    def test_generic_same_outcome_cannot_replace_o10_row_witness(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        manifest = load(target / "manifest.json")
+        row = next(
+            item for item in manifest["coverage"]["o10"]["sourceRows"]
+            if item["rowId"] == "O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL"
+        )
+        row["witnesses"][0]["inputId"] = "inv-resource-sequence"
+        row["witnesses"][0]["scenarioId"] = "scenario-vector-inv-resource-sequence"
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(ValidationError, "O-10 source-row partition mismatch"):
+            validate(REPO, target)
 
     def test_hygiene_rejects_embedded_absolute_paths_but_not_reuse_label(self) -> None:
         for value in ("path=/", "provenance=/tmp/styx", "path=C:\\review", r"path=\\host\share"):
@@ -132,11 +226,18 @@ class ManifestTests(unittest.TestCase):
 
     def test_every_vector_is_executed_and_counterexamples_are_distinct(self) -> None:
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
-        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        invalid_document = load(CORPUS / "invalid-transcript-vectors.json")
+        invalid = invalid_document["records"]
+        ap_expectations = invalid_document["apExpectationOnlyRecords"]
         scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
         traces = load(CORPUS / "expected-traces.json")["records"]
-        used = {step["inputVectorId"] for scenario in scenarios for step in scenario["steps"]}
-        self.assertEqual(used, {row["id"] for row in valid + invalid})
+        used = {
+            step["inputVectorId"]
+            for scenario in scenarios
+            for step in scenario["steps"]
+            if "inputVectorId" in step
+        }
+        self.assertEqual(used, {row["id"] for row in valid + invalid + ap_expectations})
         counterexamples = [row for row in scenarios if "counterexampleId" in row]
         self.assertEqual({len(row["steps"]) for row in counterexamples}, {3})
         observations = {
@@ -146,6 +247,152 @@ class ManifestTests(unittest.TestCase):
         }
         self.assertEqual(len(observations), len(counterexamples))
         self.assertFalse(any("conditions" in row for row in invalid))
+
+    def test_evidence_layer_cannot_be_swapped_at_constant_cardinality(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        transcript_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "TRANSCRIPT_CONFORMANCE"
+        )
+        local_negative_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "LOCAL_NEGATIVE"
+        )
+        transcript_step["evidenceLayer"] = "LOCAL_NEGATIVE"
+        local_negative_step["evidenceLayer"] = "TRANSCRIPT_CONFORMANCE"
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "layer references a non-(?:valid|invalid) vector",
+        ):
+            validate(REPO, target)
+
+    def test_boundary_layer_cannot_be_swapped_at_constant_cardinality(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        boundary_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "BOUNDARY_NOT_EXECUTED"
+        )
+        transcript_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "TRANSCRIPT_CONFORMANCE"
+        )
+        boundary_step["evidenceLayer"] = "TRANSCRIPT_CONFORMANCE"
+        transcript_step["evidenceLayer"] = "BOUNDARY_NOT_EXECUTED"
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "boundary execution-layer mismatch",
+        ):
+            validate(REPO, target)
+
+    def test_boundary_shape_cannot_move_to_an_executed_flow(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        boundary_scenario = next(
+            scenario
+            for scenario in scenarios["records"]
+            if scenario.get("flowId") == "secure_session_receive"
+        )
+        transcript_scenario = next(
+            scenario
+            for scenario in scenarios["records"]
+            if scenario.get("flowId") == "author_application_event"
+        )
+        boundary_step = boundary_scenario["steps"][0]
+        transcript_step = transcript_scenario["steps"][0]
+        for field in ("evidenceLayer", "executed", "expectedStage"):
+            boundary_step[field], transcript_step[field] = (
+                transcript_step[field],
+                boundary_step[field],
+            )
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "boundary scenario-layer mismatch",
+        ):
+            validate(REPO, target)
+
+    def test_boundary_shape_cannot_move_by_swapping_flow_identity(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        boundary_scenario = next(
+            scenario
+            for scenario in scenarios["records"]
+            if scenario.get("flowId") == "secure_session_receive"
+        )
+        transcript_scenario = next(
+            scenario
+            for scenario in scenarios["records"]
+            if scenario.get("flowId") == "author_application_event"
+        )
+        boundary_scenario["flowId"], transcript_scenario["flowId"] = (
+            transcript_scenario["flowId"],
+            boundary_scenario["flowId"],
+        )
+        boundary_step = boundary_scenario["steps"][0]
+        transcript_step = transcript_scenario["steps"][0]
+        for field in ("evidenceLayer", "executed", "expectedStage"):
+            boundary_step[field], transcript_step[field] = (
+                transcript_step[field],
+                boundary_step[field],
+            )
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "flow scenario identity mismatch",
+        ):
+            validate(REPO, target)
 
 
 if __name__ == "__main__":

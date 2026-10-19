@@ -49,6 +49,11 @@ def run(repo_root: Path, corpus: Path) -> dict[str, object]:
             "result": "PASS",
             "runtimes": ["javascript", "python"],
             "scenarios": report["scenarios"],
+            "kAdmissionHostileScenarios": report[
+                "kAdmissionHostileScenarios"
+            ],
+            "kAdmissionRecords": report["kAdmissionRecords"],
+            "kAdmissionScenarios": report["kAdmissionScenarios"],
             "vectors": report["validVectors"] + report["invalidVectors"],
         }
 

@@ -24,12 +24,12 @@ melos:
     - packages/*
     - test_integration
 
-  # themis_survey is a Flutter package (depends on the flutter SDK) and is not a member
+  # flegias_survey is a Flutter package (depends on the flutter SDK) and is not a member
   # of the Dart pub `workspace:` above. The reference-stack CI runs on the pure-Dart
   # toolchain (dart-lang/setup-dart, no Flutter), so melos must skip it — otherwise
   # analyze/test would fail resolving `package:flutter`. See docs/architecture/decisions/ADR-0003.
   ignore:
-    - packages/themis_survey
+    - packages/flegias_survey
 
   scripts:
     analyze:

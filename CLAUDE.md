@@ -93,10 +93,23 @@ JavaScript/TypeScript. A successful path detector may green-skip irrelevant
 heavy jobs; detector failure is never a green skip.
 
 CI coverage does not replace the exact tests named by the task contract.
-`packages/themis_survey` is Flutter and must be tested separately when touched.
+`packages/flegias_survey` is Flutter and must be tested separately when touched.
 
 ## Current governance boundary
 
 Governance work does not authorize product changes. Do not start PR-3 or decide
 cryptography, persisted formats, migrations or vault architecture unless a
 separate approved technical Issue explicitly authorizes that work.
+
+The active freeze, permitted protocol-only artifact classes and exit gates are
+defined by `docs/protocol/protocol-hardening-plan.md`. A task contract cannot
+silently bypass that plan. Issue #266 / merged PR #267 completed bounded C0.3
+transcript/K evidence only; implementation alignment, demo, product and
+sensitive use remain `NO-GO`.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->

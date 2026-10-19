@@ -1,8 +1,9 @@
 # Marmot/OpenMLS Phase B2.4 authorization proof
 
 This directory is an isolated, non-product security proof. Nothing under
-`styx-js/src`, the chat PWA, vault, worker, transport, Themis or Flegias imports
-it. It is not a full Marmot implementation or a sensitive-use release.
+`styx-js/src`, the chat PWA, vault, worker, transport, Flegias or the
+`flegias_survey` package imports it. It is not a full Marmot implementation or
+a sensitive-use release.
 
 ## What it proves
 

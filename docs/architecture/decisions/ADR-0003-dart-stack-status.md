@@ -34,5 +34,8 @@ Lo stack Dart (`packages/`) è software maturo e testato: ~10.660 righe di libre
 
 ## Note
 
-- `themis_survey` (app Flutter di sondaggi) è già decoupled dal core e non rientra in questa decisione: è un consumatore opzionale, non parte del ledger.
+- `flegias_survey` (chiamato `themis_survey` prima della
+  [decisione di rinomina](../../brand/THEMIS_TO_FLEGIAS_MIGRATION.md) del
+  2026-08-29) è un package Flutter di sondaggi già decoupled dal core e non
+  rientra in questa decisione: è un consumatore opzionale, non parte del ledger.
 - Il bridge Go `push_bridge_server` è lo scaffold della vecchia linea Dart (vedi PANORAMICA §3.3): candidato a `legacy/go-push-bridge/` nella struttura target.

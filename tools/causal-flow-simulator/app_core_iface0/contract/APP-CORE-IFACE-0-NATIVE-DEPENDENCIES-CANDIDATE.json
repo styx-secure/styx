@@ -1,0 +1,634 @@
+{
+  "schema": "styx.app-core-iface0-native-dependencies-candidate.v1",
+  "status": "PRE_RATIFICATION_WORKING_EVIDENCE",
+  "authorityEffect": "NONE",
+  "repository": "styx-secure/styx",
+  "baseBranch": "main",
+  "baseSha": "e0af4e1e2173deb2481eabdb24d8622282b33455",
+  "rules": {
+    "contentDigest": "SHA-256 over exact Git blob bytes",
+    "pathSet": "literal and closed at Base",
+    "frozenPolicy": "read-only dependencies remain byte-identical",
+    "seededPolicy": "only ratified additive projection changes; existing semantics remain covered",
+    "workingTreeBytes": "never accepted as native dependency evidence"
+  },
+  "derivedCounts": {
+    "dependencies": 65,
+    "readOnlyDependencies": 60,
+    "seededExtensionDependencies": 4,
+    "ratifiedExactRepinDependencies": 1,
+    "c03CanonicalFiles": 6,
+    "c03ImplementationAndTestFiles": 26,
+    "protocolReviewToolFiles": 16
+  },
+  "setDigests": {
+    "allPathSetSha256": "236b0419285085d92e7b7bfe5967b8292c46da43bed09e0bceedf37eddd52028",
+    "readOnlyPathSetSha256": "107c9f61ffc6bd44c4cf36f132c40380b5726af813399601ea5d94f1e75c3499",
+    "seededExtensionPathSetSha256": "cb8be3acdfd8cfa9dac993c1c1e158dbd847f5206659fc1de5f91701f9551520",
+    "ratifiedExactRepinPathSetSha256": "626f1f4719aea4a6046ee036826277514c31b97fc25c7bd5757ef58918b823d3",
+    "dependencyRelationSha256": "ba67224da7a79df7b11e6a6c4f29d1308b2361ec383e16b5b9822cebf9627eb2"
+  },
+  "seededExtensionPaths": [
+    "docs/protocol/review/README.md",
+    "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+    "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
+    "tools/protocol-review-model/validate.py"
+  ],
+  "ratifiedExactRepinPaths": [
+    "tools/causal-flow-simulator/c03/corpus_model.py"
+  ],
+  "dependencies": [
+    {
+      "path": "AGENTS.md",
+      "category": "GOVERNANCE_AND_SEQUENCE",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "328914da1864b7ad40fe746631190c9448f6d7be",
+      "byteSize": 8689,
+      "sha256": "ae4d3ca7dd7fc2123443c163462f16afddc31183a4287d9039ee66a8a9009078"
+    },
+    {
+      "path": "docs/protocol/protocol-hardening-plan.md",
+      "category": "GOVERNANCE_AND_SEQUENCE",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+      "byteSize": 61955,
+      "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
+      "category": "NORMATIVE_SEMANTICS",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "e417d672358edbabdf095e7e0f29fef3c7b025c0",
+      "byteSize": 105058,
+      "sha256": "26b33af8cc4177bb59eecbd102a7fe628c201c3c6d4a963d68e2bbb5cf565e97"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
+      "category": "NORMATIVE_SEMANTICS",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "66e3ea7b01d85dfc20a7a6825a2e0cac91ff11da",
+      "byteSize": 50619,
+      "sha256": "3ea43a5b6c9b93a19b2b17ab6a54815583275ea7a544de7e5102b294b13f53db"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
+      "category": "NORMATIVE_SEMANTICS",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "007d07cae371d2cfcc9ef62348dd3090dcbb2037",
+      "byteSize": 33260,
+      "sha256": "62ae2733753c9dabeae3980eec996de33a7f63146e8d16bdd7d55a441e299dbb"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
+      "category": "NORMATIVE_SEMANTICS",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "23ee61a0fe2da64911de1b362354a2e8195b9b03",
+      "byteSize": 39236,
+      "sha256": "673e10e3392560e4227a74c99a276d6f880fe1af32eff4943fd2aaac5b791287"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md",
+      "category": "NORMATIVE_SEMANTICS",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "42906919baf5ea9ad4879c028434dc4e7bf91d2c",
+      "byteSize": 6301,
+      "sha256": "c50ea442aeb79072d1fef4c95175f53bdde9cf8a395d7e076be67571ba2d3d42"
+    },
+    {
+      "path": "docs/security/STYX-THREAT-MODEL.md",
+      "category": "NORMATIVE_SEMANTICS",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "c4a66b206bf73c293d251156522ad09a7d36eafe",
+      "byteSize": 62356,
+      "sha256": "8863ce4b2ef697055e95da22e0a2fbb630172cdf3f5fd0c91b27ec02f9d2ba54"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md",
+      "category": "RESOURCE_AND_REVIEW_MODEL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "f54a010c190f9b599b56d73e48be9d735579babb",
+      "byteSize": 9539,
+      "sha256": "eb4e8df2d9149822e94ab0242406dad47531a6830db609110a0101d86d482148"
+    },
+    {
+      "path": "docs/protocol/styx-app-kernel-v0-resource-envelope-falsification-report.md",
+      "category": "RESOURCE_AND_REVIEW_MODEL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "4f75be457463039e95a76ad3ecedfa65a73b57fa",
+      "byteSize": 4143,
+      "sha256": "ccad4bad5e9e19436b6c8953555e932b4bfe8b4691ac4d80e86199640322c075"
+    },
+    {
+      "path": "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
+      "category": "RESOURCE_AND_REVIEW_MODEL",
+      "mutationPolicy": "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS",
+      "fileMode": "100644",
+      "gitBlobOid": "83432b72474bc18342f21884ccae6a2a308a9d5d",
+      "byteSize": 23186,
+      "sha256": "9975d7ad63bb00ff3351bcf7e740f315a5cbac3acf9b13ac36901e421b46f846"
+    },
+    {
+      "path": "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+      "category": "RESOURCE_AND_REVIEW_MODEL",
+      "mutationPolicy": "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS",
+      "fileMode": "100644",
+      "gitBlobOid": "915a6f2718f53d3a45650ee5ddf41538c0b32055",
+      "byteSize": 202291,
+      "sha256": "06da54f2100d09e3373c5ebf513f26c77534e5dfea8a27f608cdae266eefcc26"
+    },
+    {
+      "path": "tools/causal-flow-simulator/o07/required_atom_instances_v1.json",
+      "category": "SELECTED_MACHINE_PROFILES",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "47f5075e707a3ca7b2361dc48887ee9f7f335c14",
+      "byteSize": 56556,
+      "sha256": "6e91c6e2734b4c26d3320ad03ca0e8c00db3ae4c1f0e4437524e376ebd9612ed"
+    },
+    {
+      "path": "tools/causal-flow-simulator/o08/resource-envelope.candidate.json",
+      "category": "SELECTED_MACHINE_PROFILES",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "459e50a6deccdd3b7006c4ad853565a2569253d1",
+      "byteSize": 32831,
+      "sha256": "3f66c0620699b260d11ba014a7355ec5234db1aad12a3e4d9ce797e5b98c5b3e"
+    },
+    {
+      "path": "tools/causal-flow-simulator/o10/outcome-taxonomy.json",
+      "category": "SELECTED_MACHINE_PROFILES",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "44094cf8ec2608216caf388206a6709ce45f2586",
+      "byteSize": 6282,
+      "sha256": "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24"
+    },
+    {
+      "path": "tools/causal-flow-simulator/o10/source-inventory.json",
+      "category": "SELECTED_MACHINE_PROFILES",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "49d82b1363960161502d75ee9243854f97585856",
+      "byteSize": 82976,
+      "sha256": "f2209badb8e142fb08e1402345d496c5d799360c0835394828a2d3c4557e737a"
+    },
+    {
+      "path": "conformance/application-protocol/c03/manifest.json",
+      "category": "C03_CANONICAL_DATA",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "04aac3dadd1fb892f9d1ffa55f0574c2a17afe52",
+      "byteSize": 57058,
+      "sha256": "e0fe763ed1e2e8a032b0aa6ed495f57ce808ed17d3156d6a08e4da2048b78eb0"
+    },
+    {
+      "path": "conformance/application-protocol/c03/valid-transcript-vectors.json",
+      "category": "C03_CANONICAL_DATA",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "6173f4cc99db760df6e9cd4d06fc5021ea133809",
+      "byteSize": 704641,
+      "sha256": "8dc607acff6b0f9c4942834acce3d5004594a8b9b8169edd5b346b53cc6955cb"
+    },
+    {
+      "path": "conformance/application-protocol/c03/invalid-transcript-vectors.json",
+      "category": "C03_CANONICAL_DATA",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "5126a420a16b55fc10ac2cf28785f32b06cb84c7",
+      "byteSize": 187522,
+      "sha256": "6e5d9c4e9100be721651312fe5900fae640560b232588d4838142c2bd22889d4"
+    },
+    {
+      "path": "conformance/application-protocol/c03/state-machine-scenarios.json",
+      "category": "C03_CANONICAL_DATA",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "a63ac2aa16a9383b7287d11f3d5f515e6b02b1e9",
+      "byteSize": 127334,
+      "sha256": "ea07798d2fc2a95dc95f1d0a06300ef9b548a3eb13fbef6a59958d680b0842b3"
+    },
+    {
+      "path": "conformance/application-protocol/c03/adversarial-mutations.json",
+      "category": "C03_CANONICAL_DATA",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "0ef8dfdca4f08e1f5eba69964843012b8d910053",
+      "byteSize": 375050,
+      "sha256": "a1464c018b37272da5cee7afcb6e6f6c9f03a11b5c74173a559dc931fcf8cb94"
+    },
+    {
+      "path": "conformance/application-protocol/c03/expected-traces.json",
+      "category": "C03_CANONICAL_DATA",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "339322b91e351be01940ada72f5d851991e68da0",
+      "byteSize": 242594,
+      "sha256": "33eb07a0f5911926cd458cfa1f3e790a535942058e9bd7ef309860236b99765d"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/README.md",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "caa015280b9eb7a70c3a433675c586c184db97dd",
+      "byteSize": 6165,
+      "sha256": "5f81a81f17e1e3ec4dd06a0e898730920bebb41a5def6bd53c716710a6921262"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/build_blind_projection.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "6d1cdd38cda430ddb89fac7d766eae5b899b13e8",
+      "byteSize": 70044,
+      "sha256": "4b8b656619f0f46a42f10c7e0ad156ae6b9b599a77514b852b42c50d68209ac4"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/canonical_json.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "241331ac48ca569be9c254d04f2866bed06d7a36",
+      "byteSize": 2819,
+      "sha256": "bd2340bf0efbc97489f38e48939cf99da485965c38553c746df06345194a20d2"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/compare_clean_room.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "3e6d48d9144b0f9e4bcbb59234b1fdd1ffff0b1b",
+      "byteSize": 18463,
+      "sha256": "acfb04fbb588c4ec581cfc0beafce53298179a3f34e56e92deb5b477d3b74928"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/corpus-inventory.json",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "81a27dd17f59210183cf8fdefd434545d9aa62b4",
+      "byteSize": 13779,
+      "sha256": "c2afc7304253f703edb226a2916980137e2ecc6b67fc528eb322fcf89b3bcc8e"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/corpus-source-map.json",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "ee5d5fed90de417b8de572c5e138b7919c80071c",
+      "byteSize": 3559,
+      "sha256": "569d34412eaecd1732ee2ec4be0ad9796b43d91d27d8686d7747ae242668c1ef"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/corpus_model.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "RATIFIED_H12_H3_EXACT_REPIN",
+      "fileMode": "100644",
+      "gitBlobOid": "2b32cf37f4311961744d312db7cc6a5e9cad5919",
+      "byteSize": 94960,
+      "sha256": "6d72bb7daa780c65d1c94786c5ccae1418810955b51eb5ac4d0871f192dfd94c",
+      "repin": {
+        "oldSha256": "6d72bb7daa780c65d1c94786c5ccae1418810955b51eb5ac4d0871f192dfd94c",
+        "newSha256": "88006ae04db4d99dc3f0fe779f3a0cad1511c2e0a121448de9f21980271e1454",
+        "newGitBlobOid": "eedb80547418f487767e36f1702c2f9b5005190d",
+        "newByteSize": 99831,
+        "reason": "Issue #295 comment 5550502736, amendment V3 sections 3.2, 3.4 and 4: separate logical K admission from O-04 content/opening availability while preserving the legacy evidence evaluator as an explicitly distinct path"
+      }
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/generate_corpus.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "dccf4553273929edb7b49f3cd46ff8185b58fda1",
+      "byteSize": 117559,
+      "sha256": "75ed59223f20a4d048876ffb0276aeddc26d62bb5837f5296cf2ab22ac35fad4"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/h1_h2_relation.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "6c8620f019064488780e0c369f4ad79b64acbd72",
+      "byteSize": 218928,
+      "sha256": "1fbaff70b4b9220d47e3c0e2c4692112324a9d0156ec95ff021636dce8eb40b2"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/node_adapter.mjs",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "20ca36f0cb72576f2d1bd8d3b0c08db161ce114b",
+      "byteSize": 112097,
+      "sha256": "e2e86cd1b1b8f5becd19eddc94c477e02ee091e5635351c8026e00ceb6b83887"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/replay_corpus.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "45c6ed97b5399ee6945cc724dbec4f6540612b1b",
+      "byteSize": 13923,
+      "sha256": "141549e6f0851fae2b30a589148b6b9f4f7f5193153fe23ee80dbb615957446d"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/run_cross_runtime.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "ef94927b9725bb607c65b8ba4488b7f5b5be7e44",
+      "byteSize": 2938,
+      "sha256": "0f410f0990fd6a8129a222c847491df0dffc4fea598312140c00bacfda6e3bf9"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/run_mutations.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "fe577a19b72938231965f2c17254afc88b51b19d",
+      "byteSize": 14084,
+      "sha256": "e9b3b6608a8f1eab0a15360f2e2731d0dc8d41e9541862baa267d82f0f097492"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/scope_guard.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "18e996b7e8048330c16abde6a8105185c1a8753a",
+      "byteSize": 6667,
+      "sha256": "659174150266eee3c3b82048c146fdc3cef3b7a2aba48206443c210922d12975"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_blind_projection.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "a51e5e0493c358206ceca552c5777205995d3614",
+      "byteSize": 10731,
+      "sha256": "fc2fb9aaeeae3a4ecd612e5daee87cadfd24790babdacc9e684c39c6fb794ac7"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_canonical_json.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "18ab606c3565a82db4872452fba87393e68deb45",
+      "byteSize": 1029,
+      "sha256": "2ebee93bd728fcb21c7c9c9020e3f30cba32bb8226d43169bf6eb09150a5c2b0"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_compare_clean_room.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "95c8460d2b9baf6c643e90bc2e0e4daa3cc8f932",
+      "byteSize": 5137,
+      "sha256": "591fe9055960d25afe243c5475d0802b435800a42b08b10049e61354ca09a895"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_coverage.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "cbdacaba297ce3105343a91727496480b390e449",
+      "byteSize": 1772,
+      "sha256": "c354dffd396873775a90f0aac1aa8b10b3b029883bd7604f856b21ca2de17861"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_cross_runtime.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "f6b0aae8124e8f499c5f977dc348b367527df700",
+      "byteSize": 10636,
+      "sha256": "eee56758f2ccb6f57f653afc0e972a892bb26208f181b97e8c9cfbcefa6925c9"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_generation.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "9b2fde865f0c83c02e96219ecaae18bfa993023a",
+      "byteSize": 923,
+      "sha256": "ffa3c7029821d15bf0848656067e7bcace993a3ca41fe6aaafcdbf08e84a4df4"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_h1_h2_relation.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "58475553760ce702acf4bbfbf44c8ffadc48aef1",
+      "byteSize": 44991,
+      "sha256": "261f66fbc41662cde671825eb64d9c7f360fe71b4a6ffd7b068abcb1767b0a3e"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_manifest.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "eb6b170d6a4d578a5fb4b115b2e31bc2b9a50f2a",
+      "byteSize": 17507,
+      "sha256": "9a91215a510f8f1b5be8fd838fdec2cf301cbcb3cf17bfcbad7f9b147e44cacd"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_mutations.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "e1c36f60fc957c65148deae67a5f45e08078167a",
+      "byteSize": 3196,
+      "sha256": "948bff3888f17d6a999088aba103faa006499858eb4b66d8abc1ea7b81cf41e5"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_replay.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "0cedc4eb7e7d8b418004ffab242cbb5de3154e13",
+      "byteSize": 30634,
+      "sha256": "f1566d7412b16f3210b17c8e076c7d836e7693b7404c9af14a6ac1e6293b56ab"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/tests/test_scope_guard.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "900be92f33e56d59bd616c6c0f5a072f0cd185ed",
+      "byteSize": 2454,
+      "sha256": "555d222f39f55549919ce2e46081011c92ae1a7f5cd4d072795f1c2e8fe5bbff"
+    },
+    {
+      "path": "tools/causal-flow-simulator/c03/validate_corpus.py",
+      "category": "C03_EVIDENCE_IMPLEMENTATION",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "26661f4cf50bbfc595915e804ade2dccb982aa58",
+      "byteSize": 52499,
+      "sha256": "602001ac722d779bd81593100ad1b34a0c389badbeecd9afe5cc901555a95b69"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/__init__.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "ff50a41fdd231db7882a53d0db56e4839859a643",
+      "byteSize": 58,
+      "sha256": "8963b72d720ba9043b5986a5ae53b26bacc2152cd528d7c6b58c9cfee765e66a"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/fixtures/duplicate-keys.json",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "71fa559c2b9d7497b763ed0c87973d931c49a8b7",
+      "byteSize": 33,
+      "sha256": "4f0b473a0f2f94463f2dcd94184c23ac539d280033f6bc318c788a0db1b9c707"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/fixtures/malformed.json",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "53e68a413db01c1a5029666eecaa44b81ef0f5ac",
+      "byteSize": 13,
+      "sha256": "77fdcda48d48526236789e6cd710861e0d0abbe5ee76b3240d053d18ca553a68"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/fixtures/negative-cases.json",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "2358af809d5f2ddf02d70b888f33693ebb625f23",
+      "byteSize": 18258,
+      "sha256": "fe3a7c0ae5c13fb54918df5443006e6254b7773b2bd5329dcaf109e13ad6b374"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/fixtures/o06c-capability-gates.json",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "cbb76481439989422323be7538e9dc5119feeddb",
+      "byteSize": 923,
+      "sha256": "fddb72e685d2988a1bccdd03efb4a862a32209efca57553227e46202383b2f66"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/fixtures/o10-outcome-taxonomy.json",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "44094cf8ec2608216caf388206a6709ce45f2586",
+      "byteSize": 6282,
+      "sha256": "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/support.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "a1913379ca1fe20b58b353b0b765efe4249de752",
+      "byteSize": 934,
+      "sha256": "d3ca0c4099df171d6662179eae93dff2ee4bd40915b36dfb0559ce0a9626840a"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_c03_corpus_path_approval.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "f1d4086a08bc8592b0ed15f15a2ea7f4c6106466",
+      "byteSize": 11071,
+      "sha256": "6d7b86b0202a256e0bb3e16461f3dddb5dec9725e1eec4e0647de134715c36c7"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_c03_entry_authorization.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "f07e42fe1db54ab05c756a4dd3e0e9baa33bee43",
+      "byteSize": 5880,
+      "sha256": "3b2a38814af826785d869a44a026631cad171cd0f854ba6b7f0007183038ab81"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_o06c_capability_gates.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "2fa26ce752b239fa1f3294ff480cd1daad50ca83",
+      "byteSize": 2509,
+      "sha256": "6508ca713ecee01fff2a047be0fc11ec02131cf27b6716736ecf7ba17e11218f"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_o10_outcome_taxonomy.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "7293ba01591a87eb06a838fe607449ad72f9b93a",
+      "byteSize": 7305,
+      "sha256": "81c58e68bbd0e6f638daa4f55d61dfb7dc7b370870059aa48bedb3cc07e28cd6"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_o14_scope.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "2ee14c8b2a7b23f8e0e9c6e849db76487b0e4ddf",
+      "byteSize": 2031,
+      "sha256": "a1c8decf5fbe6780a01bfafae8131871fb3851a5f21f093316b6746341fd899c"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_secure_session_profile.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "94eee554a892ad5ac9ee214ad040746ef9862e9b",
+      "byteSize": 11214,
+      "sha256": "1a0dfd5e368a21aba321a19f9ac7847d3e357f943a055b26dc8ece8c707817f3"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_ss0_corpus_path_approval.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "b033bcbf237f5f6250c474b5acf0e5118e973677",
+      "byteSize": 15314,
+      "sha256": "c640186d9028633e36d0aa6d8b5e0ecf13ebcfa231ca47204eb8439d8f7885e7"
+    },
+    {
+      "path": "tools/protocol-review-model/tests/test_validate.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "fileMode": "100644",
+      "gitBlobOid": "d43f6f72e7551b461eee9902a4e662e4e5cbf25e",
+      "byteSize": 26986,
+      "sha256": "b96634a57f47b6e0526177870efb218f11a61efe4949e6ec2701a774fcca1ed3"
+    },
+    {
+      "path": "tools/protocol-review-model/validate.py",
+      "category": "PROTOCOL_REVIEW_TOOL",
+      "mutationPolicy": "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS",
+      "fileMode": "100644",
+      "gitBlobOid": "81942c95b8af8d10fcbce08df9f1eb805528a10a",
+      "byteSize": 129810,
+      "sha256": "e79caecde38c457ed79036d339c67b7aa7a394e37708ba76f0aa715ce0092f3b"
+    },
+    {
+      "path": "docs/protocol/review/README.md",
+      "category": "SEEDED_REVIEW_DOCUMENTATION",
+      "mutationPolicy": "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS",
+      "fileMode": "100644",
+      "gitBlobOid": "582b401df09f8625c649ec48abae94182c0e9608",
+      "byteSize": 18469,
+      "sha256": "749dd8869f437b58b0b090df50974afe40759e8e9759d120e2089c6cef705e9a"
+    }
+  ]
+}

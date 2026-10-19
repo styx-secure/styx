@@ -9,6 +9,7 @@
     }
   },
   {
+    "expect_target_id": "credential_report",
     "expected_code": "SOURCE_DIGEST_MISMATCH",
     "id": "normative-source-digest-drift",
     "mutation": {
@@ -18,6 +19,7 @@
     }
   },
   {
+    "expect_target_value": "DECIDED",
     "expected_code": "UNKNOWN_REGISTRY_VALUE",
     "id": "closed-registry-extension",
     "mutation": {
@@ -27,6 +29,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "DUPLICATE_ID",
     "id": "duplicate-actor-id",
     "mutation": {
@@ -36,6 +39,7 @@
     }
   },
   {
+    "expect_target_id": "author_application_event",
     "expected_code": "DANGLING_REFERENCE",
     "id": "unknown-flow-producer",
     "mutation": {
@@ -54,6 +58,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "MISSING_NORMATIVE_CITATION",
     "id": "evidence-only-security-record",
     "mutation": {
@@ -68,6 +73,7 @@
     }
   },
   {
+    "expect_target_id": "ap_protocol_version",
     "expected_code": "MISSING_PROTECTION_METADATA",
     "id": "remove-field-confidentiality",
     "mutation": {
@@ -76,6 +82,7 @@
     }
   },
   {
+    "expect_target_id": "C0.2j",
     "expected_code": "BLOCKER_CYCLE",
     "id": "blocker-dependency-cycle",
     "mutation": {
@@ -87,6 +94,8 @@
     }
   },
   {
+    "expect_secondary_target_id": "authorized_endpoint",
+    "expect_target_id": "application_profile",
     "expected_code": "NONDETERMINISTIC_ORDER",
     "id": "actor-order-drift",
     "mutation": {
@@ -99,6 +108,7 @@
     }
   },
   {
+    "expect_target_id": "C0.3",
     "expected_code": "C03_GATE_MISSING",
     "id": "remove-c03-no-go-edge",
     "mutation": {
@@ -108,6 +118,7 @@
     }
   },
   {
+    "expect_target_id": "C0.2j",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-open-blocker",
     "mutation": {
@@ -117,6 +128,7 @@
     }
   },
   {
+    "expect_target_id": "C0.2k",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "reopen-selected-c02k",
     "mutation": {
@@ -126,6 +138,7 @@
     }
   },
   {
+    "expect_target_id": "secure_session_receive",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-profile-dependent-flow",
     "mutation": {
@@ -135,6 +148,7 @@
     }
   },
   {
+    "expect_target_id": "INV_C0_3_NO_GO",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-no-go-invariant",
     "mutation": {
@@ -144,6 +158,7 @@
     }
   },
   {
+    "expect_target_id": "CE_CHECKPOINT_STALE",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-evidence-only-counterexample",
     "mutation": {
@@ -153,6 +168,7 @@
     }
   },
   {
+    "expect_target_id": "ap_projection",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-symbolic-state-model",
     "mutation": {
@@ -162,6 +178,7 @@
     }
   },
   {
+    "expect_target_id": "author_application_event",
     "expected_code": "UNKNOWN_REGISTRY_VALUE",
     "id": "unknown-flow-status",
     "mutation": {
@@ -171,6 +188,7 @@
     }
   },
   {
+    "expect_target_id": "C0.2j",
     "expected_code": "C03_GATE_MISSING",
     "id": "remove-sensitive-use-gate",
     "mutation": {
@@ -180,6 +198,7 @@
     }
   },
   {
+    "expect_target_id": "C0.3",
     "expected_code": "C03_GATE_MISSING",
     "id": "remove-corpus-path-gate",
     "mutation": {
@@ -189,6 +208,7 @@
     }
   },
   {
+    "expect_target_id": "ap_protocol_version",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "claim-unsupported-secure-session-confidentiality",
     "mutation": {
@@ -198,6 +218,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "DUPLICATE_ID",
     "id": "cross-namespace-id-collision",
     "mutation": {
@@ -207,6 +228,7 @@
     }
   },
   {
+    "expect_target_id": "ap_protocol_version",
     "expected_code": "VISIBILITY_MUTABILITY_MISMATCH",
     "id": "mutator-not-visible",
     "mutation": {
@@ -218,6 +240,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "CITATION_ANCHOR_INVALID",
     "id": "short-citation-anchor",
     "mutation": {
@@ -227,6 +250,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "CITATION_ANCHOR_MISSING",
     "id": "absent-citation-anchor",
     "mutation": {
@@ -236,6 +260,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "MISSING_CITATION",
     "id": "missing-record-citation",
     "mutation": {
@@ -244,6 +269,7 @@
     }
   },
   {
+    "expect_target_id": "credential_report",
     "expected_code": "SOURCE_MISSING",
     "id": "missing-source-file",
     "mutation": {
@@ -253,6 +279,7 @@
     }
   },
   {
+    "expect_target_id": "credential_report",
     "expected_code": "SOURCE_BOUNDARY",
     "id": "source-escapes-repository",
     "mutation": {
@@ -262,6 +289,7 @@
     }
   },
   {
+    "expect_target_id": "INV_C0_3_NO_GO",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-required-invariant",
     "mutation": {
@@ -270,6 +298,7 @@
     }
   },
   {
+    "expect_target_id": "RR_CHECKPOINT_STALENESS",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-residual-risk",
     "mutation": {
@@ -278,6 +307,7 @@
     }
   },
   {
+    "expect_target_id": "O-16",
     "expected_code": "BLOCKER_EDGE_MISMATCH",
     "id": "unreciprocated-blocker-edge",
     "mutation": {
@@ -289,6 +319,7 @@
     }
   },
   {
+    "expect_target_id": "author_application_event",
     "expected_code": "DANGLING_REFERENCE",
     "id": "unknown-obligation-reference",
     "mutation": {
@@ -298,6 +329,7 @@
     }
   },
   {
+    "expect_target_id": "C0.2j",
     "expected_code": "DANGLING_REFERENCE",
     "id": "unknown-gated-capability",
     "mutation": {
@@ -307,6 +339,7 @@
     }
   },
   {
+    "expect_target_id": "C0.2k",
     "expected_code": "C03_GATE_MISSING",
     "id": "remove-c02k-c02j-edge",
     "mutation": {
@@ -316,6 +349,7 @@
     }
   },
   {
+    "expect_target_id": "O-06c",
     "expected_code": "C03_GATE_MISSING",
     "id": "remove-o06c-c02k-edge",
     "mutation": {
@@ -325,6 +359,7 @@
     }
   },
   {
+    "expect_target_id": "C0.3",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "weaken-c03-no-go-status",
     "mutation": {
@@ -334,6 +369,7 @@
     }
   },
   {
+    "expect_target_id": "causal_report",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-evidence-source-to-normative",
     "mutation": {
@@ -343,6 +379,7 @@
     }
   },
   {
+    "expect_target_id": "content_type_id",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-unresolved-content-type",
     "mutation": {
@@ -352,6 +389,7 @@
     }
   },
   {
+    "expect_target_id": "author_application_event",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-required-flow",
     "mutation": {
@@ -360,6 +398,7 @@
     }
   },
   {
+    "expect_target_id": "O-12",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-required-blocker",
     "mutation": {
@@ -377,6 +416,7 @@
     }
   },
   {
+    "expect_target_id": "STALE_EVIDENCE",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-symbolic-outcome",
     "mutation": {
@@ -386,6 +426,7 @@
     }
   },
   {
+    "expect_target_id": "RR_FORK_AVAILABILITY",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-open-residual-risk",
     "mutation": {
@@ -395,6 +436,7 @@
     }
   },
   {
+    "expect_target_id": "ap_protocol_version",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-pinned-object-field",
     "mutation": {
@@ -403,6 +445,7 @@
     }
   },
   {
+    "expect_target_id": "ap_pending_to_active",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-pinned-state-transition",
     "mutation": {
@@ -411,6 +454,7 @@
     }
   },
   {
+    "expect_target_id": "application_profile",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "unexpected-record-set-entry",
     "mutation": {
@@ -422,6 +466,7 @@
     }
   },
   {
+    "expect_target_id": "ap_protocol_version",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "unexpected-object-field",
     "mutation": {
@@ -433,6 +478,7 @@
     }
   },
   {
+    "expect_target_id": "ap_pending_to_active",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "unexpected-state-transition",
     "mutation": {
@@ -444,6 +490,7 @@
     }
   },
   {
+    "expect_target_id": "CE_AUTHORITY_PROJECTION_EXHAUSTION",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-authority-projection-exhaustion-counterexample",
     "mutation": {
@@ -452,6 +499,7 @@
     }
   },
   {
+    "expect_target_id": "CE_BOUNDED_CONTESTED_STANDING",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-bounded-standing-counterexample",
     "mutation": {
@@ -460,6 +508,7 @@
     }
   },
   {
+    "expect_target_id": "CE_NONCAUSAL_REDUCTION_TARGET",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-noncausal-target-counterexample",
     "mutation": {
@@ -468,6 +517,7 @@
     }
   },
   {
+    "expect_target_id": "CE_SELF_LINEAGE_REDUCTION",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-self-lineage-counterexample",
     "mutation": {
@@ -476,6 +526,7 @@
     }
   },
   {
+    "expect_target_id": "CE_SUBTREE_AMPLIFICATION",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-subtree-amplification-counterexample",
     "mutation": {
@@ -484,6 +535,7 @@
     }
   },
   {
+    "expect_target_id": "INV_AUTHORITY_PROJECTION_LIMITS",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-authority-projection-limit-invariant",
     "mutation": {
@@ -492,6 +544,7 @@
     }
   },
   {
+    "expect_target_id": "INV_BOUNDED_CONTESTED_STANDING",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-bounded-standing-invariant",
     "mutation": {
@@ -500,6 +553,7 @@
     }
   },
   {
+    "expect_target_id": "INV_CAUSAL_TARGET_AVAILABILITY",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-causal-target-invariant",
     "mutation": {
@@ -508,6 +562,7 @@
     }
   },
   {
+    "expect_target_id": "INV_NO_OPENING_SUBSTITUTION",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-outcome-precedence-invariant",
     "mutation": {
@@ -516,6 +571,7 @@
     }
   },
   {
+    "expect_target_id": "INV_PROTECTION_SEPARATION",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-self-lineage-invariant",
     "mutation": {
@@ -524,6 +580,7 @@
     }
   },
   {
+    "expect_target_id": "AUTHORITY_PROJECTION_UNAVAILABLE",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-authority-unavailable-outcome",
     "mutation": {
@@ -532,6 +589,7 @@
     }
   },
   {
+    "expect_target_id": "ap_to_authority_unavailable",
     "expected_code": "REQUIRED_RECORD_MISSING",
     "id": "missing-authority-unavailable-transition",
     "mutation": {
@@ -549,6 +607,7 @@
     }
   },
   {
+    "expect_target_id": "ap_protocol_version",
     "expected_code": "MISSING_PROTECTION_METADATA",
     "id": "pinned-field-owner-drift",
     "mutation": {
@@ -558,6 +617,7 @@
     }
   },
   {
+    "expect_target_id": "ap_projection",
     "expected_code": "PINNED_VALUE_DRIFT",
     "id": "pinned-state-terminal-states-drift",
     "mutation": {
@@ -567,6 +627,7 @@
     }
   },
   {
+    "expect_target_id": "INV_AUTHORITY_PROJECTION_LIMITS",
     "expected_code": "PINNED_VALUE_DRIFT",
     "id": "pinned-invariant-reference-drift",
     "mutation": {
@@ -576,6 +637,7 @@
     }
   },
   {
+    "expect_target_id": "INV_COMMITMENT_CONTEXT_BINDING",
     "expected_code": "PINNED_VALUE_DRIFT",
     "id": "pinned-c02k-binding-evidence-drift",
     "mutation": {
@@ -585,6 +647,7 @@
     }
   },
   {
+    "expect_target_id": "O-12",
     "expected_code": "BLOCKER_EDGE_MISMATCH",
     "id": "pinned-blocker-edge-drift",
     "mutation": {
@@ -594,6 +657,7 @@
     }
   },
   {
+    "expect_target_id": "ap_pending_to_active",
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "pinned-transition-status-demotion",
     "mutation": {
@@ -603,6 +667,7 @@
     }
   },
   {
+    "expect_target_id": "ap_pending_to_active",
     "expected_code": "PINNED_VALUE_DRIFT",
     "id": "pinned-transition-edge-drift",
     "mutation": {
@@ -612,6 +677,7 @@
     }
   },
   {
+    "expect_target_id": "APPLIED",
     "expected_code": "PINNED_VALUE_DRIFT",
     "id": "pinned-outcome-transition-drift",
     "mutation": {
@@ -621,6 +687,7 @@
     }
   },
   {
+    "expect_target_id": "CE_ALIAS_SURVIVAL",
     "expected_code": "PINNED_VALUE_DRIFT",
     "id": "pinned-counterexample-blocks-drift",
     "mutation": {
@@ -630,6 +697,7 @@
     }
   },
   {
+    "expect_target_id": "C0.3",
     "expected_code": "GATED_CAPABILITY_UNBLOCKED",
     "id": "gated-capability-loses-last-open-gate",
     "mutation": {

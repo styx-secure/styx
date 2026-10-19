@@ -663,21 +663,21 @@ h1 em {
   color: var(--river);
 }
 
-.themis {
+.flegias {
   background: var(--foam);
 }
 
-.themis-grid {
+.flegias-grid {
   display: grid;
   grid-template-columns: .9fr 1.1fr;
   gap: 120px;
 }
 
-.themis h2 {
+.flegias h2 {
   margin-bottom: 28px;
 }
 
-.themis-lede {
+.flegias-lede {
   max-width: 450px;
   color: var(--river-dark);
   font-family: var(--serif);
@@ -685,7 +685,7 @@ h1 em {
   line-height: 1.35;
 }
 
-.themis-copy {
+.flegias-copy {
   color: var(--ink-soft);
   font-size: 1.02rem;
 }
@@ -993,7 +993,7 @@ footer > div a:hover {
   .roadmap-heading,
   .architecture-heading,
   .audience-layout,
-  .themis-grid,
+  .flegias-grid,
   .boundaries-layout,
   .open-layout {
     grid-template-columns: 1fr;

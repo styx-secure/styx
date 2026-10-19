@@ -10,7 +10,7 @@ Un'app demo **standalone**: server Express + SQLite + un subscriber Nostr, con a
 
 - **Non è parte del prodotto:** non importata dalla chat (`apps/chat`) né dalla libreria (`styx-js/src`); non entra nel bundle di produzione; non è in CI.
 - **Stack diverso:** usa un proprio server, un proprio DB e un proprio modello di auth (JWT) — nessuno di questi è il core Rust/MLS canonico (ADR-0001).
-- **Concetto affine, non codice condiviso:** l'idea (risposte private via Styx) si sovrappone a `themis_survey` (Dart) più che alla chat MLS.
+- **Concetto affine, non codice condiviso:** l'idea (risposte private via Styx) si sovrappone a `flegias_survey` (Dart) più che alla chat MLS.
 - **Peso:** ~5 file tracciati + asset; porta dipendenze pesanti (express, bcrypt, jsonwebtoken) fuori dal grafo della chat.
 
 ## Rischi se mantenuta nel repo canonico

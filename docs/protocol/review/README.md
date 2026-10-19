@@ -86,6 +86,23 @@ technical gate passes. Independent review and human approvals completed in
 merged PR #261 at `490689f0d81980cf942d448c76a54192913b7cde`; no
 product/runtime conformance follows.
 
+The SS-0 snapshot adds the Gate-A-frozen
+`styx-secure-session-v0-decisions.md` source and represents `SSD-01` through
+`SSD-11` as a separate bounded secure-session evidence-profile decision group.
+The top-level `modeled_scope` record keeps those decisions distinct from the
+application-kernel `O-*` group, while `decision_sources` attributes every
+decision to exactly one pinned normative source. The `SS` layer and its actor
+record reference all nine `OB-SS*` obligations and the closed forbidden-
+inference boundary. This is evidence-model coverage only: it selects no
+supported adapter, implementation, SDK, wire, persistence or product behavior,
+and `C0.3` remains `NO_GO`.
+
+The historical filenames in this directory remain application-kernel-oriented
+even though the derived graph now includes the bounded SS-0 slice. Renaming or
+splitting the graph would create a second source-of-truth and is outside Issue
+#285. The closed modeled scope and per-decision attribution make that mismatch
+explicit, but do not eliminate its review cost.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
@@ -130,7 +147,10 @@ verdict or permission to implement unresolved semantics.
 
 ## Closed registry semantics
 
-The arrays in `registries` are exhaustive and sorted. Their meanings are:
+The arrays in `registries` are exhaustive and sorted. `modeled_scope` and
+`decision_sources` additionally close the distinction between application-
+kernel decisions and bounded secure-session evidence decisions. Their meanings
+are:
 
 - `statuses`: `DECIDED` is normatively selected; `DERIVED` follows mechanically
   from normative data; `EVIDENCE_ONLY` is an observation, not authority;
@@ -243,6 +263,22 @@ python3 tools/docs-translation-sync/check.py \
 reuse lint
 ```
 
+## Phase-exit merged-scope review coverage
+
+<!-- styx-phase-exit-merged-review:v1:start -->
+- Exact merged-scope Base: `fd6f652af1666c6c9dca8356c2aed615773f5208`.
+- SS-0 PR #286 exact-final review `5062107437`: `APPROVED`, with no unresolved
+  `BLOCKER` or `HIGH` finding on reviewed head
+  `ddc62ac3d2f3b06aacf244cca924b1ef97433c62`.
+- SS-0 post-squash remediation PR #290 exact-final review `5065807842`:
+  `APPROVED`, with no unresolved `BLOCKER` or `HIGH` finding on reviewed head
+  `b9926a70c3a6feae78851852bcd1aa2159428b07`.
+- Merged phase scope through the exact Base has no recorded unresolved
+  `BLOCKER` or `HIGH` finding. The current phase-exit candidate is deliberately
+  excluded from this statement and is resolved only by `EXIT-08` at its exact
+  final HEAD.
+<!-- styx-phase-exit-merged-review:v1:end -->
+
 ## Limits
 
 The model does not prove protocol security, cryptographic soundness,
@@ -259,12 +295,40 @@ exact-HEAD reviews and technical human approval; O-10 is bounded `DECIDED` for
 trusted-local outcomes and one opaque untrusted-remote collapse, with no
 numeric/wire/API representation selected. `C0.3_CORPUS_PATH_APPROVAL` is
 bounded `DECIDED` by Issue #253's exact six-path synthetic-only amendment. Issue
-#264 now populates exactly those paths and validates the closed corpus through
-independent Python/JavaScript replay and the complete mutation gate. While C0.3
-is `NO_GO`, this records corpus construction only. C0.3 continues to block
-implementation alignment, demo, product and sensitive-use claims.
+#264 populated exactly those paths. Issue #266 / merged PR #267 reconciled the
+resulting corpus with an explicit transcript/local-negative/connected-K
+evidence split, derived connected authority only from accepted genesis and
+admitted `GRANT` history, and obtained agreement from Python, JavaScript and a
+fresh oracle-free reader on the bounded public transcript/K surface. That exact
+D4 package has a bounded evidence GO only. The C0.3 capability gate remains
+`NO_GO` and continues to block implementation alignment, demo, product and
+sensitive-use claims.
+
+Issue #291 separately ratified six exact, synthetic-only SS-0 corpus paths
+under Apache-2.0; Issue #293 populates exactly those paths with Styx-generated
+data and bounded replay/mutation evidence. `K11-SS` and SS-CORPUS-0 authorize no
+adapter, persistence, SDK, transport, product, demo, deployment or sensitive
+use.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and
 must not be alphabetically sorted. Other arrays documented as registries,
 references or sets remain sorted and duplicate-free.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->
+
+<!-- styx-c03-h1h2-package-a:v4:review-readme:start -->
+### Package-A H1/H2 evidence boundary
+
+The Package-A candidate is limited to test-local C0.3/K conformance-oracle
+repair. It must pass 164 handwritten scenarios in each independent runtime and
+kill 24 source mutants in each runtime while the six public corpus files remain
+byte-identical to Base. These results do not update the public corpus review
+model; Package B, H3, exact-final review and human gates remain blocking. C0.3
+stays `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:review-readme:end -->

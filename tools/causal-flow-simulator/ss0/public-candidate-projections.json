@@ -1,0 +1,124 @@
+{
+  "schema": "styx.ss0.public-candidate-projections.v1",
+  "projections": [
+    {
+      "derivation": "EXACT_ANCHOR_PROFILE_WITHOUT_TERMINAL_RESULT",
+      "id": "profile",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "derivation": "EPOCH_DISTANCE_LE_RETAINED_PAST_EPOCHS",
+      "id": "retention-distance-five",
+      "input": {
+        "operation": "retention",
+        "profile": {
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "retained_past_epochs": 5
+        },
+        "current_epoch": "12",
+        "message_epoch": "7"
+      }
+    },
+    {
+      "derivation": "EPOCH_DISTANCE_LE_RETAINED_PAST_EPOCHS",
+      "id": "retention-distance-six",
+      "input": {
+        "operation": "retention",
+        "profile": {
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "retained_past_epochs": 5
+        },
+        "current_epoch": "12",
+        "message_epoch": "6"
+      }
+    },
+    {
+      "derivation": "LOWER_UNSIGNED_LEXICOGRAPHIC_ACCOUNT_AFTER_FIXED_INPUT_CHECKS",
+      "id": "two-candidate-selection",
+      "input": {
+        "operation": "convergence",
+        "profile": {
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "retained_past_epochs": 5
+        },
+        "candidates": [
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ]
+      }
+    },
+    {
+      "derivation": "UNSUPPORTED_OPERATION_NONCLAIM",
+      "id": "unsupported-recovery",
+      "input": {
+        "operation": "recovery",
+        "profile": {
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "retained_past_epochs": 5
+        }
+      }
+    }
+  ]
+}

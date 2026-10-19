@@ -1,0 +1,43 @@
+{
+  "profile": {
+    "ciphersuite": "0x0001",
+    "ciphersuite_registry": "IANA_MLS",
+    "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+    "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+    "members": [
+      "MDK_PIN_9396ADB",
+      "STYX_B32A"
+    ],
+    "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+    "retained_past_epochs": 5,
+    "terminal_result": "B33B2B=BOUNDED_GO"
+  },
+  "reports": [
+    {
+      "label": "phase-b-verdict",
+      "path": "docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md",
+      "sha256": "73922a8c2c2bf6acb27cde6d48288adeaa0ee924deb3cb44ad28e424e91a210e"
+    },
+    {
+      "label": "phase-b3-3a",
+      "path": "docs/architecture/spikes/2026-08-15-marmot-openmls-phase-b3-3a.md",
+      "sha256": "8e53b5c2c138a80cab0596ef57b1fdd05118e1eabb86eb7e4d103416ec27e9c8"
+    },
+    {
+      "label": "phase-b3-3b-1",
+      "path": "docs/architecture/spikes/2026-08-16-marmot-openmls-phase-b3-3b-1.md",
+      "sha256": "435a135e89d2e5c7ce6160462e1018f44d7daf8712a66200e706b4249d38800b"
+    },
+    {
+      "label": "phase-b3-3b-2a",
+      "path": "docs/architecture/spikes/2026-08-16-marmot-openmls-phase-b3-3b-2a.md",
+      "sha256": "d83329844439c302d120da241792691dcd2b99a34969aa0783ab54a2622b4d6b"
+    },
+    {
+      "label": "phase-b3-3b-2b",
+      "path": "docs/architecture/spikes/2026-08-16-marmot-openmls-phase-b3-3b-2b.md",
+      "sha256": "0d1e2015bd30bc6e9f0c293a74ef26afd43c7d328f8d0e6c4cd8cbde3140b660"
+    }
+  ],
+  "schema": "styx.ss0.phase-b-anchor.v1"
+}

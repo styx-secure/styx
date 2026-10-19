@@ -17,8 +17,11 @@ The [application-protocol hardening plan](../protocol/protocol-hardening-plan.md
 currently freezes new product and runtime implementation. Protocol decisions,
 threat-model reconciliation, adversarial evidence and language-neutral
 conformance take priority until the plan's human-ratified exit gates pass.
-Issue #233 / PR #234 remain isolated experimental evidence, C0.3 remains
-`NO-GO`, and this roadmap does not bypass that gate.
+Issue #266 / merged PR #267 completed a bounded evidence GO for the exact D4
+transcript/K corpus and evidence package. C0.3 nevertheless remains `NO-GO`
+for implementation alignment, demo, product and sensitive use. Only a
+separately contracted SS-0 increment limited to the plan's permitted
+protocol-artifact classes may proceed; this roadmap does not bypass that gate.
 
 ## 1. Method and legend
 
@@ -363,3 +366,10 @@ The active action is to execute the protocol-hardening plan in dependency order.
 Each decision still becomes an approved Issue with a threat model, non-goals,
 tests and rollback; product integration resumes only after the plan's exit
 verdict and under separate contracts.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->

@@ -18,7 +18,7 @@ need self-custodied identity, end-to-end-encrypted collaboration, verifiable
 state transitions, offline operation, and delivery through infrastructure that
 is not trusted with plaintext.
 
-Styx is not a general-purpose messenger. The first product vertical is Themis:
+Styx is not a general-purpose messenger. The first product vertical is Flegias:
 an anonymous case-management system in which a reporter can maintain a
 two-way, asynchronous relationship without disclosing an email address, phone
 number, or central account. A minimal chat remains useful only as a reference
@@ -62,9 +62,9 @@ ordering, deterministic conflict handling, retention and pruning semantics,
 and the conformance corpus. It must remain independent of programming language,
 UI toolkit, browser APIs, and transport provider.
 
-### Themis
+### Flegias
 
-Themis is the first supported product vertical and drives requirements for
+Flegias is the first supported product vertical and drives requirements for
 anonymous onboarding, durable case state, controlled disclosure, asynchronous
 dialogue, notifications, evidence integrity, and operational safety.
 
@@ -103,7 +103,7 @@ needed by real verticals. It does not define the product roadmap.
    stack as a reference.
 3. Establish a secure-session compatibility profile, preferring Marmot where a
    bounded and reviewable implementation can conform.
-4. Build Themis on the application protocol and reusable runtime profiles.
+4. Build Flegias on the application protocol and reusable runtime profiles.
 5. Keep cryptographic artifacts pinned, reproducible, independently reviewed,
    and separated from product policy.
 6. Keep documentation English-canonical and security claims evidence-based.

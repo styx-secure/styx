@@ -204,12 +204,16 @@
     },
     {
       "can_act": [
-        "Authenticate session members and protect opaque application bytes under one supported profile"
+        "Evaluate the exact bounded SS-0 evidence profile without claiming a supported adapter"
       ],
       "can_observe": [
-        "Application bytes presented for encryption and authenticated bytes after decryption"
+        "Opaque bounded application bytes, abstract session/context binding and model-local session observations"
       ],
       "citations": [
+        {
+          "anchor": "### SSD-02 — Layer and identity separation",
+          "source_id": "secure_session_decisions"
+        },
         {
           "anchor": "| `SS` | **Secure-session adapter**",
           "source_id": "responsibility"
@@ -217,12 +221,31 @@
       ],
       "decision_refs": [
         "O-09",
-        "O-11"
+        "O-11",
+        "SSD-01",
+        "SSD-02",
+        "SSD-03",
+        "SSD-04",
+        "SSD-05",
+        "SSD-06",
+        "SSD-07",
+        "SSD-08",
+        "SSD-09",
+        "SSD-10",
+        "SSD-11"
       ],
-      "description": "Secure-session boundary; current Phase B evidence is bounded and is not a supported adapter claim.",
+      "description": "Secure-session evidence boundary; SS-0 is bounded to the exact Phase-B profile and is not a supported adapter claim.",
       "id": "secure_session_adapter",
       "obligation_refs": [
-        "OB-SS01"
+        "OB-SS01",
+        "OB-SS02",
+        "OB-SS03",
+        "OB-SS04",
+        "OB-SS05",
+        "OB-SS06",
+        "OB-SS07",
+        "OB-SS08",
+        "OB-SS09"
       ],
       "owner": "SS",
       "trust_class": "SESSION"
@@ -353,7 +376,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Issue #264 completes the separately contracted synthetic-only corpus construction; implementation alignment, demo, product and sensitive use remain blocked pending implementation agreement, exit review and an explicit human phase verdict.",
+      "reason": "Issue #264 completed the first separately contracted synthetic-only corpus construction. Issue #266 reconciles it with separated transcript-conformance, local-negative and connected-K evidence plus an oracle-free clean-room comparison; implementation alignment, demo, product and sensitive use remain blocked pending exact agreement, exit review and an explicit human phase verdict.",
       "status": "NO_GO"
     },
     {
@@ -1133,6 +1156,132 @@
         "Admit one eligible contested reduction of that target",
         "Verify descendant cleanup, bounded replay and absence of an additional contested slot"
       ]
+    }
+  ],
+  "decision_sources": [
+    {
+      "decision_id": "O-01",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-02",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-03",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-04",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-05",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-06",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-06a",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-06b-1",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-06b-2",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-06c",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-07",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-08",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-09",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-10",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-11",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-12",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-13",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-14",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-15",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "O-16",
+      "source_id": "decisions"
+    },
+    {
+      "decision_id": "SSD-01",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-02",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-03",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-04",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-05",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-06",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-07",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-08",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-09",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-10",
+      "source_id": "secure_session_decisions"
+    },
+    {
+      "decision_id": "SSD-11",
+      "source_id": "secure_session_decisions"
     }
   ],
   "flows": [
@@ -2830,43 +2979,72 @@
     {
       "citations": [
         {
+          "anchor": "## 2. Selected decisions",
+          "source_id": "secure_session_decisions"
+        },
+        {
           "anchor": "| `SS` | **Secure-session adapter**",
           "source_id": "responsibility"
         }
       ],
       "decision_refs": [
         "O-09",
-        "O-11"
+        "O-11",
+        "SSD-01",
+        "SSD-02",
+        "SSD-03",
+        "SSD-04",
+        "SSD-05",
+        "SSD-06",
+        "SSD-07",
+        "SSD-08",
+        "SSD-09",
+        "SSD-10",
+        "SSD-11"
       ],
       "does_not_own": [
         "Application authorization",
         "Application causal order",
-        "Business workflow"
+        "Business workflow",
+        "Durable state and rollback behavior",
+        "Transport delivery and metadata policy"
       ],
       "forbidden_inferences": [
         "Decryption proves AP authorization",
+        "Logical retention or absence proves physical custody or deletion",
         "Membership proves business role",
-        "Session epoch defines application order"
+        "Model-local disposition is a stable O-10 outcome",
+        "Session epoch defines application order",
+        "Session success proves delivery, freshness or business truth"
       ],
       "id": "SS",
       "inputs": [
-        "Destination and session reference",
-        "Versioned authenticated application bytes"
+        "Abstract selected session/context binding",
+        "Exact-profile session candidates and abstract RS tri-state",
+        "Opaque bounded application bytes"
       ],
-      "name": "Secure-session adapter",
+      "name": "Secure-session evidence boundary",
       "obligation_refs": [
-        "OB-SS01"
+        "OB-SS01",
+        "OB-SS02",
+        "OB-SS03",
+        "OB-SS04",
+        "OB-SS05",
+        "OB-SS06",
+        "OB-SS07",
+        "OB-SS08",
+        "OB-SS09"
       ],
       "outputs": [
-        "Authenticated plaintext delivery",
-        "Ciphertext and membership outcomes",
-        "Session recovery requirements"
+        "Authenticated plaintext bytes and member/session attribution",
+        "Closed model-local dispositions",
+        "Staged or applied bounded session-mutation observations"
       ],
       "owner": "SS",
       "owns": [
-        "Authenticated confidential session payloads",
-        "Epoch and membership policy",
-        "Session-secret lifecycle"
+        "Bounded authenticated confidential session-payload evidence",
+        "Exact-profile epoch, replay and membership-transition semantics",
+        "Logical session-secret availability within the evidence profile"
       ]
     },
     {
@@ -2913,6 +3091,47 @@
       ]
     }
   ],
+  "modeled_scope": {
+    "application_kernel_decisions": [
+      "O-01",
+      "O-02",
+      "O-03",
+      "O-04",
+      "O-05",
+      "O-06",
+      "O-06a",
+      "O-06b-1",
+      "O-06b-2",
+      "O-06c",
+      "O-07",
+      "O-08",
+      "O-09",
+      "O-10",
+      "O-11",
+      "O-12",
+      "O-13",
+      "O-14",
+      "O-15",
+      "O-16"
+    ],
+    "implementation_claim": false,
+    "product_activation": false,
+    "secure_session_evidence_decisions": [
+      "SSD-01",
+      "SSD-02",
+      "SSD-03",
+      "SSD-04",
+      "SSD-05",
+      "SSD-06",
+      "SSD-07",
+      "SSD-08",
+      "SSD-09",
+      "SSD-10",
+      "SSD-11"
+    ],
+    "secure_session_profile_kind": "BOUNDED_EVIDENCE_ONLY",
+    "supported_adapter": false
+  },
   "non_claims": [
     {
       "citations": [
@@ -3122,16 +3341,25 @@
     {
       "citations": [
         {
+          "anchor": "no audit, product conformance, supported adapter, deployment",
+          "source_id": "secure_session_decisions"
+        },
+        {
           "anchor": "Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile",
           "source_id": "threat_model"
         }
       ],
       "decision_refs": [
-        "O-03"
+        "O-03",
+        "SSD-01",
+        "SSD-03",
+        "SSD-11"
       ],
       "id": "NC_SUPPORTED_ADAPTER",
       "obligation_refs": [
-        "OB-SS01"
+        "OB-SS01",
+        "OB-SS03",
+        "OB-SS09"
       ],
       "owner": "SS",
       "statement": "Bounded Phase B evidence is not a supported secure-session adapter, Nostr envelope or product-integration claim."
@@ -5253,7 +5481,18 @@
       "O-13",
       "O-14",
       "O-15",
-      "O-16"
+      "O-16",
+      "SSD-01",
+      "SSD-02",
+      "SSD-03",
+      "SSD-04",
+      "SSD-05",
+      "SSD-06",
+      "SSD-07",
+      "SSD-08",
+      "SSD-09",
+      "SSD-10",
+      "SSD-11"
     ],
     "gated_capabilities": [
       "corpus",
@@ -5601,16 +5840,28 @@
     {
       "citations": [
         {
+          "anchor": "no generally supported dependency, ciphersuite, retention",
+          "source_id": "secure_session_decisions"
+        },
+        {
           "anchor": "| `SS` | **Secure-session adapter** | Session membership, epochs, handshake/Commit policy",
           "source_id": "responsibility"
         }
       ],
       "decision_refs": [
-        "O-03"
+        "O-03",
+        "O-09",
+        "O-11",
+        "SSD-01",
+        "SSD-02",
+        "SSD-03",
+        "SSD-11"
       ],
       "id": "RR_SECURE_ADAPTER_ABSENT",
       "obligation_refs": [
-        "OB-SS01"
+        "OB-SS01",
+        "OB-SS03",
+        "OB-SS09"
       ],
       "owner": "SS",
       "statement": "No supported secure-session adapter is selected; confidentiality and session authentication remain profile-dependent.",
@@ -5938,7 +6189,7 @@
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "f3488bec6b61d92b6f1fc86e06ff101281d4ea51f4aaa5ecb8c4e1dee56584fa"
+      "sha256": "673e10e3392560e4227a74c99a276d6f880fe1af32eff4943fd2aaac5b791287"
     },
     {
       "authority": "evidence",
@@ -5956,7 +6207,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "0e0335a2f727b979c7ff64ffc281663a223fc709e6c25bd8a11350d605c39eed"
+      "sha256": "26b33af8cc4177bb59eecbd102a7fe628c201c3c6d4a963d68e2bbb5cf565e97"
     },
     {
       "authority": "evidence",
@@ -6010,7 +6261,13 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "fc8cbef3f492fc0004f13c98128b9569f913348ec1e1fd42608cf316fd83e03e"
+      "sha256": "3ea43a5b6c9b93a19b2b17ab6a54815583275ea7a544de7e5102b294b13f53db"
+    },
+    {
+      "authority": "normative",
+      "id": "secure_session_decisions",
+      "path": "docs/protocol/styx-secure-session-v0-decisions.md",
+      "sha256": "235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07"
     },
     {
       "authority": "evidence",
@@ -6028,7 +6285,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "e4a003e55022ff2c0c31a5ac0dafb93482fb76585f379c8af18842f8407c03f8"
+      "sha256": "8863ce4b2ef697055e95da22e0a2fbb630172cdf3f5fd0c91b27ec02f9d2ba54"
     },
     {
       "authority": "normative",
@@ -6342,8 +6599,8 @@
           "obligation_refs": [
             "OB-K18"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
           "to": "BINDING_ADMITTED",
           "trigger": "A structurally valid, causally available and signature-valid GRANT creates one fresh grant-rooted binding without implying AP authority."
@@ -6366,8 +6623,8 @@
           "obligation_refs": [
             "OB-K01"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
           "to": "ADMITTED",
           "trigger": "The candidate passes K validity, collision and fork classification."
@@ -6478,7 +6735,7 @@
           "owner": "K",
           "status": "DECIDED",
           "to": "FORK_CLASSIFIED",
-          "trigger": "Distinct same-author transcript shares an author sequence"
+          "trigger": "Distinct same-author transcripts share an author sequence; both remain authenticated K-graph dependencies while AP owns lineage quarantine."
         }
       ]
     },
@@ -6503,13 +6760,12 @@
       "owner": "K",
       "precedence": [
         "PENDING_OPENING",
-        "PENDING_ANCESTOR",
-        "APPLIED"
+        "PENDING_ANCESTOR"
       ],
       "states": [
-        "APPLIED",
         "PENDING_ANCESTOR",
         "PENDING_OPENING",
+        "READY_FOR_AP_FOLD",
         "REPLAY_CANDIDATE"
       ],
       "status": "DECIDED",
@@ -6532,10 +6788,10 @@
           "obligation_refs": [
             "OB-K13"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
-          "to": "APPLIED",
+          "to": "READY_FOR_AP_FOLD",
           "trigger": "No missing REQUIRED opening or pending ancestor blocks this candidate."
         },
         {
@@ -6602,10 +6858,10 @@
           "obligation_refs": [
             "OB-K01"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
-          "to": "APPLIED",
+          "to": "READY_FOR_AP_FOLD",
           "trigger": "Monotone verified-opening update releases the event from every remaining pending root"
         }
       ]

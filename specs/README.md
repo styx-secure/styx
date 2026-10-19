@@ -39,7 +39,7 @@ GitHub history.
 Issues #45, #61, and #62, Epic #65, and migration/governance task Issues are
 outside that adoption perimeter and must not receive `us-id:*` labels. New
 strategic work such as the Styx application protocol, Marmot evaluation, and
-Themis requires its own approved contractual Issues rather than being inserted
+Flegias requires its own approved contractual Issues rather than being inserted
 silently into the historical sprint plan.
 
 ## Documentation and claims
