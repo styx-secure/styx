@@ -19,6 +19,7 @@ from contract import ContractError, evaluate_path, parse_contract, pattern_match
 from git_inventory import (
     SHA_RE,
     authorize_copy_sources,
+    ancestor_base_problem,
     content_diagnostics,
     inventory_changes,
     output_is_inside_repository,
@@ -99,6 +100,26 @@ def _validate_scalar_inputs(args: argparse.Namespace) -> None:
         raise ContractError("execution ID contains control characters")
 
 
+def check_ancestor_contract_base(repo: Path, contract: Contract, evaluated_base: str) -> None:
+    """Accept an older contract base only under the shared ancestor-base rule.
+
+    The contract base must be on the first-parent chain of the evaluated base,
+    and no commit between the two may touch a path matching an allowed pattern,
+    even if the change was later reverted. The change inventory and every
+    path, binary and copy check still run on evaluated_base..head.
+    """
+
+    problem = ancestor_base_problem(repo, contract.base_sha, evaluated_base, contract.allowed_patterns)
+    if problem is not None:
+        message, path = problem
+        raise ContractBaseShaError(message, path=path)
+    print(
+        f"scope_guard: contract base {contract.base_sha} accepted as first-parent ancestor of "
+        f"{evaluated_base}; no commit in between touched an allowed path",
+        file=sys.stderr,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     repo = args.repo.resolve()
@@ -127,16 +148,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         issue_body_bytes = args.issue_body_file.read_bytes()
         issue_hash = hashlib.sha256(issue_body_bytes).hexdigest()
         contract = parse_contract(issue_body_bytes)
-        if contract.base_sha != args.base_sha:
-            raise ContractBaseShaError(
-                "contract Base SHA does not match the evaluated --base-sha"
-            )
         initial_status = verify_repository(
             repo,
             args.base_sha,
             args.head_sha,
             worktree_sha=expected_worktree_sha,
         )
+        if contract.base_sha != args.base_sha:
+            check_ancestor_contract_base(repo, contract, args.base_sha)
         entries = inventory_changes(repo, args.base_sha, args.head_sha)
 
         for entry in entries:
