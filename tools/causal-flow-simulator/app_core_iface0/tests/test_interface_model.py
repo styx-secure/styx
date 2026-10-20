@@ -813,6 +813,53 @@ class InterfaceModelTests(unittest.TestCase):
         fields.update(updates)
         return fields
 
+    def _none_content_validation_observations(self) -> dict[str, str]:
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        transcript = backend.encode_event(self._application_fields())
+        result = validate_transcript(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "candidate": self._application_presentation(
+                    backend, transcript, bytes(64)
+                )
+            },
+        )
+        self.assertEqual(result["kind"], "VALIDATED")
+        return result["observations"]
+
+    def test_mutant_233e5b57577e47c781985d4516d7918f_o04_ob_k06_ob_k10(self) -> None:
+        observations = self._none_content_validation_observations()
+        self.assertEqual(observations["geometryPredicate1"], "NOT_APPLICABLE")
+        geometry = {
+            key: value
+            for key, value in observations.items()
+            if key.startswith("geometryPredicate")
+        }
+        self.assertEqual(
+            geometry,
+            {
+                f"geometryPredicate{index}": "NOT_APPLICABLE"
+                for index in range(1, 8)
+            },
+        )
+
+    def test_mutant_241b2e1bf74447aeb54c78a812fc43cc_o04_ob_k06_ob_k10(self) -> None:
+        observations = self._none_content_validation_observations()
+        self.assertEqual(observations["geometryPredicate7"], "NOT_APPLICABLE")
+        geometry = {
+            key: value
+            for key, value in observations.items()
+            if key.startswith("geometryPredicate")
+        }
+        self.assertEqual(
+            geometry,
+            {
+                f"geometryPredicate{index}": "NOT_APPLICABLE"
+                for index in range(1, 8)
+            },
+        )
+
     def test_v3_profile_tuple_precedes_selected_envelope_and_signature(self) -> None:
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
         fields = self._application_fields(

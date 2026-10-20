@@ -192,6 +192,14 @@ paused.
 - Prefer short, concrete sentences and active voice.
 - Use sentence case for headings.
 - Expand end-to-end encryption before using **E2EE** in non-technical copy.
+- Use “end-to-end encrypted” or “encrypted” for demonstrated Styx behaviour
+  only when the same sentence or paragraph says “synthetic data” and
+  “pre-audit”, for example: “end-to-end encrypted, synthetic data, pre-audit”.
+  Never describe Styx as “anonymous”, “formally verified”, “in production”,
+  “first”, “audited” or “unbreakable” (owner decision, 2026-10-19).
+- Review note: the automatic claims lint (`tools/docs-claims-lint`) does not
+  check the wording in the previous rule. Reviewers check it with a word scan
+  of the added lines before a public text is approved.
 - Use **application substrate** or **infrastructure**, not “ecosystem.”
 - Use **person who reports** or **reporter**, not “anonymous user.”
 - Use **organization** or the precise operator role, not “administrator.”
