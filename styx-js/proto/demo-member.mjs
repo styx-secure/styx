@@ -9,6 +9,7 @@
 //      INVITEE (inviter only), MESSAGES (default 3), OUT (JSON result path),
 //      KEYPACKAGE_EVENT (optional, invitee: wait on an already published KP),
 //      REPLY_AFTER_ALL=1 (invitee: reply only once all N messages arrived)
+//      REPLY_DELAY_MS (invitee: wait this long before each reply; default 0)
 //      SCENES=1 (inviter only): demo scenes -- message 1 normal; relay R1 dropped on
 //      this host, message 2; this host's network stalls (R2, R3 black-holed), message 3
 //      times out and is retried after the network returns. Faults are injected here, in
@@ -48,7 +49,17 @@ class FaultWS {
     ws.onerror = (e) => this.onerror?.(e);
   }
   get readyState() { return this._ws ? this._ws.readyState : this._state; }
-  send(d) { if ((faults.get(this.host) || 'ok') === 'ok') this._ws?.send(d); }
+  send(d) {
+    if ((faults.get(this.host) || 'ok') !== 'ok') return;
+    // demo log only: show the SDK's catch-up re-requests (REQ with a `since` bound)
+    try {
+      const m = JSON.parse(d);
+      if (m[0] === 'REQ' && Number.isInteger(m[2]?.since)) {
+        log(`catch-up: REQ since=${new Date(m[2].since * 1000).toISOString().slice(11, 19)}Z on ${RN(this.url.replace(/\/$/, ''))}`);
+      }
+    } catch { /* not JSON */ }
+    this._ws?.send(d);
+  }
   close() { try { this._ws?.close(); } catch { /* ignore */ } }
 }
 if (SCENES) globalThis.WebSocket = FaultWS;
@@ -208,6 +219,7 @@ if (ROLE === 'inviter' && SCENES) {
   while (answered < N && Date.now() - t1 < 300000) {
     if (received.length > answered && gate()) {
       const m = received[answered]; answered += 1;
+      if (Number(env.REPLY_DELAY_MS) > 0) await new Promise((r) => setTimeout(r, Number(env.REPLY_DELAY_MS)));
       await sendAndTrack(`synthetic reply ${answered} to "${m.text.slice(0, 26)}"`);
     } else await new Promise((r) => setTimeout(r, 200));
   }

@@ -17,6 +17,7 @@ import { createRelaySet } from './delivery/relay-pool.js';
 import { retryDelayMs } from './delivery/retry.js';
 import { bytesToHex, randomBytes } from '../utils.js';
 import { relayUrlAllowed } from './relay-url.js';
+import { createCatchUp } from './catch-up.js';
 
 export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.1.0-experimental';
 
@@ -297,6 +298,8 @@ export function createStyxClient(config) {
 
   const teardown = async (m) => {
     if (!m) return;
+    try { m.catchUp?.stop(); } catch { /* ignore */ }
+    try { m.unCatch?.(); } catch { /* ignore */ }
     try { m.receipts?.shutdown(); } catch { /* ignore */ }
     try { if (m.outbox) await m.outbox.shutdown(); } catch { /* ignore */ }
     try { m.unFrame?.(); } catch { /* ignore */ }
@@ -335,9 +338,12 @@ export function createStyxClient(config) {
     if (typeof r.value !== 'string' || !HEX64.test(r.value)) { await teardown(m); return fail('E_SDK_IDENTITY_FAILED'); }
     cachedKey = r.value;
     if (stopping) { await teardown(m); return fail('E_SDK_CLIENT_STOPPED'); }
-    // (4) relay set
+    // (4) relay set; its pools come through the catch-up transport (prototype,
+    // see catch-up.js: re-request with `since` after a stall or a reconnect)
     try {
+      m.catchUp = createCatchUp({ clock });
       m.relaySet = createRelaySet({
+        transport: m.catchUp.transport,
         relays: [...cfg.relays], clock, random, perRelayTimeoutMs: cfg.delivery.perRelayTimeoutMs,
         subscriptionId: 's' + bytesToHex(randomBytes(16)),
         filter: { kinds: [4741, 4742], '#p': [cachedKey] }, reconnectDelay: retryDelayMs,
@@ -356,6 +362,7 @@ export function createStyxClient(config) {
         acceptReceipt: (x) => m.outbox.acceptReceipt(x),
         onEvent: sink,
       });
+      m.unCatch = m.relaySet.onFrame((frame) => m.catchUp.observe(frame));
       m.unFrame = m.relaySet.onFrame((frame) => { try { m.receipts.ingest(frame); } catch { /* ignore */ } });
     } catch { await teardown(m); return fail('E_SDK_INTERNAL'); }
     // (6) connect
@@ -365,6 +372,7 @@ export function createStyxClient(config) {
     if (stopping) { await teardown(m); return fail('E_SDK_CLIENT_STOPPED'); }
     if (n < 1 || n > relayCount) { await teardown(m); return fail('E_SDK_NO_RELAY_AVAILABLE'); }
     mods = m;
+    m.catchUp.start();
     setState('RUNNING');
     return ok(Object.freeze({ clientState: 'RUNNING', connectedRelays: n }));
   };
@@ -440,6 +448,7 @@ export function createStyxClient(config) {
       let lost = 0;
       let outboxStop = null;
       if (m) {
+        try { m.catchUp?.stop(); } catch { /* ignore */ }
         try { m.receipts.shutdown(); } catch { /* ignore */ }
         try { outboxStop = m.outbox.shutdown(); } catch { outboxStop = null; }
       }
@@ -456,6 +465,7 @@ export function createStyxClient(config) {
       await new Promise((res) => queueMicrotask(res));
       if (m) {
         try { m.unFrame?.(); } catch { /* ignore */ }
+        try { m.unCatch?.(); } catch { /* ignore */ }
         if (!m.disposeP) m.disposeP = Promise.resolve().then(() => m.relaySet.dispose()).catch(() => {});
         await m.disposeP;
       }
