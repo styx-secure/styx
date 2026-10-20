@@ -373,7 +373,9 @@ describe('the module and its public surface', () => {
     expect(Object.isFrozen(outbox)).toBe(true);
     expect(Object.keys(outbox).sort()).toEqual([
       'acceptReceipt',
+      'adoptPublicKey',
       'cancel',
+      'failClosed',
       'getDelivery',
       'inspectStore',
       'send',
@@ -2236,4 +2238,601 @@ describe('generative invariants over a deterministic draw stream', () => {
       await harness.outbox.shutdown();
     }
   }, 120000);
+});
+
+/* ------------------------------------------------------------------------- *
+ * Card I-SDK composition seams on the outbox: S1 (adoptPublicKey), S4
+ * (failClosed) and S5 (timer quiescence at the stop).
+ * ------------------------------------------------------------------------- */
+
+const OUTBOX_MEMBERS = [
+  'acceptReceipt',
+  'adoptPublicKey',
+  'cancel',
+  'failClosed',
+  'getDelivery',
+  'inspectStore',
+  'send',
+  'shutdown',
+];
+
+describe('seam S1 -- adoptPublicKey', () => {
+  test('the outbox carries exactly its members plus adoptPublicKey and failClosed', () => {
+    const { outbox } = makeHarness();
+    expect(Object.isFrozen(outbox)).toBe(true);
+    expect(Reflect.ownKeys(outbox).map(String).sort()).toEqual(OUTBOX_MEMBERS);
+  });
+
+  test('a key adopted before the first attempt is used, and getPublicKey is never called', async () => {
+    const { outbox, identity, relaySet } = makeHarness();
+    const adopted = outbox.adoptPublicKey(OTHER);
+    expect(adopted).toEqual({ ok: true, value: { adopted: true } });
+    expect(Object.isFrozen(adopted)).toBe(true);
+    expect(Object.isFrozen(adopted.value)).toBe(true);
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(relaySet.attempts).toHaveLength(2);
+    for (const attempt of relaySet.attempts) expect(attempt.event.pubkey).toBe(OTHER);
+    expect(identity.keyCalls).toBe(0);
+    await outbox.shutdown();
+    expect(identity.keyCalls).toBe(0);
+  });
+
+  test('a value that is not a lowercase 64-hex string is refused and changes nothing', async () => {
+    const { outbox, identity, relaySet } = makeHarness();
+    for (const value of [
+      undefined,
+      null,
+      '',
+      OTHER.toUpperCase(),
+      OTHER.slice(0, 63),
+      `${OTHER}0`,
+      'g'.repeat(64),
+      64,
+      [OTHER],
+      { key: OTHER },
+      Object(OTHER),
+    ]) {
+      const refused = outbox.adoptPublicKey(value);
+      expect(refused).toEqual({ ok: false, code: 'E_SDK_INVALID_ARGUMENT' });
+      expect(Object.isFrozen(refused)).toBe(true);
+    }
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    // Nothing was adopted: the module reads the identity port as before.
+    expect(identity.keyCalls).toBe(1);
+    expect(relaySet.attempts[0].event.pubkey).toBe(PUBKEY);
+    await outbox.shutdown();
+  });
+
+  test('a second adoption, an adoption after the module read its key and one during the reading are refused', async () => {
+    const first = makeHarness();
+    expect(first.outbox.adoptPublicKey(OTHER).ok).toBe(true);
+    expect(first.outbox.adoptPublicKey(RECIPIENT)).toEqual({ ok: false, code: 'E_SDK_INVALID_ARGUMENT' });
+    await first.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(first.relaySet.attempts[0].event.pubkey).toBe(OTHER);
+    expect(first.identity.keyCalls).toBe(0);
+    await first.outbox.shutdown();
+
+    const read = makeHarness();
+    await read.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(read.identity.keyCalls).toBe(1);
+    expect(read.outbox.adoptPublicKey(OTHER)).toEqual({ ok: false, code: 'E_SDK_INVALID_ARGUMENT' });
+    await read.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(read.relaySet.attempts[1].event.pubkey).toBe(PUBKEY);
+    expect(read.identity.keyCalls).toBe(1);
+    await read.outbox.shutdown();
+
+    let releaseKey = null;
+    const identity = makeIdentity({
+      getPublicKey() {
+        identity.keyCalls += 1;
+        return new Promise((resolve) => {
+          releaseKey = () => resolve(PUBKEY);
+        });
+      },
+    });
+    const reading = makeHarness({ identity });
+    await reading.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(identity.keyCalls).toBe(1);
+    expect(reading.outbox.adoptPublicKey(OTHER)).toEqual({ ok: false, code: 'E_SDK_INVALID_ARGUMENT' });
+    releaseKey();
+    await flush();
+    expect(reading.relaySet.attempts[0].event.pubkey).toBe(PUBKEY);
+    await reading.outbox.shutdown();
+  });
+
+  test('adoptPublicKey is synchronous', () => {
+    const { outbox } = makeHarness();
+    const result = outbox.adoptPublicKey(OTHER);
+    expect(typeof result.then).toBe('undefined');
+  });
+});
+
+describe('seam S4 -- failClosed', () => {
+  const RECEIPT_DELIVERY = { ...DELIVERY, receiptMode: 'RECIPIENT_RECEIPT' };
+
+  /** The one event of a fail-closed item. */
+  function expectFailedClosed(harness, before, state) {
+    const added = harness.events.slice(before.events);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({
+      kind: 'DELIVERY_STATE_CHANGED',
+      deliveryId: 'd1',
+      state,
+      terminal: true,
+      lastCode: 'E_SDK_UNKNOWN_CODE',
+    });
+  }
+
+  /** The terminal record of section 6.4, written once the write chain drains. */
+  async function expectTerminalRecord(harness, state) {
+    await flush();
+    const updates = harness.storage.calls.update;
+    const last = updates[updates.length - 1];
+    expect(last).toMatchObject({ deliveryId: 'd1', state, lastCode: 'E_SDK_UNKNOWN_CODE' });
+    expect(Object.keys(last).sort()).toEqual(Object.keys(harness.storage.calls.put[0]).sort());
+    expect(harness.storage.records.get('d1')).toBe(last);
+  }
+
+  test('an IN_FLIGHT item takes FAILED_NOT_ACCEPTED, its attempt ignores acknowledgements and nothing follows', async () => {
+    for (const delivery of [DELIVERY, RECEIPT_DELIVERY]) {
+      const harness = makeHarness({ delivery });
+      const { outbox, relaySet, clock } = harness;
+      await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      await flush();
+      expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('IN_FLIGHT');
+      const before = { events: harness.events.length };
+      const clearsBefore = clock.state.clearCalls.length;
+      const result = outbox.failClosed({ deliveryId: 'd1' });
+      expect(result).toEqual({ ok: true, value: { deliveryId: 'd1', state: 'FAILED_NOT_ACCEPTED' } });
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Object.isFrozen(result.value)).toBe(true);
+      expectFailedClosed(harness, before, 'FAILED_NOT_ACCEPTED');
+      expect(relaySet.attempts[0].ignoreState()).toBe(true);
+      // The deadline timer is cleared: the attempts are stopped.
+      expect(clock.state.clearCalls.length).toBeGreaterThan(clearsBefore);
+      await expectTerminalRecord(harness, 'FAILED_NOT_ACCEPTED');
+      relaySet.attempts[0].answer(0, 'ACCEPTED');
+      await clock.advance(delivery.deadlineMs + 5000);
+      expect(relaySet.attempts).toHaveLength(1);
+      expect(harness.events.slice(before.events)).toHaveLength(1);
+      expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+        state: 'FAILED_NOT_ACCEPTED',
+        terminal: true,
+        lastCode: 'E_SDK_UNKNOWN_CODE',
+      });
+      await outbox.shutdown();
+    }
+  });
+
+  test('a QUEUED item waiting for its retry takes FAILED_NOT_ACCEPTED and no retry starts', async () => {
+    for (const delivery of [DELIVERY, RECEIPT_DELIVERY]) {
+      const harness = makeHarness({ delivery });
+      const { outbox, relaySet, clock } = harness;
+      await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      await flush();
+      relaySet.attempts[0].answer(0, 'REJECTED');
+      relaySet.attempts[0].answer(1, 'REJECTED');
+      await flush();
+      expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('QUEUED');
+      const before = { events: harness.events.length };
+      expect(outbox.failClosed({ deliveryId: 'd1' })).toEqual({
+        ok: true,
+        value: { deliveryId: 'd1', state: 'FAILED_NOT_ACCEPTED' },
+      });
+      expectFailedClosed(harness, before, 'FAILED_NOT_ACCEPTED');
+      await expectTerminalRecord(harness, 'FAILED_NOT_ACCEPTED');
+      await clock.advance(delivery.deadlineMs + 5000);
+      expect(relaySet.attempts).toHaveLength(1);
+      expect(harness.events.slice(before.events)).toHaveLength(1);
+      await outbox.shutdown();
+    }
+  });
+
+  test('an item awaiting its receipt in RECIPIENT_RECEIPT mode takes FAILED_NO_RECEIPT', async () => {
+    const harness = makeHarness({ delivery: RECEIPT_DELIVERY });
+    const { outbox, relaySet, clock } = harness;
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    relaySet.attempts[0].answer(0, 'ACCEPTED');
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('RELAY_ACCEPTED_AWAITING_RECEIPT');
+    const before = { events: harness.events.length };
+    expect(outbox.failClosed({ deliveryId: 'd1' })).toEqual({
+      ok: true,
+      value: { deliveryId: 'd1', state: 'FAILED_NO_RECEIPT' },
+    });
+    expectFailedClosed(harness, before, 'FAILED_NO_RECEIPT');
+    await expectTerminalRecord(harness, 'FAILED_NO_RECEIPT');
+    const eventId = relaySet.attempts[0].event.id;
+    const refusedReceipt = await outbox.acceptReceipt({ eventId, recipient: RECIPIENT });
+    expect(refusedReceipt.ok).toBe(true);
+    expect(refusedReceipt.value.accepted).toBe(false);
+    await clock.advance(RECEIPT_DELIVERY.deadlineMs + 5000);
+    expect(harness.events.slice(before.events)).toHaveLength(1);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'FAILED_NO_RECEIPT',
+      terminal: true,
+      lastCode: 'E_SDK_UNKNOWN_CODE',
+    });
+    await outbox.shutdown();
+  });
+
+  test('every other terminal state is unchanged and answers E_SDK_DELIVERY_TERMINAL', async () => {
+    const reach = {
+      // A receipt accepted after the relay acceptance.
+      RECIPIENT_RECEIPT_RECEIVED: async ({ outbox, relaySet }) => {
+        relaySet.attempts[0].answer(0, 'ACCEPTED');
+        await flush();
+        const accepted = await outbox.acceptReceipt({ eventId: relaySet.attempts[0].event.id, recipient: RECIPIENT });
+        expect(accepted.value.accepted).toBe(true);
+      },
+      // The deadline reached while the receipt is awaited.
+      FAILED_NO_RECEIPT: async ({ relaySet, clock }) => {
+        relaySet.attempts[0].answer(0, 'ACCEPTED');
+        await flush();
+        await clock.advance(RECEIPT_DELIVERY.deadlineMs + 5000);
+      },
+      // The deadline reached before any acceptance.
+      FAILED_NOT_ACCEPTED: async ({ clock }) => {
+        await clock.advance(RECEIPT_DELIVERY.deadlineMs + 5000);
+      },
+      CANCELLED: async ({ outbox }) => {
+        expect((await outbox.cancel({ deliveryId: 'd1' })).ok).toBe(true);
+      },
+    };
+    for (const [state, arrange] of Object.entries(reach)) {
+      const harness = makeHarness({ delivery: RECEIPT_DELIVERY });
+      const { outbox } = harness;
+      await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      await flush();
+      await arrange(harness);
+      await flush();
+      const snapshot = (await outbox.getDelivery({ deliveryId: 'd1' })).value;
+      expect(snapshot).toMatchObject({ state, terminal: true });
+      const events = harness.events.length;
+      const writes = harness.storage.calls.update.length;
+      const refused = outbox.failClosed({ deliveryId: 'd1' });
+      expect(refused).toEqual({ ok: false, code: 'E_SDK_DELIVERY_TERMINAL' });
+      expect(Object.isFrozen(refused)).toBe(true);
+      await flush();
+      expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toEqual(snapshot);
+      expect(harness.events).toHaveLength(events);
+      expect(harness.storage.calls.update).toHaveLength(writes);
+      await outbox.shutdown();
+    }
+  });
+
+  test('a terminal item is unchanged and answers E_SDK_DELIVERY_TERMINAL', async () => {
+    const harness = makeHarness();
+    const { outbox, relaySet } = harness;
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    relaySet.attempts[0].answer(0, 'ACCEPTED');
+    await flush();
+    const snapshot = (await outbox.getDelivery({ deliveryId: 'd1' })).value;
+    expect(snapshot.terminal).toBe(true);
+    const events = harness.events.length;
+    const writes = harness.storage.calls.update.length;
+    const refused = outbox.failClosed({ deliveryId: 'd1' });
+    expect(refused).toEqual({ ok: false, code: 'E_SDK_DELIVERY_TERMINAL' });
+    expect(Object.isFrozen(refused)).toBe(true);
+    await flush();
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toEqual(snapshot);
+    expect(harness.events).toHaveLength(events);
+    expect(harness.storage.calls.update).toHaveLength(writes);
+    // An item failClosed already made terminal is terminal for it too.
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(outbox.failClosed({ deliveryId: 'd2' }).ok).toBe(true);
+    expect(outbox.failClosed({ deliveryId: 'd2' })).toEqual({ ok: false, code: 'E_SDK_DELIVERY_TERMINAL' });
+    await outbox.shutdown();
+  });
+
+  test('an unknown id answers E_SDK_UNKNOWN_DELIVERY and a malformed argument E_SDK_INVALID_ARGUMENT', async () => {
+    const harness = makeHarness();
+    const { outbox } = harness;
+    expect(outbox.failClosed({ deliveryId: 'd1' })).toEqual({ ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' });
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    expect(outbox.failClosed({ deliveryId: 'd9' })).toEqual({ ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' });
+    const events = harness.events.length;
+    for (const argument of [
+      undefined,
+      null,
+      'd1',
+      [],
+      {},
+      { deliveryId: 1 },
+      { deliveryId: 'd1', extra: true },
+      Object.create({ deliveryId: 'd1' }),
+    ]) {
+      const refused = outbox.failClosed(argument);
+      expect(refused).toEqual({ ok: false, code: 'E_SDK_INVALID_ARGUMENT' });
+      expect(Object.isFrozen(refused)).toBe(true);
+    }
+    expect(harness.events).toHaveLength(events);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('IN_FLIGHT');
+    await outbox.shutdown();
+  });
+
+  test('after the stop it changes nothing and answers E_SDK_CLIENT_STOPPED', async () => {
+    const harness = makeHarness();
+    const { outbox } = harness;
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    const stopping = outbox.shutdown();
+    expect(outbox.failClosed({ deliveryId: 'd1' })).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 1 } });
+    const events = harness.events.length;
+    const writes = harness.storage.calls.update.length;
+    for (const deliveryId of ['d1', 'd9']) {
+      expect(outbox.failClosed({ deliveryId })).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+    }
+    expect(outbox.failClosed(null)).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+    await flush();
+    expect(harness.events).toHaveLength(events);
+    expect(harness.storage.calls.update).toHaveLength(writes);
+    expect((await outbox.getDelivery({ deliveryId: 'd1' })).value).toMatchObject({
+      state: 'LOST_ON_SHUTDOWN',
+      lastCode: null,
+    });
+  });
+
+  test('failClosed is synchronous', async () => {
+    const { outbox } = makeHarness();
+    await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await flush();
+    const result = outbox.failClosed({ deliveryId: 'd1' });
+    expect(typeof result.then).toBe('undefined');
+    expect(result.ok).toBe(true);
+    await outbox.shutdown();
+  });
+});
+
+describe('seam S5 -- item-timer quiescence at the stop', () => {
+  const RECEIPT_DELIVERY = { ...DELIVERY, receiptMode: 'RECIPIENT_RECEIPT' };
+
+  /**
+   * One outbox whose clock and host timer clears and whose sink are recorded
+   * in one ordered log. The sink schedules a `queueMicrotask` dispatch for each
+   * LOST_ON_SHUTDOWN event, as the client does (C-SDK section 4.2), and logs
+   * when that dispatch runs. Host timers are observed through `globalThis`,
+   * restored in `finally`.
+   */
+  async function withQuiescenceHarness(config, body) {
+    const log = [];
+    const clock = makeClock(0);
+    const setTimer = clock.port.setTimer;
+    const clearTimer = clock.port.clearTimer;
+    const clockArmed = [];
+    clock.port.setTimer = (callback, delayMs) => {
+      const handle = setTimer(callback, delayMs);
+      clockArmed.push({ handle, delayMs });
+      return handle;
+    };
+    clock.port.clearTimer = (handle) => {
+      log.push({ type: 'clockClear', handle });
+      clearTimer(handle);
+    };
+    const previousSet = globalThis.setTimeout;
+    const previousClear = globalThis.clearTimeout;
+    const hostArmed = [];
+    globalThis.setTimeout = (callback, delayMs, ...args) => {
+      const handle = previousSet(callback, delayMs, ...args);
+      hostArmed.push({ handle, delayMs, callback });
+      return handle;
+    };
+    globalThis.clearTimeout = (handle) => {
+      log.push({ type: 'hostClear', handle });
+      previousClear(handle);
+    };
+    try {
+      const delivery = config.delivery ?? DELIVERY;
+      const storage = config.storage;
+      const relaySet = makeRelaySet({ relayCount: 2, clock, perRelayTimeoutMs: delivery.perRelayTimeoutMs });
+      const events = [];
+      const outbox = createOutbox({
+        delivery,
+        relayCount: 2,
+        storage,
+        session: makeSession(),
+        identity: makeIdentity(),
+        clock: clock.port,
+        random: { nextUint32: () => 0 },
+        publish: relaySet.publish,
+        onEvent: (event) => {
+          events.push(event);
+          log.push({ type: 'event', deliveryId: event.deliveryId, state: event.state });
+          if (event.state === 'LOST_ON_SHUTDOWN') {
+            queueMicrotask(() => log.push({ type: 'dispatched', deliveryId: event.deliveryId }));
+          }
+        },
+      });
+      /** The deadline handles of the items: clock, and host with its callback. */
+      const deadlineHandles = () => ({
+        clock: clockArmed.filter((entry) => entry.delayMs === delivery.deadlineMs).map((entry) => entry.handle),
+        host: hostArmed.filter((entry) => entry.delayMs > delivery.deadlineMs),
+      });
+      await body({ outbox, clock, relaySet, storage, events, log, deadlineHandles, delivery });
+    } finally {
+      globalThis.setTimeout = previousSet;
+      globalThis.clearTimeout = previousClear;
+    }
+  }
+
+  /**
+   * Every clock clear and every clear of an item's host handle comes after the
+   * dispatch of the last LOST_ON_SHUTDOWN event (so at least one microtask
+   * turn after it was handed to the sink), and every item handle is cleared
+   * before the stop resolved.
+   */
+  function expectQuiescence(log, handles, lost) {
+    const hostHandles = new Set(handles.host.map((entry) => entry.handle));
+    const isItemClear = (entry) => entry.type === 'clockClear'
+      || (entry.type === 'hostClear' && hostHandles.has(entry.handle));
+    const dispatched = log.flatMap((entry, index) => (entry.type === 'dispatched' ? [index] : []));
+    expect(dispatched).toHaveLength(lost);
+    const lastEvent = log
+      .map((entry) => entry.type === 'event' && entry.state === 'LOST_ON_SHUTDOWN')
+      .lastIndexOf(true);
+    const lastDispatch = Math.max(...dispatched);
+    expect(lastDispatch).toBeGreaterThan(lastEvent);
+    const stopCalled = log.findIndex((entry) => entry.type === 'stopCalled');
+    expect(stopCalled).toBeGreaterThanOrEqual(0);
+    const firstClear = log.findIndex((entry, index) => index > stopCalled && isItemClear(entry));
+    expect(firstClear).toBeGreaterThan(lastDispatch);
+    const resolved = log.findIndex((entry) => entry.type === 'resolved');
+    expect(resolved).toBeGreaterThan(firstClear);
+    const clearedBefore = log.slice(stopCalled, resolved).filter(isItemClear);
+    for (const handle of handles.clock) {
+      expect(clearedBefore.some((entry) => entry.type === 'clockClear' && entry.handle === handle)).toBe(true);
+    }
+    for (const handle of hostHandles) {
+      expect(clearedBefore.some((entry) => entry.type === 'hostClear' && entry.handle === handle)).toBe(true);
+    }
+  }
+
+  /** Start the stop and log the moment it resolves. */
+  function stop(h) {
+    h.log.push({ type: 'stopCalled' });
+    return h.outbox.shutdown().then((result) => {
+      h.log.push({ type: 'resolved' });
+      return result;
+    });
+  }
+
+  test('the outbox members are unchanged by S5', () => {
+    const { outbox } = makeHarness();
+    expect(Reflect.ownKeys(outbox).map(String).sort()).toEqual(OUTBOX_MEMBERS);
+  });
+
+  test('an item awaiting a receipt whose host deadline backstop falls due after the stop call, before a held put settles', async () => {
+    const storage = makeStorage();
+    let releasePut = null;
+    let puts = 0;
+    storage.putResult = (record) => {
+      puts += 1;
+      if (puts === 1) {
+        storage.records.set(record.deliveryId, record);
+        return true;
+      }
+      return new Promise((resolve) => {
+        releasePut = () => {
+          storage.records.set(record.deliveryId, record);
+          resolve(true);
+        };
+      });
+    };
+    await withQuiescenceHarness({ delivery: RECEIPT_DELIVERY, storage }, async (h) => {
+      await h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      await flush();
+      h.relaySet.attempts[0].answer(0, 'ACCEPTED');
+      await flush();
+      expect((await h.outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('RELAY_ACCEPTED_AWAITING_RECEIPT');
+      const later = h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      await flush();
+      expect(releasePut).not.toBe(null);
+      const stopping = stop(h);
+      const handles = h.deadlineHandles();
+      expect(handles.clock).toHaveLength(2);
+      expect(handles.host).toHaveLength(2);
+      // The d1 host deadline backstop falls due: its callback runs now ...
+      handles.host[0].callback();
+      // ... and the clock deadlines of both items fall due too.
+      await h.clock.advance(h.delivery.deadlineMs + 2000);
+      const sinceStop = h.log.slice(h.log.findIndex((entry) => entry.type === 'stopCalled'));
+      expect(sinceStop.filter((entry) => entry.type === 'clockClear')).toEqual([]);
+      expect(sinceStop.some((entry) => entry.type === 'hostClear'
+        && handles.host.some((host) => host.handle === entry.handle))).toBe(false);
+      releasePut();
+      expect(await later).toEqual({ ok: true, value: { deliveryId: 'd2', state: 'QUEUED' } });
+      expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 2 } });
+      expectQuiescence(h.log, handles, 2);
+      expect(h.events.filter((event) => event.state === 'LOST_ON_SHUTDOWN')).toHaveLength(2);
+    });
+  });
+
+  for (const removeSucceeds of [true, false]) {
+    test(`an IN_FLIGHT item with a later send held in put that then fails, ${removeSucceeds ? 'with a successful' : 'with a failed'} remove`, async () => {
+      const storage = makeStorage();
+      let releasePut = null;
+      let puts = 0;
+      storage.putResult = (record) => {
+        puts += 1;
+        if (puts === 1) {
+          storage.records.set(record.deliveryId, record);
+          return true;
+        }
+        return new Promise((resolve) => {
+          releasePut = () => resolve(false);
+        });
+      };
+      if (!removeSucceeds) {
+        storage.removeResult = () => {
+          throw new Error('remove');
+        };
+      }
+      await withQuiescenceHarness({ storage }, async (h) => {
+        await h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+        await flush();
+        expect((await h.outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('IN_FLIGHT');
+        const later = h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+        await flush();
+        expect(releasePut).not.toBe(null);
+        const stopping = stop(h);
+        const handles = h.deadlineHandles();
+        expect(handles.clock).toHaveLength(2);
+        expect(handles.host).toHaveLength(2);
+        releasePut();
+        expect(await later).toEqual({ ok: false, code: 'E_SDK_STORAGE_FAILED' });
+        expect(storage.calls.remove).toEqual(['d2']);
+        expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 1 } });
+        // The failed admission's handles are among those cleared, after the
+        // events and before the stop resolved.
+        expectQuiescence(h.log, handles, 1);
+        const d2 = await h.outbox.getDelivery({ deliveryId: 'd2' });
+        if (removeSucceeds) {
+          expect(d2).toEqual({ ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' });
+          expect(h.events.map((event) => event.state)).toEqual(['IN_FLIGHT', 'LOST_ON_SHUTDOWN']);
+        } else {
+          expect(d2.value).toMatchObject({ state: 'FAILED_NOT_ACCEPTED', lastCode: 'E_SDK_STORAGE_FAILED' });
+          expect(h.events.map((event) => event.state)).toEqual([
+            'IN_FLIGHT',
+            'FAILED_NOT_ACCEPTED',
+            'LOST_ON_SHUTDOWN',
+          ]);
+        }
+      });
+    });
+  }
+
+  test('a retry timer that falls due after the stop call does nothing and is cleared only in step (4)', async () => {
+    const storage = makeStorage();
+    await withQuiescenceHarness({ storage }, async (h) => {
+      await h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      await flush();
+      h.relaySet.attempts[0].answer(0, 'REJECTED');
+      h.relaySet.attempts[0].answer(1, 'REJECTED');
+      await flush();
+      expect((await h.outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('QUEUED');
+      const stopping = stop(h);
+      // Every armed clock timer and the host deadline backstop fall due now,
+      // synchronously after the stop call: each callback returns at once.
+      for (const timer of [...h.clock.state.timers.values()]) timer.callback();
+      for (const host of h.deadlineHandles().host) host.callback();
+      const sinceStop = h.log.slice(h.log.findIndex((entry) => entry.type === 'stopCalled'));
+      expect(sinceStop.filter((entry) => entry.type === 'clockClear' || entry.type === 'hostClear')).toEqual([]);
+      expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 1 } });
+      expectQuiescence(h.log, h.deadlineHandles(), 1);
+      await h.clock.advance(60000);
+      expect(h.relaySet.attempts).toHaveLength(1);
+    });
+  });
 });
