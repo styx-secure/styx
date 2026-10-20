@@ -147,7 +147,9 @@ the note under "Authority".
 
 ## Fail closed
 
-Stop and report `Blocked` when the contract is invalid, base/dependencies drift,
+Stop and report `Blocked` when the contract is invalid, dependencies drift, the base drifts beyond what the scope check
+accepts (an ancestor contract base is accepted only while no allowed path has
+changed since it; see `docs/governance/task-contract-v1.md`),
 required work is outside scope, tasks overlap, a test cannot run, CI/change
 detection is failed/cancelled/unexpectedly skipped/absent, a sensitive decision
 is underspecified, independence is unprovable, or human approval is missing.
