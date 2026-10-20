@@ -13,9 +13,12 @@
 // Faults (identical for every port):
 //   PUT_THROW  the first readwrite put throws synchronously (T6b mutant "a put throws mid-enqueue")
 //   READ_FAIL  every readonly request throws synchronously (T9 "readback unavailable")
-//   TAMPER     the result of readonly request k (or of every one when tamperAt is null) has the last
-//              byte of every byte array flipped (T9 "AEAD tamper"); readonly requests are counted in
-//              issue order while armed, so k ranges over the reads of the reference (dry) run
+//   TAMPER     the result of readonly request k (tamperAt k), of every one (tamperAt null) or of every
+//              one after the first (tamperAt 'REST') has the last byte of every byte array flipped (T9
+//              "AEAD tamper"); readonly requests are counted in issue order while armed
+// The OPEN hook carries the transaction's durability and scope to the host, so that a killed context
+// still leaves its transaction metadata with the harness (B-CHR PR-r1 F9). `state.onOpen`, when set,
+// is called with every armed readwrite transaction (the worker's memory-hold probe).
 const REQUEST_METHODS = ['put', 'add', 'delete', 'clear', 'get', 'getAll', 'getAllKeys', 'getKey', 'count', 'openCursor', 'openKeyCursor'];
 
 function tamper(value) {
@@ -53,10 +56,12 @@ export function instrument({ hook, state }) {
     if (!state.armed || tx.mode !== 'readwrite') return tx;
     const id = state.next++;
     info.set(tx, { id, requests: 0 });
-    state.trace.push({ tx: id, ev: 'OPEN', stores: Array.from(tx.objectStoreNames), durability: tx.durability });
+    const meta = { stores: Array.from(tx.objectStoreNames), durability: tx.durability };
+    state.trace.push({ tx: id, ev: 'OPEN', ...meta });
     tx.addEventListener('complete', () => { state.trace.push({ tx: id, ev: 'COMPLETE' }); hook(`T${id}:COMPLETE`); });
     tx.addEventListener('abort', () => { state.trace.push({ tx: id, ev: 'ABORT' }); });
-    hook(`T${id}:OPEN`);
+    if (typeof state.onOpen === 'function') state.onOpen(id, tx);
+    hook(`T${id}:OPEN`, meta);
     return tx;
   };
   const origCommit = IDBTransaction.prototype.commit;
@@ -81,7 +86,7 @@ export function instrument({ hook, state }) {
         if (state.armed && mode === 'readonly') {
           const k = state.reads++;
           state.trace.push({ ev: 'READ', k, op: name });
-          if (state.fault === 'TAMPER' && (state.tamperAt === null || state.tamperAt === k)) tampered.set(r, k);
+          if (state.fault === 'TAMPER' && (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1))) tampered.set(r, k);
           hook(`R${k}`); // a readonly request boundary: right after request k was issued
         }
         return r;

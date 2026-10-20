@@ -4,12 +4,11 @@
 import { openVaultDb } from '/src/storage/vault-db.js';
 import { M2_KIND, decodeEnvelope, decodePlaintext, encodePlaintext } from '/src/storage/m2/session-codec.js';
 import {
-  M2_OUTCOME, buildMutationEnvelope, classifyAuthority, mutationRow, reconcileIndeterminate, runMutation,
-  validateCommitResultEvidence,
+  M2_OUTCOME, classifyAuthority, mutationRow, reconcileIndeterminate, runMutation, validateCommitResultEvidence,
 } from '/src/storage/m2/session-transaction.js';
 import { instrument } from './instrument.mjs';
 import {
-  PORT_CONTEXT, ROOT_KEY, envelopeInput, evidenceFor, generationFixture, mutationInput, selectorBytes,
+  PORT_CONTEXT, evidenceFor, manifestRootKey, mutationInput, noneHoldEncodable, parentFixture, prepareFixtures, selfSelector,
 } from './fixtures.mjs';
 
 const params = new URL(self.location.href).searchParams;
@@ -19,14 +18,15 @@ const FACTORY = { reference: './reference-port.mjs', product: '/src/storage/m2/s
 const NS = 'mls';
 const LOCK_NAME = 'styx-m2-bchr-suite-writer';
 const API = { EMPTY: 1, ACTIVE: 2 };
+const K = M2_KIND;
 const hex = (b) => (b === null || b === undefined ? null : Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join(''));
-const state = { armed: false, fault: null, tamperAt: null, plan: {}, trace: [], next: 0, reads: 0, faulted: false };
-const hook = (point) => {
+const state = { armed: false, fault: null, tamperAt: null, plan: {}, trace: [], next: 0, reads: 0, faulted: false, onOpen: null };
+const hook = (point, data = null) => {
   const x = new XMLHttpRequest();
-  x.open('GET', `/hook?p=${encodeURIComponent(point)}`, false);
+  x.open('GET', `/hook?p=${encodeURIComponent(point)}${data === null ? '' : `&d=${encodeURIComponent(JSON.stringify(data))}`}`, false);
   x.send();
 };
-instrument({ hook: (p) => { if (state.armed) hook(p); }, state });
+instrument({ hook: (p, d) => { if (state.armed) hook(p, d); }, state });
 
 let db = null;
 let port = null;
@@ -42,16 +42,17 @@ async function init({ dbName }) {
       return new Promise(() => {});
     }).catch(() => resolve(false));
   });
+  await prepareFixtures();
   db = await openVaultDb({ name: dbName });
   const { createPort } = await import(FACTORY);
   port = await createPort({ db, context: PORT_CONTEXT });
-  return { lock };
+  return { lock, noneHoldEncodable: noneHoldEncodable() };
 }
 
 /** Write a generation and a selector through the public port interface only (I-TXN step shapes). */
-async function writeGeneration(g, selector, expected, extra = []) {
+async function writeGeneration(g, records, selector, expected, extra = []) {
   const steps = [
-    ...g.records.map((r) => ({ kind: 'STAGE_DATA', payload: { generation: g.generation, ...r } })),
+    ...records.map((r) => ({ kind: 'STAGE_DATA', payload: { generation: g.generation, ...r } })),
     { kind: 'STAGE_MANIFEST', payload: {
       generation: g.generation, manifestKey: g.manifestKey, manifestBytes: g.manifestBytes,
       manifestCipherDigest: g.manifestCipherDigest, keyedRoot: g.keyedRoot, sessionBindingDigest: g.sessionBindingDigest,
@@ -65,9 +66,19 @@ async function writeGeneration(g, selector, expected, extra = []) {
 
 /** The parent authority: generation 1 selected in the row's origin state. */
 async function seed({ scenario }) {
-  await writeGeneration(generationFixture(1n), selectorBytes(1n, API[mutationRow(scenario).stateBefore]), null);
+  const P = parentFixture(scenario);
+  await writeGeneration(P, P.records, selfSelector(P, API[mutationRow(scenario).stateBefore]), null);
   return 'seeded';
 }
+
+// A parent spec names the stored generation a request stages over: absent, the row's generation 1;
+// { row, outcome, op }, the generation 2 that request of `row` staged over that row's generation 1.
+const parentOf = (scenario, spec) => (spec ? mutationInput(spec.row, M2_OUTCOME[spec.outcome], { generation: 2n, op: spec.op }).staged
+  : parentFixture(scenario));
+const requestOf = (scenario, outcome, { parent, generation = '2', op = 1 } = {}) => mutationInput(scenario, outcome, {
+  parent: parentOf(scenario, parent), generation: BigInt(generation), op,
+  parentState: parent ? API.ACTIVE : API[mutationRow(scenario).stateBefore],
+});
 
 /**
  * Debris fixture (C-FMT generationCommit.unboundCandidate): a complete candidate generation 2 with its
@@ -75,18 +86,18 @@ async function seed({ scenario }) {
  * same plaintext, as a crash of a per-call writer leaves it. Written through the public interface only.
  */
 async function seedDebris({ scenario, outcome }) {
-  const { candidate } = mutationInput(scenario, M2_OUTCOME[outcome], { parent: 1n, generation: 2n, op: 0x40 });
+  const { candidate, staged } = mutationInput(scenario, M2_OUTCOME[outcome], { generation: 2n, op: 0x40 });
   const stored = await port.readSelector();
   const extra = [{ kind: 'STAGE_EVIDENCE', payload: { generation: 2n, evidence: candidate.resultEvidence } }];
   if (candidate.escrow !== null) extra.push({ kind: 'STAGE_ESCROW', payload: { generation: 2n, escrow: candidate.escrow } });
-  await writeGeneration(generationFixture(2n), stored.plaintext, stored.envelope, extra);
+  await writeGeneration(staged, staged.records, stored.plaintext, stored.envelope, extra);
   return 'debris';
 }
 
 /** The stored selector envelope, kept by the harness outside the context it will kill. */
 async function snapshot() {
   const s = await port.readSelector();
-  return s === null ? null : { envelope: hex(s.envelope), plaintext: hex(s.plaintext) };
+  return s === null ? null : { envelope: hex(s.envelope), plaintext: hex(s.plaintext), nonce: hex(decodeEnvelope(s.envelope).nonce) };
 }
 
 /**
@@ -103,23 +114,25 @@ async function delayedReplace({ snap }) {
 }
 
 /**
- * T9 PRODUCE_COMMITTED (obligation item 13, COMMITTED branch): the commit lands while its response is
- * lost and the SS still holds its hold. The landed commit is driven through the I-TXN driver with
- * injected RS evidence; the producer is then given the hold the SS kept and must read back COMMITTED,
- * terminal, with identity fields that validate against the operation's envelope. It writes nothing.
+ * T9 PRODUCE_COMMITTED / TAMPER_COMMITTED (obligation item 13, COMMITTED branch): the commit lands while
+ * its response is lost and the SS still holds its hold. The landed commit is driven through the I-TXN
+ * driver with injected RS evidence; the producer is then given the hold the SS kept and must read back
+ * COMMITTED, terminal, with identity fields that validate against the operation's envelope (or, with
+ * `tamper`, every read after the first returns flipped bytes and the producer must fail closed). It
+ * writes nothing.
  */
-async function produceAfterCommit({ scenario, op = 1 }) {
+async function produceAfterCommit({ scenario, tamper = false }) {
   const hold = await port.readMemoryHold();
-  const envelope = envelopeInput(scenario, op);
+  const { envelope } = requestOf(scenario, M2_OUTCOME.INDETERMINATE);
   const landed = await guarded(async () => reconcileIndeterminate({
-    storage: port, manifestRootKey: ROOT_KEY, hold, evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED),
+    storage: port, manifestRootKey: manifestRootKey(), hold, evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED),
     reference: envelope.reconciliationIdentity.reference,
   }));
   const before = (await readback({})).dbDigest;
-  arm({});
+  arm(tamper ? { fault: 'TAMPER', tamperAt: 'REST' } : {});
   const p = await guarded(() => port.readbackEvidence({ hold }));
   state.armed = false;
-  const valid = p.ok ? await guarded(async () => validateCommitResultEvidence({ evidence: p.ok, envelope: buildMutationEnvelope(envelope) })) : null;
+  const valid = p.ok ? await guarded(async () => validateCommitResultEvidence({ evidence: p.ok, envelope })) : null;
   const after = await readback({});
   return {
     setup: landed.error ?? null, hadHold: hold !== null,
@@ -128,41 +141,84 @@ async function produceAfterCommit({ scenario, op = 1 }) {
   };
 }
 
+const flip = (b) => { const c = Uint8Array.from(b); c[0] ^= 0xff; return c; };
+function reencode(kind, plaintext, change) {
+  const v = { ...decodePlaintext(kind, plaintext) };
+  change(v);
+  return encodePlaintext(kind, v);
+}
+
 /**
  * T9 CONTRADICT_* (obligation item 13, last bullet): an authenticated contradiction. With the SS hold
- * kept after an ORIGINAL INDETERMINATE, the harness replaces the selector through the public port
- * interface (sealed by the port, CAS on the stored envelope) with a selector that contradicts the hold:
- * - CONTRADICT_RR_PARENT: RR, but the parent keyed root is not the hold's;
- * - CONTRADICT_RR_CANDIDATE: RR, but the candidate keyed root is not the stored candidate's;
- * - CONTRADICT_COMMITTED: names the candidate generation, but with a root its generation does not have.
- * The producer must fail closed (never NOT_COMMITTED, COMMITTED or S024) and write nothing.
+ * kept after an ORIGINAL INDETERMINATE, the harness writes through the public port interface (sealed by
+ * the port, CAS on the stored envelope):
+ * - CONTRADICT_RR_PARENT / CONTRADICT_RR_CANDIDATE: an RR selector whose parent / candidate keyed root
+ *   is not the hold's / the stored candidate's;
+ * - CONTRADICT_COMMITTED: a selector naming the candidate generation with roots it does not have;
+ * - CONTRADICT_RESULT / CONTRADICT_ESCROW / CONTRADICT_PARTIAL: a selector naming a generation 2 whose
+ *   records are complete and canonical but whose COMMIT_RESULT does not identify the held mutation /
+ *   whose OUTPUT_ESCROW has another output kind / that lacks one data record (B-CHR PR-r1 F1).
+ * The port may refuse the write (nothing written); otherwise the producer must fail closed (never
+ * NOT_COMMITTED, COMMITTED or S024) and write nothing.
  */
 async function contradict({ scenario, kind }) {
   const hold = await port.readMemoryHold();
-  const { candidate } = mutationInput(scenario, M2_OUTCOME.INDETERMINATE, {
-    parent: 1n, generation: 2n, parentState: API[mutationRow(scenario).stateBefore], op: 1,
-  });
-  const flip = (b) => { const c = Uint8Array.from(b); c[0] ^= 0xff; return c; };
-  const committed = kind === 'CONTRADICT_COMMITTED';
-  const v = decodePlaintext(M2_KIND.GENERATION_SELECTOR, committed ? candidate.selectorBytes : candidate.holdSelectorBytes);
-  const fields = { CONTRADICT_RR_PARENT: ['keyedRoot'], CONTRADICT_RR_CANDIDATE: ['candidateKeyedRoot'], CONTRADICT_COMMITTED: ['keyedRoot', 'candidateKeyedRoot'] }[kind];
-  const bad = { ...v };
-  for (const f of fields) bad[f] = flip(v[f]);
+  const { candidate, staged } = requestOf(scenario, M2_OUTCOME.INDETERMINATE);
   const current = await port.readSelector();
-  const setup = await guarded(() => port.apply(Object.freeze({
-    index: 0, boundary: 'BEFORE_STAGING', kind: 'REPLACE_SELECTOR',
-    payload: { selectorBytes: encodePlaintext(M2_KIND.GENERATION_SELECTOR, bad), resolveHoldGeneration: null, expectedSelectorBytes: current.envelope },
-  })));
+  const start = (await readback({})).dbDigest;
+  let setup;
+  if (kind.startsWith('CONTRADICT_RR_') || kind === 'CONTRADICT_COMMITTED') {
+    const committed = kind === 'CONTRADICT_COMMITTED';
+    const v = decodePlaintext(K.GENERATION_SELECTOR, committed ? candidate.selectorBytes : candidate.holdSelectorBytes);
+    const fields = { CONTRADICT_RR_PARENT: ['keyedRoot'], CONTRADICT_RR_CANDIDATE: ['candidateKeyedRoot'], CONTRADICT_COMMITTED: ['keyedRoot', 'candidateKeyedRoot'] }[kind];
+    const bad = { ...v };
+    for (const f of fields) bad[f] = flip(v[f]);
+    setup = await guarded(() => port.apply(Object.freeze({
+      index: 0, boundary: 'BEFORE_STAGING', kind: 'REPLACE_SELECTOR',
+      payload: { selectorBytes: encodePlaintext(K.GENERATION_SELECTOR, bad), resolveHoldGeneration: null, expectedSelectorBytes: current.envelope },
+    })));
+  } else {
+    let records = staged.records.map((r) => ({ ...r }));
+    if (kind === 'CONTRADICT_RESULT') {
+      records = records.map((r) => (r.recordKind !== K.COMMIT_RESULT ? r
+        : { ...r, plaintext: reencode(K.COMMIT_RESULT, r.plaintext, (x) => { x.candidateDigest = flip(x.candidateDigest); }) }));
+    } else if (kind === 'CONTRADICT_ESCROW') {
+      records = records.map((r) => (r.recordKind !== K.OUTPUT_ESCROW ? r
+        : { ...r, plaintext: reencode(K.OUTPUT_ESCROW, r.plaintext, (x) => { x.outputKind = x.outputKind === 6 ? 2 : x.outputKind + 1; }) }));
+    } else {
+      records = records.filter((r) => r.recordKind !== K.ABSENCE_COMMITMENTS);
+    }
+    setup = await guarded(() => writeGeneration(staged, records, selfSelector(staged, API.ACTIVE), current.envelope));
+  }
   const before = (await readback({})).dbDigest;
   arm({});
   const p = await guarded(() => port.readbackEvidence({ hold }));
   state.armed = false;
   const after = await readback({});
   return {
-    setup: setup.error ?? null, hadHold: hold !== null,
+    setup: setup.error ?? null, wrote: before !== start, hadHold: hold !== null,
     produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null, error: p.error ?? null,
     before, after: after.dbDigest, trace: state.trace,
   };
+}
+
+/**
+ * #468 B4 (trusted reader, C-FMT historicalHoldRule): over the seeded generation 1, the harness writes
+ * through the public port interface a complete canonical generation 2 whose present kind-13 record is
+ * not historical evidence (its parent is not earlier; for a row without an output it is also another
+ * mutation's hold), and a selector naming it as ACTIVE authority. The port may refuse the write
+ * (nothing written); otherwise no reader may classify it as authority.
+ */
+async function forgeHistorical({ scenario }) {
+  const own = requestOf(scenario, M2_OUTCOME.COMMITTED);
+  const donor = own.holdPlaintext ?? requestOf('CAPI-S014', M2_OUTCOME.COMMITTED).holdPlaintext;
+  const forged = reencode(K.MUTATION_HOLD, donor, (x) => { x.parentGeneration = 2n; });
+  const records = own.staged.records.map((r) => (r.recordKind === K.MUTATION_HOLD ? { ...r, plaintext: forged } : { ...r }));
+  const current = await port.readSelector();
+  const start = (await readback({})).dbDigest;
+  const setup = await guarded(() => writeGeneration(own.staged, records, selfSelector(own.staged, API.ACTIVE), current.envelope));
+  const rb = await readback({});
+  return { setup: setup.error ?? null, wrote: rb.dbDigest !== start, classify: rb.classify, start, after: rb.dbDigest };
 }
 
 function arm({ plan = {}, fault = null, tamperAt = null } = {}) {
@@ -187,22 +243,35 @@ function finish(r) {
   return { result: plain(r.ok), error: r.error ?? null, trace: state.trace, reads: state.reads };
 }
 
-async function original({ scenario, outcome, parent = '1', generation = '2', op = 1 }) {
-  const { envelope, candidate } = mutationInput(scenario, M2_OUTCOME[outcome], {
-    parent: BigInt(parent), generation: BigInt(generation), parentState: API[mutationRow(scenario).stateBefore], op,
-  });
-  return finish(await guarded(() => runMutation({
-    storage: port, manifestRootKey: ROOT_KEY, envelope, candidate, outcome: M2_OUTCOME[outcome],
+// The memory-hold probe (B-CHR obligation v2 item 6): at the open of every armed readwrite transaction
+// the harness asks the port for its memory hold; an answer that arrives before that transaction's
+// `complete` is recorded. The probe is outside the port and identical for every port.
+function holdProbe(id, tx) {
+  let done = false;
+  tx.addEventListener('complete', () => { done = true; });
+  tx.addEventListener('abort', () => { done = true; });
+  port.readMemoryHold().then((h) => { if (!done) state.trace.push({ ev: 'HOLD_BEFORE_COMPLETE', tx: id, held: h !== null }); }, () => {});
+}
+
+async function original({ scenario, outcome, parent = null, generation = '2', op = 1 }) {
+  const { envelope, candidate, holdPlaintext } = requestOf(scenario, M2_OUTCOME[outcome], { parent, generation, op });
+  state.onOpen = holdProbe;
+  const r = finish(await guarded(() => runMutation({
+    storage: port, manifestRootKey: manifestRootKey(), envelope, candidate, outcome: M2_OUTCOME[outcome],
   })));
+  state.onOpen = null;
+  return { ...r, stagedHold: holdPlaintext === null ? null : hex(holdPlaintext) };
 }
 
 /**
  * Reconciliation. `outcome` injects the RS evidence the I-TXN driver consumes (the C-MUT outcome
  * matrix). `produce: true` instead takes the evidence from the port's own terminal readback producer
- * (obligation item 13); `produceFault` arms a T9 fault for the producer's reads only.
+ * (obligation item 13); `produceFault` arms a T9 fault for the producer's reads only. `emissionFault`
+ * makes the harness's storage boundary refuse the first RELEASE_ESCROW (an interrupted local emission:
+ * the selection landed, the emission did not), outside the port.
  */
-async function reconcile({ scenario, outcome, op = 1, produce = false, produceFault = null, tamperAt = null }) {
-  const envelope = envelopeInput(scenario, op);
+async function reconcile({ scenario, outcome, parent = null, generation = '2', op = 1, produce = false, produceFault = null, tamperAt = null, emissionFault = false }) {
+  const { envelope } = requestOf(scenario, M2_OUTCOME.INDETERMINATE, { parent, generation, op });
   // The SS hold when SS memory survived; null after a restart, where I-TXN reads the durable kind-13 hold.
   const hold = await port.readMemoryHold();
   let produced = null;
@@ -215,8 +284,17 @@ async function reconcile({ scenario, outcome, op = 1, produce = false, produceFa
     produced = p.ok;
   }
   const evidence = produced ?? evidenceFor(envelope, M2_OUTCOME[outcome]);
+  const storage = !emissionFault ? port : {
+    apply: (step) => (step.kind === 'RELEASE_ESCROW'
+      ? Promise.reject(Object.assign(new Error('injected emission interruption'), { code: 'BCHR_EMISSION_INTERRUPTED' }))
+      : port.apply(step)),
+    readSelector: () => port.readSelector(),
+    readGeneration: (g) => port.readGeneration(g),
+    readMemoryHold: () => port.readMemoryHold(),
+    readGenerationNumbers: () => port.readGenerationNumbers(),
+  };
   const r = finish(await guarded(async () => reconcileIndeterminate({
-    storage: port, manifestRootKey: ROOT_KEY, hold, evidence, reference: envelope.reconciliationIdentity.reference,
+    storage, manifestRootKey: manifestRootKey(), hold, evidence, reference: envelope.reconciliationIdentity.reference,
   })));
   return { ...r, produced: produced === null ? null : { outcome: produced.outcome, terminal: produced.terminal } };
 }
@@ -232,6 +310,16 @@ function canon(v) {
 async function digest(v) {
   return hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canon(v)))));
 }
+// A deterministic, type-tagged encoding of an IndexedDB key, for ordering and hashing only; lookups
+// use the original key (B-CHR PR-r1 F8).
+function keyCode(k) {
+  if (typeof k === 'string') return `s:${k}`;
+  if (typeof k === 'number') return `n:${k}`;
+  if (k instanceof Date) return `d:${k.getTime()}`;
+  if (k instanceof ArrayBuffer || ArrayBuffer.isView(k)) return `b:${hex(k instanceof ArrayBuffer ? k : new Uint8Array(k.buffer, k.byteOffset, k.byteLength))}`;
+  if (Array.isArray(k)) return `a:[${k.map(keyCode).join(',')}]`;
+  return `?:${String(k)}`;
+}
 
 async function readback({ parent = '1', candidate = '2' }) {
   const out = { lock };
@@ -239,7 +327,7 @@ async function readback({ parent = '1', candidate = '2' }) {
   if (stored.error) out.selectorError = stored.error;
   else if (stored.ok === null) out.selector = null;
   else {
-    const s = decodePlaintext(M2_KIND.GENERATION_SELECTOR, stored.ok.plaintext);
+    const s = decodePlaintext(K.GENERATION_SELECTOR, stored.ok.plaintext);
     out.selector = {
       envelope: hex(stored.ok.envelope), nonce: hex(decodeEnvelope(stored.ok.envelope).nonce),
       plaintext: hex(stored.ok.plaintext), generation: s.generation.toString(),
@@ -247,26 +335,29 @@ async function readback({ parent = '1', candidate = '2' }) {
     };
   }
   const c = await guarded(() => classifyAuthority({
-    storage: port, manifestRootKey: ROOT_KEY, oldGeneration: BigInt(parent), newGeneration: BigInt(candidate),
+    storage: port, manifestRootKey: manifestRootKey(), oldGeneration: BigInt(parent), newGeneration: BigInt(candidate),
   }));
   out.classify = c.error ? { error: c.error } : { authority: c.ok.authority, generation: c.ok.generation?.toString() ?? null, held: c.ok.held };
   const cand = await guarded(() => port.readGeneration(BigInt(candidate)));
   out.candidatePresent = cand.error ? { error: cand.error } : cand.ok !== null;
   out.candidateDigest = cand.ok ? await digest(cand.ok) : null;
   out.escrowOutput = cand.ok?.escrow?.output ? hex(cand.ok.escrow.output) : null;
+  const k13 = cand.ok ? (cand.ok.records ?? []).find((r) => r.recordKind === K.MUTATION_HOLD) : undefined;
+  out.candidateHold = k13 === undefined ? null : hex(k13.plaintext);
   const nums = await guarded(() => port.readGenerationNumbers());
   out.numbers = nums.error ? { error: nums.error } : Array.from(nums.ok, (n) => BigInt(n).toString()).sort();
   const mh = await guarded(() => port.readMemoryHold());
   out.memoryHold = mh.error ? { error: mh.error } : mh.ok !== null;
-  // The whole `mls` store, read through the public VaultDb reads.
-  const keys = (await db.list(NS)).map(String).sort();
+  // The whole `mls` store, read through the public VaultDb reads, original keys (F8).
+  const keys = [...await db.list(NS)].sort((a, b) => (keyCode(a) < keyCode(b) ? -1 : (keyCode(a) > keyCode(b) ? 1 : 0)));
   const values = [];
-  for (const k of keys) values.push([k, await db.get(NS, k)]);
+  for (const k of keys) values.push([keyCode(k), await db.get(NS, k)]);
   out.dbDigest = await digest(values);
+  out.entries = keys.length;
   return out;
 }
 
-const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, contradict, readback };
+const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, contradict, forgeHistorical, readback };
 self.onmessage = async (ev) => {
   // A dedicated worker only receives messages from the page that created it (same origin; the event
   // origin is empty or ours). Anything else is ignored; an unknown op is answered with an error.
