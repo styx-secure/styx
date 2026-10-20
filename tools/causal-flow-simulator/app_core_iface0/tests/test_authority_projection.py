@@ -23,6 +23,104 @@ class AuthorityProjectionTests(unittest.TestCase):
     ROOT = "11" * 32
     GRANT = "22" * 32
 
+    def _assert_regranted_descendant_is_terminated_at_acting_prefix(
+        self, *, forked: bool, revoked: bool
+    ) -> None:
+        child = self.GRANT
+        grandchild = "33" * 32
+        grant_child = AuthorityEvent(
+            reference=child,
+            actor=self.ROOT,
+            sequence=0,
+            kind="GRANT",
+            dependencies=frozenset(),
+            ancestors=frozenset(),
+        )
+        events = [grant_child]
+        completed = {grant_child.reference}
+        fork_relation: dict[tuple[str, int], tuple[str, ...]] = {}
+        if forked:
+            left = AuthorityEvent(
+                reference="44" * 32,
+                actor=child,
+                sequence=0,
+                kind="ACTION",
+                dependencies=frozenset(completed),
+                ancestors=frozenset(completed),
+            )
+            right = AuthorityEvent(
+                reference="55" * 32,
+                actor=child,
+                sequence=0,
+                kind="ACTION",
+                dependencies=frozenset(completed),
+                ancestors=frozenset(completed),
+            )
+            events.extend((left, right))
+            completed.update((left.reference, right.reference))
+            fork_relation[(child, 0)] = (left.reference, right.reference)
+        if revoked:
+            revoke = AuthorityEvent(
+                reference="66" * 32,
+                actor=self.ROOT,
+                sequence=1,
+                kind="REVOKE",
+                dependencies=frozenset(completed),
+                ancestors=frozenset(completed),
+                target_credential=child,
+            )
+            events.append(revoke)
+            completed.add(revoke.reference)
+        regrant_descendant = AuthorityEvent(
+            reference=grandchild,
+            actor=self.ROOT,
+            sequence=2,
+            kind="GRANT",
+            dependencies=frozenset(completed),
+            ancestors=frozenset(completed),
+        )
+        completed.add(regrant_descendant.reference)
+        descendant_action = AuthorityEvent(
+            reference="77" * 32,
+            actor=grandchild,
+            sequence=0,
+            kind="ACTION",
+            dependencies=frozenset(completed),
+            ancestors=frozenset(completed),
+        )
+        events.extend((regrant_descendant, descendant_action))
+        value = fold_authority(
+            tuple(events),
+            {
+                self.ROOT: (None, self.ROOT),
+                child: (self.ROOT, grant_child.reference),
+                # Deliberately keep the lineage under the terminated child while
+                # ROOT re-adds the credential. This isolates the acting-prefix
+                # termination check from the authority-membership check.
+                grandchild: (child, regrant_descendant.reference),
+            },
+            self.ROOT,
+            fork_relation,
+            state_limit=256,
+            transition_limit=512,
+        )
+        self.assertEqual(value.event_authority[descendant_action.reference], "NO_AUTH")
+
+    def test_mutant_3acb1ac7cf3e4cf0b9efb3ee0e8d4492_o02_ob_ap02(self) -> None:
+        self._assert_regranted_descendant_is_terminated_at_acting_prefix(
+            forked=True, revoked=False
+        )
+
+    def test_mutant_44ae0390bc2b44ad93b89ee10e7c4fa9_o02_ob_ap02(self) -> None:
+        self._assert_regranted_descendant_is_terminated_at_acting_prefix(
+            forked=True, revoked=True
+        )
+
+    def test_mutant_b4193e194ec84bbfaa4e678ef7d9f3b3_o02_ob_ap02(self) -> None:
+        self._assert_regranted_descendant_is_terminated_at_acting_prefix(
+            forked=False, revoked=True
+        )
+
     def test_grant_and_reduction_use_acting_prefix_authority(self) -> None:
         grant = AuthorityEvent(
             reference=self.GRANT,
