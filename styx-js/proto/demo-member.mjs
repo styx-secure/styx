@@ -227,6 +227,13 @@ if (ROLE === 'inviter' && SCENES) {
   log('answered', answered, okAll ? '' : '(timeout)');
 }
 
+const LINGER_MS = Number(env.LINGER_MS ?? 3000);
+if (LINGER_MS > 0) {
+  // demo: let the receipt for the last message reach the relays before stopping
+  // (the prototype's shutdown does not wait for receipts still in flight)
+  log('lingering', LINGER_MS, 'ms before shutdown');
+  await new Promise((r) => setTimeout(r, LINGER_MS));
+}
 const sd = await client.shutdown();
 log('client.shutdown ->', JSON.stringify(sd));
 step('client-stopped', sd.ok ? sd.value : { code: sd.code });
