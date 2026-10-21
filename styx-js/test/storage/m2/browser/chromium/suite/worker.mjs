@@ -14,39 +14,40 @@ import {
 /**
  * The port the worker drives, wrapped so the harness sees every selector envelope the port reads or
  * writes (obligation item 10: a fresh 96-bit nonce per selector write, never a reused one), whatever
- * the factory does internally. The wrapper owns no behaviour: it forwards everything unchanged. An
- * envelope is identified by its own bytes; the nonce is read from the port's C-FMT selector envelope.
+ * the factory does internally. The wrapper owns no behaviour: it forwards every call unchanged and returns
+ * the port's own promise, never awaiting anything on the port's path (review impl2 R2-5).
+ *
+ * Write events (cycle 3, review impl3 R3-6/R3-7): every REPLACE_SELECTOR call is one write event, with
+ * its own identity, the section it originates in, and the envelope it was asked to replace. The wrapper
+ * issues no read of its own while an operation runs. The envelope a write produced is derived afterwards,
+ * at a harness boundary (`observe`), from what the port itself shows: the envelope the next completed
+ * write of the same port replaced (its compare-and-swap precondition), or, for the last write, the stored
+ * selector read after the operation returned. Reads are recorded in the section that issued them.
  */
 function tracked(target) {
-  /**
-   * Every selector envelope the port is seen reading or writing, with the plaintext of the write that
-   * produced it (obligation item 10). Nothing is awaited on the port's completion path (review impl2
-   * R2-5): a write is observed opportunistically after the operation, and the recorded plaintext is the
-   * one the plan supplied, which is what links two writes of the same plaintext to their envelopes.
-   */
-  const note = (envelope, plaintext) => {
-    if (!(envelope instanceof Uint8Array) || envelope.length === 0) return;
-    const h = hex(envelope);
-    if (state.selectors.some((sel) => sel.envelope === h)) return;
-    state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(envelope).nonce), plaintext: plaintext instanceof Uint8Array ? hex(plaintext) : null });
-  };
-  return {
+  const worker = hex(crypto.getRandomValues(new Uint8Array(8)));
+  const writes = [];
+  const reads = [];
+  let seq = 0;
+  const envelopeOf = (e) => (e instanceof Uint8Array && e.length > 0 ? { envelope: hex(e), nonce: hex(decodeEnvelope(e).nonce) } : null);
+  const wrapper = {
     apply: (step) => {
-      // The port's own resolution timing is preserved: the wrapper never awaits anything on that path.
-      // A write is recorded by the plaintext the plan supplied and, opportunistically, by the envelope a
-      // later read shows (review impl2 R2-5).
-      const r = target.apply(step);
-      if (step.kind === 'REPLACE_SELECTOR') {
-        state.selectors.push({ envelope: null, nonce: null, plaintext: hex(step.payload.selectorBytes), written: true });
-        Promise.resolve(r).then(() => target.readSelector()).then((stored) => {
-          if (stored !== null) note(stored.envelope, null);
-        }, () => {});
-      }
+      if (step.kind !== 'REPLACE_SELECTOR') return target.apply(step);
+      const ev = {
+        token: `${worker}:${seq++}`, section: state.section, status: 'pending', envelope: null, nonce: null,
+        expected: step.payload.expectedSelectorBytes instanceof Uint8Array ? hex(step.payload.expectedSelectorBytes) : null,
+      };
+      writes.push(ev);
+      let r;
+      try { r = target.apply(step); } catch (e) { ev.status = 'refused'; throw e; }
+      Promise.resolve(r).then(() => { ev.status = 'written'; }, () => { ev.status = 'refused'; });
       return r;
     },
     readSelector: async () => {
+      const section = state.section;
       const r = await target.readSelector();
-      if (r !== null) note(r.envelope, null);
+      const seen = r === null ? null : envelopeOf(r.envelope);
+      if (seen !== null) reads.push({ section, ...seen });
       return r;
     },
     readGeneration: (g) => target.readGeneration(g),
@@ -54,6 +55,30 @@ function tracked(target) {
     readGenerationNumbers: () => target.readGenerationNumbers(),
     readbackEvidence: (a) => target.readbackEvidence(a),
   };
+  /**
+   * The selector observations of `section`, taken at a harness boundary after the operation returned
+   * and its promises settled: the reads it issued and its write events, each with the envelope it
+   * produced when that can be derived (`null` otherwise).
+   */
+  async function observe(section) {
+    let stored = null;
+    try { const s = await target.readSelector(); stored = s === null ? null : envelopeOf(s.envelope); } catch { stored = null; }
+    for (let i = 0; i < writes.length; i++) {
+      const w = writes[i];
+      if (w.status !== 'written' || w.envelope !== null) continue;
+      let produced;
+      const later = writes.slice(i + 1).filter((x) => x.status !== 'refused');
+      if (later.length === 0) produced = stored;
+      else if (later[0].status === 'written' && later[0].expected !== null) produced = { envelope: later[0].expected, nonce: hex(decodeEnvelope(Uint8Array.from(later[0].expected.match(/../g), (x) => parseInt(x, 16))).nonce) };
+      else produced = null;
+      if (produced !== null) Object.assign(w, produced);
+    }
+    return {
+      reads: reads.filter((x) => x.section === section).map(({ envelope, nonce }) => ({ envelope, nonce })),
+      writes: writes.filter((x) => x.section === section).map(({ token, status, envelope, nonce, expected }) => ({ token, status, envelope, nonce, expected })),
+    };
+  }
+  return { port: wrapper, observe };
 }
 
 const params = new URL(self.location.href).searchParams;
@@ -65,7 +90,7 @@ const LOCK_NAME = 'styx-m2-bchr-suite-writer';
 const API = { EMPTY: 1, ACTIVE: 2 };
 const K = M2_KIND;
 const hex = (b) => (b === null || b === undefined ? null : Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join(''));
-const state = { armed: false, fault: null, tamperAt: null, plan: {}, trace: [], probes: [], selectors: [], next: 0, reads: 0, faulted: false, onOpen: null };
+const state = { armed: false, section: 0, fault: null, tamperAt: null, plan: {}, trace: [], probes: [], next: 0, reads: 0, faulted: false, onOpen: null };
 const hook = (point, data = null) => {
   const x = new XMLHttpRequest();
   x.open('GET', `/hook?p=${encodeURIComponent(point)}${data === null ? '' : `&d=${encodeURIComponent(JSON.stringify(data))}`}`, false);
@@ -75,7 +100,10 @@ instrument({ hook: (p, d) => { if (state.armed) hook(p, d); }, state });
 
 let db = null;
 let port = null;
+let tracker = null;
 let lock = null;
+/** Install the port behind the observing wrapper. */
+function install(p) { tracker = tracked(p); port = tracker.port; }
 
 async function init({ dbName }) {
   // Harness-owned Web Lock (no product lock claim, act §1 non-claims): it shows that the lock of a dead
@@ -90,7 +118,7 @@ async function init({ dbName }) {
   await prepareFixtures();
   db = await openVaultDb({ name: dbName });
   const { createPort } = await import(FACTORY);
-  port = tracked(await createPort({ db, context: PORT_CONTEXT }));
+  install(await createPort({ db, context: PORT_CONTEXT }));
   return { lock, noneHoldEncodable: noneHoldEncodable() };
 }
 
@@ -173,16 +201,12 @@ async function produceAfterCommit({ scenario, tamper = false }) {
     storage: port, manifestRootKey: manifestRootKey(), hold, evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED),
     reference: envelope.reconciliationIdentity.reference,
   }));
-  const before = (await readback({})).dbDigest;
-  arm(tamper ? { fault: 'TAMPER', tamperAt: 'REST' } : {});
-  const p = await guarded(() => port.readbackEvidence({ hold }));
-  state.armed = false;
+  const p = await produce({ hold, fault: tamper ? 'TAMPER' : null, tamperAt: tamper ? 'REST' : null });
   const valid = p.ok ? await guarded(async () => validateCommitResultEvidence({ evidence: p.ok, envelope })) : null;
-  const after = await readback({});
   return {
-    setup: landed.error ?? null, hadHold: hold !== null,
-    produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null, error: p.error ?? null,
-    identity: valid === null ? null : (valid.error ?? 'VALID'), before, after: after.dbDigest, trace: state.trace,
+    setup: landed.error ?? null, hadHold: hold !== null, producer: p.section,
+    produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null,
+    identity: valid === null ? null : (valid.error ?? 'VALID'),
   };
 }
 
@@ -239,15 +263,10 @@ async function contradict({ scenario, kind }) {
     }
     setup = await guarded(() => writeGeneration(forged, forged.records, selfSelector(forged, API.ACTIVE), current.envelope));
   }
-  const before = (await readback({})).dbDigest;
-  arm({});
-  const p = await guarded(() => port.readbackEvidence({ hold }));
-  state.armed = false;
-  const after = await readback({});
+  const p = await produce({ hold });
   return {
-    setup: setup.error ?? null, wrote: before !== start, hadHold: hold !== null,
-    produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null, error: p.error ?? null,
-    before, after: after.dbDigest, trace: state.trace,
+    setup: setup.error ?? null, wrote: p.section.before !== start, hadHold: hold !== null, producer: p.section,
+    produced: p.ok ? { outcome: p.ok.outcome, terminal: p.ok.terminal } : null,
   };
 }
 
@@ -270,8 +289,13 @@ async function forgeHistorical({ scenario }) {
   return { setup: setup.error ?? null, wrote: rb.dbDigest !== start, classify: rb.classify, start, after: rb.dbDigest };
 }
 
+/** A new section: its own trace, probes and selector observations (cycle 3, R3-7). */
+function beginSection() {
+  Object.assign(state, { section: state.section + 1, trace: [], probes: [], next: 0, reads: 0, faulted: false });
+}
 function arm({ plan = {}, fault = null, tamperAt = null } = {}) {
-  Object.assign(state, { armed: true, fault, tamperAt, plan, trace: [], probes: [], selectors: [], next: 0, reads: 0, faulted: false });
+  beginSection();
+  Object.assign(state, { armed: true, fault, tamperAt, plan });
 }
 
 const errorCode = (e) => (typeof e?.code === 'string' ? e.code : (e?.name ?? 'Error'));
@@ -290,39 +314,69 @@ function plain(r) {
  * answer that belongs to the operation is never lost to a snapshot taken too early (review impl1 F3). */
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-function finish(r) {
+/**
+ * Close the current section after its operation returned (`r`): the RETURNED kill point, then, unarmed,
+ * the pending probe answers settle into this section's own arrays and its selector observations are
+ * drained (cycle 3, R3-7). The returned arrays are copies taken at this boundary.
+ */
+async function close(r) {
   if (state.armed) hook('RETURNED');
   state.armed = false;
-  return { result: plain(r.ok), error: r.error ?? null, trace: state.trace, reads: state.reads, probes: state.probes, selectors: state.selectors };
+  const { section, trace, probes, reads } = state;
+  await settle();
+  const selectors = await tracker.observe(section);
+  return { result: plain(r.ok), error: r.error ?? null, trace: [...trace], reads, probes: [...probes], selectors };
 }
 
 // The memory-hold probe (B-CHR obligation v2 item 6): at the open of every armed readwrite transaction
 // the harness asks the port for its memory hold; an answer that arrives before that transaction's
 // `complete` is recorded, and a later answer is recorded as `late` so that "could not observe" is never
 // mistaken for "observed no hold" (review impl1 F3). The probe is outside the port, identical for every port.
+// Each answer is recorded in the section that opened the transaction (cycle 3, R3-7). Only an answer that
+// arrived before `complete` (late: false) says anything about the hold while the transaction ran; a late
+// answer is coverage at most (review impl3 R3-4).
 function holdProbe(id, tx) {
   let done = false;
+  const { probes, trace } = state;
   tx.addEventListener('complete', () => { done = true; });
   tx.addEventListener('abort', () => { done = true; });
   Promise.resolve()
     .then(() => port.readMemoryHold())
     .then((h) => {
-      state.probes.push({ tx: id, late: done, held: h !== null });
-      state.trace.push(done ? { ev: 'HOLD_AFTER_COMPLETE', tx: id, held: h !== null } : { ev: 'HOLD_BEFORE_COMPLETE', tx: id, held: h !== null });
+      probes.push({ tx: id, late: done, held: h !== null });
+      trace.push(done ? { ev: 'HOLD_AFTER_COMPLETE', tx: id, held: h !== null } : { ev: 'HOLD_BEFORE_COMPLETE', tx: id, held: h !== null });
     }, (e) => {
-      state.probes.push({ tx: id, late: true, error: String(e?.code ?? e?.message ?? e) });
-      state.trace.push({ ev: 'HOLD_PROBE_FAILED', tx: id, error: String(e?.code ?? e?.message ?? e) });
+      probes.push({ tx: id, late: true, error: String(e?.code ?? e?.message ?? e) });
+      trace.push({ ev: 'HOLD_PROBE_FAILED', tx: id, error: String(e?.code ?? e?.message ?? e) });
     });
+}
+
+/**
+ * The port's terminal readback producer (obligation item 13) in its own armed section, the same for every
+ * caller (cycle 3, R3-2/R2-6): the store fingerprint around it is taken unarmed, its faults are armed for
+ * its reads only, and every readwrite transaction it opens is probed. The returned section carries its
+ * error, trace, probes, selector observations and fingerprint; `ok` is its evidence, or null.
+ */
+async function produce({ hold, fault = null, tamperAt = null }) {
+  state.armed = false;
+  const before = (await readback({})).dbDigest;
+  arm({ fault, tamperAt });
+  const onOpen = state.onOpen;
+  state.onOpen = holdProbe;
+  const p = await guarded(() => port.readbackEvidence({ hold }));
+  const section = await close(p);
+  state.onOpen = onOpen;
+  const after = (await readback({})).dbDigest;
+  return { ok: p.ok ?? null, section: { ...section, before, after } };
 }
 
 async function original({ scenario, outcome, parent = null, generation = '2', op = 1 }) {
   const { envelope, candidate } = requestOf(scenario, M2_OUTCOME[outcome], { parent, generation, op });
   state.onOpen = holdProbe;
-  const r = finish(await guarded(() => runMutation({
+  const r = await close(await guarded(() => runMutation({
     storage: port, manifestRootKey: manifestRootKey(), envelope, candidate, outcome: M2_OUTCOME[outcome],
   })));
   state.onOpen = null;
-  await settle();
   // The exact kind-13 record the candidate stages: a present hold or, under R3, a canonical tombstone.
   return { ...r, stagedHold: hex(candidate.records.find((x) => x.recordKind === K.MUTATION_HOLD).plaintext) };
 }
@@ -333,23 +387,32 @@ async function original({ scenario, outcome, parent = null, generation = '2', op
  * (obligation item 13); `produceFault` arms a T9 fault for the producer's reads only. `emissionFault`
  * makes the harness's storage boundary refuse the first RELEASE_ESCROW (an interrupted local emission:
  * the selection landed, the emission did not), outside the port.
+ *
+ * Arming (cycle 3, R3-5): a reconciliation the caller armed runs in the caller's section with the
+ * caller's plan and fault, unchanged, so the kill points of its plan are reported; an unarmed one is
+ * armed with nothing. With a producer, the producer has its own section and the reconciliation then a
+ * fresh one, armed with the caller's plan and fault. A failed producer ends the operation: no evidence is
+ * synthesized and the I-TXN reconciliation is not invoked (R3-3).
  */
-async function reconcile({ scenario, outcome, parent = null, generation = '2', op = 1, produce = false, produceFault = null, tamperAt = null, emissionFault = false }) {
+async function reconcile({ scenario, outcome, parent = null, generation = '2', op = 1, produce: useProducer = false, produceFault = null, tamperAt = null, emissionFault = false }) {
+  const caller = state.armed ? { plan: state.plan, fault: state.fault, tamperAt: state.tamperAt } : null;
+  if (caller === null) arm({});
   state.onOpen = holdProbe;
   const { envelope } = requestOf(scenario, M2_OUTCOME.INDETERMINATE, { parent, generation, op });
   // The SS hold when SS memory survived; null after a restart, where I-TXN reads the durable kind-13 hold.
   const hold = await port.readMemoryHold();
   let produced = null;
   let producer = null;
-  if (produce) {
-    // The producer runs in its own armed section, so its trace, its write requests and the store
-    // fingerprint around it are observed on their own (obligation item 13; review impl1 F2).
-    const before = (await readback({})).dbDigest;
-    arm({ fault: produceFault, tamperAt });
-    const p = await guarded(() => port.readbackEvidence({ hold }));
-    await settle();
-    producer = { ...finish(p), before, after: (await readback({})).dbDigest };
-    produced = p.ok ?? null; // a failed producer is judged by the reconciliation it then feeds
+  if (useProducer) {
+    const p = await produce({ hold, fault: produceFault, tamperAt });
+    producer = p.section;
+    produced = p.ok;
+    if (produced === null) {
+      state.onOpen = null;
+      return { result: null, error: null, trace: [], reads: 0, probes: [], selectors: { reads: [], writes: [] }, producer, produced: null, reconciled: false };
+    }
+    arm(caller ?? {});
+    state.onOpen = holdProbe;
   }
   const evidence = produced ?? evidenceFor(envelope, M2_OUTCOME[outcome]);
   const storage = !emissionFault ? port : {
@@ -361,15 +424,11 @@ async function reconcile({ scenario, outcome, parent = null, generation = '2', o
     readMemoryHold: () => port.readMemoryHold(),
     readGenerationNumbers: () => port.readGenerationNumbers(),
   };
-  // The reconciliation is its own armed section: the producer's faults are off and its observations are
-  // kept in `producer` (review impl2 R2-3). No evidence is fabricated when the producer failed.
-  arm({});
-  const r = finish(await guarded(async () => reconcileIndeterminate({
+  const r = await close(await guarded(async () => reconcileIndeterminate({
     storage, manifestRootKey: manifestRootKey(), hold, evidence, reference: envelope.reconciliationIdentity.reference,
   })));
   state.onOpen = null;
-  await settle();
-  return { ...r, producer, produced: produced === null ? null : { outcome: produced.outcome, terminal: produced.terminal } };
+  return { ...r, producer, produced: produced === null ? null : { outcome: produced.outcome, terminal: produced.terminal }, reconciled: true };
 }
 
 // Canonical logical-value digest: byte preservation by logical value, not by database files.
@@ -437,6 +496,8 @@ self.onmessage = async (ev) => {
   if (ev.origin !== '' && ev.origin !== self.location.origin) return;
   const { id, op, args } = ev.data ?? {};
   if (!Object.hasOwn(OPS, op)) { self.postMessage({ id, error: { code: 'UNKNOWN_OP', message: String(op) } }); return; }
+  // Every operation the harness did not arm runs in a section of its own (cycle 3, R3-7).
+  if (!state.armed && op !== 'arm') beginSection();
   try {
     self.postMessage({ id, value: await OPS[op](args ?? {}) });
   } catch (e) {

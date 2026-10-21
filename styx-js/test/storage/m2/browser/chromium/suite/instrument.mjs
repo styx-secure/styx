@@ -19,6 +19,10 @@
 // The OPEN hook carries the transaction's durability and scope to the host, so that a killed context
 // still leaves its transaction metadata with the harness (B-CHR PR-r1 F9). `state.onOpen`, when set,
 // is called with every armed readwrite transaction (the worker's memory-hold probe).
+// Sections (cycle 3, review impl3 R3-5/R3-7): every event is recorded in the trace of the armed section
+// it originates in (the section current when its transaction opened, or its read was issued), and a
+// kill point of a transaction is reported only while that section is the current one, so that a late
+// `complete` or request of an earlier section never lands in, or adds a kill point to, a later one.
 const REQUEST_METHODS = ['put', 'add', 'delete', 'clear', 'get', 'getAll', 'getAllKeys', 'getKey', 'count', 'openCursor', 'openKeyCursor'];
 
 function tamper(value) {
@@ -36,7 +40,7 @@ const carriesBytes = (v) => (v instanceof Uint8Array ? v.length > 0 : (v instanc
   : (Array.isArray(v) ? v.some(carriesBytes) : (v !== null && typeof v === 'object' ? Object.values(v).some(carriesBytes) : false))));
 
 export function instrument({ hook, state }) {
-  // state: { armed, fault, tamperAt, plan: { [txIndex]: lastRequestIndex }, trace: [], next: 0, reads: 0 }
+  // state: { armed, section, fault, tamperAt, plan: { [txIndex]: lastRequestIndex }, trace: [], next: 0, reads: 0 }
   const info = new WeakMap();
   const tampered = new WeakMap(); // request -> read index
   const resultGetter = Object.getOwnPropertyDescriptor(IDBRequest.prototype, 'result').get;
@@ -45,8 +49,8 @@ export function instrument({ hook, state }) {
     get() {
       const v = resultGetter.call(this);
       if (!tampered.has(this)) return v;
-      const k = tampered.get(this);
-      if (!state.trace.some((e) => e.ev === 'TAMPERED' && e.k === k)) state.trace.push({ ev: 'TAMPERED', k, changed: carriesBytes(v) });
+      const { k, trace } = tampered.get(this);
+      if (!trace.some((e) => e.ev === 'TAMPERED' && e.k === k)) trace.push({ ev: 'TAMPERED', k, changed: carriesBytes(v) });
       return tamper(v);
     },
   });
@@ -55,11 +59,13 @@ export function instrument({ hook, state }) {
     const tx = origTransaction.apply(this, args);
     if (!state.armed || tx.mode !== 'readwrite') return tx;
     const id = state.next++;
-    info.set(tx, { id, requests: 0 });
+    const { trace, section } = state;
+    info.set(tx, { id, requests: 0, trace, section });
+    const current = () => state.section === section;
     const meta = { stores: Array.from(tx.objectStoreNames), durability: tx.durability };
-    state.trace.push({ tx: id, ev: 'OPEN', ...meta });
-    tx.addEventListener('complete', () => { state.trace.push({ tx: id, ev: 'COMPLETE' }); hook(`T${id}:COMPLETE`); });
-    tx.addEventListener('abort', () => { state.trace.push({ tx: id, ev: 'ABORT' }); });
+    trace.push({ tx: id, ev: 'OPEN', ...meta });
+    tx.addEventListener('complete', () => { trace.push({ tx: id, ev: 'COMPLETE' }); if (current()) hook(`T${id}:COMPLETE`); });
+    tx.addEventListener('abort', () => { trace.push({ tx: id, ev: 'ABORT' }); });
     if (typeof state.onOpen === 'function') state.onOpen(id, tx);
     hook(`T${id}:OPEN`, meta);
     return tx;
@@ -68,7 +74,7 @@ export function instrument({ hook, state }) {
   IDBTransaction.prototype.commit = function commit(...args) {
     const r = origCommit.apply(this, args);
     const t = info.get(this);
-    if (t !== undefined) { state.trace.push({ tx: t.id, ev: 'COMMIT_SENT' }); hook(`T${t.id}:COMMIT_SENT`); }
+    if (t !== undefined) { t.trace.push({ tx: t.id, ev: 'COMMIT_SENT' }); if (state.section === t.section) hook(`T${t.id}:COMMIT_SENT`); }
     return r;
   };
   const READS = new Set(['get', 'getAll', 'getAllKeys', 'getKey', 'count', 'openCursor', 'openKeyCursor']);
@@ -90,27 +96,28 @@ export function instrument({ hook, state }) {
         if (state.armed && mode === 'readonly') {
           const k = state.reads++;
           state.trace.push({ ev: 'READ', k, op: name });
-          if (state.fault === 'TAMPER' && (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1))) tampered.set(r, k);
+          if (state.fault === 'TAMPER' && (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1))) tampered.set(r, { k, trace: state.trace });
           hook(`R${k}`); // a readonly request boundary: right after request k was issued
         }
         return r;
       }
       const j = t.requests++;
-      state.trace.push({ tx: t.id, ev: 'REQ', j, op: name, store: this.name });
-      hook(`T${t.id}:R${j}`);
-      if (state.fault === 'PUT_THROW' && name === 'put' && !state.faulted) {
+      const current = state.section === t.section;
+      t.trace.push({ tx: t.id, ev: 'REQ', j, op: name, store: this.name });
+      if (current) hook(`T${t.id}:R${j}`);
+      if (current && state.fault === 'PUT_THROW' && name === 'put' && !state.faulted) {
         state.faulted = true;
-        state.trace.push({ tx: t.id, ev: 'FAULT', fault: 'PUT_THROW', j });
+        t.trace.push({ tx: t.id, ev: 'FAULT', fault: 'PUT_THROW', j });
         throw new DOMException('injected request failure', 'UnknownError');
       }
       const r = orig.apply(this, args);
-      if (READS.has(name) && readFault()) {
+      if (current && READS.has(name) && readFault()) {
         // A read inside a readwrite transaction takes the next read index (no kill point of its own).
         const k = state.reads++;
         state.trace.push({ ev: 'READ', k, op: name, tx: t.id });
-        if (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1)) tampered.set(r, k);
+        if (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1)) tampered.set(r, { k, trace: state.trace });
       }
-      if (state.plan[t.id] === j) hook(`T${t.id}:END`);
+      if (current && state.plan[t.id] === j) hook(`T${t.id}:END`);
       return r;
     };
   }

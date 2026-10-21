@@ -9,6 +9,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import {
@@ -119,29 +120,60 @@ async function call(page, op, args) {
 }
 /** Every browser context a cell opened, so that a failure anywhere still closes them all. */
 const openContexts = new Set();
+/** Launches still in flight, so that teardown waits for them and closes what they return. */
+const pendingLaunches = new Set();
+/**
+ * The cell each piece of work belongs to, carried through its continuations. A cell whose watchdog fired,
+ * or that finished, is cancelled (review impl3 R3-8): its body may still be running, since a race does not
+ * stop the losing promise, but it can start no further context, and a context that its in-flight launch
+ * returns afterwards is closed before any initialization; teardown waits for that close.
+ */
+const cellOf = new AsyncLocalStorage();
+const NO_CELL = { cancelled: false, id: '(outside a cell)' };
+const LAUNCH_SETTLE_MS = 60000;
 async function tearDown() {
   hookHandler = answer;
+  if (pendingLaunches.size > 0) {
+    let t = null;
+    await Promise.race([Promise.allSettled([...pendingLaunches]), new Promise((r) => { t = setTimeout(r, LAUNCH_SETTLE_MS); })]);
+    clearTimeout(t);
+  }
   for (const ctx of [...openContexts]) { openContexts.delete(ctx); await closeHard(ctx); }
 }
 /** A cell as a whole is bounded and always cleaned up, whatever fails inside it (review impl1 F5). */
 async function withCell(id, fn) {
+  const cell = { cancelled: false, id };
   let watchdog = null;
   try {
-    return await Promise.race([fn(), new Promise((_, reject) => {
-      watchdog = setTimeout(() => reject(new Error(`cell ${id} exceeded 900 s`)), 900000);
+    return await Promise.race([cellOf.run(cell, fn), new Promise((_, reject) => {
+      watchdog = setTimeout(() => { cell.cancelled = true; reject(new Error(`cell ${id} exceeded 900 s`)); }, 900000);
     })]);
   } finally {
     if (watchdog !== null) clearTimeout(watchdog);
+    cell.cancelled = true; // nothing of this cell may start a context after its teardown
     await tearDown();
   }
 }
-// launch(): the context is registered as soon as it exists and closed if initialization fails.
-async function launchBody() {
-  const ctx = await engine.launchPersistentContext(PROFILE, {
+// launch(): the context is registered as soon as it exists and closed if initialization fails, or if its
+// cell was cancelled while the launch was in flight (R3-8).
+async function launchBody(owner) {
+  if (owner.cancelled) throw new Error(`cell ${owner.id} was cancelled: no further context is launched`);
+  const launching = engine.launchPersistentContext(PROFILE, {
     headless: true, executablePath: process.env.BCHR_EXE || undefined,
     args: browserName === 'chromium' ? ['--disable-gpu', '--no-first-run', '--disable-extensions', '--renderer-process-limit=1'] : [],
   });
-  openContexts.add(ctx); // registered at once, so a failure during initialization is still cleaned up
+  let release;
+  const settled = new Promise((r) => { release = r; });
+  pendingLaunches.add(settled); // settles once the context is registered, or closed if it came late
+  let ctx;
+  try {
+    ctx = await launching;
+    if (owner.cancelled) { await closeHard(ctx); throw new Error(`cell ${owner.id} was cancelled: the late context was closed`); }
+    openContexts.add(ctx); // registered at once, so a failure during initialization is still cleaned up
+  } finally {
+    pendingLaunches.delete(settled);
+    release();
+  }
   const page = ctx.pages()[0] ?? await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('404')) log(`    [console.error] ${m.text()}`); });
   await page.goto(`${ORIGIN}/?factory=${encodeURIComponent(factory)}`);
@@ -153,7 +185,8 @@ async function launchBody() {
   return { ctx, page, init };
 }
 async function launch() {
-  try { return await launchBody(); } catch (e) { await tearDown(); throw e; }
+  const owner = cellOf.getStore() ?? NO_CELL;
+  try { return await launchBody(owner); } catch (e) { if (!owner.cancelled) await tearDown(); throw e; }
 }
 async function fresh() {
   fs.rmSync(PROFILE, { recursive: true, force: true });
@@ -172,15 +205,15 @@ async function contextDeath(page) {
 // R3 (#468 6171085366 §3a): a row without an output while the served codec cannot encode its hold.
 const r3 = (row) => !HAS_OUTPUT(row) && NONE_HOLD !== true;
 
-/** Every selector envelope the worker's port read or wrote during `r`, into the nonce book. */
+/** Every selector envelope the worker's port read, and every selector write event, during `r`, into the nonce book. */
 function addSelectors(book, r) {
   book.add(r.snap);
   book.add(r.rb?.selector);
-  for (const s of r.response?.selectors ?? []) book.add(s);
+  book.addObserved(r.response?.selectors);
 }
-/** Every selector envelope of the operations `calls` (their worker responses), into the nonce book. */
+/** Every selector observation of the operations `calls` (their worker responses, producer sections included). */
 function addSelectorsOf(book, ...calls) {
-  for (const c of calls) for (const s of c?.selectors ?? []) book.add(s);
+  for (const c of calls) { book.addObserved(c?.selectors); book.addObserved(c?.producer?.selectors); }
 }
 
 // ---- results ----------------------------------------------------------------------------------------
@@ -474,7 +507,7 @@ async function faultCell(row, id, kind) {
       await closeHard(ctx);
       openContexts.delete(ctx);
       record({ id, row, phase: 'T9', fault: kind, produced: response.produced, response: response.result?.reconciliation ?? response.error?.code,
-        failures: [...checkProducer(kind, pre, response, rb), ...book.failures()] });
+        failures: [...checkProducer(kind, pre, response, rb, { memoryHold: kind === 'READ_FAIL_MEMORY' }), ...book.failures()] });
   }
 }
 

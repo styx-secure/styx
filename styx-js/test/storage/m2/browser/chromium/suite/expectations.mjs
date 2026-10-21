@@ -156,9 +156,10 @@ export function checkUninterrupted(cell, response, rb) {
     want(r.reconciliation === kind, `reconciliation ${r.reconciliation} is ${kind}`, CITE.OUTPUT_RECON);
     want((r.output ?? null) === output, `reconciliation output ${r.output} is ${output}`, CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.candidatePresent === false, 'the candidate is discarded', CITE.NOT_COMMITTED);
-    // Item 6, observed on the reconciliation too: a reconciliation starts from the hold it resolves, so
-    // every probe of it must report that hold.
-    f.push(...checkProbeCoverage('RECONCILIATION', response, { earlyHoldAsserts: true, expectedHoldAtOpen: true }));
+    // Item 6, observed on the reconciliation too. A reconciliation with SS memory alive starts from the
+    // memory hold it resolves; after a context death the fresh worker has none, and the durable kind-13
+    // hold it reads is not a memory hold (review impl3 R3-4).
+    f.push(...checkProbeCoverage(phase, response, { earlyHoldAsserts: true, expectedHoldAtOpen: phase === 'RECONCILIATION' }));
     if (outcome === 'COMMITTED') want(rb.memoryHold === false, 'the hold is cleared by the local emission', CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.memoryHold === false, 'terminal NOT_COMMITTED leaves no memory hold', CITE.MEMORY_HOLD);
     if (outcome === 'INDETERMINATE' && phase === 'RECONCILIATION') want(rb.memoryHold === true, 'a continued INDETERMINATE keeps the memory hold', CITE.MEMORY_HOLD);
@@ -173,8 +174,6 @@ export function checkUninterrupted(cell, response, rb) {
   const tx = expectedTransactions(cell);
   want(n === tx, `the operation issues exactly ${tx} readwrite transaction(s) (got ${n})`, CITE.ONE_TX);
   f.push(...checkDurability(response.trace));
-  f.push(...checkProbeCoverage('RECONCILIATION-after-restart', { trace: response.trace, probes: response.probes, selectors: response.selectors },
-    { earlyHoldAsserts: true, expectedHoldAtOpen: false })); // a fresh worker after the context death
   return f;
 }
 
@@ -212,7 +211,8 @@ export function checkResumed(cell, response, rb) {
   const tx = expectedTransactions({ ...cell, phase: 'RECONCILIATION' });
   if (n !== tx) f.push({ what: `the resumed reconciliation issues exactly ${tx} readwrite transaction(s) (got ${n})`, cite: CITE.ONE_TX });
   f.push(...checkDurability(response.trace));
-  f.push(...checkProbeCoverage('a resumed reconciliation', response, { earlyHoldAsserts: true, expectedHoldAtOpen: true }));
+  // The resumed reconciliation runs in the relaunched context: no memory hold survived the kill (R3-4).
+  f.push(...checkProbeCoverage('a resumed reconciliation', response, { earlyHoldAsserts: true, expectedHoldAtOpen: false }));
   return f;
 }
 
@@ -246,19 +246,29 @@ export function checkRestartReconcile(cell, pre, response, rb, repeat) {
 
 /**
  * The memory-hold probe (obligation item 6; review impl1 F3): for every armed readwrite transaction the
- * operation opened, the port answered the harness promptly, and no answer that arrived before that
- * transaction's completion reported a hold. "Could not observe" is a failure, never a pass.
+ * operation opened, the port answered the harness. With `earlyHoldAsserts`, at least one answer arrived
+ * before that transaction's completion, and every such answer reports the hold the operation started with
+ * (`expectedHoldAtOpen`). An answer that arrived after the completion is coverage only: it says nothing about
+ * the hold while the transaction ran, so it is never compared (review impl3 R3-4). "Could not observe in
+ * time" is a failure, never a pass.
  */
 export function checkProbeCoverage(cell, response, { earlyHoldAsserts = true, expectedHoldAtOpen = false } = {}) {
   const f = [];
-  const txs = new Set((response.trace ?? []).filter((e) => e.ev === 'OPEN').map((e) => e.tx));
-  const probes = response.probes ?? [];
+  const txs = new Set((response?.trace ?? []).filter((e) => e.ev === 'OPEN').map((e) => e.tx));
+  const probes = response?.probes ?? [];
   for (const tx of txs) {
     const answers = probes.filter((p) => p.tx === tx);
-    if (answers.length === 0) f.push({ what: `the memory-hold probe of transaction T${tx} was observed (no answer by the operation's return)`, cite: CITE.NO_EARLY_HOLD });
-    if (answers.some((a) => a.error !== undefined)) f.push({ what: `the memory-hold probe of T${tx} answered with the port's hold (${answers.find((a) => a.error !== undefined).error})`, cite: CITE.NO_EARLY_HOLD });
-    if (earlyHoldAsserts && answers.some((a) => a.held !== expectedHoldAtOpen)) {
-      f.push({ what: `the memory-hold probe of T${tx} reports ${answers.find((a) => a.held !== expectedHoldAtOpen).held ? 'a hold' : 'no hold'} where this operation had ${expectedHoldAtOpen ? 'one' : 'none'} when it opened`, cite: CITE.NO_EARLY_HOLD });
+    if (answers.length === 0) { f.push({ what: `${cell}: the memory-hold probe of transaction T${tx} was observed (no answer by the operation's return)`, cite: CITE.NO_EARLY_HOLD }); continue; }
+    if (answers.some((a) => a.error !== undefined)) f.push({ what: `${cell}: the memory-hold probe of T${tx} answered with the port's hold (${answers.find((a) => a.error !== undefined).error})`, cite: CITE.NO_EARLY_HOLD });
+    if (!earlyHoldAsserts) continue;
+    const timely = answers.filter((a) => a.error === undefined && a.late === false);
+    if (timely.length === 0) {
+      f.push({ what: `${cell}: the memory-hold probe of T${tx} was answered before the transaction completed (a later answer proves nothing about the hold while it ran)`, cite: CITE.NO_EARLY_HOLD });
+      continue;
+    }
+    const wrong = timely.find((a) => a.held !== expectedHoldAtOpen);
+    if (wrong !== undefined) {
+      f.push({ what: `${cell}: the memory-hold probe of T${tx} reports ${wrong.held ? 'a hold' : 'no hold'} before the transaction completed, where this operation had ${expectedHoldAtOpen ? 'one' : 'none'} when it opened`, cite: CITE.NO_EARLY_HOLD });
     }
   }
   return f;
@@ -266,34 +276,42 @@ export function checkProbeCoverage(cell, response, { earlyHoldAsserts = true, ex
 
 /**
  * T9 on the port's own terminal readback producer (obligation item 13), in fixed, port-independent cells
- * (T9_CELLS). A fault case whose fault never reached a producer read fails (receipt). A forged state the
- * port refuses to write (nothing written) is a pass for every forging cell, the selector ones included
- * (review impl1 F1). Every producer path must write nothing: the fingerprint around the producer, its own
- * write requests, and its own transaction count are checked directly (review impl1 F2).
+ * (T9_CELLS). Every cell judges the producer's own section (`response.producer`, the same shape from every
+ * worker helper: error, trace, probes, fingerprint), which must be present (review impl3 R3-2, R2-6). A
+ * fault case whose fault never reached a producer read fails (receipt, searched in the producer's trace,
+ * R3-3). A forged state the port refuses to write (nothing written) is a pass for every forging cell, the
+ * selector ones included (review impl1 F1). Every producer path must write nothing: no write request and
+ * the fingerprint around it unchanged; a readwrite transaction holding only reads is permitted (contract
+ * Acceptance, get-only readwrite control; R3-1), its durability and scope are still checked. A failed
+ * producer is not followed by any reconciliation (no evidence is synthesized, R3-3). `memoryHold` says
+ * whether SS memory survived into the reconciliation (only `READ_FAIL_MEMORY`, R3-4).
  */
-export function checkProducer(kind, pre, response, rb) {
+export function checkProducer(kind, pre, response, rb, { memoryHold = false } = {}) {
   const f = [];
   const want = (ok, what, cite) => { if (!ok) f.push({ what, cite }); };
   const trace = response.trace ?? [];
   const output = response.result?.output ?? null;
   const p = response.producer;
-  const ptrace = p?.trace ?? [];
-  // The producer's own section: no write request, the fingerprint around it unchanged. A readwrite
-  // transaction containing only reads is permitted (contract Acceptance: the get-only readwrite control
-  // reports zero failures), so the transaction mode is not checked here (review impl2 R2-1).
+  if (p === undefined || p === null || !Array.isArray(p.trace)) {
+    f.push({ what: `${kind}: the producer was exercised and its section recorded`, cite: CITE.PRODUCER_WRITES_NOTHING });
+    return f;
+  }
+  const ptrace = p.trace;
+  const producerError = p.error ?? null;
   const producerWritesNothing = () => {
-    if (p === undefined || p === null) return;
-    want(p.before === p.after, 'the producer writes nothing (store byte-identical around it)', CITE.PRODUCER_WRITES_NOTHING);
-    want(writes(ptrace) === 0, 'the producer issues no write request', CITE.PRODUCER_WRITES_NOTHING);
+    want(typeof p.before === 'string' && p.before === p.after, `${kind}: the producer writes nothing (store byte-identical around it)`, CITE.PRODUCER_WRITES_NOTHING);
+    want(writes(ptrace) === 0, `${kind}: the producer issues no write request (got ${writes(ptrace)})`, CITE.PRODUCER_WRITES_NOTHING);
+    f.push(...checkDurability(ptrace));
+    f.push(...checkProbeCoverage(`${kind}: the producer`, p, { earlyHoldAsserts: false }));
   };
-  // The produced evidence is the producer's own outcome, never a substituted one (review impl2 R2-2).
-  const producerError = p?.error ?? null;
+  producerWritesNothing();
   const failClosed = (label) => {
-    want(p !== undefined && p !== null, `${label}: the producer was exercised`, CITE.PRODUCER_TAMPER);
-    producerWritesNothing();
     want(response.produced === null && producerError !== null && [...VERIFY_CODES, 'EVIDENCE_MISMATCH'].includes(producerError.code),
       `${label}: fails closed with a verification code, never NOT_COMMITTED, COMMITTED or S024 (got ${JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_TAMPER);
   };
+  const receipt = (fault) => (fault === 'READ_FAIL'
+    ? ptrace.some((e) => e.ev === 'FAULT' && e.fault === 'READ_FAIL')
+    : ptrace.some((e) => e.ev === 'TAMPERED' && e.changed === true));
   if (kind.startsWith('CONTRADICT_')) {
     // The forging step writes through the public port interface; a port that refuses it writes nothing,
     // and the producer that then runs against the unchanged healthy state is judged as any other.
@@ -301,8 +319,7 @@ export function checkProducer(kind, pre, response, rb) {
     if (response.setup !== null) {
       want(response.wrote === false && [...VERIFY_CODES, 'EVIDENCE_MISMATCH'].includes(response.setup.code),
         `a refused forged write leaves the store unchanged with a verification code (got ${response.setup.code}, wrote ${response.wrote})`, CITE.PRODUCER_VERIFY);
-      producerWritesNothing();
-      want(p !== undefined && producerError === null && typeof response.produced?.outcome === 'number',
+      want(producerError === null && typeof response.produced?.outcome === 'number',
         `the producer against the unchanged healthy state answers (got ${producerError?.code ?? JSON.stringify(response.produced)})`, CITE.PRODUCER_NOT_COMMITTED);
       return f;
     }
@@ -316,54 +333,43 @@ export function checkProducer(kind, pre, response, rb) {
         `the producer gives COMMITTED terminal (got ${JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_COMMITTED);
       want(response.identity === 'VALID', `the produced evidence validates against the envelope (got ${JSON.stringify(response.identity)})`, CITE.PRODUCER_COMMITTED);
     } else {
-      want(trace.some((e) => e.ev === 'TAMPERED' && e.changed === true), 'TAMPER_COMMITTED: the fault reached a producer read', CITE.FAULT_RECEIPT);
+      want(receipt('TAMPER'), 'TAMPER_COMMITTED: the fault reached a producer read', CITE.FAULT_RECEIPT);
       want(response.produced === null && VERIFY_CODES.includes(producerError?.code),
         `TAMPER_COMMITTED: a tampered committed generation fails closed with a verification code (got ${JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_VERIFY);
     }
-    producerWritesNothing();
     return f;
   }
   if (kind === 'PRODUCE') {
-    if (p === undefined || p === null) { f.push({ what: 'PRODUCE: the producer was exercised', cite: CITE.PRODUCER_NOT_COMMITTED }); return f; }
     want(response.produced?.outcome === 2 && response.produced?.terminal === true && producerError === null,
       `the producer gives NOT_COMMITTED terminal (got ${JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_NOT_COMMITTED);
     want(response.result?.reconciliation === 'NOT_COMMITTED', `reconciliation ${response.result?.reconciliation ?? response.error?.code} is NOT_COMMITTED`, CITE.PRODUCER_NOT_COMMITTED);
     want(authority(rb.classify) === 'COMPLETE_OLD' && rb.candidatePresent === false, `readback ${authority(rb.classify)} is COMPLETE_OLD with the candidate discarded`, CITE.NOT_COMMITTED);
     want(output === null, 'nothing is emitted', CITE.OUTPUT_RECON);
-    producerWritesNothing();
-    want(opens(ptrace) === 0, 'the producer opens no readwrite transaction', CITE.PRODUCER_WRITES_NOTHING);
-    f.push(...checkDurability(ptrace));
     // The reconciliation is its own armed section: its transactions, durability and probes are counted.
     want(opens(trace) === 1, `the reconciliation after the producer issues exactly 1 readwrite transaction (got ${opens(trace)})`, CITE.ONE_TX);
     f.push(...checkDurability(trace));
-    f.push(...checkProbeCoverage('the reconciliation after the producer', response, { earlyHoldAsserts: true, expectedHoldAtOpen: true }));
-    f.push(...checkProbeCoverage('the producer', p, { earlyHoldAsserts: false, expectedHoldAtOpen: true }));
+    f.push(...checkProbeCoverage('the reconciliation after the producer', response, { earlyHoldAsserts: true, expectedHoldAtOpen: memoryHold }));
     return f;
   }
-  const receipt = kind.startsWith('READ_FAIL')
-    ? trace.some((e) => e.ev === 'FAULT' && e.fault === 'READ_FAIL')
-    : trace.some((e) => e.ev === 'TAMPERED' && e.changed === true);
-  want(receipt, `${kind}: the fault reached a producer read`, CITE.FAULT_RECEIPT);
-  if (p === undefined || p === null) { f.push({ what: `${kind}: the producer was exercised`, cite: CITE.FAULT_RECEIPT }); return f; }
-  producerWritesNothing();
-  want(opens(ptrace) === 0, `${kind}: the producer opens no readwrite transaction`, CITE.PRODUCER_WRITES_NOTHING);
-  f.push(...checkProbeCoverage('the producer', p, { earlyHoldAsserts: false, expectedHoldAtOpen: false }));
+  want(receipt(kind.startsWith('READ_FAIL') ? 'READ_FAIL' : 'TAMPER'), `${kind}: the fault reached a producer read`, CITE.FAULT_RECEIPT);
   value: {
     if (kind === 'READ_FAIL_MEMORY') {
-      want(response.produced?.outcome === 3 && response.error === null, `READ_FAIL_MEMORY: the producer gives INDETERMINATE evidence (got ${JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_UNAVAILABLE);
+      want(response.produced?.outcome === 3 && producerError === null && response.error === null, `READ_FAIL_MEMORY: the producer gives INDETERMINATE evidence (got ${JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_UNAVAILABLE);
       want(response.result?.reconciliation === 'INDETERMINATE', `READ_FAIL_MEMORY: reconciliation ${response.result?.reconciliation ?? response.error?.code} is INDETERMINATE (S024)`, CITE.PRODUCER_UNAVAILABLE);
+      // A continued INDETERMINATE writes no authority.
+      want(opens(trace) === 0, `READ_FAIL_MEMORY: the S024 reconciliation opens no readwrite transaction (got ${opens(trace)})`, CITE.ONE_TX);
       break value;
     }
     if (kind === 'READ_FAIL_LOST') {
       want(response.produced === null && producerError !== null, `READ_FAIL_LOST: the producer fails closed (got ${response.result?.reconciliation ?? JSON.stringify(response.produced)})`, CITE.PRODUCER_NO_HOLD);
-      break value;
+    } else {
+      want(response.produced === null && VERIFY_CODES.includes(producerError?.code),
+        `${kind}: the producer fails closed with a verification code before any evidence, never S024 (got ${response.result?.reconciliation ?? producerError?.code ?? ''})`, CITE.PRODUCER_VERIFY);
     }
-    want(response.produced === null && VERIFY_CODES.includes(producerError?.code),
-      `${kind}: the producer fails closed with a verification code before any evidence, never S024 (got ${response.result?.reconciliation ?? producerError?.code ?? ''})`, CITE.PRODUCER_VERIFY);
+    // No evidence is synthesized after a failed producer: no reconciliation runs (R3-3).
+    want(response.reconciled === false && opens(trace) === 0, `${kind}: no reconciliation runs after the failed producer (reconciled ${response.reconciled})`, CITE.PRODUCER_NO_HOLD);
   }
   want(output === null, `${kind}: nothing is emitted`, CITE.PRODUCER_NO_HOLD);
-  // The reconciliation of a refused producer executes no step that could write, so it opens none.
-  want(opens(trace) === 0, `${kind}: the reconciliation after a refused producer opens no readwrite transaction (got ${opens(trace)})`, CITE.ONE_TX);
   f.push(...checkDurability(trace));
   want(rb.dbDigest === pre.dbDigest, `${kind}: the store is byte-preserved`, CITE.READ_FAIL);
   want(authority(rb.classify) === 'COMPLETE_OLD+HELD', `${kind}: the hold is unchanged (${authority(rb.classify)})`, CITE.CONTINUED);
@@ -391,28 +397,43 @@ export function checkDelayedWriter(point, response, before, after) {
 }
 
 /**
- * Fresh seals across one cell (obligation item 10): no nonce ever appears under two different envelopes,
- * and a write that re-seals plaintext a write of the same cell already sealed is reported whenever the
- * envelopes of the two can be seen to be the same. `add` takes what the port was seen reading or writing
- * (envelope, nonce, and the plaintext the plan supplied for a write).
+ * Fresh seals across one cell (obligation item 10; C-FMT §4 nonce rule), judged on write events, never on
+ * plaintext equality (review impl3 R3-6): two fresh seals of unchanged plaintext are lawful. `add` takes an
+ * envelope the port was seen reading (envelope, nonce); `addWrite` one selector write event of the worker
+ * (`token` identifies the event; `envelope`/`nonce` what it produced; `expected` the envelope it replaced).
+ * Failures: a nonce under two different envelopes; two distinct write events that produced the same
+ * envelope (identical plaintext sealed with a reused nonce); a completed write whose envelope is the one
+ * it replaced; a completed write whose envelope could not be observed (never a silent pass).
  */
 export function nonceBook() {
   const byNonce = new Map();
-  const byPlaintext = new Map();
+  const byEnvelope = new Map();
+  const tokens = new Set();
   const f = [];
+  const noteNonce = (sel) => {
+    const seen = byNonce.get(sel.nonce);
+    if (seen === undefined) byNonce.set(sel.nonce, sel.envelope);
+    else if (seen !== sel.envelope) f.push({ what: `selector nonce ${sel.nonce} is reused by a different envelope`, cite: CITE.FRESH_NONCE });
+  };
   return {
     add(selector) {
-      if (selector?.envelope && selector.nonce) {
-        const seen = byNonce.get(selector.nonce);
-        if (seen === undefined) byNonce.set(selector.nonce, selector.envelope);
-        else if (seen !== selector.envelope) f.push({ what: `selector nonce ${selector.nonce} is reused by a different envelope`, cite: CITE.FRESH_NONCE });
-      }
-      if (selector?.written === true && selector.plaintext) {
-        const seen = byPlaintext.get(selector.plaintext);
-        if (seen === undefined) byPlaintext.set(selector.plaintext, selector.envelope);
-        else if (seen !== null && seen === selector.envelope) f.push({ what: 'an authority write re-sealed unchanged plaintext in the same envelope', cite: CITE.FRESH_NONCE });
-        else if (seen === null && selector.envelope !== null) byPlaintext.set(selector.plaintext, selector.envelope);
-      }
+      if (selector?.envelope && selector.nonce) noteNonce(selector);
+    },
+    addWrite(w) {
+      if (!w?.token || tokens.has(w.token)) return;
+      tokens.add(w.token);
+      if (w.status !== 'written') return;
+      if (!w.envelope || !w.nonce) { f.push({ what: `selector write ${w.token}: the envelope it produced was observed`, cite: CITE.FRESH_NONCE }); return; }
+      noteNonce(w);
+      const other = byEnvelope.get(w.envelope);
+      if (other !== undefined) f.push({ what: `selector writes ${other} and ${w.token} produced the same envelope (a reused nonce)`, cite: CITE.FRESH_NONCE });
+      else byEnvelope.set(w.envelope, w.token);
+      if (w.expected !== null && w.expected === w.envelope) f.push({ what: `selector write ${w.token} left the stored envelope unchanged`, cite: CITE.FRESH_NONCE });
+    },
+    /** Everything a worker response observed: `{ reads, writes }`. */
+    addObserved(selectors) {
+      for (const s of selectors?.reads ?? []) this.add(s);
+      for (const w of selectors?.writes ?? []) this.addWrite(w);
     },
     failures: () => f,
   };
