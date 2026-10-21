@@ -125,18 +125,23 @@ async function tearDown() {
 }
 /** A cell as a whole is bounded and always cleaned up, whatever fails inside it (review impl1 F5). */
 async function withCell(id, fn) {
+  let watchdog = null;
   try {
-    return await Promise.race([fn(), new Promise((_, reject) => setTimeout(
-      () => reject(new Error(`cell ${id} exceeded 900 s`)), 900000))]);
+    return await Promise.race([fn(), new Promise((_, reject) => {
+      watchdog = setTimeout(() => reject(new Error(`cell ${id} exceeded 900 s`)), 900000);
+    })]);
   } finally {
+    if (watchdog !== null) clearTimeout(watchdog);
     await tearDown();
   }
 }
-async function launch() {
+// launch(): the context is registered as soon as it exists and closed if initialization fails.
+async function launchBody() {
   const ctx = await engine.launchPersistentContext(PROFILE, {
     headless: true, executablePath: process.env.BCHR_EXE || undefined,
     args: browserName === 'chromium' ? ['--disable-gpu', '--no-first-run', '--disable-extensions', '--renderer-process-limit=1'] : [],
   });
+  openContexts.add(ctx); // registered at once, so a failure during initialization is still cleaned up
   const page = ctx.pages()[0] ?? await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('404')) log(`    [console.error] ${m.text()}`); });
   await page.goto(`${ORIGIN}/?factory=${encodeURIComponent(factory)}`);
@@ -147,11 +152,12 @@ async function launch() {
   try { maxProcs = Math.max(maxProcs, processTree().length); } catch { /* ignore */ }
   return { ctx, page, init };
 }
+async function launch() {
+  try { return await launchBody(); } catch (e) { await tearDown(); throw e; }
+}
 async function fresh() {
   fs.rmSync(PROFILE, { recursive: true, force: true });
-  const started = await launch();
-  openContexts.add(started.ctx);
-  return started;
+  return launch();
 }
 async function closeHard(ctx) {
   try { await Promise.race([ctx.close(), new Promise((r) => setTimeout(r, 3000))]); } catch { /* dead */ }
@@ -234,10 +240,11 @@ async function runArmed(cell, { killAt = null, killKind = null, plan = {}, fault
   await call(page, 'arm', { plan, fault, tamperAt });
   let response = null;
   const crashed = new Promise((r) => { page.on('crash', () => r({ crashed: 'crash' })); page.on('close', () => r({ crashed: 'close' })); });
-  const watchdog = new Promise((r) => setTimeout(() => r({ crashed: 'watchdog 60s' }), 60000));
+  let watchdogTimer = null;
+  const watchdog = new Promise((r) => { watchdogTimer = setTimeout(() => r({ crashed: 'watchdog 60s' }), 60000); });
   try {
     response = await Promise.race([operate(page, cell), crashed, watchdog]);
-  } catch (e) { response = { crashed: String(e.message).split('\n')[0] }; }
+  } catch (e) { response = { crashed: String(e.message).split('\n')[0] }; } finally { clearTimeout(watchdogTimer); }
   hookHandler = answer;
   const opened = hostOpens;
   // The kind-13 record the operation's candidate stages: from the setup (RECONCILIATION) or the operation.
@@ -266,7 +273,12 @@ function txPlan(trace) {
 async function killMatrix(rows) {
   for (const row of rows) for (const phase of PHASES) for (const outcome of OUTCOMES) {
     tally.cells += 1;
-    if (r3(row) && phase === 'RECONCILIATION') { await r3Cell(row, `${row}/${phase}/${outcome}/R3`, phase); continue; }
+    await withCell(`${row}/${phase}/${outcome}`, () => killCell(row, phase, outcome));
+  }
+}
+async function killCell(row, phase, outcome) {
+  {
+    if (r3(row) && phase === 'RECONCILIATION') { await r3CellBody(row, `${row}/${phase}/${outcome}/R3`, phase); return; }
     const base = { row, outcome, phase, r3: r3(row) };
     const dry = await runArmed(base);
     const cell = { ...base, stagedHold: dry.stagedHold, beforeDigest: dry.beforeDigest };
@@ -324,10 +336,9 @@ async function killMatrix(rows) {
         await closeHard(r.ctx);
         openContexts.delete(r.ctx);
         const again = await launch();
-        openContexts.add(again.ctx);
         failures.push(...checkSurvives(r.rb, await call(again.page, 'readback', {})));
         r.ctx = again.ctx;
-        openContexts.delete(again.ctx);
+        r.page = again.page;
       }
       await closeHard(r.ctx);
       openContexts.delete(r.ctx);
@@ -408,9 +419,11 @@ async function restartCell(row, id, outcome) {
     addSelectors(nonces, { response, rb, opened: [] });
     failures.push(...nonces.failures());
     await closeHard(ctx);
+    openContexts.delete(ctx);
     const again = await launch();
     failures.push(...checkSurvives(rb, await call(again.page, 'readback', {})));
     await closeHard(again.ctx);
+    openContexts.delete(again.ctx);
     record({ id, row, outcome, phase: 'RESTART', response: response.result?.reconciliation ?? response.error?.code, repeat: repeat?.error?.code ?? repeat?.result?.reconciliation ?? null, failures });
   }
 }

@@ -18,26 +18,33 @@ import {
  * envelope is identified by its own bytes; the nonce is read from the port's C-FMT selector envelope.
  */
 function tracked(target) {
-  const note = (envelope) => {
+  const noteRead = (envelope, plaintext) => {
     if (!(envelope instanceof Uint8Array) || envelope.length === 0) return;
     const h = hex(envelope);
-    if (!state.selectors.some((sel) => sel.envelope === h)) {
-      state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(envelope).nonce) });
-    }
+    const existing = state.selectors.find((sel) => sel.envelope === h);
+    const pt = plaintext instanceof Uint8Array ? hex(plaintext) : null;
+    if (existing === undefined) state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(envelope).nonce), plaintext: pt, read: true });
+    else if (existing.plaintext === null) existing.plaintext = pt;
   };
   return {
     apply: (step) => {
+      // The port's own resolution timing is preserved: nothing is awaited on its completion path
+      // (review impl2 R2-5). A write's envelope is observed after the operation, never inside it.
       const r = target.apply(step);
-      if (step.kind === 'REPLACE_SELECTOR') return r.then(async (v) => {
-        const stored = await target.readSelector();
-        if (stored !== null) note(stored.envelope);
-        return v;
-      });
+      if (step.kind === 'REPLACE_SELECTOR') {
+        Promise.resolve(r).then(() => target.readSelector()).then((stored) => {
+          if (stored === null) return;
+          const h = hex(stored.envelope);
+          if (!state.selectors.some((sel) => sel.envelope === h)) {
+            state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(stored.envelope).nonce), plaintext: hex(step.payload.selectorBytes), read: false, written: true });
+          }
+        }, () => {});
+      }
       return r;
     },
     readSelector: async () => {
       const r = await target.readSelector();
-      if (r !== null) note(r.envelope);
+      if (r !== null) noteRead(r.envelope, r.plaintext);
       return r;
     },
     readGeneration: (g) => target.readGeneration(g),
@@ -352,6 +359,9 @@ async function reconcile({ scenario, outcome, parent = null, generation = '2', o
     readMemoryHold: () => port.readMemoryHold(),
     readGenerationNumbers: () => port.readGenerationNumbers(),
   };
+  // The reconciliation is its own armed section: the producer's faults are off and its observations are
+  // kept in `producer` (review impl2 R2-3). No evidence is fabricated when the producer failed.
+  arm({});
   const r = finish(await guarded(async () => reconcileIndeterminate({
     storage, manifestRootKey: manifestRootKey(), hold, evidence, reference: envelope.reconciliationIdentity.reference,
   })));
