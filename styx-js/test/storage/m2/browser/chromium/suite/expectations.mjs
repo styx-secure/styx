@@ -148,14 +148,17 @@ export function checkUninterrupted(cell, response, rb) {
     }
     if (outcome === 'NOT_COMMITTED') want(rb.candidatePresent === false, 'the candidate is discarded', CITE.NOT_COMMITTED);
     want(rb.memoryHold === (outcome === 'INDETERMINATE'), `after ORIGINAL ${outcome} a memory hold is ${outcome === 'INDETERMINATE' ? '' : 'not '}retained`, CITE.MEMORY_HOLD);
-    // Item 6, observed: no hold is reported before the binding transaction's complete.
-    const early = (response.trace ?? []).filter((e) => e.ev === 'HOLD_BEFORE_COMPLETE' && e.held);
-    want(early.length === 0, `no memory hold is reported before the complete of T${early[0]?.tx}`, CITE.NO_EARLY_HOLD);
+    // Item 6, observed: every readwrite transaction the operation opened was probed in time, and no
+    // answer that arrived before completion reported a hold.
+    f.push(...checkProbeCoverage('ORIGINAL', response));
   } else {
     const kind = { COMMITTED: 'RECONCILED_COMMITTED', NOT_COMMITTED: 'NOT_COMMITTED', INDETERMINATE: 'INDETERMINATE' }[outcome];
     want(r.reconciliation === kind, `reconciliation ${r.reconciliation} is ${kind}`, CITE.OUTPUT_RECON);
     want((r.output ?? null) === output, `reconciliation output ${r.output} is ${output}`, CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.candidatePresent === false, 'the candidate is discarded', CITE.NOT_COMMITTED);
+    // Item 6, observed on the reconciliation too: every readwrite transaction was probed in time. A
+    // reconciliation starts from the SS hold it resolves, so no early-hold assertion applies to it.
+    f.push(...checkProbeCoverage('RECONCILIATION', response, { earlyHoldAsserts: false }));
     if (outcome === 'COMMITTED') want(rb.memoryHold === false, 'the hold is cleared by the local emission', CITE.OUTPUT_RECON);
     if (outcome === 'NOT_COMMITTED') want(rb.memoryHold === false, 'terminal NOT_COMMITTED leaves no memory hold', CITE.MEMORY_HOLD);
     if (outcome === 'INDETERMINATE' && phase === 'RECONCILIATION') want(rb.memoryHold === true, 'a continued INDETERMINATE keeps the memory hold', CITE.MEMORY_HOLD);
@@ -170,6 +173,7 @@ export function checkUninterrupted(cell, response, rb) {
   const tx = expectedTransactions(cell);
   want(n === tx, `the operation issues exactly ${tx} readwrite transaction(s) (got ${n})`, CITE.ONE_TX);
   f.push(...checkDurability(response.trace));
+  f.push(...checkProbeCoverage('RECONCILIATION-after-restart', { trace: response.trace, probes: response.probes, selectors: response.selectors }, { earlyHoldAsserts: false }));
   return f;
 }
 
@@ -239,29 +243,57 @@ export function checkRestartReconcile(cell, pre, response, rb, repeat) {
 }
 
 /**
+ * The memory-hold probe (obligation item 6; review impl1 F3): for every armed readwrite transaction the
+ * operation opened, the port answered the harness promptly, and no answer that arrived before that
+ * transaction's completion reported a hold. "Could not observe" is a failure, never a pass.
+ */
+export function checkProbeCoverage(cell, response, { earlyHoldAsserts = true } = {}) {
+  const f = [];
+  const txs = new Set((response.trace ?? []).filter((e) => e.ev === 'OPEN').map((e) => e.tx));
+  const probes = response.probes ?? [];
+  for (const tx of txs) {
+    const answers = probes.filter((p) => p.tx === tx);
+    if (answers.length === 0) f.push({ what: `the memory-hold probe of transaction T${tx} was observed (no answer by the operation's return)`, cite: CITE.NO_EARLY_HOLD });
+    if (answers.some((a) => a.error !== undefined)) f.push({ what: `the memory-hold probe of T${tx} answered with the port's hold (${answers.find((a) => a.error !== undefined).error})`, cite: CITE.NO_EARLY_HOLD });
+    // A late answer that reports no hold cannot certify a temporal rule; a late answer that reports a
+    // hold is an early hold the harness failed to date (the probe's answer index is the transaction).
+    if (answers.some((a) => a.late === true && a.held === true)) f.push({ what: `the memory-hold probe of T${tx} dates the hold it reported before the transaction's completion`, cite: CITE.NO_EARLY_HOLD });
+  }
+  // An ORIGINAL operation starts with no hold, so no probe may see one before its binding transaction
+  // completes. A reconciliation starts from the SS hold it is there to resolve, so its probes are read
+  // as observations, not as an assertion. (B-CHR obligation v2 item 6; review impl1 F3.)
+  if (!String(cell).startsWith('RECONCILIATION')) {
+    const early = (response.trace ?? []).filter((e) => e.ev === 'HOLD_BEFORE_COMPLETE' && e.held);
+    if (early.length > 0) f.push({ what: `no memory hold is reported before the complete of T${early[0].tx}`, cite: CITE.NO_EARLY_HOLD });
+  }
+  return f;
+}
+
+/**
  * T9 on the port's own terminal readback producer (obligation item 13), in fixed, port-independent cells
  * (T9_CELLS). A fault case whose fault never reached a producer read fails (receipt). A forged state the
- * port refuses to write (nothing written) is a pass for the CONTRADICT_* cells that forge generations.
+ * port refuses to write (nothing written) is a pass for every forging cell, the selector ones included
+ * (review impl1 F1). Every producer path must write nothing: the fingerprint around the producer, its own
+ * write requests, and its own transaction count are checked directly (review impl1 F2).
  */
 export function checkProducer(kind, pre, response, rb) {
   const f = [];
   const want = (ok, what, cite) => { if (!ok) f.push({ what, cite }); };
   const trace = response.trace ?? [];
   const output = response.result?.output ?? null;
-  const writesNothing = () => {
-    want(response.before === response.after, 'the producer writes nothing (store byte-identical)', CITE.PRODUCER_WRITES_NOTHING);
-    want(writes(trace) === 0, 'the producer issues no write request', CITE.PRODUCER_WRITES_NOTHING);
+  const writesNothing = (label = 'the producer') => {
+    want(response.before === response.after, `${label} writes nothing (store byte-identical)`, CITE.PRODUCER_WRITES_NOTHING);
+    want(writes(trace) === 0, `${label} issues no write request`, CITE.PRODUCER_WRITES_NOTHING);
+    want(opens(trace) === 0, `${label} opens no readwrite transaction`, CITE.PRODUCER_WRITES_NOTHING);
   };
   if (kind.startsWith('CONTRADICT_')) {
-    const forged = ['CONTRADICT_RESULT', 'CONTRADICT_RESULT_NONTERMINAL', 'CONTRADICT_ESCROW', 'CONTRADICT_PARTIAL'].includes(kind);
+    // The forging step writes through the public port interface; a port that refuses it writes nothing.
     want(response.hadHold === true, 'setup: the SS hold is kept', CITE.PRODUCER_TAMPER);
-    if (forged && response.setup !== null) {
-      // The port refused to store the forged generation: nothing may have been written.
+    if (response.setup !== null) {
       want(response.wrote === false && [...VERIFY_CODES, 'EVIDENCE_MISMATCH'].includes(response.setup.code),
         `a refused forged write leaves the store unchanged with a verification code (got ${response.setup.code}, wrote ${response.wrote})`, CITE.PRODUCER_VERIFY);
       return f;
     }
-    want(response.setup === null, `setup: the contradicting state was written (${response.setup?.code ?? 'ok'})`, CITE.PRODUCER_TAMPER);
     want(response.produced === null && [...VERIFY_CODES, 'EVIDENCE_MISMATCH'].includes(response.error?.code),
       `an authenticated contradiction fails closed, never NOT_COMMITTED, COMMITTED or S024 (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_TAMPER);
     writesNothing();
@@ -281,17 +313,32 @@ export function checkProducer(kind, pre, response, rb) {
     return f;
   }
   if (kind === 'PRODUCE') {
+    if (response.producer === null || response.producer === undefined) { f.push({ what: 'PRODUCE: the producer was exercised', cite: CITE.PRODUCER_NOT_COMMITTED }); return f; }
     want(response.produced?.outcome === 2 && response.produced?.terminal === true, `the producer gives NOT_COMMITTED terminal (got ${JSON.stringify(response.produced)} ${response.error?.code ?? ''})`, CITE.PRODUCER_NOT_COMMITTED);
     want(response.result?.reconciliation === 'NOT_COMMITTED', `reconciliation ${response.result?.reconciliation ?? response.error?.code} is NOT_COMMITTED`, CITE.PRODUCER_NOT_COMMITTED);
     want(authority(rb.classify) === 'COMPLETE_OLD' && rb.candidatePresent === false, `readback ${authority(rb.classify)} is COMPLETE_OLD with the candidate discarded`, CITE.NOT_COMMITTED);
     want(output === null, 'nothing is emitted', CITE.OUTPUT_RECON);
-    f.push(...checkDurability(trace));
+    // The producer ran in its own armed section: only its own trace and fingerprint count.
+    const p = response.producer;
+    const ptrace = p.trace ?? [];
+    want(p.before === p.after, 'the producer writes nothing (store byte-identical around it)', CITE.PRODUCER_WRITES_NOTHING);
+    want(writes(ptrace) === 0, 'the producer issues no write request', CITE.PRODUCER_WRITES_NOTHING);
+    want(opens(ptrace) === 0, 'the producer opens no readwrite transaction', CITE.PRODUCER_WRITES_NOTHING);
+    f.push(...checkDurability(ptrace));
+    f.push(...checkProbeCoverage('the producer', { trace: ptrace, probes: p.probes, selectors: p.selectors }, { earlyHoldAsserts: false }));
+    f.push(...checkProbeCoverage('the reconciliation', { trace: response.trace, probes: response.probes, selectors: response.selectors }, { earlyHoldAsserts: false }));
     return f;
   }
   const receipt = kind.startsWith('READ_FAIL')
     ? trace.some((e) => e.ev === 'FAULT' && e.fault === 'READ_FAIL')
     : trace.some((e) => e.ev === 'TAMPERED' && e.changed === true);
   want(receipt, `${kind}: the fault reached a producer read`, CITE.FAULT_RECEIPT);
+  if (response.producer === null || response.producer === undefined) { f.push({ what: `${kind}: the producer was exercised`, cite: CITE.FAULT_RECEIPT }); return f; }
+  const p = response.producer;
+  const ptrace = p.trace ?? [];
+  want(p.before === p.after, `${kind}: the producer writes nothing (store byte-identical around it)`, CITE.PRODUCER_WRITES_NOTHING);
+  want(writes(ptrace) === 0, `${kind}: the producer issues no write request`, CITE.PRODUCER_WRITES_NOTHING);
+  want(opens(ptrace) === 0, `${kind}: the producer opens no readwrite transaction`, CITE.PRODUCER_WRITES_NOTHING);
   want(output === null, `${kind}: nothing is emitted`, CITE.PRODUCER_NO_HOLD);
   want(rb.dbDigest === pre.dbDigest, `${kind}: the store is byte-preserved`, CITE.READ_FAIL);
   want(authority(rb.classify) === 'COMPLETE_OLD+HELD', `${kind}: the hold is unchanged (${authority(rb.classify)})`, CITE.CONTINUED);
@@ -409,8 +456,7 @@ export function checkNext(cell, d) {
   const tx = expectedTransactions({ outcome: cell.outcome, phase: 'ORIGINAL' });
   want(opens(d.next.trace) === tx, `the next ${cell.outcome} issues exactly ${tx} readwrite transaction(s) (got ${opens(d.next.trace)})`, CITE.ONE_TX);
   f.push(...checkDurability(d.next.trace));
-  const early = (d.next.trace ?? []).filter((e) => e.ev === 'HOLD_BEFORE_COMPLETE' && e.held);
-  want(early.length === 0, `no memory hold is reported before the complete of T${early[0]?.tx}`, CITE.NO_EARLY_HOLD);
+  f.push(...checkProbeCoverage(`the next ${cell.outcome}`, d.next, { earlyHoldAsserts: cell.outcome !== 'INDETERMINATE' }));
   if (cell.outcome === 'COMMITTED') {
     want(d.next.error === null && d.next.result?.commitOutcome === 'COMMITTED' && (d.next.result?.output ?? null) === output,
       `the next COMMITTED commits with its output (got ${d.next.error?.code ?? d.next.result?.commitOutcome})`);

@@ -102,10 +102,35 @@ function kill(kind) {
   }
   return { victims: victims.length, total: tree.length, survivors: alive.length };
 }
+const RPC_TIMEOUT_MS = 60000;
 async function call(page, op, args) {
-  const r = await page.evaluate(([o, a]) => window.bchr.call(o, a), [op, args]);
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`rpc ${op} timed out after ${RPC_TIMEOUT_MS} ms`)), RPC_TIMEOUT_MS);
+  });
+  let r;
+  try {
+    r = await Promise.race([page.evaluate(([o, a]) => window.bchr.call(o, a), [op, args]), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
   if (r.error) throw Object.assign(new Error(`${op}: ${r.error.code} ${r.error.message}`), { code: r.error.code });
   return r.value;
+}
+/** Every browser context a cell opened, so that a failure anywhere still closes them all. */
+const openContexts = new Set();
+async function tearDown() {
+  hookHandler = answer;
+  for (const ctx of [...openContexts]) { openContexts.delete(ctx); await closeHard(ctx); }
+}
+/** A cell as a whole is bounded and always cleaned up, whatever fails inside it (review impl1 F5). */
+async function withCell(id, fn) {
+  try {
+    return await Promise.race([fn(), new Promise((_, reject) => setTimeout(
+      () => reject(new Error(`cell ${id} exceeded 900 s`)), 900000))]);
+  } finally {
+    await tearDown();
+  }
 }
 async function launch() {
   const ctx = await engine.launchPersistentContext(PROFILE, {
@@ -124,7 +149,9 @@ async function launch() {
 }
 async function fresh() {
   fs.rmSync(PROFILE, { recursive: true, force: true });
-  return launch();
+  const started = await launch();
+  openContexts.add(started.ctx);
+  return started;
 }
 async function closeHard(ctx) {
   try { await Promise.race([ctx.close(), new Promise((r) => setTimeout(r, 3000))]); } catch { /* dead */ }
@@ -139,6 +166,17 @@ async function contextDeath(page) {
 // R3 (#468 6171085366 §3a): a row without an output while the served codec cannot encode its hold.
 const r3 = (row) => !HAS_OUTPUT(row) && NONE_HOLD !== true;
 
+/** Every selector envelope the worker's port read or wrote during `r`, into the nonce book. */
+function addSelectors(book, r) {
+  book.add(r.snap);
+  book.add(r.rb?.selector);
+  for (const s of r.response?.selectors ?? []) book.add(s);
+}
+/** Every selector envelope of the operations `calls` (their worker responses), into the nonce book. */
+function addSelectorsOf(book, ...calls) {
+  for (const c of calls) for (const s of c?.selectors ?? []) book.add(s);
+}
+
 // ---- results ----------------------------------------------------------------------------------------
 const tally = { cells: 0, runs: 0, kills: 0, notKilled: 0, failures: 0 };
 function record(entry) {
@@ -152,6 +190,9 @@ function record(entry) {
 
 /** R3 cell: seed, then the row's INDETERMINATE request must be refused before any write. */
 async function r3Cell(row, id, phase) {
+  await withCell(id, () => r3CellBody(row, id, phase));
+}
+async function r3CellBody(row, id, phase) {
   const { ctx, page } = await fresh();
   await call(page, 'seed', { scenario: row });
   const before = await call(page, 'readback', {});
@@ -204,10 +245,13 @@ async function runArmed(cell, { killAt = null, killKind = null, plan = {}, fault
   if (killAt === null && response?.crashed === undefined) {
     const rb = await call(page, 'readback', {});
     await closeHard(ctx);
+    openContexts.delete(ctx);
     return { points, killed, response, rb, snap, ctx: null, opened, stagedHold, beforeDigest };
   }
   await closeHard(ctx);
+  openContexts.delete(ctx);
   ({ ctx, page } = await launch());
+  openContexts.add(ctx);
   const rb = await call(page, 'readback', {});
   return { points, killed, response, rb, snap, ctx, page, opened, stagedHold, beforeDigest };
 }
@@ -228,7 +272,7 @@ async function killMatrix(rows) {
     const cell = { ...base, stagedHold: dry.stagedHold, beforeDigest: dry.beforeDigest };
     const id0 = `${row}/${phase}/${outcome}/NONE`;
     const nonces = nonceBook();
-    nonces.add(dry.snap); nonces.add(dry.rb.selector);
+    addSelectors(nonces, dry);
     record({ id: id0, ...base, kill: 'NONE', rb: dry.rb, response: dry.response, failures: [...checkUninterrupted(cell, dry.response, dry.rb), ...nonces.failures()] });
     const plan = txPlan(dry.response.trace ?? []);
     const txs = Object.keys(plan).map(Number);
@@ -248,7 +292,7 @@ async function killMatrix(rows) {
       tally.kills += 1;
       const failures = [];
       const book = nonceBook();
-      book.add(r.snap); book.add(r.rb.selector);
+      addSelectors(book, r);
       if (r.killed === null || r.killed.victims === 0 || r.killed.survivors !== 0) {
         tally.notKilled += 1;
         failures.push({ what: `kill ${kind} at ${point} was delivered (${JSON.stringify(r.killed)})`, cite: 'act §1 item 2 (every request boundary)' });
@@ -265,7 +309,7 @@ async function killMatrix(rows) {
         await call(r.page, 'arm', {}); // F9: the resumed reconciliation is armed and observed
         resumed = await call(r.page, 'reconcile', { scenario: row, outcome });
         const rb2 = await call(r.page, 'readback', {});
-        book.add(rb2.selector);
+        addSelectors(book, { response: resumed, rb: rb2 });
         failures.push(...checkResumed(cell, resumed, rb2));
       }
       if (committed.has(point) && got === final && final !== initial && r.snap !== null) {
@@ -278,11 +322,15 @@ async function killMatrix(rows) {
       }
       if (committed.has(point) && got === final) { // T6b: the classified state survives another restart
         await closeHard(r.ctx);
+        openContexts.delete(r.ctx);
         const again = await launch();
+        openContexts.add(again.ctx);
         failures.push(...checkSurvives(r.rb, await call(again.page, 'readback', {})));
         r.ctx = again.ctx;
+        openContexts.delete(again.ctx);
       }
       await closeHard(r.ctx);
+      openContexts.delete(r.ctx);
       failures.push(...book.failures());
       record({ id: `${row}/${phase}/${outcome}/${kind}@${point}`, ...base, kill: kind, point, killed: r.killed, got, resumed: resumed?.result?.reconciliation ?? resumed?.error?.code ?? null, failures });
     }
@@ -290,36 +338,41 @@ async function killMatrix(rows) {
 }
 
 // ---- 2. debris, then a second mutation over it ------------------------------------------------------------
-async function debris(rows) {
+async function debris(row, outcome) {
+  const cell = { row, outcome, r3: r3(row) };
+  const { ctx, page } = await fresh();
+  const nonces = nonceBook();
+  await call(page, 'seed', { scenario: row });
+  const sealed = await call(page, 'readback', {});
+  nonces.add(sealed.selector);
+  await call(page, 'seedDebris', { scenario: row, outcome });
+  const failures = [];
+  const d = await call(page, 'readback', {});
+  nonces.add(d.selector);
+  failures.push(...checkDebris(cell, 'DEBRIS', d));
+  // Fresh seal (item 10): seedDebris re-wrote the selector with unchanged plaintext.
+  const delayed = await call(page, 'delayedReplace', { snap: sealed.selector });
+  const afterDelayed = await call(page, 'readback', {});
+  failures.push(...checkDebris(cell, 'RESEAL', { before: sealed.selector, after: d.selector, delayed, digestBefore: d.dbDigest, digestAfter: afterDelayed.dbDigest }));
+  const reuse = await call(page, 'original', { scenario: row, outcome, generation: '2' });
+  const afterReuse = await call(page, 'readback', {});
+  failures.push(...checkDebris(cell, 'REUSE', { response: reuse, rb: afterReuse, before: d.dbDigest }));
+  await call(page, 'arm', {});
+  const second = await call(page, 'original', { scenario: row, outcome, generation: '3' });
+  const rb = await call(page, 'readback', { candidate: '3' });
+  const debrisAfter = (await call(page, 'readback', { candidate: '2' })).candidateDigest;
+  addSelectorsOf(nonces, reuse, second);
+  failures.push(...checkDebris({ ...cell, stagedHold: second.stagedHold }, 'SECOND', { response: second, rb, debrisDigest: d.candidateDigest, debrisAfter, beforeDigest: afterReuse.dbDigest }));
+  failures.push(...nonces.failures());
+  await closeHard(ctx);
+  openContexts.delete(ctx);
+  record({ id: `${row}/DEBRIS/${outcome}`, row, outcome, phase: 'DEBRIS', reuse: reuse.error?.code ?? 'success', second: second.result?.commitOutcome ?? second.error?.code, failures });
+}
+
+async function debrisAll(rows) {
   for (const row of rows) for (const outcome of OUTCOMES) {
     tally.cells += 1;
-    const cell = { row, outcome, r3: r3(row) };
-    const { ctx, page } = await fresh();
-    const nonces = nonceBook();
-    await call(page, 'seed', { scenario: row });
-    const sealed = await call(page, 'readback', {});
-    nonces.add(sealed.selector);
-    await call(page, 'seedDebris', { scenario: row, outcome });
-    const failures = [];
-    const d = await call(page, 'readback', {});
-    nonces.add(d.selector);
-    failures.push(...checkDebris(cell, 'DEBRIS', d));
-    // Fresh seal (item 10): seedDebris re-wrote the selector with unchanged plaintext.
-    const delayed = await call(page, 'delayedReplace', { snap: sealed.selector });
-    const afterDelayed = await call(page, 'readback', {});
-    failures.push(...checkDebris(cell, 'RESEAL', { before: sealed.selector, after: d.selector, delayed, digestBefore: d.dbDigest, digestAfter: afterDelayed.dbDigest }));
-    const reuse = await call(page, 'original', { scenario: row, outcome, generation: '2' });
-    const afterReuse = await call(page, 'readback', {});
-    failures.push(...checkDebris(cell, 'REUSE', { response: reuse, rb: afterReuse, before: d.dbDigest }));
-    await call(page, 'arm', {});
-    const second = await call(page, 'original', { scenario: row, outcome, generation: '3' });
-    const rb = await call(page, 'readback', { candidate: '3' });
-    nonces.add(rb.selector);
-    const debrisAfter = (await call(page, 'readback', { candidate: '2' })).candidateDigest;
-    failures.push(...checkDebris({ ...cell, stagedHold: second.stagedHold }, 'SECOND', { response: second, rb, debrisDigest: d.candidateDigest, debrisAfter, beforeDigest: afterReuse.dbDigest }));
-    failures.push(...nonces.failures());
-    await closeHard(ctx);
-    record({ id: `${row}/DEBRIS/${outcome}`, row, outcome, phase: 'DEBRIS', reuse: reuse.error?.code ?? 'success', second: second.result?.commitOutcome ?? second.error?.code, failures });
+    await withCell(`${row}/DEBRIS/${outcome}`, () => debris(row, outcome));
   }
 }
 
@@ -339,7 +392,11 @@ async function restartReconcile(rows) {
   for (const row of rows) for (const outcome of OUTCOMES) {
     tally.cells += 1;
     const id = `${row}/RESTART/${outcome}`;
-    if (r3(row)) { await r3Cell(row, id, 'RESTART'); continue; }
+    await withCell(id, () => (r3(row) ? r3CellBody(row, id, 'RESTART') : restartCell(row, id, outcome)));
+  }
+}
+async function restartCell(row, id, outcome) {
+  {
     const { ctx, page, pre, stagedHold, selectors } = await heldThenContextDeath(row);
     await call(page, 'arm', {}); // F9: the restart operation is armed and its transactions observed
     const response = await call(page, 'reconcile', { scenario: row, outcome });
@@ -348,6 +405,7 @@ async function restartReconcile(rows) {
     const failures = checkRestartReconcile({ row, outcome, stagedHold }, pre, response, rb, repeat);
     const nonces = nonceBook();
     for (const s of [...selectors, pre.selector, rb.selector]) nonces.add(s);
+    addSelectors(nonces, { response, rb, opened: [] });
     failures.push(...nonces.failures());
     await closeHard(ctx);
     const again = await launch();
@@ -363,7 +421,13 @@ async function faults(rows) {
     for (const kind of T9_CELLS) {
       tally.cells += 1;
       const id = `${row}/T9/${kind}`;
-      if (r3(row)) { await r3Cell(row, id, 'T9'); continue; }
+      await withCell(id, () => faultCell(row, id, kind));
+    }
+  }
+}
+async function faultCell(row, id, kind) {
+  {
+      if (r3(row)) { await r3CellBody(row, id, 'T9'); return; }
       if (kind.startsWith('CONTRADICT_') || kind === 'PRODUCE_COMMITTED' || kind === 'TAMPER_COMMITTED') {
         // With the SS hold kept after an ORIGINAL INDETERMINATE.
         const { ctx, page } = await fresh();
@@ -374,7 +438,7 @@ async function faults(rows) {
           : await call(page, 'produceAfterCommit', { scenario: row, tamper: kind === 'TAMPER_COMMITTED' });
         await closeHard(ctx);
         record({ id, row, phase: 'T9', fault: kind, produced: response.produced, response: response.error?.code ?? null, setup: response.setup?.code ?? null, failures: checkProducer(kind, null, response, null) });
-        continue;
+        return;
       }
       let ctx; let page; let pre;
       if (kind === 'READ_FAIL_MEMORY') {
@@ -391,76 +455,100 @@ async function faults(rows) {
       await call(page, 'arm', {});
       const response = await call(page, 'reconcile', { scenario: row, produce: true, produceFault: fault, tamperAt });
       const rb = await call(page, 'readback', {});
+      const book = nonceBook();
+      addSelectorsOf(book, response);
+      book.add(rb.selector); book.add(pre.selector);
       await closeHard(ctx);
-      record({ id, row, phase: 'T9', fault: kind, produced: response.produced, response: response.result?.reconciliation ?? response.error?.code, failures: checkProducer(kind, pre, response, rb) });
-    }
+      openContexts.delete(ctx);
+      record({ id, row, phase: 'T9', fault: kind, produced: response.produced, response: response.result?.reconciliation ?? response.error?.code,
+        failures: [...checkProducer(kind, pre, response, rb), ...book.failures()] });
   }
 }
 
 // ---- 4. KIND13 (#468 B3, B4): emission retry, the next mutation, a forged historical hold ------------------
 async function kind13(rows) {
   for (const row of rows) {
-    // EMISSION_RETRY: the selection lands, the local emission is interrupted, the SS retries it.
     tally.cells += 1;
-    if (r3(row)) await r3Cell(row, `${row}/KIND13/EMISSION_RETRY`, 'KIND13');
-    else {
-      const { ctx, page } = await fresh();
-      await call(page, 'seed', { scenario: row });
-      const h = await held(page, row);
-      const first = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED', emissionFault: true });
-      const mid = await call(page, 'readback', {});
-      await call(page, 'arm', {});
-      const retry = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
-      const rb = await call(page, 'readback', {});
-      const repeat = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
-      await closeHard(ctx);
-      record({ id: `${row}/KIND13/EMISSION_RETRY`, row, phase: 'KIND13', response: retry.result?.reconciliation ?? retry.error?.code,
-        failures: checkEmissionRetry({ row }, { first, mid, retry, rb, repeat, stagedHold: h.stagedHold }) });
-    }
-    // NEXT_COMMITTED / NEXT_INDETERMINATE from the authority a terminal COMMITTED left (generation 2).
+    await withCell(`${row}/KIND13/EMISSION_RETRY`, () => (r3(row) ? r3CellBody(row, `${row}/KIND13/EMISSION_RETRY`, 'KIND13') : emissionRetry(row)));
     for (const outcome of ['COMMITTED', 'INDETERMINATE']) {
       tally.cells += 1;
-      const next = NEXT_ROW(row);
-      const cell = { row, nextRow: next, outcome, r3Next: r3(next) && outcome === 'INDETERMINATE' };
-      const { ctx, page } = await fresh();
-      await call(page, 'seed', { scenario: row });
-      let base; let parent;
-      if (r3(row)) {
-        base = await call(page, 'original', { scenario: row, outcome: 'COMMITTED' });
-        parent = { row, outcome: 'COMMITTED', op: 1 };
-      } else {
-        await held(page, row);
-        base = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
-        parent = { row, outcome: 'INDETERMINATE', op: 1 };
-      }
-      const baseRb = await call(page, 'readback', {});
-      const d = { base, baseRb, baseDigest: baseRb.dbDigest };
-      await call(page, 'arm', {});
-      d.next = await call(page, 'original', { scenario: next, outcome, parent, generation: '3', op: 2 });
-      d.nextRb = await call(page, 'readback', { parent: '2', candidate: '3' });
-      if (!cell.r3Next && outcome === 'INDETERMINATE') {
-        const init = await contextDeath(page);
-        d.pre = { ...await call(page, 'readback', { parent: '2', candidate: '3' }), lock: init.lock };
-        await call(page, 'arm', {}); // the reconciliation after context death is observed (C4)
-        d.recon = await call(page, 'reconcile', { scenario: next, outcome: 'COMMITTED', parent, generation: '3', op: 2 });
-        d.reconRb = await call(page, 'readback', { parent: '2', candidate: '3' });
-      }
-      const old = await call(page, 'readback', { parent: '1', candidate: '2' });
-      d.oldHold = old.candidateHold;
-      d.numbers = Array.isArray(old.numbers) ? old.numbers.join(',') : JSON.stringify(old.numbers);
-      await closeHard(ctx);
-      record({ id: `${row}/KIND13/NEXT_${outcome}`, row, next, phase: 'KIND13', response: d.next.result?.commitOutcome ?? d.next.error?.code, failures: checkNext(cell, d) });
+      await withCell(`${row}/KIND13/NEXT_${outcome}`, () => nextCell(row, outcome));
     }
-    // HISTORICAL_FORGED (#468 B4).
     tally.cells += 1;
-    {
-      const { ctx, page } = await fresh();
-      await call(page, 'seed', { scenario: row });
-      const d = await call(page, 'forgeHistorical', { scenario: row });
-      await closeHard(ctx);
-      record({ id: `${row}/KIND13/HISTORICAL_FORGED`, row, phase: 'KIND13', response: d.setup?.code ?? (d.classify?.error?.code ?? d.classify?.authority), failures: checkHistoricalForged(d) });
-    }
+    await withCell(`${row}/KIND13/HISTORICAL_FORGED`, () => historicalCell(row));
   }
+}
+
+/** The selection lands, the local emission is interrupted, the SS retries it (#468 B3). */
+async function emissionRetry(row) {
+  const { ctx, page } = await fresh();
+  const nonces = nonceBook();
+  await call(page, 'seed', { scenario: row });
+  const h = await held(page, row);
+  const first = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED', emissionFault: true });
+  const mid = await call(page, 'readback', {});
+  await call(page, 'arm', {});
+  const retry = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
+  const rb = await call(page, 'readback', {});
+  const repeat = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
+  addSelectorsOf(nonces, h, first, retry, repeat);
+  nonces.add(rb.selector);
+  await closeHard(ctx);
+  openContexts.delete(ctx);
+  record({ id: `${row}/KIND13/EMISSION_RETRY`, row, phase: 'KIND13', response: retry.result?.reconciliation ?? retry.error?.code,
+    failures: [...checkEmissionRetry({ row }, { first, mid, retry, rb, repeat, stagedHold: h.stagedHold }), ...nonces.failures()] });
+}
+
+/** The next mutation from the authority a terminal COMMITTED left (generation 2). */
+async function nextCell(row, outcome) {
+  const next = NEXT_ROW(row);
+  const cell = { row, nextRow: next, outcome, r3Next: r3(next) && outcome === 'INDETERMINATE' };
+  const { ctx, page } = await fresh();
+  const nonces = nonceBook();
+  await call(page, 'seed', { scenario: row });
+  let base; let parent; let setupCalls = [];
+  if (r3(row)) {
+    base = await call(page, 'original', { scenario: row, outcome: 'COMMITTED' });
+    parent = { row, outcome: 'COMMITTED', op: 1 };
+    setupCalls = [base];
+  } else {
+    const h = await held(page, row);
+    base = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
+    parent = { row, outcome: 'INDETERMINATE', op: 1 };
+    setupCalls = [h, base];
+  }
+  const baseRb = await call(page, 'readback', {});
+  const d = { base, baseRb, baseDigest: baseRb.dbDigest };
+  await call(page, 'arm', {});
+  d.next = await call(page, 'original', { scenario: next, outcome, parent, generation: '3', op: 2 });
+  d.nextRb = await call(page, 'readback', { parent: '2', candidate: '3' });
+  if (!cell.r3Next && outcome === 'INDETERMINATE') {
+    const init = await contextDeath(page);
+    d.pre = { ...await call(page, 'readback', { parent: '2', candidate: '3' }), lock: init.lock };
+    await call(page, 'arm', {}); // the reconciliation after context death is observed (C4)
+    d.recon = await call(page, 'reconcile', { scenario: next, outcome: 'COMMITTED', parent, generation: '3', op: 2 });
+    d.reconRb = await call(page, 'readback', { parent: '2', candidate: '3' });
+  }
+  const old = await call(page, 'readback', { parent: '1', candidate: '2' });
+  d.oldHold = old.candidateHold;
+  d.numbers = Array.isArray(old.numbers) ? old.numbers.join(',') : JSON.stringify(old.numbers);
+  // Item 10 over every write of this cell: setup, the next mutation and the restart reconciliation.
+  addSelectorsOf(nonces, ...setupCalls, d.next, d.recon);
+  for (const rb of [baseRb, d.nextRb, d.reconRb, old, d.pre]) nonces.add(rb?.selector);
+  await closeHard(ctx);
+  openContexts.delete(ctx);
+  record({ id: `${row}/KIND13/NEXT_${outcome}`, row, next, phase: 'KIND13', response: d.next.result?.commitOutcome ?? d.next.error?.code,
+    failures: [...checkNext(cell, d), ...nonces.failures()] });
+}
+
+/** #468 B4: a selected generation whose present kind-13 record is not historical evidence. */
+async function historicalCell(row) {
+  const { ctx, page } = await fresh();
+  await call(page, 'seed', { scenario: row });
+  const d = await call(page, 'forgeHistorical', { scenario: row });
+  await closeHard(ctx);
+  openContexts.delete(ctx);
+  record({ id: `${row}/KIND13/HISTORICAL_FORGED`, row, phase: 'KIND13', response: d.setup?.code ?? (d.classify?.error?.code ?? d.classify?.authority), failures: checkHistoricalForged(d) });
 }
 
 // ---- 5. T6b mutant: a put throws mid-enqueue during the original write, for every outcome ------------------
@@ -468,7 +556,11 @@ async function putThrow(rows) {
   for (const row of rows) for (const outcome of OUTCOMES) {
     tally.cells += 1;
     const id = `${row}/T6b/PUT_THROW/${outcome}`;
-    if (r3(row) && outcome === 'INDETERMINATE') { await r3Cell(row, id, 'T6b'); continue; }
+    await withCell(id, () => (r3(row) && outcome === 'INDETERMINATE' ? r3CellBody(row, id, 'T6b') : putThrowCell(row, outcome, id)));
+  }
+}
+async function putThrowCell(row, outcome, id) {
+  {
     const cell = { row, outcome, phase: 'ORIGINAL' };
     const r = await runArmed(cell, { fault: 'PUT_THROW' });
     const applied = (r.response.trace ?? []).some((e) => e.ev === 'FAULT' && e.fault === 'PUT_THROW');
@@ -484,7 +576,7 @@ const rows = SMOKE ? ROWS.slice(0, 1) : ROWS;
 log(`# B-CHR frozen suite: browser=${browserName} factory=${factory} rows=${rows.join(',')} smoke=${SMOKE}`);
 let crashed = null;
 try {
-  await debris(rows);
+  await debrisAll(rows);
   log(`# R3 state of the served codec: present NONE-output hold encodable = ${NONE_HOLD}`);
   await restartReconcile(rows);
   await faults(rows);

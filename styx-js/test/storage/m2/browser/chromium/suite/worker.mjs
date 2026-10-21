@@ -11,6 +11,42 @@ import {
   PORT_CONTEXT, evidenceFor, manifestRootKey, mutationInput, noneHoldEncodable, parentFixture, prepareFixtures, restage, selfSelector,
 } from './fixtures.mjs';
 
+/**
+ * The port the worker drives, wrapped so the harness sees every selector envelope the port reads or
+ * writes (obligation item 10: a fresh 96-bit nonce per selector write, never a reused one), whatever
+ * the factory does internally. The wrapper owns no behaviour: it forwards everything unchanged. An
+ * envelope is identified by its own bytes; the nonce is read from the port's C-FMT selector envelope.
+ */
+function tracked(target) {
+  const note = (envelope) => {
+    if (!(envelope instanceof Uint8Array) || envelope.length === 0) return;
+    const h = hex(envelope);
+    if (!state.selectors.some((sel) => sel.envelope === h)) {
+      state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(envelope).nonce) });
+    }
+  };
+  return {
+    apply: (step) => {
+      const r = target.apply(step);
+      if (step.kind === 'REPLACE_SELECTOR') return r.then(async (v) => {
+        const stored = await target.readSelector();
+        if (stored !== null) note(stored.envelope);
+        return v;
+      });
+      return r;
+    },
+    readSelector: async () => {
+      const r = await target.readSelector();
+      if (r !== null) note(r.envelope);
+      return r;
+    },
+    readGeneration: (g) => target.readGeneration(g),
+    readMemoryHold: () => target.readMemoryHold(),
+    readGenerationNumbers: () => target.readGenerationNumbers(),
+    readbackEvidence: (a) => target.readbackEvidence(a),
+  };
+}
+
 const params = new URL(self.location.href).searchParams;
 // The one line that selects the factory (act §1: no other line of the suite branches on it).
 const FACTORY = { reference: './reference-port.mjs', product: '/src/storage/m2/session-idb-port.js' }[params.get('factory')];
@@ -20,7 +56,7 @@ const LOCK_NAME = 'styx-m2-bchr-suite-writer';
 const API = { EMPTY: 1, ACTIVE: 2 };
 const K = M2_KIND;
 const hex = (b) => (b === null || b === undefined ? null : Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join(''));
-const state = { armed: false, fault: null, tamperAt: null, plan: {}, trace: [], next: 0, reads: 0, faulted: false, onOpen: null };
+const state = { armed: false, fault: null, tamperAt: null, plan: {}, trace: [], probes: [], selectors: [], next: 0, reads: 0, faulted: false, onOpen: null };
 const hook = (point, data = null) => {
   const x = new XMLHttpRequest();
   x.open('GET', `/hook?p=${encodeURIComponent(point)}${data === null ? '' : `&d=${encodeURIComponent(JSON.stringify(data))}`}`, false);
@@ -45,7 +81,7 @@ async function init({ dbName }) {
   await prepareFixtures();
   db = await openVaultDb({ name: dbName });
   const { createPort } = await import(FACTORY);
-  port = await createPort({ db, context: PORT_CONTEXT });
+  port = tracked(await createPort({ db, context: PORT_CONTEXT }));
   return { lock, noneHoldEncodable: noneHoldEncodable() };
 }
 
@@ -226,7 +262,7 @@ async function forgeHistorical({ scenario }) {
 }
 
 function arm({ plan = {}, fault = null, tamperAt = null } = {}) {
-  Object.assign(state, { armed: true, fault, tamperAt, plan, trace: [], next: 0, reads: 0, faulted: false });
+  Object.assign(state, { armed: true, fault, tamperAt, plan, trace: [], probes: [], selectors: [], next: 0, reads: 0, faulted: false });
 }
 
 const errorCode = (e) => (typeof e?.code === 'string' ? e.code : (e?.name ?? 'Error'));
@@ -241,20 +277,33 @@ function plain(r) {
   return out;
 }
 
+/** Let the microtask queue and any pending harness probe settle before the answer is returned, so an
+ * answer that belongs to the operation is never lost to a snapshot taken too early (review impl1 F3). */
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
 function finish(r) {
   if (state.armed) hook('RETURNED');
   state.armed = false;
-  return { result: plain(r.ok), error: r.error ?? null, trace: state.trace, reads: state.reads };
+  return { result: plain(r.ok), error: r.error ?? null, trace: state.trace, reads: state.reads, probes: state.probes, selectors: state.selectors };
 }
 
 // The memory-hold probe (B-CHR obligation v2 item 6): at the open of every armed readwrite transaction
 // the harness asks the port for its memory hold; an answer that arrives before that transaction's
-// `complete` is recorded. The probe is outside the port and identical for every port.
+// `complete` is recorded, and a later answer is recorded as `late` so that "could not observe" is never
+// mistaken for "observed no hold" (review impl1 F3). The probe is outside the port, identical for every port.
 function holdProbe(id, tx) {
   let done = false;
   tx.addEventListener('complete', () => { done = true; });
   tx.addEventListener('abort', () => { done = true; });
-  port.readMemoryHold().then((h) => { if (!done) state.trace.push({ ev: 'HOLD_BEFORE_COMPLETE', tx: id, held: h !== null }); }, () => {});
+  Promise.resolve()
+    .then(() => port.readMemoryHold())
+    .then((h) => {
+      state.probes.push({ tx: id, late: done, held: h !== null });
+      state.trace.push(done ? { ev: 'HOLD_AFTER_COMPLETE', tx: id, held: h !== null } : { ev: 'HOLD_BEFORE_COMPLETE', tx: id, held: h !== null });
+    }, (e) => {
+      state.probes.push({ tx: id, late: true, error: String(e?.code ?? e?.message ?? e) });
+      state.trace.push({ ev: 'HOLD_PROBE_FAILED', tx: id, error: String(e?.code ?? e?.message ?? e) });
+    });
 }
 
 async function original({ scenario, outcome, parent = null, generation = '2', op = 1 }) {
@@ -264,6 +313,7 @@ async function original({ scenario, outcome, parent = null, generation = '2', op
     storage: port, manifestRootKey: manifestRootKey(), envelope, candidate, outcome: M2_OUTCOME[outcome],
   })));
   state.onOpen = null;
+  await settle();
   // The exact kind-13 record the candidate stages: a present hold or, under R3, a canonical tombstone.
   return { ...r, stagedHold: hex(candidate.records.find((x) => x.recordKind === K.MUTATION_HOLD).plaintext) };
 }
@@ -276,17 +326,21 @@ async function original({ scenario, outcome, parent = null, generation = '2', op
  * the selection landed, the emission did not), outside the port.
  */
 async function reconcile({ scenario, outcome, parent = null, generation = '2', op = 1, produce = false, produceFault = null, tamperAt = null, emissionFault = false }) {
+  state.onOpen = holdProbe;
   const { envelope } = requestOf(scenario, M2_OUTCOME.INDETERMINATE, { parent, generation, op });
   // The SS hold when SS memory survived; null after a restart, where I-TXN reads the durable kind-13 hold.
   const hold = await port.readMemoryHold();
   let produced = null;
+  let producer = null;
   if (produce) {
-    const saved = { fault: state.fault, tamperAt: state.tamperAt };
-    Object.assign(state, { fault: produceFault, tamperAt });
+    // The producer runs in its own armed section, so its trace, its write requests and the store
+    // fingerprint around it are observed on their own (obligation item 13; review impl1 F2).
+    const before = (await readback({})).dbDigest;
+    arm({ fault: produceFault, tamperAt });
     const p = await guarded(() => port.readbackEvidence({ hold }));
-    Object.assign(state, saved);
-    if (p.error) return { ...finish(p), produced: null };
-    produced = p.ok;
+    await settle();
+    producer = { ...finish(p), before, after: (await readback({})).dbDigest };
+    produced = p.ok ?? null; // a failed producer is judged by the reconciliation it then feeds
   }
   const evidence = produced ?? evidenceFor(envelope, M2_OUTCOME[outcome]);
   const storage = !emissionFault ? port : {
@@ -301,7 +355,9 @@ async function reconcile({ scenario, outcome, parent = null, generation = '2', o
   const r = finish(await guarded(async () => reconcileIndeterminate({
     storage, manifestRootKey: manifestRootKey(), hold, evidence, reference: envelope.reconciliationIdentity.reference,
   })));
-  return { ...r, produced: produced === null ? null : { outcome: produced.outcome, terminal: produced.terminal } };
+  state.onOpen = null;
+  await settle();
+  return { ...r, producer, produced: produced === null ? null : { outcome: produced.outcome, terminal: produced.terminal } };
 }
 
 // Canonical logical-value digest: byte preservation by logical value, not by database files.
