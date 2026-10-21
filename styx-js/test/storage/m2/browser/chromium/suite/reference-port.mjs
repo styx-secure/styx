@@ -399,7 +399,14 @@ export async function createPort({ db, context }) {
       k13 = r === undefined ? null : decodePlaintext(K.MUTATION_HOLD, r.plaintext);
     } else {
       let d;
-      try { d = await readDurableGeneration(g); } catch (e) { resetBuffer(); throw e; }
+      try {
+        d = await readDurableGeneration(g);
+      } catch (e) {
+        resetBuffer();
+        // A verification failure keeps its code; a read that could not be performed is typed (Muse L4).
+        if (VERIFY_CODES.has(e?.code)) throw e;
+        throw failed('HOLD_UNAVAILABLE', `the kind-13 record of generation ${g} could not be read`);
+      }
       k13 = d === null ? null : d.value.mutationHold;
     }
     if (k13 === null || !holdMatches(k13, p.hold)) {

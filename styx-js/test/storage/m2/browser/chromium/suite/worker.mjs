@@ -258,13 +258,14 @@ function holdProbe(id, tx) {
 }
 
 async function original({ scenario, outcome, parent = null, generation = '2', op = 1 }) {
-  const { envelope, candidate, holdPlaintext } = requestOf(scenario, M2_OUTCOME[outcome], { parent, generation, op });
+  const { envelope, candidate } = requestOf(scenario, M2_OUTCOME[outcome], { parent, generation, op });
   state.onOpen = holdProbe;
   const r = finish(await guarded(() => runMutation({
     storage: port, manifestRootKey: manifestRootKey(), envelope, candidate, outcome: M2_OUTCOME[outcome],
   })));
   state.onOpen = null;
-  return { ...r, stagedHold: holdPlaintext === null ? null : hex(holdPlaintext) };
+  // The exact kind-13 record the candidate stages: a present hold or, under R3, a canonical tombstone.
+  return { ...r, stagedHold: hex(candidate.records.find((x) => x.recordKind === K.MUTATION_HOLD).plaintext) };
 }
 
 /**
