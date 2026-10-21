@@ -81,6 +81,39 @@ def load_trusted_contract_parser(repo: Path) -> Callable[[bytes], Any]:
                 sys.modules[name] = old
 
 
+TRUSTED_ENFORCEMENT_DIR = Path(__file__).resolve().parent.parent / "agent-enforcement"
+
+
+def load_trusted_ancestor_rule(tool_dir: Path = TRUSTED_ENFORCEMENT_DIR) -> Callable[..., Any]:
+    """Load the shared ancestor-base rule from the planner's own installation.
+
+    The rule is executable verifier code, so it is never imported from the
+    repository being planned: a candidate change to git_inventory.py or
+    contract.py must not be able to authorize its own base drift. The candidate
+    repository is passed to the rule only as Git object data.
+    """
+
+    if not (tool_dir / "git_inventory.py").is_file():
+        raise ContractInputError("trusted ancestor-base rule is missing")
+    names = ("contract", "model", "git_inventory")
+    previous_path = list(sys.path)
+    previous_modules = {name: sys.modules.get(name) for name in names}
+    try:
+        sys.path.insert(0, str(tool_dir))
+        for name in names:
+            sys.modules.pop(name, None)
+        module = importlib.import_module("git_inventory")
+        return module.ancestor_base_problem
+    except Exception as exc:
+        raise ContractInputError(f"unable to load trusted ancestor-base rule: {redact_text(str(exc))}") from exc
+    finally:
+        sys.path[:] = previous_path
+        for name, old in previous_modules.items():
+            sys.modules.pop(name, None)
+            if old is not None:
+                sys.modules[name] = old
+
+
 def _scan_sections(body: str) -> dict[str, str]:
     """Fence-aware section scanner using the trusted parser's block rules."""
 
