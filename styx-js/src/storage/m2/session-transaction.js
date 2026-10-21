@@ -13,11 +13,14 @@
 // later card. The real IndexedDB adapter arrives in B-CHR. The port owns the in-memory hold lifecycle:
 // a successful terminal clearing step (RELEASE_ESCROW or CLEAR_CANDIDATE) is the event after which
 // `readMemoryHold()` reports no hold.
-import { M2_KIND, decodePlaintext, encodePlaintext, decodeRecordKey } from './session-codec.js';
+import { sha256 } from '@noble/hashes/sha256';
+import { M2_KIND, M2_SCOPE, decodePlaintext, encodePlaintext, decodeRecordKey } from './session-codec.js';
 import {
   validateAuthority, computeKeyedRoot, ciphertextDigest, manifestEntry, encodeManifest,
   manifestKeyDigest, encodeManifestKey,
 } from './session-root.js';
+
+const TE = new TextEncoder();
 
 /** The three C-MUT logical commit outcomes. */
 export const M2_OUTCOME = Object.freeze({ COMMITTED: 1, NOT_COMMITTED: 2, INDETERMINATE: 3 });
@@ -95,6 +98,10 @@ export const M2_TXN = Object.freeze({
   // F2: the typed code a storage port throws when the stored selector envelope is not byte-identical
   // to the `expectedSelectorBytes` of a REPLACE_SELECTOR; I-TXN rethrows it unchanged.
   SELECTOR_PRECONDITION_FAILED: 'SELECTOR_PRECONDITION_FAILED',
+  // I-RESTART: the two exact error codes of `loadBoundHold`. An authenticated contradiction (fail
+  // closed, never the routine `CAPI-S024` continuation) and an unavailable readback.
+  BOUND_HOLD_INVALID: 'BOUND_HOLD_INVALID',
+  READBACK_UNAVAILABLE: 'READBACK_UNAVAILABLE',
   ROW_COUNT: 7,
   BOUNDARY_COUNT: 12,
   COMPONENT_COUNT: 10,
@@ -119,6 +126,9 @@ const CODE = Object.freeze({
   NO_RECONCILIATION_PENDING: 'NO_RECONCILIATION_PENDING',
   HOLD_UNAVAILABLE: 'HOLD_UNAVAILABLE',
   SELECTOR_PRECONDITION_FAILED: 'SELECTOR_PRECONDITION_FAILED',
+  // I-RESTART: the loader's two codes, single-sourced from the exported constant surface.
+  BOUND_HOLD_INVALID: M2_TXN.BOUND_HOLD_INVALID,
+  READBACK_UNAVAILABLE: M2_TXN.READBACK_UNAVAILABLE,
 });
 
 const isPreconditionFailure = (e) => e !== null && typeof e === 'object'
@@ -493,13 +503,7 @@ const INSPECTION_PLAN_KEYS = Object.freeze(PLAN_KEYS.filter((k) => k !== 'expect
 // envelope bytes (nonce, ciphertext and tag) that every later REPLACE_SELECTOR of the same request
 // carries as `expectedSelectorBytes`. The envelope is never interpreted here, only compared by the port.
 async function readStoredSelector(storage) {
-  const value = await storage.readSelector();
-  if (value === null || value === undefined) return null;
-  const s = strictObject(value, ['plaintext', 'envelope'], 'stored selector');
-  return Object.freeze({
-    plaintext: bytes(s.plaintext, null, 'stored selector.plaintext'),
-    envelope: bytes(s.envelope, null, 'stored selector.envelope'),
-  });
+  return storedSelectorValue(await storage.readSelector());
 }
 const envelopeOf = (stored) => (stored === null ? null : stored.envelope);
 
@@ -1166,6 +1170,459 @@ export async function runMutation(input) {
   return resultFor(envelope, candidate, outcome, row);
 }
 
+// ---------------------------------------------------------------------------------------------
+// I-RESTART: the bound-hold loader and the restart readback rules.
+//
+// After an SS restart the memory hold is gone while the durable selector still demands
+// reconciliation. The complete kind-13 record of the bound candidate is durable authority for that
+// mutation (C-FMT §6/§7, C-REST §6/§7); `loadBoundHold` authenticates the whole locator chain down
+// to that record and returns it read-only, and `reconcileIndeterminate` uses the same rules - with
+// the per-record-kind compatibility of Change 5 - when it has no memory hold left.
+//
+// Two exact codes, and nothing else, come out of `loadBoundHold`: `BOUND_HOLD_INVALID` for every
+// authenticated contradiction on returned data (never the routine `CAPI-S024` continuation) and
+// `READBACK_UNAVAILABLE` for a readback the port could not perform. Only the awaited port call is
+// classified by code: a throw whose own string `code` is one of the four verification codes of the
+// port error obligation is an authenticated refusal, anything else means no readback happened.
+// ---------------------------------------------------------------------------------------------
+
+const BINDING_DIGEST_LABEL = 'STYX-M2-BINDING-DIGEST-V1';
+const CANONICAL_BINDING_LENGTH = 389;
+const CANDIDATE_REF_MAX_UNITS = 256;
+const READBACK_VERIFICATION_CODES = Object.freeze(new Set([
+  'AUTHENTICATION_FAILED', CODE.MALFORMED_INPUT, CODE.UNSUPPORTED_VALUE, CODE.CONTEXT_MISMATCH,
+]));
+
+const be32 = (n) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+function concatBytes(...parts) {
+  const length = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const part of parts) { out.set(part, at); at += part.length; }
+  return out;
+}
+// The candidate binding leg of C-FMT `sessionDomain`, exactly as `session-codec.js::encodeAad`
+// computes it (ASCII label, the be32 length prefix, then the 389 canonical binding bytes).
+const bindingDigestOf = (canonicalBinding) => sha256(concatBytes(
+  TE.encode(BINDING_DIGEST_LABEL), be32(CANONICAL_BINDING_LENGTH), canonicalBinding,
+));
+const sameBytesOrNull = (a, b) => (a === null || b === null ? a === b : equal(a, b));
+
+function storedSelectorValue(value) {
+  if (value === null || value === undefined) return null;
+  const s = strictObject(value, ['plaintext', 'envelope'], 'stored selector');
+  return Object.freeze({
+    plaintext: bytes(s.plaintext, null, 'stored selector.plaintext'),
+    envelope: bytes(s.envelope, null, 'stored selector.envelope'),
+  });
+}
+
+// The selector binds a candidate distinct from the generation it names.
+const selectorBindsCandidate = (selector) => selector.candidateGeneration !== selector.generation
+  || !equal(selector.candidateManifestKeyDigest, selector.manifestKeyDigest)
+  || !equal(selector.candidateManifestCipherDigest, selector.manifestCipherDigest)
+  || !equal(selector.candidateKeyedRoot, selector.keyedRoot);
+
+// Change 1(h): every data record of a generation is stored under its own canonical key, in the
+// generation and the manifest-key locator context the generation declares.
+function checkRecordKeyLocators(facts, locator, refuse) {
+  for (let i = 0; i < facts.records.length; i += 1) {
+    const record = facts.records[i];
+    let decoded;
+    try { decoded = decodeRecordKey(record.recordKey); } catch (e) {
+      refuse(`generation ${facts.generation} stores record ${i} under a non-canonical key: ${e.message}`);
+    }
+    if (decoded.recordKind !== record.recordKind) {
+      refuse(`generation ${facts.generation} stores record ${i} under the key of kind ${decoded.recordKind}`);
+    }
+    if (decoded.writeGeneration !== facts.generation) {
+      refuse(`generation ${facts.generation} stores record ${i} under the key of generation ${decoded.writeGeneration}`);
+    }
+    if (decoded.scope !== locator.scope || !equal(decoded.localContextId, locator.localContextId)
+        || !sameBytesOrNull(decoded.secureSessionIdentity, locator.secureSessionIdentity)) {
+      refuse(`generation ${facts.generation} stores record ${i} outside its manifest-key locator context`);
+    }
+  }
+}
+
+// Change 1(k), the candidate binding leg: the candidate is stored in the SESSION scope, its
+// BINDING_PROFILE decodes canonically present, and the profile hashes to the session binding digest
+// the trusted reader projects for the located manifest (F3).
+function checkCandidateBindingDigest(candidate, locator, strict, refuse) {
+  if (locator.scope !== M2_SCOPE.SESSION) refuse('the candidate manifest key is not in the session scope');
+  const record = candidate.records.find((r) => r.recordKind === M2_KIND.BINDING_PROFILE);
+  const decoded = record === undefined
+    ? undefined : optionalCanonicalPlaintext(record.plaintext, M2_KIND.BINDING_PROFILE);
+  if (decoded === undefined || decoded.presence !== 1) {
+    if (strict) refuse('the candidate stores no canonical present BINDING_PROFILE record');
+    return;
+  }
+  if (candidate.sessionBindingDigest === null) refuse('the candidate declares no session binding digest');
+  if (!equal(bindingDigestOf(decoded.canonicalBinding), candidate.sessionBindingDigest)) {
+    refuse('the candidate binding profile does not hash to its declared session binding digest');
+  }
+}
+
+// A record plaintext decoded canonically for its kind, or `undefined` when it does not decode (a
+// filler plaintext, B-CHR item 12). Callers decide whether that is a refusal.
+function optionalCanonicalPlaintext(plaintext, kind) {
+  try {
+    return decodePlaintext(kind, plaintext);
+  } catch {
+    return undefined;
+  }
+}
+
+// The kind-13 hold of a list of records: the canonical present MUTATION_HOLD plaintext, the complete
+// `mutationHold` projection when no canonical plaintext exists, or `null` when there is no hold.
+function candidateHoldRecord(candidate, strict) {
+  const record = candidate.records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  if (record !== undefined) {
+    const decoded = optionalCanonicalPlaintext(record.plaintext, M2_KIND.MUTATION_HOLD);
+    if (decoded !== undefined) {
+      if (decoded.presence !== 1) return null; // a canonical tombstone holds nothing
+      return holdRecordFacts(decoded, 'authenticated candidate hold');
+    }
+  }
+  return strict ? null : candidate.holdRecord;
+}
+
+// The kind-8 normalization (closed, used by both paths): a canonical present COMMIT_RESULT plaintext
+// minus `presence`, with `profileDigest` renamed `profile`, must pass `evidenceFacts` and equal the
+// same generation's `resultEvidence` projection member by member, bytes compared by value.
+const RESULT_RECORD_FIELDS = Object.freeze([
+  'operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference', 'candidateDigest',
+  'candidateReference', 'mutationSetDigest', 'mutationSetReference', 'expectedOriginalState',
+  'bindingRef', 'profile', 'outcome', 'authenticatedByRS', 'terminal',
+]);
+
+function normalizedResultRecord(decoded) {
+  return evidenceFacts({
+    operationIdentity: decoded.operationIdentity,
+    originalAuthorityDigest: decoded.originalAuthorityDigest,
+    originalAuthorityReference: decoded.originalAuthorityReference,
+    candidateDigest: decoded.candidateDigest,
+    candidateReference: decoded.candidateReference,
+    mutationSetDigest: decoded.mutationSetDigest,
+    mutationSetReference: decoded.mutationSetReference,
+    expectedOriginalState: decoded.expectedOriginalState,
+    bindingRef: decoded.bindingRef,
+    profile: decoded.profileDigest,
+    outcome: decoded.outcome,
+    authenticatedByRS: decoded.authenticatedByRS,
+    terminal: decoded.terminal,
+  }, 'authenticated commit result');
+}
+
+const sameEvidence = (a, b) => RESULT_RECORD_FIELDS.every((k) => (
+  (a[k] instanceof Uint8Array || b[k] instanceof Uint8Array) ? equal(a[k], b[k]) : a[k] === b[k]));
+
+// Change 2(g): the candidate COMMIT_RESULT. The record-plaintext leg is checked only where a
+// canonical plaintext exists and is skipped otherwise (Change 5); the outcome set and the
+// association with the hold are projection checks and always apply.
+function checkCandidateResult(candidate, hold, strict, refuse) {
+  const projection = evidenceFacts(candidate.resultEvidence, 'candidate result evidence');
+  const record = candidate.records.find((r) => r.recordKind === M2_KIND.COMMIT_RESULT);
+  const decoded = record === undefined ? undefined : optionalCanonicalPlaintext(record.plaintext, M2_KIND.COMMIT_RESULT);
+  if (decoded === undefined || decoded.presence !== 1) {
+    if (strict) refuse('the candidate stores no canonical present COMMIT_RESULT record');
+  } else if (!sameEvidence(normalizedResultRecord(decoded), projection)) {
+    refuse('the candidate COMMIT_RESULT record differs from its stored evidence projection');
+  }
+  if (projection.outcome !== M2_OUTCOME.COMMITTED && projection.outcome !== M2_OUTCOME.INDETERMINATE) {
+    refuse('the candidate commit result is neither committed nor indeterminate');
+  }
+  if (!storedResultMatchesHold(projection, hold)) {
+    refuse('the candidate commit result does not identify the held mutation');
+  }
+}
+
+// Change 2(h)-2(i): the candidate component set, compared with the held component-set identity.
+function checkComponentSet(records, hold, strict, refuse) {
+  const record = records.find((r) => r.recordKind === M2_KIND.COMPONENT_SET);
+  const decoded = record === undefined ? undefined : optionalCanonicalPlaintext(record.plaintext, M2_KIND.COMPONENT_SET);
+  if (decoded === undefined || decoded.presence !== 1) {
+    if (strict) refuse('the candidate stores no canonical present COMPONENT_SET record');
+    return;
+  }
+  if (!equal(decoded.mutationSetDigest, hold.componentSetDigest)) {
+    refuse('the candidate component set digest is not the held component-set digest');
+  }
+  if (!equal(decoded.mutationSetReference, hold.componentSetReference)) {
+    refuse('the candidate component set reference is not the held component-set reference');
+  }
+}
+
+// Change 2(j): the stored escrow is the held output; a row with an output requires output bytes.
+function requireEscrowMatchesHold(escrow, hold, refuse) {
+  if (!storedEscrowMatchesHold(escrow, hold)) refuse('the candidate escrow is not the held output of this mutation');
+  const kind = OUTPUT_KINDS[hold.heldOutputKind - 1];
+  if (kind !== 'NONE'
+      && !(escrow !== null && typeof escrow === 'object' && escrow.output instanceof Uint8Array)) {
+    refuse('the candidate escrow carries no output bytes for a row with an output');
+  }
+}
+
+// Change 2(k)-2(m): the OUTPUT_ESCROW record against the hold and the stored projection.
+function checkEscrowRecord(candidate, hold, strict, refuse) {
+  const record = candidate.records.find((r) => r.recordKind === M2_KIND.OUTPUT_ESCROW);
+  const decoded = record === undefined ? undefined : optionalCanonicalPlaintext(record.plaintext, M2_KIND.OUTPUT_ESCROW);
+  if (decoded === undefined || decoded.presence !== 1) {
+    if (strict) refuse('the candidate stores no canonical present OUTPUT_ESCROW record');
+    return;
+  }
+  for (const [recordField, heldField] of [
+    ['operationIdentity', 'operationIdentity'], ['candidateDigest', 'candidateDigest'],
+    ['candidateReference', 'candidateReference'], ['mutationSetDigest', 'componentSetDigest'],
+    ['mutationSetReference', 'componentSetReference'],
+  ]) {
+    if (!equal(decoded[recordField], hold[heldField])) {
+      refuse(`the candidate OUTPUT_ESCROW ${recordField} is not the held envelope's`);
+    }
+  }
+  if (decoded.outputKind !== hold.heldOutputKind) {
+    refuse('the candidate OUTPUT_ESCROW kind is not the held output kind');
+  }
+  const escrow = candidate.escrow;
+  if (escrow === null || typeof escrow !== 'object' || !(escrow.output instanceof Uint8Array)) {
+    refuse('the candidate escrow projection carries no output bytes to compare with the record');
+  }
+  if (!equal(decoded.output, escrow.output)) {
+    refuse('the candidate OUTPUT_ESCROW bytes are not the escrow projection bytes');
+  }
+}
+
+// Change 1(j): the selected generation's kind-13 record is a canonical tombstone or historical
+// evidence of the mutation that produced it, associated with that generation's own commit result.
+function checkSelectedGeneration(selected, selector, strict, refuse) {
+  const record = selected.records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  const decoded = record === undefined ? undefined : optionalCanonicalPlaintext(record.plaintext, M2_KIND.MUTATION_HOLD);
+  if (decoded === undefined) {
+    if (strict) refuse('the selected generation stores no canonical MUTATION_HOLD record');
+    return;
+  }
+  if (decoded.presence === 0) return; // a tombstone: nothing is held in the selected generation
+  const held = holdRecordFacts(decoded, 'selected historical hold');
+  let key;
+  try { key = decodeRecordKey(record.recordKey); } catch (e) {
+    refuse(`the selected historical hold is stored under a non-canonical key: ${e.message}`);
+  }
+  if (key.recordKind !== M2_KIND.MUTATION_HOLD || key.writeGeneration !== selected.generation) {
+    refuse('the selected historical hold is not stored under its own generation key');
+  }
+  const derived = encodeManifestKey({
+    localContextId: key.localContextId, scope: key.scope,
+    secureSessionIdentity: key.secureSessionIdentity, writeGeneration: key.writeGeneration,
+  });
+  if (!equal(derived, selected.manifestKey)) {
+    refuse('the selected historical hold record key does not derive its generation manifest key');
+  }
+  if (!(held.parentGeneration < selected.generation)) {
+    refuse('the selected historical hold does not name an earlier parent');
+  }
+  const resultRecord = selected.records.find((r) => r.recordKind === M2_KIND.COMMIT_RESULT);
+  const resultPlaintext = resultRecord === undefined
+    ? undefined : optionalCanonicalPlaintext(resultRecord.plaintext, M2_KIND.COMMIT_RESULT);
+  const projection = evidenceFacts(selected.resultEvidence, 'selected result evidence');
+  if (resultPlaintext === undefined || resultPlaintext.presence !== 1) {
+    if (strict) {
+      refuse('the selected generation stores no canonical present COMMIT_RESULT record beside its historical hold');
+    }
+  } else if (!sameEvidence(normalizedResultRecord(resultPlaintext), projection)) {
+    refuse('the selected COMMIT_RESULT record differs from its stored evidence projection');
+  }
+  if (!storedResultMatchesHold(projection, held)) {
+    refuse('the selected historical hold is not identified by its generation commit result');
+  }
+}
+
+// Exactly the 22 members of `HOLD_RECORD_KEYS`, each byte array a fresh copy: no locator member.
+function boundHoldCopy(record) {
+  const out = {};
+  for (const key of HOLD_RECORD_KEYS) {
+    const value = record[key];
+    out[key] = value instanceof Uint8Array ? Uint8Array.prototype.slice.call(value) : value;
+  }
+  return Object.freeze(out);
+}
+
+// Change 3: the CAPI-S017 escrow carries the reference string; the staging producer owns the
+// UTF-8 encoding and the loader decodes it back with the exact reversible form.
+function selectedCandidateRefOf(hold, escrow) {
+  if (OUTPUT_KINDS[hold.heldOutputKind - 1] !== 'SELECTED_CANDIDATE_REF') return null;
+  if (escrow === null || typeof escrow !== 'object' || !(escrow.output instanceof Uint8Array)) {
+    mismatch('the candidate escrow of a CAPI-S017 row carries no reference bytes');
+  }
+  let ref;
+  try {
+    ref = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(escrow.output);
+  } catch (e) {
+    mismatch(`the staged candidate reference is not well-formed UTF-8: ${e.message}`);
+  }
+  if (ref.length === 0) mismatch('the staged candidate reference is empty');
+  if (ref.length > CANDIDATE_REF_MAX_UNITS) {
+    mismatch(`the staged candidate reference is ${ref.length} UTF-16 units, over the ${CANDIDATE_REF_MAX_UNITS} bound`);
+  }
+  return ref;
+}
+
+const loadBoundHoldInvalid = (message) => fail(CODE.BOUND_HOLD_INVALID, message);
+
+// One awaited port call. The port error obligation makes a verification failure carry its own
+// string `code`; anything else - a wrapped, inherited, non-string or absent code - means the
+// readback was not performed.
+async function awaitedReadback(call, label) {
+  let value;
+  try {
+    value = await call();
+  } catch (error) {
+    const descriptor = error !== null && typeof error === 'object'
+      ? Object.getOwnPropertyDescriptor(error, 'code') : undefined;
+    const code = descriptor === undefined ? undefined : descriptor.value;
+    if (typeof code === 'string' && READBACK_VERIFICATION_CODES.has(code)) {
+      loadBoundHoldInvalid(`the ${label} readback refused the stored bytes with ${code}`);
+    }
+    fail(CODE.READBACK_UNAVAILABLE,
+      `the ${label} readback was not performed; the bound hold cannot be loaded from here`);
+  }
+  return value;
+}
+
+/**
+ * Load the hold of the candidate a `RECONCILIATION_REQUIRED` selector binds, from durable bytes
+ * alone, and return `{ hold, facts }` read-only. Never calls `apply` or `readMemoryHold`, never
+ * writes or caches the hold, and never returns `CAPI-S024`: an authenticated contradiction is
+ * `BOUND_HOLD_INVALID` and an unperformed readback is `READBACK_UNAVAILABLE`.
+ */
+export async function loadBoundHold(input) {
+  const s = strictObject(input, ['storage', 'manifestRootKey'], 'bound hold input');
+  const storage = storagePort(s.storage);
+  const manifestRootKey = bytes(s.manifestRootKey, 32, 'manifestRootKey');
+  let stored;
+  try {
+    stored = await readBoundHold(storage, manifestRootKey);
+  } catch (error) {
+    if (error instanceof M2TxnError
+        && (error.code === CODE.BOUND_HOLD_INVALID || error.code === CODE.READBACK_UNAVAILABLE)) throw error;
+    fail(CODE.BOUND_HOLD_INVALID,
+      `the stored bytes of this profile are not a bound hold: ${error instanceof Error ? error.message : 'refused'}`);
+  }
+  return stored;
+}
+
+async function readBoundHold(storage, manifestRootKey) {
+  // Change 1(a): the authenticated selector is in RECONCILIATION_REQUIRED and binds a candidate
+  // distinct from the generation it names.
+  const selectorValue = await awaitedReadback(() => storage.readSelector(), 'stored selector');
+  const stored = storedSelectorValue(selectorValue);
+  if (stored === null) loadBoundHoldInvalid('no stored selector exists; no reconciliation is pending');
+  const selectorBytes = stored.plaintext;
+  const selector = selectorFacts(selectorBytes);
+  if (selector.state !== SELECTOR_STATE.RECONCILIATION_REQUIRED) {
+    loadBoundHoldInvalid('the stored selector is not in RECONCILIATION_REQUIRED');
+  }
+  if (!selectorBindsCandidate(selector)) {
+    loadBoundHoldInvalid('the stored selector names no candidate distinct from the selected generation');
+  }
+  // Change 1(b)-1(c): the locator is a canonical kind-16 key with an empty objectId for exactly the
+  // candidate generation, and its literal digest is the stored candidate manifest key digest.
+  let locator;
+  try { locator = decodeRecordKey(selector.candidateManifestKey); } catch (e) {
+    loadBoundHoldInvalid(`the candidate manifest key is not a canonical record key: ${e.message}`);
+  }
+  if (locator.recordKind !== M2_KIND.MANIFEST || locator.objectId.length !== 0) {
+    loadBoundHoldInvalid('the candidate manifest key is not a canonical kind-16 manifest key');
+  }
+  if (locator.writeGeneration !== selector.candidateGeneration) {
+    loadBoundHoldInvalid('the candidate manifest key does not derive the bound candidate generation');
+  }
+  if (!equal(manifestKeyDigest(selector.candidateManifestKey), selector.candidateManifestKeyDigest)) {
+    loadBoundHoldInvalid('the candidate manifest key digest is not the literal digest of the stored locator');
+  }
+  // Change 1(d): one point lookup per named generation, in order; a named generation that is not
+  // stored fails.
+  const selectedRaw = await awaitedReadback(
+    () => storage.readGeneration(selector.generation), `generation ${selector.generation}`);
+  const candidateRaw = await awaitedReadback(
+    () => storage.readGeneration(selector.candidateGeneration), `generation ${selector.candidateGeneration}`);
+  if (selectedRaw === null || selectedRaw === undefined) {
+    loadBoundHoldInvalid(`the selected generation ${selector.generation} is not stored`);
+  }
+  if (candidateRaw === null || candidateRaw === undefined) {
+    loadBoundHoldInvalid(`the candidate generation ${selector.candidateGeneration} is not stored`);
+  }
+  // Change 1(g): both generations pass the base generation-facts reader.
+  const selected = generationFactsFromStorage(selectedRaw, selector.generation, manifestRootKey);
+  const candidate = generationFactsFromStorage(candidateRaw, selector.candidateGeneration, manifestRootKey);
+  // Change 1(e)-1(f): one locator context, and the located candidate key is the stored locator.
+  const selectedLocator = decodeRecordKey(selected.manifestKey);
+  if (!equal(selectedLocator.localContextId, locator.localContextId)) {
+    loadBoundHoldInvalid('the candidate manifest key is in another locator context than the selected generation');
+  }
+  if (!equal(candidate.manifestKey, selector.candidateManifestKey)) {
+    loadBoundHoldInvalid('the located candidate manifest key is not the stored selector locator');
+  }
+  // Change 1(h): every record key of both generations.
+  checkRecordKeyLocators(selected, selectedLocator, loadBoundHoldInvalid);
+  checkRecordKeyLocators(candidate, locator, loadBoundHoldInvalid);
+  // Change 1(i): the selector and both generations are one consistent authority.
+  try {
+    validateAuthority({
+      selector: selectorBytes, manifestRootKey,
+      selected: authorityTuple(selected), candidate: authorityTuple(candidate),
+    });
+  } catch (e) {
+    loadBoundHoldInvalid(`the stored selector is not consistent with the generations it binds: ${e.message}`);
+  }
+  // Change 1(j)-1(k).
+  checkSelectedGeneration(selected, selector, true, loadBoundHoldInvalid);
+  checkCandidateBindingDigest(candidate, locator, true, loadBoundHoldInvalid);
+  // Change 2(a): the candidate kind-13 record is a canonical present MUTATION_HOLD - the hold.
+  const record = candidateHoldRecord(candidate, true);
+  if (record === null) {
+    loadBoundHoldInvalid('the candidate stores no canonical present MUTATION_HOLD record');
+  }
+  const hold = boundHoldCopy(record);
+  if (hold.resultStatus !== M2_OUTCOME.INDETERMINATE) {
+    loadBoundHoldInvalid('the held mutation is not INDETERMINATE');
+  }
+  if (hold.parentGeneration !== selector.generation) {
+    loadBoundHoldInvalid('the held mutation does not name the selected generation as its physical parent');
+  }
+  if (!equal(hold.parentKeyedRoot, selector.keyedRoot)) {
+    loadBoundHoldInvalid('the held mutation parent root is not the selected authority root');
+  }
+  // Change 2(e): the hold rebuilds the closed, row-bound envelope.
+  try {
+    envelopeFromHold(hold);
+  } catch (e) {
+    loadBoundHoldInvalid(`the held mutation does not rebuild its mutation envelope: ${e.message}`);
+  }
+  // Change 2(f), R3: a NONE-output row is refused by the loader.
+  if (OUTPUT_KINDS[hold.heldOutputKind - 1] === 'NONE') {
+    loadBoundHoldInvalid('the held mutation has no output; the bound-hold loader refuses this row');
+  }
+  checkCandidateResult(candidate, hold, true, loadBoundHoldInvalid);
+  checkComponentSet(candidate.records, hold, true, loadBoundHoldInvalid);
+  requireEscrowMatchesHold(candidate.escrow, hold, loadBoundHoldInvalid);
+  checkEscrowRecord(candidate, hold, true, loadBoundHoldInvalid);
+  const selectedCandidateRef = selectedCandidateRefOf(hold, candidate.escrow);
+  return Object.freeze({
+    hold,
+    facts: Object.freeze({
+      scenario: SCENARIOS[hold.scenario - 1],
+      operation: OPERATIONS[hold.operation - 1],
+      originalStateBefore: hold.originalApiState === API_STATE_CODE.ACTIVE ? 'ACTIVE' : 'EMPTY',
+      expectedStateAfter: hold.expectedStateAfter === API_STATE_CODE.ACTIVE ? 'ACTIVE' : 'EMPTY',
+      expectedSuccessCode: SUCCESS_CODES[hold.expectedSuccessCode - 1],
+      outputKind: OUTPUT_KINDS[hold.heldOutputKind - 1],
+      operationIdentity: Uint8Array.prototype.slice.call(hold.operationIdentity),
+      reconciliationReference: Uint8Array.prototype.slice.call(hold.reconciliationReference),
+      selectedCandidateRef,
+    }),
+  });
+}
+
 function generationFactsFromStorage(value, generation, manifestRootKey) {
   if (value === null || value === undefined) {
     partial(`the selector names generation ${generation}, which is not stored`);
@@ -1403,15 +1860,52 @@ function sameTupleSelector(facts, state) {
 // generation a RECONCILIATION_REQUIRED selector binds. The selected and candidate generations must
 // validate as one consistent authority (C-FMT §6) and the record must be the unresolved INDETERMINATE
 // hold whose parent is the selector's physical authority. Anything else yields null (fail closed).
+// Change 5: with no memory hold the durable selector decides whether anything is pending, and the
+// same Changes 1-2 authenticate the bound candidate, with the per-record-kind compatibility of the
+// reconcile path: a record whose plaintext decodes canonically for its kind is checked, a record
+// that does not decode is skipped, and a canonical record that contradicts is never skipped. The
+// projection checks (storedResultMatchesHold, the outcome set, all of 2(j)) always apply, and 2(f)
+// does not apply here. Failures apply nothing, are never the loader's codes and never CAPI-S024.
 async function durableHeldEnvelope(storage, manifestRootKey, selectorBytes) {
+  const partialRefuse = (message) => partial(message);
+  const evidenceRefuse = (message) => fail(CODE.EVIDENCE_MISMATCH, message);
   const selector = selectorFacts(selectorBytes);
-  if (selector.candidateGeneration === selector.generation) return null;
+  if (selector.state !== SELECTOR_STATE.RECONCILIATION_REQUIRED || !selectorBindsCandidate(selector)) {
+    fail(CODE.NO_RECONCILIATION_PENDING,
+      'the stored selector is not in RECONCILIATION_REQUIRED with a separate candidate');
+  }
+  // Change 1(b)-1(c): the bound locator.
+  let locator;
+  try { locator = decodeRecordKey(selector.candidateManifestKey); } catch (e) {
+    partial(`the candidate manifest key is not a canonical record key: ${e.message}`);
+  }
+  if (locator.recordKind !== M2_KIND.MANIFEST || locator.objectId.length !== 0) {
+    partial('the candidate manifest key is not a canonical kind-16 manifest key');
+  }
+  if (locator.writeGeneration !== selector.candidateGeneration) {
+    partial('the candidate manifest key does not derive the bound candidate generation');
+  }
+  if (!equal(manifestKeyDigest(selector.candidateManifestKey), selector.candidateManifestKeyDigest)) {
+    partial('the candidate manifest key digest is not the literal digest of the stored locator');
+  }
+  // Change 1(d), 1(g): one point lookup per named generation, both through the base reader.
   const selected = generationFactsFromStorage(
     await storage.readGeneration(selector.generation), selector.generation, manifestRootKey,
   );
   const candidate = generationFactsFromStorage(
     await storage.readGeneration(selector.candidateGeneration), selector.candidateGeneration, manifestRootKey,
   );
+  // Change 1(e)-1(h).
+  const selectedLocator = decodeRecordKey(selected.manifestKey);
+  if (!equal(selectedLocator.localContextId, locator.localContextId)) {
+    partial('the candidate manifest key is in another locator context than the selected generation');
+  }
+  if (!equal(candidate.manifestKey, selector.candidateManifestKey)) {
+    partial('the located candidate manifest key is not the stored selector locator');
+  }
+  checkRecordKeyLocators(selected, selectedLocator, partialRefuse);
+  checkRecordKeyLocators(candidate, locator, partialRefuse);
+  // Change 1(i).
   try {
     validateAuthority({
       selector: selectorBytes, manifestRootKey, selected: authorityTuple(selected), candidate: authorityTuple(candidate),
@@ -1419,11 +1913,27 @@ async function durableHeldEnvelope(storage, manifestRootKey, selectorBytes) {
   } catch (e) {
     partial(`the stored selector is not consistent with the generations it binds: ${e.message}`);
   }
-  const record = candidate.holdRecord;
+  // Change 1(j)-1(k).
+  checkSelectedGeneration(selected, selector, false, partialRefuse);
+  checkCandidateBindingDigest(candidate, locator, false, partialRefuse);
+  // Change 2(a)-2(d): the hold, and the four hold facts the durable selector must confirm.
+  const record = candidateHoldRecord(candidate, false);
   if (record === null || record.resultStatus !== M2_OUTCOME.INDETERMINATE
     || record.parentGeneration !== selector.generation || !equal(record.parentKeyedRoot, selector.keyedRoot)) {
     return null;
   }
+  // Change 2(e): the held mutation rebuilds the closed, row-bound envelope (2(f) does not apply here).
+  try {
+    envelopeFromHold(record);
+  } catch (e) {
+    if (e instanceof M2TxnError && e.code === CODE.INVALID_ENVELOPE) throw e;
+    evidenceRefuse(`the held mutation does not rebuild its mutation envelope: ${e.message}`);
+  }
+  // Change 2(g)-2(j) and 2(k)-2(m).
+  checkCandidateResult(candidate, record, false, evidenceRefuse);
+  checkComponentSet(candidate.records, record, false, evidenceRefuse);
+  requireEscrowMatchesHold(candidate.escrow, record, evidenceRefuse);
+  checkEscrowRecord(candidate, record, false, evidenceRefuse);
   return record;
 }
 
