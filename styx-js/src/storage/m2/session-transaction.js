@@ -1245,6 +1245,27 @@ function checkRecordKeyLocators(facts, locator, refuse) {
   }
 }
 
+// Change 1(e)-1(f), on the manifest keys the port returned, before 1(g) reads the generations: the
+// selected generation's manifest key is in the locator context of the candidate locator, and the
+// candidate's stored manifest key is the stored selector locator byte for byte. A manifest key that
+// is not a byte array or does not decode is left to the base reader of 1(g), which refuses it with
+// its own class. No port call is made here.
+function checkStoredLocators(selectedRaw, candidateRaw, locator, candidateManifestKey, refuse) {
+  const keyOf = (raw) => (raw !== null && typeof raw === 'object' ? raw.manifestKey : undefined);
+  const selectedKey = keyOf(selectedRaw);
+  const candidateKey = keyOf(candidateRaw);
+  if (selectedKey instanceof Uint8Array) {
+    let selectedLocator = null;
+    try { selectedLocator = decodeRecordKey(selectedKey); } catch { selectedLocator = null; }
+    if (selectedLocator !== null && !equal(selectedLocator.localContextId, locator.localContextId)) {
+      refuse('the candidate manifest key is in another locator context than the selected generation');
+    }
+  }
+  if (candidateKey instanceof Uint8Array && !equal(candidateKey, candidateManifestKey)) {
+    refuse('the located candidate manifest key is not the stored selector locator');
+  }
+}
+
 // Change 1(k), the candidate binding leg: the candidate is stored in the SESSION scope, its
 // BINDING_PROFILE decodes canonically present, and the profile hashes to the session binding digest
 // the trusted reader projects for the located manifest (F3).
@@ -1317,17 +1338,35 @@ function normalizedResultRecord(decoded) {
 const sameEvidence = (a, b) => RESULT_RECORD_FIELDS.every((k) => (
   (a[k] instanceof Uint8Array || b[k] instanceof Uint8Array) ? equal(a[k], b[k]) : a[k] === b[k]));
 
+// A validation failure of returned data (a projection or a record that does not pass
+// `evidenceFacts`) contradicts the rule being checked: it goes through that rule's refusal, so the
+// reconcile path keeps the class Change 5 names for it. Only pure validators run inside; no port
+// call is made here, so no port read error is re-classified.
+function validatedOrRefused(validate, refuse, message) {
+  try {
+    return validate();
+  } catch (e) {
+    return refuse(`${message}: ${e instanceof Error ? e.message : 'refused'}`);
+  }
+}
+
 // Change 2(g): the candidate COMMIT_RESULT. The record-plaintext leg is checked only where a
 // canonical plaintext exists and is skipped otherwise (Change 5); the outcome set and the
 // association with the hold are projection checks and always apply.
 function checkCandidateResult(candidate, hold, strict, refuse) {
-  const projection = evidenceFacts(candidate.resultEvidence, 'candidate result evidence');
+  const projection = validatedOrRefused(
+    () => evidenceFacts(candidate.resultEvidence, 'candidate result evidence'), refuse,
+    'the candidate result evidence projection is not commit-result evidence');
   const record = candidate.records.find((r) => r.recordKind === M2_KIND.COMMIT_RESULT);
   const decoded = record === undefined ? undefined : optionalCanonicalPlaintext(record.plaintext, M2_KIND.COMMIT_RESULT);
   if (decoded === undefined || decoded.presence !== 1) {
     if (strict) refuse('the candidate stores no canonical present COMMIT_RESULT record');
-  } else if (!sameEvidence(normalizedResultRecord(decoded), projection)) {
-    refuse('the candidate COMMIT_RESULT record differs from its stored evidence projection');
+  } else {
+    const normalized = validatedOrRefused(() => normalizedResultRecord(decoded), refuse,
+      'the candidate COMMIT_RESULT record fails the kind-8 normalization');
+    if (!sameEvidence(normalized, projection)) {
+      refuse('the candidate COMMIT_RESULT record differs from its stored evidence projection');
+    }
   }
   if (projection.outcome !== M2_OUTCOME.COMMITTED && projection.outcome !== M2_OUTCOME.INDETERMINATE) {
     refuse('the candidate commit result is neither committed nor indeterminate');
@@ -1423,13 +1462,19 @@ function checkSelectedGeneration(selected, selector, strict, refuse) {
   const resultRecord = selected.records.find((r) => r.recordKind === M2_KIND.COMMIT_RESULT);
   const resultPlaintext = resultRecord === undefined
     ? undefined : optionalCanonicalPlaintext(resultRecord.plaintext, M2_KIND.COMMIT_RESULT);
-  const projection = evidenceFacts(selected.resultEvidence, 'selected result evidence');
+  const projection = validatedOrRefused(
+    () => evidenceFacts(selected.resultEvidence, 'selected result evidence'), refuse,
+    'the selected result evidence projection is not commit-result evidence');
   if (resultPlaintext === undefined || resultPlaintext.presence !== 1) {
     if (strict) {
       refuse('the selected generation stores no canonical present COMMIT_RESULT record beside its historical hold');
     }
-  } else if (!sameEvidence(normalizedResultRecord(resultPlaintext), projection)) {
-    refuse('the selected COMMIT_RESULT record differs from its stored evidence projection');
+  } else {
+    const normalized = validatedOrRefused(() => normalizedResultRecord(resultPlaintext), refuse,
+      'the selected COMMIT_RESULT record fails the kind-8 normalization');
+    if (!sameEvidence(normalized, projection)) {
+      refuse('the selected COMMIT_RESULT record differs from its stored evidence projection');
+    }
   }
   if (!storedResultMatchesHold(projection, held)) {
     refuse('the selected historical hold is not identified by its generation commit result');
@@ -1551,10 +1596,12 @@ async function readBoundHold(storage, manifestRootKey) {
   if (candidateRaw === null || candidateRaw === undefined) {
     loadBoundHoldInvalid(`the candidate generation ${selector.candidateGeneration} is not stored`);
   }
+  // Change 1(e)-1(f): one locator context, and the located candidate key is the stored locator.
+  checkStoredLocators(selectedRaw, candidateRaw, locator, selector.candidateManifestKey, loadBoundHoldInvalid);
   // Change 1(g): both generations pass the base generation-facts reader.
   const selected = generationFactsFromStorage(selectedRaw, selector.generation, manifestRootKey);
   const candidate = generationFactsFromStorage(candidateRaw, selector.candidateGeneration, manifestRootKey);
-  // Change 1(e)-1(f): one locator context, and the located candidate key is the stored locator.
+  // The same 1(e)-1(f) on the keys 1(g) accepted (equal by construction to the keys checked above).
   const selectedLocator = decodeRecordKey(selected.manifestKey);
   if (!equal(selectedLocator.localContextId, locator.localContextId)) {
     loadBoundHoldInvalid('the candidate manifest key is in another locator context than the selected generation');
@@ -1888,14 +1935,22 @@ async function durableHeldEnvelope(storage, manifestRootKey, selectorBytes) {
   if (!equal(manifestKeyDigest(selector.candidateManifestKey), selector.candidateManifestKeyDigest)) {
     partial('the candidate manifest key digest is not the literal digest of the stored locator');
   }
-  // Change 1(d), 1(g): one point lookup per named generation, both through the base reader.
-  const selected = generationFactsFromStorage(
-    await storage.readGeneration(selector.generation), selector.generation, manifestRootKey,
-  );
-  const candidate = generationFactsFromStorage(
-    await storage.readGeneration(selector.candidateGeneration), selector.candidateGeneration, manifestRootKey,
-  );
-  // Change 1(e)-1(h).
+  // Change 1(d): one point lookup per named generation, in order; a named generation that is not
+  // stored fails before the next lookup, as at the base.
+  const selectedRaw = await storage.readGeneration(selector.generation);
+  if (selectedRaw === null || selectedRaw === undefined) {
+    partial(`the selector names generation ${selector.generation}, which is not stored`);
+  }
+  const candidateRaw = await storage.readGeneration(selector.candidateGeneration);
+  if (candidateRaw === null || candidateRaw === undefined) {
+    partial(`the selector names generation ${selector.candidateGeneration}, which is not stored`);
+  }
+  // Change 1(g), then 1(e)-1(f): on the reconcile path Change 5 keeps the base behaviour, so the base
+  // reader runs first and keeps its class (a candidate in another context is CONTEXT_MISMATCH there);
+  // the loader alone runs 1(e)-1(f) before 1(g) (checkStoredLocators).
+  const selected = generationFactsFromStorage(selectedRaw, selector.generation, manifestRootKey);
+  const candidate = generationFactsFromStorage(candidateRaw, selector.candidateGeneration, manifestRootKey);
+  // Change 1(e)-1(f) on the keys 1(g) accepted, then 1(h).
   const selectedLocator = decodeRecordKey(selected.manifestKey);
   if (!equal(selectedLocator.localContextId, locator.localContextId)) {
     partial('the candidate manifest key is in another locator context than the selected generation');

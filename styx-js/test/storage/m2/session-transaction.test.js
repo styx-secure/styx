@@ -3025,7 +3025,7 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
   describe('T3c: the CAPI-S017 reference round trip (Change 3)', () => {
     const REFS = [
       ['an ASCII reference', 'ref-ascii-0001'],
-      ['a non-ASCII reference', 'rif-rif-01-pi'],
+      ['a non-ASCII reference', 'rif-\u00e8-\u03c0-\u4e2d-01'],
       ['a reference with a leading U+FEFF', '\uFEFFref-bom-0001'],
       ['128 non-BMP characters (256 UTF-16 units)', '\u{1F600}'.repeat(128)],
     ];
@@ -3140,6 +3140,38 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
         expect(b).toEqual(a);
         expect(hex(lost.store.selector)).toBe(hex(retained.store.selector));
         expect(hex(lost.store.selectorEnvelope)).not.toBe(hex(retained.store.selectorEnvelope));
+      }
+    });
+
+    // r4 S3: the steps must carry the same payloads, not only the same kinds. The payloads are
+    // captured by a local wrapper, so the shared fake port stays unchanged. The two stores seal their
+    // selector under different envelopes by construction (asserted above), so the CAS member is
+    // compared with the envelope the store holds at that apply; every other member must be equal.
+    const capturePayloads = (store) => {
+      const seen = [];
+      const inner = store.apply;
+      store.apply = async (step) => {
+        let payload = step.payload;
+        if (payload !== null && typeof payload === 'object' && Object.hasOwn(payload, 'expectedSelectorBytes')) {
+          const cas = payload.expectedSelectorBytes;
+          const env = store.selectorEnvelope;
+          const same = cas === null ? env === null : env !== null && hex(cas) === hex(env);
+          payload = { ...payload, expectedSelectorBytes: same ? 'THE_STORED_ENVELOPE' : cas };
+        }
+        seen.push({ boundary: step.boundary, kind: step.kind, payload });
+        return inner(step);
+      };
+      return seen;
+    };
+    test.each(HOLD_ROWS)('%s: every applied step carries the same payload under all three outcomes', async (scenario) => {
+      for (const outcome of [M2_OUTCOME.COMMITTED, M2_OUTCOME.NOT_COMMITTED, M2_OUTCOME.INDETERMINATE]) {
+        const retained = await boundStore(scenario);
+        const lost = await boundStore(scenario);
+        const a = capturePayloads(retained.store);
+        const b = capturePayloads(lost.store);
+        await reconcileWith(retained.store, scenario, outcome, 'RETAINED');
+        await reconcileWith(lost.store, scenario, outcome, 'LOST');
+        expect([outcome, b]).toEqual([outcome, a]);
       }
     });
   });
@@ -3366,6 +3398,12 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
       ['1(h) a record key in another locator context (base keyed root first)', (store) => rekey(store, K14, encodeRecordKey({
         scope: 2, localContextId: bytesOf(32, 0x78), secureSessionIdentity: SESSION_ID, writeGeneration: NEW_GENERATION, recordKind: K14,
       }))],
+      ['1(h) a record key in another secure session (base keyed root first)', (store) => rekey(store, K14, encodeRecordKey({
+        scope: 2, localContextId: LOCAL, secureSessionIdentity: bytesOf(SESSION_ID.length, 0x79), writeGeneration: NEW_GENERATION, recordKind: K14,
+      }))],
+      ['1(h) a record key in another scope (base keyed root first)', (store) => rekey(store, K14, encodeRecordKey({
+        scope: 1, localContextId: LOCAL, secureSessionIdentity: null, writeGeneration: NEW_GENERATION, recordKind: K14,
+      }))],
       ['1(j) a selected historical hold whose generation stores no canonical commit result', (store) => {
         withHistoricalParent(store, SC);
         const old = store.generations.get(OLD_GENERATION);
@@ -3380,6 +3418,19 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
       }],
       ['2(e) a hold that does not rebuild its row-bound envelope', (store) => holdField(store, {
         operation: OPERATIONS.indexOf(OPERATIONS.find((o) => o !== mutationRow(SC).operation)) + 1,
+      })],
+      // r4 S3: more than one row-bound field of 2(e).
+      ['2(e) a hold that names another scenario', (store) => holdField(store, {
+        scenario: M2_TXN.SCENARIOS.indexOf(M2_TXN.SCENARIOS.find((s) => s !== SC)) + 1,
+      })],
+      ['2(e) a hold whose original API state is not the row one', (store) => holdField(store, {
+        originalApiState: holdRecordFor(SC).originalApiState === 1 ? 2 : 1,
+      })],
+      ['2(e) a hold whose expected success code is not the row one', (store) => holdField(store, {
+        expectedSuccessCode: holdRecordFor(SC).expectedSuccessCode === 1 ? 2 : 1,
+      })],
+      ['2(e) a hold whose expected state after is not the row one', (store) => holdField(store, {
+        expectedStateAfter: holdRecordFor(SC).expectedStateAfter === 1 ? 2 : 1,
       })],
       ['2(h) a component set digest that is not the held one', (store) => componentField(store, 'mutationSetDigest')],
       ['2(i) a component set reference that is not the held one', (store) => componentField(store, 'mutationSetReference')],
@@ -3454,6 +3505,16 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
         old.records = old.records.map((r) => (r.recordKind === K13 ? { ...r, recordKey: candidateKey(OLD_GENERATION, K13) } : r));
         return store;
       }],
+      // r4 S2: a canonical kind-8 record that fails the evidence normalization is a contradiction of
+      // the rule that reads it, never MALFORMED_INPUT or NONTERMINAL_NOT_COMMITTED.
+      ['2(g) a candidate COMMIT_RESULT record that is a non-terminal NOT_COMMITTED', (store) => {
+        const record = resultRecordOf(buildMutationEnvelope(envelopeInput(SC)), M2_OUTCOME.INDETERMINATE);
+        record.outcome = M2_OUTCOME.NOT_COMMITTED;
+        record.terminal = false;
+        return reencode(store, K8, encodePlaintext(K8, record));
+      }],
+      ['1(j) a selected historical commit result record that is a non-terminal NOT_COMMITTED',
+        (store) => historicalResult(store, (r) => { r.outcome = M2_OUTCOME.NOT_COMMITTED; r.terminal = false; })],
     ];
     const byLabel = new Map([...CASES, ...RECONCILE_EXTRA]);
     const KIND8 = ['operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference', 'candidateDigest',
@@ -3464,6 +3525,8 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
       ['1(j) a selected historical hold whose commit result plaintext names another mutation', 'PARTIAL_APPLICATION'],
       ['1(j) a selected historical commit result plaintext that differs from its projection', 'PARTIAL_APPLICATION'],
       ['1(k) a candidate whose binding profile does not hash to its session binding digest', 'PARTIAL_APPLICATION'],
+      ['2(g) a candidate COMMIT_RESULT record that is a non-terminal NOT_COMMITTED', 'EVIDENCE_MISMATCH'],
+      ['1(j) a selected historical commit result record that is a non-terminal NOT_COMMITTED', 'PARTIAL_APPLICATION'],
       ['2(h) a component set digest that is not the held one', 'EVIDENCE_MISMATCH'],
       ['2(i) a component set reference that is not the held one', 'EVIDENCE_MISMATCH'],
       ['2(j) an output row whose escrow carries no bytes', 'EVIDENCE_MISMATCH'],
@@ -3489,9 +3552,16 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
       ['1(h) a record stored under the key of another kind (base manifest reproduction first)', 'PARTIAL_APPLICATION'],
       ['1(h) a record stored under the key of another generation (base keyed root first)', 'PARTIAL_APPLICATION'],
       ['1(h) a record key in another locator context (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record key in another secure session (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record key in another scope (base keyed root first)', 'PARTIAL_APPLICATION'],
       ['1(j) a selected historical hold that names a later parent', 'PARTIAL_APPLICATION'],
       ['1(j) a selected historical hold stored under a key that does not derive its generation (base reader first)', 'PARTIAL_APPLICATION'],
       ['2(e) a hold that does not rebuild its row-bound envelope', 'INVALID_ENVELOPE'],
+      ['2(e) a hold that names another scenario', 'INVALID_ENVELOPE'],
+      // An earlier authority rule refuses this one before the envelope rebuild of 2(e).
+      ['2(e) a hold whose original API state is not the row one', 'PARTIAL_APPLICATION'],
+      ['2(e) a hold whose expected success code is not the row one', 'INVALID_ENVELOPE'],
+      ['2(e) a hold whose expected state after is not the row one', 'INVALID_ENVELOPE'],
       ['2(j) an escrow that is not the held output', 'EVIDENCE_MISMATCH'],
     ];
     async function reconcileRefusal(label) {
@@ -3510,6 +3580,31 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
 
     test.each(RECONCILE_BASE)('reconcile after memory loss (base regression): %s is %s and applies nothing', async (label, expected) => {
       expect(await reconcileRefusal(label)).toEqual({ code: expected, applied: 0, selectorSame: true, memory: null });
+    });
+
+    // r4 S4/M1: the loader checks 1(e)-1(f) on the stored manifest keys before 1(g) reads the
+    // generations, so a 1(f) contradiction is named even when the generation would also fail 1(g).
+    test('the loader names 1(f) before a 1(g) failure of the same candidate', async () => {
+      const { store } = await boundStore(SC);
+      const g = store.generations.get(NEW_GENERATION);
+      g.manifestKey = encodeManifestKey({
+        localContextId: LOCAL, scope: 2, secureSessionIdentity: SESSION_ID, writeGeneration: OLD_GENERATION,
+      });
+      g.keyedRoot = flip(g.keyedRoot);
+      store.memoryHold = null;
+      const error = await loadOf(store).then(() => null, (e) => e);
+      expect(error.code).toBe('BOUND_HOLD_INVALID');
+      expect(error.message).toMatch(/not the stored selector locator/);
+    });
+
+    test('the loader refuses the S2 normalization contradictions too', async () => {
+      for (const label of ['2(g) a candidate COMMIT_RESULT record that is a non-terminal NOT_COMMITTED',
+        '1(j) a selected historical commit result record that is a non-terminal NOT_COMMITTED']) {
+        const { store } = await boundStore(SC);
+        byLabel.get(label)(store);
+        store.memoryHold = null;
+        expect([label, await codeOf(loadOf(store))]).toEqual([label, 'BOUND_HOLD_INVALID']);
+      }
     });
 
     test('the loader refuses the two new historical contradictions too', async () => {
@@ -3556,6 +3651,36 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
         if (step.kind === 'REPLACE_SELECTOR') throw selectorPreconditionFailed();
       };
       const error = await reconcileWith(store, SC, M2_OUTCOME.NOT_COMMITTED, 'LOST').then(() => null, (e) => e);
+      expect(error.code).toBe('SELECTOR_PRECONDITION_FAILED');
+      const kinds = store.applied.slice(before).map((x) => x.kind);
+      expect(kinds).toContain('REPLACE_SELECTOR');
+      expect(kinds).not.toContain('CLEAR_CANDIDATE');
+      expect(store.generations.has(NEW_GENERATION)).toBe(true);
+    });
+
+    // r4 S3: the same re-seal with memory RETAINED.
+    test('with memory RETAINED the first apply is the same parent selector re-seal', async () => {
+      const retained = await boundStore(SC);
+      const lost = await boundStore(SC);
+      lost.store.memoryHold = null;
+      const r0 = retained.store.applied.length;
+      const l0 = lost.store.applied.length;
+      await reconcileWith(retained.store, SC, M2_OUTCOME.NOT_COMMITTED, 'RETAINED');
+      await reconcileWith(lost.store, SC, M2_OUTCOME.NOT_COMMITTED, 'LOST');
+      const kinds = retained.store.applied.slice(r0).map((x) => x.kind);
+      expect(kinds.slice(0, 2)).toEqual(['REPLACE_SELECTOR', 'CLEAR_CANDIDATE']);
+      expect(kinds).toEqual(lost.store.applied.slice(l0).map((x) => x.kind));
+      expect(hex(retained.store.selector)).toBe(hex(lost.store.selector));
+    });
+
+    test('with memory RETAINED a refused selector precondition leaves no CLEAR_CANDIDATE', async () => {
+      const { store } = await boundStore(SC);
+      const before = store.applied.length;
+      store.apply = async (step) => {
+        store.applied.push({ boundary: step.boundary, kind: step.kind });
+        if (step.kind === 'REPLACE_SELECTOR') throw selectorPreconditionFailed();
+      };
+      const error = await reconcileWith(store, SC, M2_OUTCOME.NOT_COMMITTED, 'RETAINED').then(() => null, (e) => e);
       expect(error.code).toBe('SELECTOR_PRECONDITION_FAILED');
       const kinds = store.applied.slice(before).map((x) => x.kind);
       expect(kinds).toContain('REPLACE_SELECTOR');
