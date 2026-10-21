@@ -23,6 +23,17 @@
 // it originates in (the section current when its transaction opened, or its read was issued), and a
 // kill point of a transaction is reported only while that section is the current one, so that a late
 // `complete` or request of an earlier section never lands in, or adds a kill point to, a later one.
+// Ownership first (cycle 4, review impl4 R4-4): every transaction, readonly ones included, belongs to the
+// section current when it was created; a read fault is injected, and its receipt, a read index or a
+// tamper recorded, only for a request of a transaction owned by the current armed section, in that
+// section's own trace. A request of an earlier section's transaction is never faulted.
+// Selector writes (cycle 4, R4-2): every `put` of a readwrite transaction, armed or not, is shown to
+// `state.onPut(value, section)` before it is issued, so that the harness can judge every selector put
+// on its own (obligation item 10), not only every public call.
+// Keep-alive (cycle 4, R4-1): `keepAlive(tx, until, ms)` keeps a transaction from auto-committing until
+// `until` settles (at most `ms`), by chaining harness reads of a key no port writes through the
+// uninstrumented `get`: they add no request index, kill point, read index or fault, and no write. A port
+// that calls commit() itself ends the chain at once (no request may follow commit()).
 const REQUEST_METHODS = ['put', 'add', 'delete', 'clear', 'get', 'getAll', 'getAllKeys', 'getKey', 'count', 'openCursor', 'openKeyCursor'];
 
 function tamper(value) {
@@ -41,7 +52,9 @@ const carriesBytes = (v) => (v instanceof Uint8Array ? v.length > 0 : (v instanc
 
 export function instrument({ hook, state }) {
   // state: { armed, section, fault, tamperAt, plan: { [txIndex]: lastRequestIndex }, trace: [], next: 0, reads: 0 }
-  const info = new WeakMap();
+  const info = new WeakMap(); // armed readwrite transaction -> { id, requests, trace, section }
+  const owner = new WeakMap(); // every transaction -> { section, trace, armed } at its creation
+  const rawGet = IDBObjectStore.prototype.get;
   const tampered = new WeakMap(); // request -> read index
   const resultGetter = Object.getOwnPropertyDescriptor(IDBRequest.prototype, 'result').get;
   Object.defineProperty(IDBRequest.prototype, 'result', {
@@ -57,6 +70,7 @@ export function instrument({ hook, state }) {
   const origTransaction = IDBDatabase.prototype.transaction;
   IDBDatabase.prototype.transaction = function transaction(...args) {
     const tx = origTransaction.apply(this, args);
+    owner.set(tx, { section: state.section, trace: state.trace, armed: state.armed });
     if (!state.armed || tx.mode !== 'readwrite') return tx;
     const id = state.next++;
     const { trace, section } = state;
@@ -79,24 +93,32 @@ export function instrument({ hook, state }) {
   };
   const READS = new Set(['get', 'getAll', 'getAllKeys', 'getKey', 'count', 'openCursor', 'openKeyCursor']);
   const readFault = () => state.armed && (state.fault === 'READ_FAIL' || state.fault === 'TAMPER');
+  // The transaction's owner when it is the current armed section (R4-4), null otherwise.
+  const currentOwner = (tx) => {
+    const o = owner.get(tx);
+    return o !== undefined && o.armed && state.armed && o.section === state.section ? o : null;
+  };
   for (const name of REQUEST_METHODS) {
     const orig = IDBObjectStore.prototype[name];
     if (typeof orig !== 'function') continue;
     IDBObjectStore.prototype[name] = function request(...args) {
       const mode = this.transaction.mode;
+      const mine = currentOwner(this.transaction);
       // Read faults reach every read request, whatever the transaction mode (B-CHR-CANON r1 C3): a port
-      // may read inside a readwrite transaction that writes nothing.
-      if (READS.has(name) && readFault() && state.fault === 'READ_FAIL') {
-        state.trace.push({ ev: 'FAULT', fault: 'READ_FAIL', op: name });
+      // may read inside a readwrite transaction that writes nothing. Only a request of a transaction of
+      // the current armed section is faulted, and the receipt goes to that section's trace (R4-4).
+      if (mine !== null && READS.has(name) && readFault() && state.fault === 'READ_FAIL') {
+        mine.trace.push({ ev: 'FAULT', fault: 'READ_FAIL', op: name });
         throw new DOMException('injected read failure', 'UnknownError');
       }
+      if (name === 'put' && mode === 'readwrite' && typeof state.onPut === 'function') state.onPut(args[0], owner.get(this.transaction)?.section ?? null);
       const t = info.get(this.transaction);
       if (t === undefined) {
         const r = orig.apply(this, args);
-        if (state.armed && mode === 'readonly') {
+        if (mine !== null && mode === 'readonly') {
           const k = state.reads++;
-          state.trace.push({ ev: 'READ', k, op: name });
-          if (state.fault === 'TAMPER' && (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1))) tampered.set(r, { k, trace: state.trace });
+          mine.trace.push({ ev: 'READ', k, op: name });
+          if (state.fault === 'TAMPER' && (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1))) tampered.set(r, { k, trace: mine.trace });
           hook(`R${k}`); // a readonly request boundary: right after request k was issued
         }
         return r;
@@ -121,4 +143,22 @@ export function instrument({ hook, state }) {
       return r;
     };
   }
+  const KEEP_ALIVE_KEY = 'styx-bchr-harness-keepalive';
+  function keepAlive(tx, until, ms) {
+    let stop = false;
+    const timer = setTimeout(() => { stop = true; }, ms);
+    const end = () => { stop = true; clearTimeout(timer); };
+    Promise.resolve(until).then(end, end);
+    let store;
+    try { store = tx.objectStore(tx.objectStoreNames[0]); } catch { end(); return; }
+    const ping = () => {
+      if (stop) return;
+      let r;
+      try { r = rawGet.call(store, KEEP_ALIVE_KEY); } catch { end(); return; } // committed, aborted or finished
+      r.onsuccess = ping;
+      r.onerror = (ev) => { ev.preventDefault?.(); ev.stopPropagation?.(); end(); };
+    };
+    ping();
+  }
+  return { keepAlive };
 }

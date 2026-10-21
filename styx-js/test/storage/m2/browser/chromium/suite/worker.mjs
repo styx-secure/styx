@@ -28,7 +28,13 @@ function tracked(target) {
   const worker = hex(crypto.getRandomValues(new Uint8Array(8)));
   const writes = [];
   const reads = [];
+  const puts = [];
   let seq = 0;
+  let putSeq = 0;
+  /** Every selector `put` request a port issues, one event each, in the section owning its transaction (R4-2). */
+  const notePut = (value, section) => {
+    for (const s of selectorEnvelopesIn(value)) puts.push({ token: `${worker}:put${putSeq++}`, section, ...s });
+  };
   const envelopeOf = (e) => (e instanceof Uint8Array && e.length > 0 ? { envelope: hex(e), nonce: hex(decodeEnvelope(e).nonce) } : null);
   const wrapper = {
     apply: (step) => {
@@ -76,9 +82,10 @@ function tracked(target) {
     return {
       reads: reads.filter((x) => x.section === section).map(({ envelope, nonce }) => ({ envelope, nonce })),
       writes: writes.filter((x) => x.section === section).map(({ token, status, envelope, nonce, expected }) => ({ token, status, envelope, nonce, expected })),
+      puts: puts.filter((x) => x.section === section).map(({ token, envelope, nonce }) => ({ token, envelope, nonce })),
     };
   }
-  return { port: wrapper, observe };
+  return { port: wrapper, observe, notePut };
 }
 
 const params = new URL(self.location.href).searchParams;
@@ -90,20 +97,37 @@ const LOCK_NAME = 'styx-m2-bchr-suite-writer';
 const API = { EMPTY: 1, ACTIVE: 2 };
 const K = M2_KIND;
 const hex = (b) => (b === null || b === undefined ? null : Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join(''));
-const state = { armed: false, section: 0, fault: null, tamperAt: null, plan: {}, trace: [], probes: [], next: 0, reads: 0, faulted: false, onOpen: null };
+const state = { armed: false, section: 0, fault: null, tamperAt: null, plan: {}, trace: [], probes: [], pending: [], next: 0, reads: 0, faulted: false, onOpen: null, onPut: null };
 const hook = (point, data = null) => {
   const x = new XMLHttpRequest();
   x.open('GET', `/hook?p=${encodeURIComponent(point)}${data === null ? '' : `&d=${encodeURIComponent(JSON.stringify(data))}`}`, false);
   x.send();
 };
-instrument({ hook: (p, d) => { if (state.armed) hook(p, d); }, state });
+const { keepAlive } = instrument({ hook: (p, d) => { if (state.armed) hook(p, d); }, state });
+
+/**
+ * Every selector envelope inside a value a port puts (cycle 4, review impl4 R4-2): the C-FMT envelope of
+ * record kind GENERATION_SELECTOR, wherever the port's layout places it in the value. Port-neutral: it
+ * depends on the frozen envelope format only, never on a store key.
+ */
+function selectorEnvelopesIn(v, out = [], depth = 0) {
+  if (depth > 4 || v === null || v === undefined) return out;
+  if (v instanceof ArrayBuffer) return selectorEnvelopesIn(new Uint8Array(v), out, depth);
+  if (v instanceof Uint8Array) {
+    try { const e = decodeEnvelope(v); if (e.recordKind === K.GENERATION_SELECTOR) out.push({ envelope: hex(v), nonce: hex(e.nonce) }); } catch { /* not an envelope */ }
+    return out;
+  }
+  if (Array.isArray(v)) { for (const x of v) selectorEnvelopesIn(x, out, depth + 1); return out; }
+  if (typeof v === 'object') for (const x of Object.values(v)) selectorEnvelopesIn(x, out, depth + 1);
+  return out;
+}
 
 let db = null;
 let port = null;
 let tracker = null;
 let lock = null;
 /** Install the port behind the observing wrapper. */
-function install(p) { tracker = tracked(p); port = tracker.port; }
+function install(p) { tracker = tracked(p); port = tracker.port; state.onPut = tracker.notePut; }
 
 async function init({ dbName }) {
   // Harness-owned Web Lock (no product lock claim, act §1 non-claims): it shows that the lock of a dead
@@ -335,12 +359,19 @@ async function close(r) {
 // Each answer is recorded in the section that opened the transaction (cycle 3, R3-7). Only an answer that
 // arrived before `complete` (late: false) says anything about the hold while the transaction ran; a late
 // answer is coverage at most (review impl3 R3-4).
+// Timing (cycle 4, review impl4 R4-1): a port may sample its hold at once and answer later. The harness
+// keeps the probed transaction from auto-committing until the answer arrives (bounded by
+// HOLD_PROBE_KEEPALIVE_MS, harness reads only: no request index, kill point, fault or write), so an answer
+// to a port that does not call commit() itself always arrives before `complete`. Only such an answer can
+// prove an early hold; an answer that still arrives after `complete` (the port committed, or the bound
+// elapsed) is insufficient observation, which the run reports apart from port failures.
+const HOLD_PROBE_KEEPALIVE_MS = 5000;
 function holdProbe(id, tx) {
   let done = false;
   const { probes, trace } = state;
   tx.addEventListener('complete', () => { done = true; });
   tx.addEventListener('abort', () => { done = true; });
-  Promise.resolve()
+  const answer = Promise.resolve()
     .then(() => port.readMemoryHold())
     .then((h) => {
       probes.push({ tx: id, late: done, held: h !== null });
@@ -349,6 +380,7 @@ function holdProbe(id, tx) {
       probes.push({ tx: id, late: true, error: String(e?.code ?? e?.message ?? e) });
       trace.push({ ev: 'HOLD_PROBE_FAILED', tx: id, error: String(e?.code ?? e?.message ?? e) });
     });
+  keepAlive(tx, answer, HOLD_PROBE_KEEPALIVE_MS);
 }
 
 /**
@@ -409,7 +441,7 @@ async function reconcile({ scenario, outcome, parent = null, generation = '2', o
     produced = p.ok;
     if (produced === null) {
       state.onOpen = null;
-      return { result: null, error: null, trace: [], reads: 0, probes: [], selectors: { reads: [], writes: [] }, producer, produced: null, reconciled: false };
+      return { result: null, error: null, trace: [], reads: 0, probes: [], selectors: { reads: [], writes: [], puts: [] }, producer, produced: null, reconciled: false };
     }
     arm(caller ?? {});
     state.onOpen = holdProbe;

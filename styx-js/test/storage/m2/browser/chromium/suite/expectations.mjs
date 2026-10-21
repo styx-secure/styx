@@ -70,7 +70,7 @@ export const CITE = Object.freeze({
   MEMORY_HOLD: 'B-CHR obligation v2 item 6 and C-MUT §5 (a terminal COMMITTED or NOT_COMMITTED leaves no hold; INDETERMINATE retains exactly one hold, in SS memory after the binding write completed)',
   PRODUCER_NOT_COMMITTED: 'B-CHR obligation v2 item 13 (an RR selector that keeps the exact parent tuple and binds exactly this candidate gives NOT_COMMITTED, terminal) with A(1)-A(6); C-MUT §6 (matching terminal NOT_COMMITTED discards candidate and escrow)',
   PRODUCER_UNAVAILABLE: 'B-CHR obligation v2 item 13 (a readback that cannot be performed gives evidence INDETERMINATE, authenticatedByRS, hence CAPI-S024); C-MUT §6 (continued INDETERMINATE leaves the hold logically unchanged)',
-  PRODUCER_NO_HOLD: 'B-CHR obligation v2 item 13 (identity fields are copied, none invented: with no readable hold no evidence can be produced) and C-REST §9 (fail closed, bytes preserved, nothing emitted)',
+  PRODUCER_NO_HOLD: 'B-CHR obligation v2 item 13 (identity fields are copied, none invented: with no readable hold no evidence can be produced), C-API failure code HOLD_UNAVAILABLE (src/storage/m2/session-transaction.js CODE.HOLD_UNAVAILABLE) and C-REST §9 (fail closed, bytes preserved, nothing emitted)',
   PRODUCER_TAMPER: 'B-CHR obligation v2 items 12 and 13 (only authenticated plaintext is used; an authenticated contradiction or an authentication failure is a fail-closed error, never S024); C-REST §9',
   PRODUCER_VERIFY: 'B-CHR obligation v2 item 12 (only AEAD-verified, canonically re-encoded plaintext is returned) with the I-RESTART port error obligation (a verification failure carries AUTHENTICATION_FAILED, CONTEXT_MISMATCH, MALFORMED_INPUT or UNSUPPORTED_VALUE)',
   FAULT_RECEIPT: 'contract #463 Observable outcome item 4 (every fault cell requires a receipt that the fault reached a producer read)',
@@ -250,7 +250,10 @@ export function checkRestartReconcile(cell, pre, response, rb, repeat) {
  * before that transaction's completion, and every such answer reports the hold the operation started with
  * (`expectedHoldAtOpen`). An answer that arrived after the completion is coverage only: it says nothing about
  * the hold while the transaction ran, so it is never compared (review impl3 R3-4). "Could not observe in
- * time" is a failure, never a pass.
+ * time" is never a pass: since cycle 4 (review impl4 R4-1) it is reported apart, as an entry marked
+ * `unobserved: true` that the run counts separately from port failures (a correct port that samples its
+ * hold at once and answers late is not rejected); only a timely answer reporting the wrong hold is a port
+ * failure.
  */
 export function checkProbeCoverage(cell, response, { earlyHoldAsserts = true, expectedHoldAtOpen = false } = {}) {
   const f = [];
@@ -258,12 +261,12 @@ export function checkProbeCoverage(cell, response, { earlyHoldAsserts = true, ex
   const probes = response?.probes ?? [];
   for (const tx of txs) {
     const answers = probes.filter((p) => p.tx === tx);
-    if (answers.length === 0) { f.push({ what: `${cell}: the memory-hold probe of transaction T${tx} was observed (no answer by the operation's return)`, cite: CITE.NO_EARLY_HOLD }); continue; }
+    if (answers.length === 0) { f.push({ unobserved: true, what: `${cell}: the memory-hold probe of transaction T${tx} was not answered by the operation's return (insufficient observation)`, cite: CITE.NO_EARLY_HOLD }); continue; }
     if (answers.some((a) => a.error !== undefined)) f.push({ what: `${cell}: the memory-hold probe of T${tx} answered with the port's hold (${answers.find((a) => a.error !== undefined).error})`, cite: CITE.NO_EARLY_HOLD });
     if (!earlyHoldAsserts) continue;
     const timely = answers.filter((a) => a.error === undefined && a.late === false);
     if (timely.length === 0) {
-      f.push({ what: `${cell}: the memory-hold probe of T${tx} was answered before the transaction completed (a later answer proves nothing about the hold while it ran)`, cite: CITE.NO_EARLY_HOLD });
+      if (answers.some((a) => a.error === undefined)) f.push({ unobserved: true, what: `${cell}: the memory-hold probe of T${tx} was answered only after the transaction completed (insufficient observation, not a proven hold)`, cite: CITE.NO_EARLY_HOLD });
       continue;
     }
     const wrong = timely.find((a) => a.held !== expectedHoldAtOpen);
@@ -361,7 +364,10 @@ export function checkProducer(kind, pre, response, rb, { memoryHold = false } = 
       break value;
     }
     if (kind === 'READ_FAIL_LOST') {
-      want(response.produced === null && producerError !== null, `READ_FAIL_LOST: the producer fails closed (got ${response.result?.reconciliation ?? JSON.stringify(response.produced)})`, CITE.PRODUCER_NO_HOLD);
+      // The required code (cycle 4, review impl4 R4-3): with no readable hold the producer answers the
+      // frozen API's HOLD_UNAVAILABLE (session-transaction CODE.HOLD_UNAVAILABLE), no other code.
+      want(response.produced === null && producerError?.code === 'HOLD_UNAVAILABLE',
+        `READ_FAIL_LOST: the producer fails closed with HOLD_UNAVAILABLE (got ${response.result?.reconciliation ?? JSON.stringify(response.produced)} ${producerError?.code ?? ''})`, CITE.PRODUCER_NO_HOLD);
     } else {
       want(response.produced === null && VERIFY_CODES.includes(producerError?.code),
         `${kind}: the producer fails closed with a verification code before any evidence, never S024 (got ${response.result?.reconciliation ?? producerError?.code ?? ''})`, CITE.PRODUCER_VERIFY);
@@ -408,6 +414,7 @@ export function checkDelayedWriter(point, response, before, after) {
 export function nonceBook() {
   const byNonce = new Map();
   const byEnvelope = new Map();
+  const putEnvelopes = new Map();
   const tokens = new Set();
   const f = [];
   const noteNonce = (sel) => {
@@ -430,10 +437,24 @@ export function nonceBook() {
       else byEnvelope.set(w.envelope, w.token);
       if (w.expected !== null && w.expected === w.envelope) f.push({ what: `selector write ${w.token} left the stored envelope unchanged`, cite: CITE.FRESH_NONCE });
     },
-    /** Everything a worker response observed: `{ reads, writes }`. */
+    /**
+     * One selector `put` request (cycle 4, review impl4 R4-2): every put is its own write event, so two
+     * puts of one envelope, in one transaction or in two, reuse a nonce under the selector key.
+     */
+    addPut(p) {
+      if (!p?.token || tokens.has(p.token)) return;
+      tokens.add(p.token);
+      if (!p.envelope || !p.nonce) return;
+      noteNonce(p);
+      const other = putEnvelopes.get(p.envelope);
+      if (other !== undefined) f.push({ what: `selector puts ${other} and ${p.token} wrote the same envelope (a reused nonce)`, cite: CITE.FRESH_NONCE });
+      else putEnvelopes.set(p.envelope, p.token);
+    },
+    /** Everything a worker response observed: `{ reads, writes, puts }`. */
     addObserved(selectors) {
       for (const s of selectors?.reads ?? []) this.add(s);
       for (const w of selectors?.writes ?? []) this.addWrite(w);
+      for (const p of selectors?.puts ?? []) this.addPut(p);
     },
     failures: () => f,
   };

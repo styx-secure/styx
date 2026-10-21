@@ -156,6 +156,24 @@ async function withCell(id, fn) {
 }
 // launch(): the context is registered as soon as it exists and closed if initialization fails, or if its
 // cell was cancelled while the launch was in flight (R3-8).
+// Navigation (cycle 4, harness stabilization): on the shared heavy-validation runner the suite runs at
+// nice 19 and idle I/O priority, so a fresh browser profile can take longer than Playwright's default 30 s
+// to load the static suite page (cycle 3 full run 1 stopped on such a `page.goto` timeout after 669 runs
+// with 0 failures). The navigation gets a longer bound, and a navigation that times out is retried, at
+// most NAVIGATION_RETRIES times: only `page.goto` itself, before the worker starts, never an RPC or an
+// assertion. Every retry is counted in the aggregate.
+const NAVIGATION_TIMEOUT_MS = 120000;
+const NAVIGATION_RETRIES = 2;
+let navigationRetries = 0;
+async function navigate(page, url) {
+  for (let attempt = 0; ; attempt++) {
+    try { await page.goto(url, { timeout: NAVIGATION_TIMEOUT_MS }); return; } catch (e) {
+      if (attempt >= NAVIGATION_RETRIES || e?.name !== 'TimeoutError') throw e;
+      navigationRetries += 1;
+      log(`    [harness] page.goto timed out after ${NAVIGATION_TIMEOUT_MS} ms; navigation retry ${attempt + 1} of ${NAVIGATION_RETRIES}`);
+    }
+  }
+}
 async function launchBody(owner) {
   if (owner.cancelled) throw new Error(`cell ${owner.id} was cancelled: no further context is launched`);
   const launching = engine.launchPersistentContext(PROFILE, {
@@ -176,8 +194,8 @@ async function launchBody(owner) {
   }
   const page = ctx.pages()[0] ?? await ctx.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('404')) log(`    [console.error] ${m.text()}`); });
-  await page.goto(`${ORIGIN}/?factory=${encodeURIComponent(factory)}`);
-  await page.waitForFunction(() => window.bchrReady === true);
+  await navigate(page, `${ORIGIN}/?factory=${encodeURIComponent(factory)}`);
+  await page.waitForFunction(() => window.bchrReady === true, null, { timeout: NAVIGATION_TIMEOUT_MS });
   await page.evaluate(() => window.bchr.start());
   const init = await call(page, 'init', { dbName: DB_NAME });
   if (NONE_HOLD === null) NONE_HOLD = init.noneHoldEncodable;
@@ -217,9 +235,21 @@ function addSelectorsOf(book, ...calls) {
 }
 
 // ---- results ----------------------------------------------------------------------------------------
-const tally = { cells: 0, runs: 0, kills: 0, notKilled: 0, failures: 0 };
+const tally = { cells: 0, runs: 0, kills: 0, notKilled: 0, failures: 0, unobserved: 0 };
+/**
+ * One run's entry. A failure marked `unobserved` (the memory-hold probe could not observe in time, review
+ * impl4 R4-1) is insufficient observation, not a port failure: it is counted, logged and kept apart, and
+ * it keeps the verdict from PASS without making it FAIL.
+ */
 function record(entry) {
   tally.runs += 1;
+  const unobserved = entry.failures.filter((f) => f.unobserved === true);
+  entry.failures = entry.failures.filter((f) => f.unobserved !== true);
+  if (unobserved.length > 0) {
+    entry.unobserved = unobserved;
+    tally.unobserved += unobserved.length;
+    for (const f of unobserved) log(`  UNOBSERVED ${entry.id}: ${f.what}`);
+  }
   if (entry.failures.length > 0) {
     tally.failures += entry.failures.length;
     for (const f of entry.failures) log(`  FAIL ${entry.id}: ${f.what}\n       [${f.cite}]`);
@@ -635,8 +665,18 @@ try {
   log(`HARNESS ERROR: ${crashed}`);
 }
 server.close();
-const verdict = crashed !== null || tally.failures > 0 || tally.notKilled > 0 ? 'FAIL' : (SMOKE ? 'INCOMPLETE' : 'PASS');
-const aggregate = { browser: browserName, factory, smoke: SMOKE, ...tally, noneHoldEncodable: NONE_HOLD, maxProcs, seconds: Math.round((Date.now() - t0) / 1000), harnessError: crashed, verdict };
+// The report tells the classes apart (cycle 4): a harness error (the launcher or the browser failed,
+// e.g. a navigation timeout), assertion failures (the port under test violated an expectation),
+// undelivered kills, and insufficient probe observation.
+const harnessErrorKind = crashed === null ? null
+  : (/page\.goto|navigation|Navigation/.test(crashed) ? 'NAVIGATION' : (/rpc \S+ timed out/.test(crashed) ? 'RPC_TIMEOUT' : (/exceeded 900 s/.test(crashed) ? 'CELL_WATCHDOG' : 'OTHER')));
+const failureClasses = [
+  ...(crashed !== null ? ['HARNESS_ERROR'] : []), ...(tally.failures > 0 ? ['ASSERTION'] : []),
+  ...(tally.notKilled > 0 ? ['NOT_KILLED'] : []), ...(tally.unobserved > 0 ? ['UNOBSERVED'] : []),
+];
+const verdict = crashed !== null || tally.failures > 0 || tally.notKilled > 0 ? 'FAIL'
+  : (SMOKE || tally.unobserved > 0 ? 'INCOMPLETE' : 'PASS');
+const aggregate = { browser: browserName, factory, smoke: SMOKE, ...tally, noneHoldEncodable: NONE_HOLD, maxProcs, navigationRetries, seconds: Math.round((Date.now() - t0) / 1000), harnessError: crashed, harnessErrorKind, failureClasses, verdict };
 fs.writeFileSync(path.join(OUT, 'AGGREGATE.json'), `${JSON.stringify(aggregate, null, 2)}\n`);
 log(`# AGGREGATE ${JSON.stringify(aggregate)}`);
 process.exit(verdict === 'PASS' ? 0 : 1);
