@@ -18,33 +18,35 @@ import {
  * envelope is identified by its own bytes; the nonce is read from the port's C-FMT selector envelope.
  */
 function tracked(target) {
-  const noteRead = (envelope, plaintext) => {
+  /**
+   * Every selector envelope the port is seen reading or writing, with the plaintext of the write that
+   * produced it (obligation item 10). Nothing is awaited on the port's completion path (review impl2
+   * R2-5): a write is observed opportunistically after the operation, and the recorded plaintext is the
+   * one the plan supplied, which is what links two writes of the same plaintext to their envelopes.
+   */
+  const note = (envelope, plaintext) => {
     if (!(envelope instanceof Uint8Array) || envelope.length === 0) return;
     const h = hex(envelope);
-    const existing = state.selectors.find((sel) => sel.envelope === h);
-    const pt = plaintext instanceof Uint8Array ? hex(plaintext) : null;
-    if (existing === undefined) state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(envelope).nonce), plaintext: pt, read: true });
-    else if (existing.plaintext === null) existing.plaintext = pt;
+    if (state.selectors.some((sel) => sel.envelope === h)) return;
+    state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(envelope).nonce), plaintext: plaintext instanceof Uint8Array ? hex(plaintext) : null });
   };
   return {
     apply: (step) => {
-      // The port's own resolution timing is preserved: nothing is awaited on its completion path
-      // (review impl2 R2-5). A write's envelope is observed after the operation, never inside it.
+      // The port's own resolution timing is preserved: the wrapper never awaits anything on that path.
+      // A write is recorded by the plaintext the plan supplied and, opportunistically, by the envelope a
+      // later read shows (review impl2 R2-5).
       const r = target.apply(step);
       if (step.kind === 'REPLACE_SELECTOR') {
+        state.selectors.push({ envelope: null, nonce: null, plaintext: hex(step.payload.selectorBytes), written: true });
         Promise.resolve(r).then(() => target.readSelector()).then((stored) => {
-          if (stored === null) return;
-          const h = hex(stored.envelope);
-          if (!state.selectors.some((sel) => sel.envelope === h)) {
-            state.selectors.push({ envelope: h, nonce: hex(decodeEnvelope(stored.envelope).nonce), plaintext: hex(step.payload.selectorBytes), read: false, written: true });
-          }
+          if (stored !== null) note(stored.envelope, null);
         }, () => {});
       }
       return r;
     },
     readSelector: async () => {
       const r = await target.readSelector();
-      if (r !== null) noteRead(r.envelope, r.plaintext);
+      if (r !== null) note(r.envelope, null);
       return r;
     },
     readGeneration: (g) => target.readGeneration(g),

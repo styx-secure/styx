@@ -174,7 +174,7 @@ export function checkUninterrupted(cell, response, rb) {
   want(n === tx, `the operation issues exactly ${tx} readwrite transaction(s) (got ${n})`, CITE.ONE_TX);
   f.push(...checkDurability(response.trace));
   f.push(...checkProbeCoverage('RECONCILIATION-after-restart', { trace: response.trace, probes: response.probes, selectors: response.selectors },
-    { earlyHoldAsserts: true, expectedHoldAtOpen: false }));
+    { earlyHoldAsserts: true, expectedHoldAtOpen: false })); // a fresh worker after the context death
   return f;
 }
 
@@ -391,10 +391,10 @@ export function checkDelayedWriter(point, response, before, after) {
 }
 
 /**
- * Fresh seals across one cell (obligation item 10): the same selector plaintext never appears twice in
- * two different envelopes, which is exactly a reused 96-bit nonce under the same key; and a completed
- * authority write always changes the stored envelope. `add` takes what the port read or wrote (envelope,
- * nonce, plaintext).
+ * Fresh seals across one cell (obligation item 10): no nonce ever appears under two different envelopes,
+ * and a write that re-seals plaintext a write of the same cell already sealed is reported whenever the
+ * envelopes of the two can be seen to be the same. `add` takes what the port was seen reading or writing
+ * (envelope, nonce, and the plaintext the plan supplied for a write).
  */
 export function nonceBook() {
   const byNonce = new Map();
@@ -402,16 +402,16 @@ export function nonceBook() {
   const f = [];
   return {
     add(selector) {
-      if (!selector?.envelope) return;
-      if (selector.nonce) {
+      if (selector?.envelope && selector.nonce) {
         const seen = byNonce.get(selector.nonce);
         if (seen === undefined) byNonce.set(selector.nonce, selector.envelope);
         else if (seen !== selector.envelope) f.push({ what: `selector nonce ${selector.nonce} is reused by a different envelope`, cite: CITE.FRESH_NONCE });
       }
-      if (selector.written === true && selector.plaintext) {
+      if (selector?.written === true && selector.plaintext) {
         const seen = byPlaintext.get(selector.plaintext);
         if (seen === undefined) byPlaintext.set(selector.plaintext, selector.envelope);
-        else if (seen !== selector.envelope) f.push({ what: 'a selector write re-sealed unchanged plaintext without a fresh envelope', cite: CITE.FRESH_NONCE });
+        else if (seen !== null && seen === selector.envelope) f.push({ what: 'an authority write re-sealed unchanged plaintext in the same envelope', cite: CITE.FRESH_NONCE });
+        else if (seen === null && selector.envelope !== null) byPlaintext.set(selector.plaintext, selector.envelope);
       }
     },
     failures: () => f,

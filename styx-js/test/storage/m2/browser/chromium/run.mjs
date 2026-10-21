@@ -547,7 +547,7 @@ async function nextCell(row, outcome) {
   d.numbers = Array.isArray(old.numbers) ? old.numbers.join(',') : JSON.stringify(old.numbers);
   // Item 10 over every write of this cell: setup, the next mutation and the restart reconciliation.
   addSelectorsOf(nonces, ...setupCalls, d.next, d.recon);
-  for (const rb of [baseRb, d.nextRb, d.reconRb, old, d.pre]) nonces.add(rb?.selector);
+  for (const rb of [baseRb, d.nextRb, d.reconRb, old, d.pre]) if (rb !== undefined) nonces.add(rb.selector);
   await closeHard(ctx);
   openContexts.delete(ctx);
   record({ id: `${row}/KIND13/NEXT_${outcome}`, row, next, phase: 'KIND13', response: d.next.result?.commitOutcome ?? d.next.error?.code,
