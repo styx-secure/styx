@@ -3331,6 +3331,33 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
           o.candidateManifestKeyDigest = manifestKeyDigest(other);
         });
       }],
+      // 1(f): a complete, re-rooted candidate under another session identity of the same context,
+      // while the selector keeps its own locator. validateAuthority would refuse the same mismatch
+      // through the literal locator digest, so only the class, not a new outcome, is claimed.
+      ['1(f) a located candidate manifest key that is not the stored selector locator', (store) => {
+        const g = store.generations.get(NEW_GENERATION);
+        const otherSession = bytesOf(32, 0x43);
+        const records = g.records.map((r) => ({
+          ...r,
+          recordKey: encodeRecordKey({
+            scope: 2, localContextId: LOCAL, secureSessionIdentity: otherSession, writeGeneration: NEW_GENERATION,
+            recordKind: r.recordKind,
+          }),
+        })).sort((a, b) => Buffer.compare(Buffer.from(a.recordKey), Buffer.from(b.recordKey)));
+        const manifestKey = encodeManifestKey({
+          localContextId: LOCAL, scope: 2, secureSessionIdentity: otherSession, writeGeneration: NEW_GENERATION,
+        });
+        const manifestBytes = encodeManifest(records.map((r) => manifestEntry({
+          recordKey: r.recordKey,
+          recordKind: r.recordKind,
+          ciphertextDigest: ciphertextDigest({
+            recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag,
+          }),
+        })));
+        const keyedRoot = computeKeyedRoot({ manifestRootKey: ROOT_KEY, manifestKey, generation: NEW_GENERATION, manifestBytes });
+        store.generations.set(NEW_GENERATION, { ...g, records, manifestKey, manifestBytes, keyedRoot });
+        return rewriteSelector(store, (o) => { o.candidateKeyedRoot = keyedRoot; });
+      }],
       // The three record-key legs of 1(h) cannot be re-sealed: the manifest entry builder and the
       // keyed root refuse the same contradiction first, so the base reader is the validator that
       // catches them here and no later failure is claimed.
@@ -3403,6 +3430,107 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
       read.mockClear();
       expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
       expect(read).not.toHaveBeenCalled();
+    });
+
+    // T3, reconcile path (Change 5): the same contradictions reach `reconcileIndeterminate` with the
+    // memory hold dropped. Each refusal applies nothing and carries its named class; a canonical
+    // tombstone counts as an absent record (owner reading of Change 5, accepted 2026-10-21).
+    const historicalResult = (store, tweak) => {
+      withHistoricalParent(store, SC);
+      const old = store.generations.get(OLD_GENERATION);
+      const record = resultRecordOf(buildMutationEnvelope(envelopeInput(SC)), M2_OUTCOME.COMMITTED);
+      tweak(record);
+      old.records = old.records.map((r) => (r.recordKind === K8 ? { ...r, plaintext: encodePlaintext(K8, record) } : r));
+      return store;
+    };
+    const RECONCILE_EXTRA = [
+      ['1(j) a selected historical hold whose commit result plaintext names another mutation',
+        (store) => historicalResult(store, (r) => { r.operationIdentity = flip(r.operationIdentity); })],
+      ['1(j) a selected historical commit result plaintext that differs from its projection',
+        (store) => historicalResult(store, (r) => { r.terminal = !r.terminal; })],
+      ['1(j) a selected historical hold stored under a key that does not derive its generation (base reader first)', (store) => {
+        withHistoricalParent(store, SC);
+        const old = store.generations.get(OLD_GENERATION);
+        old.records = old.records.map((r) => (r.recordKind === K13 ? { ...r, recordKey: candidateKey(OLD_GENERATION, K13) } : r));
+        return store;
+      }],
+    ];
+    const byLabel = new Map([...CASES, ...RECONCILE_EXTRA]);
+    const KIND8 = ['operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference', 'candidateDigest',
+      'candidateReference', 'mutationSetDigest', 'mutationSetReference', 'expectedOriginalState',
+      'bindingRef', 'profileDigest', 'outcome', 'authenticatedByRS', 'terminal'].map((f) => `2(g) the kind-8 normalization member ${f}`);
+    // New behaviour: each of these reconciles at the base (bite evidence in the I-RESTART battery).
+    const RECONCILE_NEW = [
+      ['1(j) a selected historical hold whose commit result plaintext names another mutation', 'PARTIAL_APPLICATION'],
+      ['1(j) a selected historical commit result plaintext that differs from its projection', 'PARTIAL_APPLICATION'],
+      ['1(k) a candidate whose binding profile does not hash to its session binding digest', 'PARTIAL_APPLICATION'],
+      ['2(h) a component set digest that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(i) a component set reference that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(j) an output row whose escrow carries no bytes', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record operation identity that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record candidate digest that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record candidate reference that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record mutation set digest that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record mutation set reference that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(l) an escrow record kind that is not the held output kind', 'EVIDENCE_MISMATCH'],
+      ['2(m) escrow record bytes that are not the escrow projection bytes', 'EVIDENCE_MISMATCH'],
+      ...KIND8.map((label) => [label, 'EVIDENCE_MISMATCH']),
+    ];
+    // Regression of base behaviour: an earlier base validator (selector codec, base reader, keyed
+    // root, validateAuthority, envelopeFromHold, storedEscrowMatchesHold) already refuses the same
+    // contradiction with the same class, so no later I-RESTART failure is claimed.
+    const RECONCILE_BASE = [
+      ['1(a) a stored selector that is ACTIVE, not RECONCILIATION_REQUIRED', 'NO_RECONCILIATION_PENDING'],
+      ['1(b) a candidate locator of another record kind (refused by the selector codec first)', 'PARTIAL_APPLICATION'],
+      ['1(c) a locator whose digest is not its own (refused by the selector codec first)', 'PARTIAL_APPLICATION'],
+      ['1(d) a candidate generation that is not stored', 'PARTIAL_APPLICATION'],
+      ['1(e) a candidate locator in another context', 'CONTEXT_MISMATCH'],
+      ['1(f) a located candidate manifest key that is not the stored selector locator', 'PARTIAL_APPLICATION'],
+      ['1(h) a record stored under the key of another kind (base manifest reproduction first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record stored under the key of another generation (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record key in another locator context (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(j) a selected historical hold that names a later parent', 'PARTIAL_APPLICATION'],
+      ['1(j) a selected historical hold stored under a key that does not derive its generation (base reader first)', 'PARTIAL_APPLICATION'],
+      ['2(e) a hold that does not rebuild its row-bound envelope', 'INVALID_ENVELOPE'],
+      ['2(j) an escrow that is not the held output', 'EVIDENCE_MISMATCH'],
+    ];
+    async function reconcileRefusal(label) {
+      const { store } = await boundStore(SC);
+      byLabel.get(label)(store);
+      store.memoryHold = null;
+      const appliedBefore = store.applied.length;
+      const selectorBefore = hex(store.selector);
+      const code = await codeOf(reconcileWith(store, SC, M2_OUTCOME.COMMITTED, 'LOST'));
+      return { code, applied: store.applied.length - appliedBefore, selectorSame: hex(store.selector) === selectorBefore, memory: store.memoryHold };
+    }
+
+    test.each(RECONCILE_NEW)('reconcile after memory loss: %s is %s and applies nothing', async (label, expected) => {
+      expect(await reconcileRefusal(label)).toEqual({ code: expected, applied: 0, selectorSame: true, memory: null });
+    });
+
+    test.each(RECONCILE_BASE)('reconcile after memory loss (base regression): %s is %s and applies nothing', async (label, expected) => {
+      expect(await reconcileRefusal(label)).toEqual({ code: expected, applied: 0, selectorSame: true, memory: null });
+    });
+
+    test('the loader refuses the two new historical contradictions too', async () => {
+      for (const [label] of RECONCILE_EXTRA) {
+        const { store } = await boundStore(SC);
+        byLabel.get(label)(store);
+        store.memoryHold = null;
+        expect([label, await codeOf(loadOf(store))]).toEqual([label, 'BOUND_HOLD_INVALID']);
+      }
+    });
+
+    test('a canonical kind-8 tombstone beside a selected historical hold is an absent record on the reconcile path only', async () => {
+      const make = async () => {
+        const { store } = await boundStore(SC);
+        byLabel.get('1(j) a selected historical hold whose generation stores no canonical commit result')(store);
+        store.memoryHold = null;
+        return store;
+      };
+      expect(await codeOf(loadOf(await make()))).toBe('BOUND_HOLD_INVALID');
+      const result = await reconcileWith(await make(), SC, M2_OUTCOME.COMMITTED, 'LOST');
+      expect(result).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', resultKind: 'SUCCESS' });
     });
   });
 
