@@ -12,12 +12,12 @@ export const PHASES = Object.freeze(['ORIGINAL', 'RECONCILIATION']);
 export const KILL_KINDS = Object.freeze(['BROWSER', 'RENDERER', 'COMMIT_SENT']);
 /** The fixed T9 cells per row, in run order. */
 export const T9_CELLS = Object.freeze([
-  'CONTRADICT_RR_PARENT', 'CONTRADICT_RR_CANDIDATE', 'CONTRADICT_COMMITTED', 'CONTRADICT_RESULT', 'CONTRADICT_ESCROW',
-  'CONTRADICT_PARTIAL', 'PRODUCE_COMMITTED', 'TAMPER_COMMITTED', 'PRODUCE', 'READ_FAIL_MEMORY', 'READ_FAIL_LOST',
+  'CONTRADICT_RR_PARENT', 'CONTRADICT_RR_CANDIDATE', 'CONTRADICT_COMMITTED', 'CONTRADICT_RESULT',
+  'CONTRADICT_RESULT_NONTERMINAL', 'CONTRADICT_ESCROW', 'CONTRADICT_PARTIAL', 'PRODUCE_COMMITTED', 'TAMPER_COMMITTED', 'PRODUCE', 'READ_FAIL_MEMORY', 'READ_FAIL_LOST',
   'TAMPER_FIRST', 'TAMPER_ALL', 'TAMPER_REST',
 ]);
-/** The cells per row (#468 B3, B4 and the matrix of act §1): 3 debris, 3 restart, 14 T9, 4 KIND13, 3 PUT_THROW, 6 kill. */
-export const CELLS_PER_ROW = 33;
+/** The cells per row (#468 B3, B4 and the matrix of act §1): 3 debris, 3 restart, 15 T9, 4 KIND13, 3 PUT_THROW, 6 kill. */
+export const CELLS_PER_ROW = 34;
 
 // C-MUT /mutationRows: origin state and output kind.
 const ORIGIN = Object.freeze({
@@ -25,8 +25,12 @@ const ORIGIN = Object.freeze({
   'CAPI-S014': 'ACTIVE', 'CAPI-S016': 'ACTIVE', 'CAPI-S017': 'ACTIVE',
 });
 export const HAS_OUTPUT = (row) => row !== 'CAPI-S006' && row !== 'CAPI-S016'; // C-MUT /mutationRows outputKind NONE
-/** The ACTIVE-origin row a next mutation from the resulting ACTIVE authority uses (#468 B3). */
-export const NEXT_ROW = (row) => (ORIGIN[row] === 'ACTIVE' ? row : 'CAPI-S014');
+/**
+ * The row a next mutation from the resulting ACTIVE authority uses (#468 B3): the same row when its
+ * C-FMT preconditions hold over its own result (an ACTIVE origin; CAPI-S017 needs the selection facts
+ * CAPI-S014 establishes, which it terminates), CAPI-S014 otherwise.
+ */
+export const NEXT_ROW = (row) => (ORIGIN[row] === 'ACTIVE' && row !== 'CAPI-S017' ? row : 'CAPI-S014');
 const SELECTOR_STATE = Object.freeze({ EMPTY: 1, ACTIVE: 2, RECONCILIATION_REQUIRED: 3 });
 /** The four verification-failure codes of a trusted reader (I-RESTART port error obligation, item 12). */
 export const VERIFY_CODES = Object.freeze(['AUTHENTICATION_FAILED', 'CONTEXT_MISMATCH', 'MALFORMED_INPUT', 'UNSUPPORTED_VALUE']);
@@ -249,7 +253,7 @@ export function checkProducer(kind, pre, response, rb) {
     want(writes(trace) === 0, 'the producer issues no write request', CITE.PRODUCER_WRITES_NOTHING);
   };
   if (kind.startsWith('CONTRADICT_')) {
-    const forged = ['CONTRADICT_RESULT', 'CONTRADICT_ESCROW', 'CONTRADICT_PARTIAL'].includes(kind);
+    const forged = ['CONTRADICT_RESULT', 'CONTRADICT_RESULT_NONTERMINAL', 'CONTRADICT_ESCROW', 'CONTRADICT_PARTIAL'].includes(kind);
     want(response.hadHold === true, 'setup: the SS hold is kept', CITE.PRODUCER_TAMPER);
     if (forged && response.setup !== null) {
       // The port refused to store the forged generation: nothing may have been written.
@@ -386,31 +390,42 @@ export function checkEmissionRetry(cell, d) {
 /**
  * #468 B3: from the authority a terminal COMMITTED left (generation 2, keeping its kind-13 record), the
  * next mutation (generation 3): COMMITTED selects it; INDETERMINATE holds it, and after context death
- * the durable hold reconciles it COMMITTED. Under R3 a NONE row's next INDETERMINATE is refused.
+ * the durable hold reconciles it COMMITTED. Under R3 a NONE row's next INDETERMINATE is refused. The
+ * next operation and the reconciliation are judged by the same transaction, durability and memory-hold
+ * rules as every other operation (B-CHR-CANON r1 C4).
  */
 export function checkNext(cell, d) {
   const f = [];
-  const want = (ok, what) => { if (!ok) f.push({ what, cite: CITE.NEXT }); };
+  const want = (ok, what, cite = CITE.NEXT) => { if (!ok) f.push({ what, cite }); };
   want(d.base.error === null && authority(d.baseRb.classify) === 'COMPLETE_NEW', `setup: the resulting authority is generation 2 (got ${d.base.error?.code ?? authority(d.baseRb.classify)})`);
   const kept = d.baseRb.candidateHold;
+  want(d.oldHold === kept, 'generation 2 keeps its kind-13 record byte for byte after the next mutation');
   if (cell.r3Next) {
     f.push(...checkR3Refusal('next INDETERMINATE', d.next, d.nextRb, d.baseDigest));
+    want(d.numbers === '1,2', `the inventory is exactly {1,2} (got ${d.numbers})`);
     return f;
   }
   const output = cell.outcome === 'COMMITTED' ? escrowHex(cell.nextRow) : null;
+  const tx = expectedTransactions({ outcome: cell.outcome, phase: 'ORIGINAL' });
+  want(opens(d.next.trace) === tx, `the next ${cell.outcome} issues exactly ${tx} readwrite transaction(s) (got ${opens(d.next.trace)})`, CITE.ONE_TX);
+  f.push(...checkDurability(d.next.trace));
+  const early = (d.next.trace ?? []).filter((e) => e.ev === 'HOLD_BEFORE_COMPLETE' && e.held);
+  want(early.length === 0, `no memory hold is reported before the complete of T${early[0]?.tx}`, CITE.NO_EARLY_HOLD);
   if (cell.outcome === 'COMMITTED') {
     want(d.next.error === null && d.next.result?.commitOutcome === 'COMMITTED' && (d.next.result?.output ?? null) === output,
       `the next COMMITTED commits with its output (got ${d.next.error?.code ?? d.next.result?.commitOutcome})`);
     want(authority(d.nextRb.classify) === 'COMPLETE_NEW' && d.nextRb.classify.generation === '3', `after it the authority is generation 3 (got ${authority(d.nextRb.classify)} ${d.nextRb.classify?.generation})`);
+    want(d.nextRb.candidateHold === d.next.stagedHold, 'generation 3 keeps the kind-13 record it staged', CITE.HISTORICAL);
   } else {
     want(d.next.error === null && d.next.result?.commitOutcome === 'INDETERMINATE', `the next INDETERMINATE holds (got ${d.next.error?.code ?? d.next.result?.commitOutcome})`);
     want(authority(d.nextRb.classify) === 'COMPLETE_OLD+HELD', `after it generation 2 stays authority, held (got ${authority(d.nextRb.classify)})`);
     want(d.pre.memoryHold === false && authority(d.pre.classify) === 'COMPLETE_OLD+HELD', 'after context death the durable hold is all that is left');
     want(d.recon.error === null && d.recon.result?.reconciliation === 'RECONCILED_COMMITTED' && (d.recon.result?.output ?? null) === escrowHex(cell.nextRow),
       `the durable hold reconciles COMMITTED with its output (got ${d.recon.error?.code ?? d.recon.result?.reconciliation})`);
+    want(opens(d.recon.trace) === 1, `the reconciliation issues exactly 1 readwrite transaction (got ${opens(d.recon.trace)})`, CITE.ONE_TX);
+    f.push(...checkDurability(d.recon.trace));
     want(authority(d.reconRb.classify) === 'COMPLETE_NEW' && d.reconRb.classify.generation === '3', `after it the authority is generation 3 (got ${authority(d.reconRb.classify)})`);
   }
-  want(d.oldHold === kept, 'generation 2 keeps its kind-13 record byte for byte after it stops being authority');
   want(d.numbers === '1,2,3', `the inventory is exactly {1,2,3} (got ${d.numbers})`);
   return f;
 }

@@ -31,6 +31,7 @@ import {
   ciphertextDigest, computeKeyedRoot, deriveManifestRootKey, encodeManifest, encodeManifestKey, manifestEntry,
   manifestKeyDigest,
 } from '/src/storage/m2/session-root.js';
+import { decodeBindingV0 } from '/src/crypto/m2-binding-v0.js';
 
 const NS = 'mls';
 const SEL = 'sel';
@@ -239,6 +240,12 @@ export async function createPort({ db, context }) {
         }
       }
       const resultEvidence = k8 === undefined ? null : evidenceOfRecord(k8.decoded);
+      // A present COMMIT_RESULT must be usable commit-result evidence (I-TXN evidenceFacts; C-MUT §5):
+      // authenticated by the RS, and terminal when NOT_COMMITTED (B-CHR-CANON r1 C2).
+      if (resultEvidence !== null && (resultEvidence.authenticatedByRS !== true
+        || (resultEvidence.outcome === OUTCOME.NOT_COMMITTED && resultEvidence.terminal !== true))) {
+        throw inconsistent(`generation ${generation} COMMIT_RESULT is not usable commit-result evidence`);
+      }
       // escrow: the authenticated kind-9 record, bound to the generation's own hold (C-FMT outputEscrow.binding).
       let escrow = null;
       if (k9 !== undefined && k9.decoded.presence === 1) {
@@ -251,10 +258,15 @@ export async function createPort({ db, context }) {
         }
         escrow = { kind: OUTPUT_KINDS[e.outputKind - 1], digest: copy(h.heldOutputDigest), reference: copy(h.heldOutputReference), output: copy(e.output) };
       }
-      // sessionBindingDigest: from the authenticated kind-6 BINDING_PROFILE (C-FMT sessionDomain).
+      // sessionBindingDigest: from the authenticated kind-6 BINDING_PROFILE (C-FMT sessionDomain), whose
+      // binding is a canonical C-BIND v0 binding of this context and this generation's session.
       let sessionBindingDigest = null;
       if (mk.scope === 2) {
         if (k6 === undefined || k6.decoded.presence !== 1) throw inconsistent(`SESSION generation ${generation} carries no BINDING_PROFILE`);
+        const b = decodeBindingV0(k6.decoded.canonicalBinding);
+        if (!sameBytes(b.localContextId, context.localContextId) || !sameBytes(b.secureSessionIdentity, mk.secureSessionIdentity)) {
+          throw inconsistent(`generation ${generation} BINDING_PROFILE binds another context or session`);
+        }
         const aad = await encodeAad({
           recordKey: k6.record.recordKey, localContextId: context.localContextId, productProfileDigest: context.productProfileDigest,
           scope: 2, secureSessionIdentity: mk.secureSessionIdentity, canonicalBinding: k6.decoded.canonicalBinding, writeGeneration: g,
@@ -386,7 +398,8 @@ export async function createPort({ db, context }) {
       const r = buffer.get(g).records.find((x) => x.recordKind === K.MUTATION_HOLD);
       k13 = r === undefined ? null : decodePlaintext(K.MUTATION_HOLD, r.plaintext);
     } else {
-      const d = await readDurableGeneration(g);
+      let d;
+      try { d = await readDurableGeneration(g); } catch (e) { resetBuffer(); throw e; }
       k13 = d === null ? null : d.value.mutationHold;
     }
     if (k13 === null || !holdMatches(k13, p.hold)) {

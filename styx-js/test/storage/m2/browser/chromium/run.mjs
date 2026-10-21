@@ -441,6 +441,7 @@ async function kind13(rows) {
       if (!cell.r3Next && outcome === 'INDETERMINATE') {
         const init = await contextDeath(page);
         d.pre = { ...await call(page, 'readback', { parent: '2', candidate: '3' }), lock: init.lock };
+        await call(page, 'arm', {}); // the reconciliation after context death is observed (C4)
         d.recon = await call(page, 'reconcile', { scenario: next, outcome: 'COMMITTED', parent, generation: '3', op: 2 });
         d.reconRb = await call(page, 'readback', { parent: '2', candidate: '3' });
       }

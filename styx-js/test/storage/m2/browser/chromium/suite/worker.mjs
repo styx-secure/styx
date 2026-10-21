@@ -8,7 +8,7 @@ import {
 } from '/src/storage/m2/session-transaction.js';
 import { instrument } from './instrument.mjs';
 import {
-  PORT_CONTEXT, evidenceFor, manifestRootKey, mutationInput, noneHoldEncodable, parentFixture, prepareFixtures, selfSelector,
+  PORT_CONTEXT, evidenceFor, manifestRootKey, mutationInput, noneHoldEncodable, parentFixture, prepareFixtures, restage, selfSelector,
 } from './fixtures.mjs';
 
 const params = new URL(self.location.href).searchParams;
@@ -155,9 +155,10 @@ function reencode(kind, plaintext, change) {
  * - CONTRADICT_RR_PARENT / CONTRADICT_RR_CANDIDATE: an RR selector whose parent / candidate keyed root
  *   is not the hold's / the stored candidate's;
  * - CONTRADICT_COMMITTED: a selector naming the candidate generation with roots it does not have;
- * - CONTRADICT_RESULT / CONTRADICT_ESCROW / CONTRADICT_PARTIAL: a selector naming a generation 2 whose
- *   records are complete and canonical but whose COMMIT_RESULT does not identify the held mutation /
- *   whose OUTPUT_ESCROW has another output kind / that lacks one data record (B-CHR PR-r1 F1).
+ * - CONTRADICT_RESULT / CONTRADICT_RESULT_NONTERMINAL / CONTRADICT_ESCROW / CONTRADICT_PARTIAL: a selector
+ *   naming a complete canonical generation 2 whose COMMIT_RESULT keeps the held identity but is not
+ *   authenticated by the RS / is a non-terminal NOT_COMMITTED, whose OUTPUT_ESCROW has another output
+ *   kind, or that lacks one data record (B-CHR PR-r1 F1; B-CHR-CANON r1 C2).
  * The port may refuse the write (nothing written); otherwise the producer must fail closed (never
  * NOT_COMMITTED, COMMITTED or S024) and write nothing.
  */
@@ -178,17 +179,20 @@ async function contradict({ scenario, kind }) {
       payload: { selectorBytes: encodePlaintext(K.GENERATION_SELECTOR, bad), resolveHoldGeneration: null, expectedSelectorBytes: current.envelope },
     })));
   } else {
-    let records = staged.records.map((r) => ({ ...r }));
+    let forged;
+    const k8 = (change) => ({ [K.COMMIT_RESULT]: reencode(K.COMMIT_RESULT, staged.content[K.COMMIT_RESULT], change) });
     if (kind === 'CONTRADICT_RESULT') {
-      records = records.map((r) => (r.recordKind !== K.COMMIT_RESULT ? r
-        : { ...r, plaintext: reencode(K.COMMIT_RESULT, r.plaintext, (x) => { x.candidateDigest = flip(x.candidateDigest); }) }));
+      // Identity unchanged, but not authenticated by the RS (Sol B-CHR-CANON r1 C2).
+      forged = restage(staged, k8((x) => { x.authenticatedByRS = false; }));
+    } else if (kind === 'CONTRADICT_RESULT_NONTERMINAL') {
+      forged = restage(staged, k8((x) => { x.outcome = 2; x.terminal = false; }));
     } else if (kind === 'CONTRADICT_ESCROW') {
-      records = records.map((r) => (r.recordKind !== K.OUTPUT_ESCROW ? r
-        : { ...r, plaintext: reencode(K.OUTPUT_ESCROW, r.plaintext, (x) => { x.outputKind = x.outputKind === 6 ? 2 : x.outputKind + 1; }) }));
+      const e = staged.content[K.OUTPUT_ESCROW];
+      forged = restage(staged, { [K.OUTPUT_ESCROW]: reencode(K.OUTPUT_ESCROW, e, (x) => { x.outputKind = x.outputKind === 6 ? 2 : x.outputKind + 1; }) });
     } else {
-      records = records.filter((r) => r.recordKind !== K.ABSENCE_COMMITMENTS);
+      forged = restage(staged, {}, { drop: K.ABSENCE_COMMITMENTS });
     }
-    setup = await guarded(() => writeGeneration(staged, records, selfSelector(staged, API.ACTIVE), current.envelope));
+    setup = await guarded(() => writeGeneration(forged, forged.records, selfSelector(forged, API.ACTIVE), current.envelope));
   }
   const before = (await readback({})).dbDigest;
   arm({});
@@ -212,11 +216,11 @@ async function contradict({ scenario, kind }) {
 async function forgeHistorical({ scenario }) {
   const own = requestOf(scenario, M2_OUTCOME.COMMITTED);
   const donor = own.holdPlaintext ?? requestOf('CAPI-S014', M2_OUTCOME.COMMITTED).holdPlaintext;
-  const forged = reencode(K.MUTATION_HOLD, donor, (x) => { x.parentGeneration = 2n; });
-  const records = own.staged.records.map((r) => (r.recordKind === K.MUTATION_HOLD ? { ...r, plaintext: forged } : { ...r }));
+  const forgedHold = reencode(K.MUTATION_HOLD, donor, (x) => { x.parentGeneration = 2n; });
+  const g = restage(own.staged, { [K.MUTATION_HOLD]: forgedHold });
   const current = await port.readSelector();
   const start = (await readback({})).dbDigest;
-  const setup = await guarded(() => writeGeneration(own.staged, records, selfSelector(own.staged, API.ACTIVE), current.envelope));
+  const setup = await guarded(() => writeGeneration(g, g.records, selfSelector(g, API.ACTIVE), current.envelope));
   const rb = await readback({});
   return { setup: setup.error ?? null, wrote: rb.dbDigest !== start, classify: rb.classify, start, after: rb.dbDigest };
 }

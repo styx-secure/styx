@@ -71,12 +71,16 @@ export function instrument({ hook, state }) {
     if (t !== undefined) { state.trace.push({ tx: t.id, ev: 'COMMIT_SENT' }); hook(`T${t.id}:COMMIT_SENT`); }
     return r;
   };
+  const READS = new Set(['get', 'getAll', 'getAllKeys', 'getKey', 'count', 'openCursor', 'openKeyCursor']);
+  const readFault = () => state.armed && (state.fault === 'READ_FAIL' || state.fault === 'TAMPER');
   for (const name of REQUEST_METHODS) {
     const orig = IDBObjectStore.prototype[name];
     if (typeof orig !== 'function') continue;
     IDBObjectStore.prototype[name] = function request(...args) {
       const mode = this.transaction.mode;
-      if (state.armed && mode === 'readonly' && state.fault === 'READ_FAIL') {
+      // Read faults reach every read request, whatever the transaction mode (B-CHR-CANON r1 C3): a port
+      // may read inside a readwrite transaction that writes nothing.
+      if (READS.has(name) && readFault() && state.fault === 'READ_FAIL') {
         state.trace.push({ ev: 'FAULT', fault: 'READ_FAIL', op: name });
         throw new DOMException('injected read failure', 'UnknownError');
       }
@@ -100,6 +104,12 @@ export function instrument({ hook, state }) {
         throw new DOMException('injected request failure', 'UnknownError');
       }
       const r = orig.apply(this, args);
+      if (READS.has(name) && readFault()) {
+        // A read inside a readwrite transaction takes the next read index (no kill point of its own).
+        const k = state.reads++;
+        state.trace.push({ ev: 'READ', k, op: name, tx: t.id });
+        if (state.tamperAt === null || state.tamperAt === k || (state.tamperAt === 'REST' && k >= 1)) tampered.set(r, k);
+      }
       if (state.plan[t.id] === j) hook(`T${t.id}:END`);
       return r;
     };
