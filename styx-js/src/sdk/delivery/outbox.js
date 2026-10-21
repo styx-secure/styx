@@ -543,7 +543,8 @@ function callSyncPort(port, name, args = []) {
  *
  * @param {object} options
  * @returns {{ send: Function, cancel: Function, getDelivery: Function,
- *            acceptReceipt: Function, inspectStore: Function, shutdown: Function }}
+ *            acceptReceipt: Function, inspectStore: Function, shutdown: Function,
+ *            adoptPublicKey: Function, failClosed: Function }}
  */
 export function createOutbox(options) {
   /* --- options, read once, guarded ------------------------------------- */
@@ -597,6 +598,11 @@ export function createOutbox(options) {
   let cachedPublicKey = null;
   let publicKeyCall = null;
   const inFlightCalls = new Set();
+  // C-DLV section 4.6 step (1) and C-SDK section 4.2: once `shutdown()` was
+  // called, an item-timer cleanup does not clear its handles at once; it hands
+  // them here and step (4) clears them, after the events of step (3).
+  const timersHandedToStop = [];
+  let stopTimersCleared = false;
 
   const failure = (code) => Object.freeze({ ok: false, code });
 
@@ -801,6 +807,11 @@ export function createOutbox(options) {
    * @param {boolean} byClock
    */
   function runTimer(record, byClock) {
+    // C-DLV section 4.6 step (1): from the `shutdown()` call on, a deadline or
+    // retry callback (clock or host) does nothing at all. It returns before it
+    // marks the timer fired or clears its sibling handle, so every handle is
+    // left for step (4), which clears it after the events of step (3).
+    if (stopped) return;
     if (record.fired === true) return;
     record.fired = true;
     if (byClock) clearHostTimer(record.hostHandle);
@@ -818,6 +829,23 @@ export function createOutbox(options) {
     const record = item.timers[slot];
     if (record === null || record === undefined) return;
     delete item.timers[slot];
+    if (record.fired === true) return;
+    // C-SDK section 4.2 (events before every timer clear) takes precedence
+    // over an immediate clear once `shutdown()` was called: the handles go to
+    // the stop, which clears them in its step (4).
+    if (stopped && !stopTimersCleared) {
+      timersHandedToStop.push(record);
+      return;
+    }
+    releaseTimerRecord(record);
+  }
+
+  /**
+   * Clear both handles of one timer record, once.
+   *
+   * @param {object} record
+   */
+  function releaseTimerRecord(record) {
     if (record.fired === true) return;
     record.fired = true;
     clearHostTimer(record.hostHandle);
@@ -1104,6 +1132,25 @@ export function createOutbox(options) {
     const result = await publicKeyCall;
     if (!result.ok) publicKeyCall = null;
     return result;
+  }
+
+  /**
+   * Adopt the client's public key, read once by the client (C-SDK section
+   * 8.3), so that this module never calls `identity.getPublicKey()` itself.
+   * Synchronous. Only a lowercase 64-hex string is adopted, and only before
+   * this module has read or adopted a key or started reading one; otherwise
+   * nothing changes and the result is `E_SDK_INVALID_ARGUMENT`.
+   *
+   * @param {unknown} key
+   * @returns {object} the frozen envelope of C-SDK section 5.1
+   */
+  function adoptPublicKey(key) {
+    if (!isLowerHexOfLength(key, 64)) return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+    if (cachedPublicKey !== null || publicKeyCall !== null) {
+      return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+    }
+    cachedPublicKey = key;
+    return Object.freeze({ ok: true, value: Object.freeze({ adopted: true }) });
   }
 
   /**
@@ -1916,6 +1963,51 @@ export function createOutbox(options) {
     }
   }
 
+  /* --- failClosed (C-SDK section 5.3) ---------------------------------- */
+
+  /**
+   * Apply the unknown-value rule of C-DLV section 4.5 to one item on the
+   * client's request (C-SDK section 5.3): a non-terminal item moves to its
+   * applicable terminal failed state (`FAILED_NOT_ACCEPTED` from `QUEUED` or
+   * `IN_FLIGHT`, `FAILED_NO_RECEIPT` from `RELAY_ACCEPTED_AWAITING_RECEIPT`,
+   * the state an acceptance takes in `RECIPIENT_RECEIPT` mode) with
+   * `lastCode: 'E_SDK_UNKNOWN_CODE'`; its attempts stop, one event is emitted
+   * and its terminal record is written (C-DLV section 6.4). Synchronous; it
+   * never throws.
+   *
+   * @param {unknown} argument `{ deliveryId }`
+   * @returns {object} the frozen envelope of C-SDK section 5.1
+   */
+  function failClosed(argument) {
+    try {
+      if (stopped) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      let deliveryId = null;
+      try {
+        if (!isPlainObject(argument)) return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+        if (!sameKeySet(Object.keys(argument), ['deliveryId'])) {
+          return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+        }
+        deliveryId = argument.deliveryId;
+      } catch {
+        return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+      }
+      if (typeof deliveryId !== 'string') return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+      const item = items.get(deliveryId);
+      if (item === undefined) return failure(SdkResultCode.E_SDK_UNKNOWN_DELIVERY);
+      if (TERMINAL_STATES.has(item.state)) return failure(SdkResultCode.E_SDK_DELIVERY_TERMINAL);
+      const to = applicableFailedState(item);
+      if (to === null || !recordTransition(item, to, SdkResultCode.E_SDK_UNKNOWN_CODE)) {
+        return failure(SdkResultCode.E_SDK_INTERNAL);
+      }
+      return Object.freeze({
+        ok: true,
+        value: Object.freeze({ deliveryId: item.deliveryId, state: to }),
+      });
+    } catch {
+      return failure(SdkResultCode.E_SDK_INTERNAL);
+    }
+  }
+
   /* --- receipts (C-DLV section 7.3, item side) -------------------------- */
 
   /**
@@ -2072,6 +2164,10 @@ export function createOutbox(options) {
 
       // Step (3): deliver the LOST_ON_SHUTDOWN events.
       for (const item of lostItems) emitTransition(item);
+      // C-SDK section 4.2: no item timer is cleared before at least one turn
+      // of the microtask queue has passed after the last event of step (3), so
+      // a sink that dispatches with `queueMicrotask` has reached its listeners.
+      await Promise.resolve();
 
       // Step (4): wait until every port call still in progress has settled or
       // timed out, and drain the ordered write chain of every item, before
@@ -2090,7 +2186,11 @@ export function createOutbox(options) {
           );
         }
       }
+      // Every item timer, and every handle a cleanup handed to the stop after
+      // step (1), is cleared here, after the events of step (3).
+      stopTimersCleared = true;
       for (const item of items.values()) clearItemTimers(item);
+      for (const record of timersHandedToStop.splice(0)) releaseTimerRecord(record);
       await Promise.all(writes.map((write) => write.catch(() => undefined)));
 
       // Step (5), the item side: release the ports this module held.
@@ -2109,6 +2209,14 @@ export function createOutbox(options) {
         value: Object.freeze({ clientState: 'STOPPED', lost: lostItems.size }),
       });
     } catch {
+      // The handles handed to the stop are still cleared before it resolves.
+      try {
+        stopTimersCleared = true;
+        for (const item of items.values()) clearItemTimers(item);
+        for (const record of timersHandedToStop.splice(0)) releaseTimerRecord(record);
+      } catch {
+        /* nothing further to clear */
+      }
       return failure(SdkResultCode.E_SDK_INTERNAL);
     }
   }
@@ -2120,5 +2228,7 @@ export function createOutbox(options) {
     acceptReceipt,
     inspectStore,
     shutdown,
+    adoptPublicKey,
+    failClosed,
   });
 }

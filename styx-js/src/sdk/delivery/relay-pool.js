@@ -350,6 +350,11 @@ export function createRelaySet(options) {
 
   let stopped = false;
   let running = false;
+  // Set by freeze() (C-DLV section 4.6 step 1): from then on nothing is
+  // scheduled, published or forwarded, every outcome is frozen and every
+  // attempt-timeout, supervision and reconnection callback returns at once;
+  // nothing is cleared or closed until dispose().
+  let setFrozen = false;
   let supervisionHandle = NOT_ARMED;
   let supervisionOnHost = false;
   let supervising = false;
@@ -445,6 +450,9 @@ export function createRelaySet(options) {
     state.connecting = false;
     state.frameHandler = (message) => {
       if (stopped) return;
+      // After freeze() every relay frame is ignored: no OK is recorded and no
+      // frame reaches a listener (C-DLV section 4.6 step 1).
+      if (setFrozen) return;
       // A frame of a pool that is no longer this relay's current pool never
       // settles the relay: a callback a retired pool had already queued can run
       // after its listener was removed (C-DLV §5.3, "from that relay's current
@@ -490,10 +498,22 @@ export function createRelaySet(options) {
   const connect = (state) => {
     const pool = state.pool;
     if (!pool) return;
+    // S2: preparing the pool calls caller code (the transport factory and the
+    // pool's own methods), which may have frozen the set; from the synchronous
+    // freeze() call on, no connection opens. `dispose()` alone keeps its
+    // present behaviour, so only freeze() is read here.
+    if (setFrozen) return;
     state.connecting = true;
     let promise;
     try {
-      promise = pool.connectAll();
+      // The method lookup is caller code too (a getter): it is read first and
+      // the freeze is read again before the invocation.
+      const connectAll = pool.connectAll;
+      if (setFrozen) {
+        state.connecting = false;
+        return;
+      }
+      promise = Reflect.apply(connectAll, pool, []);
     } catch (error) {
       promise = Promise.reject(error);
     }
@@ -535,6 +555,8 @@ export function createRelaySet(options) {
     // A replacement connection belongs to a started client: during the
     // connection phase and after the close nothing is scheduled here.
     if (stopped || !running) return;
+    // After freeze() no reconnection is scheduled and no pool is retired.
+    if (setFrozen) return;
     if (state.reconnectHandle !== NOT_ARMED) return;
     retire(state);
     const k = state.losses + 1;
@@ -553,7 +575,13 @@ export function createRelaySet(options) {
       // A caller-supplied schedule that throws never takes another relay down.
       delayMs = largestDelayOfStep(k);
     }
+    // S2: the random port and the schedule are caller code and may have called
+    // freeze(); from the call on no reconnection is scheduled.
+    if (setFrozen) return;
     const reconnect = () => {
+      // After freeze() the callback returns at once, leaving its handle for
+      // dispose() to clear.
+      if (setFrozen) return;
       state.reconnectHandle = NOT_ARMED;
       if (stopped) return;
       // A factory that refuses leaves the relay without a pool: it keeps its
@@ -632,6 +660,9 @@ export function createRelaySet(options) {
       if (attempt.outcomes[relayIndex] !== PENDING) return;
       if (data[2] === true) {
         if (!gateAllows(attempt.acceptGate, relayIndex, attempt)) return;
+        // S2: the gate is caller code and may have called freeze(); from the
+        // call on no OK is recorded.
+        if (setFrozen) return;
         attempt.settle(relayIndex, ACCEPTED);
       } else if (data[2] === false) {
         attempt.settle(relayIndex, REJECTED);
@@ -669,11 +700,15 @@ export function createRelaySet(options) {
     // A replacement connection belongs to a running client: after the close
     // nothing is written on it (C-DLV §5.3).
     if (!running) return;
+    if (setFrozen) return;
     if (attempt.frozen || attempt.acksIgnored) return;
     if (attempt.outcomes[state.index] !== PENDING) return;
     if (attempt.calledPool[state.index] === state.pool) return;
     if (!state.connected) return;
     if (!gateAllows(attempt.latePublishGate, state.index, attempt)) return;
+    // S2: the gate is caller code and may have called freeze(); from the call
+    // on nothing is published.
+    if (setFrozen) return;
     // C-DLV §5.2 reads `healthCheck()` whenever `publish` returns 0.
     if (!publishTo(state, attempt)) superviseOnce();
   };
@@ -697,6 +732,8 @@ export function createRelaySet(options) {
    */
   const superviseOnce = () => {
     if (stopped || !running) return;
+    // After freeze() no supervision read happens.
+    if (setFrozen) return;
     // One read at a time: a replayed listener or a publication may reach this
     // function while a pass is already running.
     if (supervising) return;
@@ -734,8 +771,11 @@ export function createRelaySet(options) {
   };
 
   const armSupervision = () => {
-    if (stopped || supervisionHandle !== NOT_ARMED) return;
+    if (stopped || setFrozen || supervisionHandle !== NOT_ARMED) return;
     const read = () => {
+      // After freeze() the callback returns at once, leaving its handle for
+      // dispose() to clear.
+      if (setFrozen) return;
       supervisionHandle = NOT_ARMED;
       supervisionOnHost = false;
       if (stopped) return;
@@ -850,7 +890,12 @@ export function createRelaySet(options) {
   const runStart = async () => {
     for (const state of states) prepare(state);
     const phase = runConnectionPhase();
-    for (const state of states) connect(state);
+    // Arming the phase timers calls the caller's clock, which may freeze the
+    // set synchronously: after freeze() no connection opens.
+    for (const state of states) {
+      if (setFrozen) break;
+      connect(state);
+    }
     await phase;
     const connectedRelays = countConnected();
     if (stopped || connectedRelays === 0) {
@@ -879,6 +924,8 @@ export function createRelaySet(options) {
     // `start()` during the phase returns the phase's own promise (C-DLV §5.1).
     if (startPromise) return startPromise;
     if (running) return startedResult ?? { connectedRelays: countConnected() };
+    // After freeze() no new connection is opened.
+    if (setFrozen) return { connectedRelays: 0 };
     startPromise = runStart().catch(() => ({ connectedRelays: 0 }));
     try {
       startedResult = await startPromise;
@@ -904,11 +951,16 @@ export function createRelaySet(options) {
         attempt.outcomes[index] = PENDING;
       }
     }
-    if (stopped) {
+    if (stopped || setFrozen) {
+      // After the close, and after freeze(), nothing is published and no timer
+      // is armed: the attempt is frozen at once.
       attempt.frozen = true;
       return publicAttempt(attempt);
     }
     const onTimeout = () => {
+      // After freeze() the callback returns at once: it clears no handle and
+      // changes no outcome, and dispose() clears both handles.
+      if (setFrozen) return;
       const clockHandle = attempt.clockHandle;
       const hostHandle = attempt.hostHandle;
       attempt.clockHandle = NOT_ARMED;
@@ -942,11 +994,21 @@ export function createRelaySet(options) {
     } catch {
       attempt.hostHandle = NOT_ARMED;
     }
+    if (setFrozen) {
+      // Arming the attempt timers calls the caller's clock, which may freeze
+      // the set synchronously: the attempt is then frozen at once and nothing
+      // is published; its handles go to dispose(), which clears them in the
+      // order of the stop.
+      attempt.frozen = true;
+      liveAttempts.add(attempt);
+      return publicAttempt(attempt);
+    }
     liveAttempts.add(attempt);
     if (event && typeof event.id === 'string') attemptsByEventId.set(event.id, attempt);
 
     let anyZero = false;
     for (const state of states) {
+      if (setFrozen) break;
       if (attempt.outcomes[state.index] === ACCEPTED) continue;
       const sent = publishTo(state, attempt);
       if (!sent) anyZero = true;
@@ -1004,6 +1066,21 @@ export function createRelaySet(options) {
     return disposePromise;
   };
 
+  /**
+   * Freeze before close (C-DLV §4.6 step 1): synchronous and idempotent. From
+   * the call on no supervision read, reconnection or new connection is
+   * scheduled, nothing is published, every relay frame is ignored, every relay
+   * outcome of every attempt keeps its current value, and the attempt-timeout,
+   * supervision and reconnection callbacks return at once. No timer handle is
+   * cleared and no connection is closed: `dispose()` does both. The
+   * connection phase of a `start()` in progress is not affected.
+   */
+  const freeze = () => {
+    if (setFrozen) return;
+    setFrozen = true;
+    for (const attempt of liveAttempts) attempt.frozen = true;
+  };
+
   return {
     /** Relay count of the caller's configuration. */
     get relayCount() {
@@ -1023,6 +1100,7 @@ export function createRelaySet(options) {
     publish,
     supervise: superviseOnce,
     dispose,
+    freeze,
     /** Subscribe to the inbound frames of every current pool. */
     onFrame: (listener) => {
       frameListeners.add(listener);

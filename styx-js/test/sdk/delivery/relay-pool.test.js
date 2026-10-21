@@ -2014,3 +2014,1112 @@ describe('createRelaySet — the unchanged RelayPool over a fake WebSocket', () 
     await set.dispose();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Seam S2 (card I-SDK): freeze before close (C-DLV §4.6 step 1).
+// ---------------------------------------------------------------------------
+
+describe('createRelaySet — seam S2, freeze() before dispose()', () => {
+  const RELAY_SET_MEMBERS = [
+    'connectedRelays',
+    'dispose',
+    'freeze',
+    'onFrame',
+    'publish',
+    'relayCount',
+    'running',
+    'start',
+    'stopped',
+    'supervise',
+  ];
+
+  /** Record every clock arming and clearing of one relay set. */
+  function watchClock(clock) {
+    const armed = [];
+    const cleared = [];
+    const setTimer = clock.setTimer.bind(clock);
+    const clearTimer = clock.clearTimer.bind(clock);
+    clock.setTimer = (callback, delayMs) => {
+      const handle = setTimer(callback, delayMs);
+      armed.push({ handle, delayMs });
+      return handle;
+    };
+    clock.clearTimer = (handle) => {
+      cleared.push(handle);
+      clearTimer(handle);
+    };
+    return { armed, cleared };
+  }
+
+  /**
+   * Record the host timers armed and cleared while `body` runs, keeping each
+   * armed callback so that a test can fire it by hand. The previous globals
+   * are restored before the test ends.
+   */
+  async function withHostCapture(body) {
+    const previousSet = globalThis.setTimeout;
+    const previousClear = globalThis.clearTimeout;
+    const armed = [];
+    const cleared = [];
+    globalThis.setTimeout = (callback, delayMs, ...args) => {
+      const handle = previousSet(callback, delayMs, ...args);
+      armed.push({ handle, delayMs, callback });
+      return handle;
+    };
+    globalThis.clearTimeout = (handle) => {
+      cleared.push(handle);
+      previousClear(handle);
+    };
+    try {
+      await body({ armed, cleared });
+    } finally {
+      globalThis.setTimeout = previousSet;
+      globalThis.clearTimeout = previousClear;
+    }
+  }
+
+  test('the relay set carries exactly its members plus freeze, and freeze is synchronous and idempotent', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    expect(Reflect.ownKeys(set).map(String).sort()).toEqual(RELAY_SET_MEMBERS);
+    expect(typeof set.freeze).toBe('function');
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    expect(set.freeze()).toBeUndefined();
+    expect(set.freeze()).toBeUndefined();
+    expect(attempt.outcomes).toEqual(['PENDING']);
+    expect(set.stopped).toBe(false);
+    expect(h.created[0].disposed).toBe(0);
+    await set.dispose();
+    expect(set.freeze()).toBeUndefined();
+    expect(h.created[0].disposed).toBe(1);
+    expect(Reflect.ownKeys(set).map(String).sort()).toEqual(RELAY_SET_MEMBERS);
+  });
+
+  test('after freeze no OK is recorded, no frame is forwarded and nothing is published', async () => {
+    const h = makeHarness([{ behaviour: 'hang', answer: 'silent' }, { behaviour: 'hang', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const frames = [];
+    set.onFrame((frame) => frames.push(frame));
+    const attempt = set.publish(EVENT);
+    const reported = [];
+    attempt.onOutcome((relayIndex, outcome) => reported.push([relayIndex, outcome]));
+    expect(h.created.map((pool) => pool.published.length)).toEqual([1, 1]);
+    set.freeze();
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true, 'saved'] });
+    h.created[1].messages.emit('message', { relay: h.relays[1], data: ['OK', EVENT.id, false, 'blocked'] });
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['EVENT', SUBSCRIPTION_ID, { id: 'x' }] });
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['NOTICE', 'hello'] });
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+    expect(attempt.acceptedIndex).toBe(-1);
+    expect(reported).toEqual([]);
+    expect(frames).toEqual([]);
+    // A publication after the freeze reaches no pool and arms no timer.
+    const timersBefore = h.clock.timers.size;
+    const liveBefore = host.live.size;
+    const later = set.publish({ id: 'f'.repeat(64), kind: 4742 });
+    expect(h.created.map((pool) => pool.published.length)).toEqual([1, 1]);
+    expect(later.outcomes).toEqual(['PENDING', 'PENDING']);
+    expect(h.clock.timers.size).toBe(timersBefore);
+    expect(host.live.size).toBe(liveBefore);
+    await set.dispose();
+  });
+
+  test('after freeze no supervision read and no reconnection happens, and no handle is cleared until dispose', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'error', answer: 'silent' }]);
+    const watch = watchClock(h.clock);
+    const set = h.make();
+    await expect(startSet(set, h.clock)).resolves.toEqual({ connectedRelays: 1 });
+    await flush();
+    // The failed relay has its replacement armed, and supervision is armed.
+    const reconnect = watch.armed.find((entry) => entry.delayMs < SUPERVISION_MS);
+    const supervision = watch.armed.find((entry) => entry.delayMs === SUPERVISION_MS);
+    expect(reconnect).toBeDefined();
+    expect(supervision).toBeDefined();
+    let healthReads = 0;
+    const live = h.created[0];
+    const healthCheck = live.healthCheck.bind(live);
+    live.healthCheck = () => {
+      healthReads += 1;
+      return healthCheck();
+    };
+    const createdBefore = h.created.length;
+    const armedBefore = watch.armed.length;
+    const clearedBefore = watch.cleared.length;
+    set.freeze();
+    // The live relay drops: a supervision read would retire and replace it.
+    live.connected = false;
+    h.clock.advance(60000);
+    await flush();
+    set.supervise();
+    expect(healthReads).toBe(0);
+    expect(h.created.length).toBe(createdBefore);
+    expect(watch.armed.length).toBe(armedBefore);
+    expect(watch.cleared.length).toBe(clearedBefore);
+    expect(live.disposed).toBe(0);
+    await set.dispose();
+    // dispose() clears the handles the inert callbacks left and closes every pool.
+    expect(watch.cleared).toEqual(expect.arrayContaining([reconnect.handle, supervision.handle]));
+    expect(h.clock.pending).toEqual([]);
+    expect(host.live.size).toBe(0);
+    expect(h.created.every((pool) => pool.disposed === 1)).toBe(true);
+  });
+
+  test('an armed attempt timeout firing on the clock after freeze changes no outcome and clears nothing', async () => {
+    const h = makeHarness([{ behaviour: 'hang', answer: 'silent' }]);
+    const watch = watchClock(h.clock);
+    const set = h.make();
+    await startSet(set, h.clock);
+    await withHostCapture(async (hostTimers) => {
+      const attempt = set.publish(EVENT);
+      const settled = [];
+      attempt.onSettled(() => settled.push(true));
+      const clockTimeout = watch.armed.find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS && h.clock.timers.has(entry.handle));
+      const hostTimeout = hostTimers.armed.find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS);
+      expect(clockTimeout).toBeDefined();
+      expect(hostTimeout).toBeDefined();
+      set.freeze();
+      const clearedBefore = watch.cleared.length;
+      h.clock.advance(PER_RELAY_TIMEOUT_MS);
+      expect(attempt.outcomes).toEqual(['PENDING']);
+      expect(settled).toEqual([]);
+      expect(watch.cleared.length).toBe(clearedBefore);
+      expect(hostTimers.cleared).toEqual([]);
+      await set.dispose();
+      expect(watch.cleared).toContain(clockTimeout.handle);
+      expect(hostTimers.cleared).toContain(hostTimeout.handle);
+      expect(attempt.outcomes).toEqual(['PENDING']);
+    });
+    expect(host.live.size).toBe(0);
+    expect(h.created.every((pool) => pool.disposed === 1)).toBe(true);
+  });
+
+  test('an armed attempt timeout firing on the host after freeze changes no outcome and clears nothing', async () => {
+    const h = makeHarness([{ behaviour: 'hang', answer: 'silent' }, { behaviour: 'hang', answer: 'silent' }]);
+    const watch = watchClock(h.clock);
+    const set = h.make();
+    await startSet(set, h.clock);
+    await withHostCapture(async (hostTimers) => {
+      const attempt = set.publish(EVENT);
+      const clockTimeout = watch.armed.find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS && h.clock.timers.has(entry.handle));
+      const hostTimeout = hostTimers.armed.find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS);
+      expect(hostTimeout).toBeDefined();
+      set.freeze();
+      const clearedBefore = watch.cleared.length;
+      // The host backstop's own callback runs by hand, as if it fell due.
+      hostTimeout.callback();
+      expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+      expect(watch.cleared.length).toBe(clearedBefore);
+      expect(hostTimers.cleared).toEqual([]);
+      expect(h.clock.timers.has(clockTimeout.handle)).toBe(true);
+      await set.dispose();
+      expect(watch.cleared).toContain(clockTimeout.handle);
+      expect(hostTimers.cleared).toContain(hostTimeout.handle);
+    });
+    expect(h.clock.pending).toEqual([]);
+    expect(host.live.size).toBe(0);
+    expect(h.created.every((pool) => pool.disposed === 1)).toBe(true);
+  });
+
+  test('a start in progress at freeze resolves at its own phase end with the count of that moment and arms no supervision', async () => {
+    const h = makeHarness([
+      { behaviour: 'normal', answer: 'silent' },
+      { behaviour: 'normal', answer: 'silent' },
+      { behaviour: 'error', answer: 'silent' },
+    ]);
+    const watch = watchClock(h.clock);
+    const set = h.make();
+    let resolved = false;
+    const starting = set.start().then((value) => {
+      resolved = true;
+      return value;
+    });
+    await flush();
+    set.freeze();
+    h.clock.advance(PER_RELAY_TIMEOUT_MS - 1);
+    await flush();
+    expect(resolved).toBe(false);
+    h.clock.advance(1);
+    await expect(starting).resolves.toEqual({ connectedRelays: 2 });
+    await flush();
+    // No supervision read and no replacement was armed after the phase.
+    expect(watch.armed.map((entry) => entry.delayMs)).toEqual([PER_RELAY_TIMEOUT_MS]);
+    expect(h.clock.pending).toEqual([]);
+    expect(h.created).toHaveLength(3);
+    expect(h.created.every((pool) => pool.disposed === 0)).toBe(true);
+    // A start after the freeze opens nothing new.
+    await expect(set.start()).resolves.toEqual({ connectedRelays: 2 });
+    expect(h.created).toHaveLength(3);
+    await set.dispose();
+    expect(h.created.every((pool) => pool.disposed === 1)).toBe(true);
+    expect(host.live.size).toBe(0);
+  });
+
+  test('a start not yet begun at freeze opens no connection', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    set.freeze();
+    await expect(set.start()).resolves.toEqual({ connectedRelays: 0 });
+    expect(h.created).toHaveLength(0);
+    await set.dispose();
+    expect(h.clock.pending).toEqual([]);
+    expect(host.live.size).toBe(0);
+  });
+
+  test('a freeze reentering from the clock while the connection phase arms: no connection opens', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const watch = watchClock(h.clock);
+    const set = h.make();
+    const setTimer = h.clock.setTimer;
+    h.clock.setTimer = (callback, delayMs) => {
+      const handle = setTimer(callback, delayMs);
+      if (delayMs === PER_RELAY_TIMEOUT_MS) set.freeze();
+      return handle;
+    };
+    const started = set.start();
+    h.clock.advance(PER_RELAY_TIMEOUT_MS);
+    await expect(started).resolves.toEqual({ connectedRelays: 0 });
+    expect(h.created.every((pool) => pool.connectCalls === 0)).toBe(true);
+    expect(watch.armed.length).toBeGreaterThan(0);
+    await set.dispose();
+    expect(h.clock.pending).toEqual([]);
+    expect(host.live.size).toBe(0);
+  });
+
+  test('a freeze reentering from the clock while an attempt timer arms: nothing published, handles left to dispose', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const watch = watchClock(h.clock);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const publishedBefore = h.created.map((pool) => pool.published.length);
+    const setTimer = h.clock.setTimer;
+    h.clock.setTimer = (callback, delayMs) => {
+      const handle = setTimer(callback, delayMs);
+      if (delayMs === PER_RELAY_TIMEOUT_MS) set.freeze();
+      return handle;
+    };
+    await withHostCapture(async (hostTimers) => {
+      const attempt = set.publish(EVENT);
+      expect(h.created.map((pool) => pool.published.length)).toEqual(publishedBefore);
+      expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+      const clockTimeout = watch.armed.find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS && h.clock.timers.has(entry.handle));
+      const hostTimeout = hostTimers.armed.find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS);
+      expect(clockTimeout).toBeDefined();
+      expect(hostTimeout).toBeDefined();
+      // freeze() clears nothing: the handles stay armed until dispose() clears them.
+      expect(watch.cleared).not.toContain(clockTimeout.handle);
+      expect(hostTimers.cleared).toEqual([]);
+      h.clock.advance(PER_RELAY_TIMEOUT_MS);
+      expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+      await set.dispose();
+      expect(watch.cleared).toContain(clockTimeout.handle);
+      expect(hostTimers.cleared).toContain(hostTimeout.handle);
+    });
+    expect(host.live.size).toBe(0);
+  });
+
+  test('a late-publication gate that calls freeze(): nothing is published on the late connection', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'late', answer: 'silent' }]);
+    const set = h.make();
+    await expect(startSet(set, h.clock)).resolves.toEqual({ connectedRelays: 1 });
+    const attempt = set.publish(EVENT);
+    expect(h.created[0].published).toHaveLength(1);
+    let gateCalls = 0;
+    attempt.latePublishGate = () => {
+      gateCalls += 1;
+      set.freeze();
+      return true;
+    };
+    const late = h.created.find((pool) => pool.pendingConnect !== null);
+    expect(late).toBeDefined();
+    late.openLate();
+    for (let turn = 0; turn < 10; turn += 1) await flush();
+    expect(gateCalls).toBe(1);
+    expect(late.published).toEqual([]);
+    await set.dispose();
+    expect(h.clock.pending).toEqual([]);
+  });
+
+  test('an acceptance gate that calls freeze(): the OK is not recorded', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'ok-true' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    let gateCalls = 0;
+    const first = set.publish({ id: 'f'.repeat(64), kind: 4741 });
+    expect(first.outcomes).toEqual(['ACCEPTED']);
+    // The gate is installed on an attempt before its OK arrives: a silent relay, then a manual OK frame.
+    h.created[0].spec = { behaviour: 'normal', answer: 'silent' };
+    const attempt = set.publish(EVENT);
+    attempt.acceptGate = () => {
+      gateCalls += 1;
+      set.freeze();
+      return true;
+    };
+    h.created[0].messages.emit('message', { relay: h.created[0].url, data: ['OK', EVENT.id, true, ''] });
+    expect(gateCalls).toBe(1);
+    expect(attempt.outcomes).toEqual(['PENDING']);
+    await set.dispose();
+  });
+
+  test('a random draw that calls freeze(): no reconnection timer is armed', async () => {
+    const h = makeHarness([{ behaviour: 'drop', answer: 'silent' }]);
+    const watch = watchClock(h.clock);
+    let set = null;
+    const draws = [];
+    set = h.make({ random: { nextUint32: () => { draws.push(true); set.freeze(); return 0; } } });
+    await startSet(set, h.clock);
+    // The publication drops the connection; the supervision read that follows retires the pool.
+    set.publish(EVENT);
+    for (let turn = 0; turn < 10; turn += 1) await flush();
+    set.supervise();
+    expect(draws).toHaveLength(1);
+    const reconnectTimers = watch.armed.filter((entry) => entry.delayMs !== PER_RELAY_TIMEOUT_MS
+      && entry.delayMs !== SUPERVISION_MS && h.clock.timers.has(entry.handle));
+    expect(reconnectTimers).toEqual([]);
+    await set.dispose();
+    expect(h.clock.pending).toEqual([]);
+  });
+
+  test('dispose alone keeps its present behaviour', async () => {
+    const h = makeHarness([{ behaviour: 'hang', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    await set.dispose();
+    expect(attempt.outcomes).toEqual(['PENDING']);
+    expect(h.clock.pending).toEqual([]);
+    expect(host.live.size).toBe(0);
+    expect(h.created[0].disposed).toBe(1);
+  });
+
+  test('a freeze() made while a replacement pool is prepared opens no connection (cycle 3, r3-H3)', async () => {
+    const timers = new Map();
+    let nextHandle = 0;
+    const clock = {
+      now: () => 0,
+      setTimer(callback, delayMs) {
+        nextHandle += 1;
+        timers.set(nextHandle, { callback, delayMs });
+        return nextHandle;
+      },
+      clearTimer(handle) {
+        timers.delete(handle);
+      },
+    };
+    const pools = [];
+    const connectionsAfterFreeze = [];
+    let set = null;
+    let frozen = false;
+    const transport = {
+      create(url) {
+        const index = pools.length;
+        const pool = {
+          connected: false,
+          messages: { on() {}, off() {} },
+          disconnectAll() {
+            pool.connected = false;
+          },
+          subscribe() {},
+          connectAll() {
+            if (frozen) connectionsAfterFreeze.push(url);
+            pool.connected = true;
+            return Promise.resolve(1);
+          },
+          healthCheck() {
+            return [{ isConnected: pool.connected }];
+          },
+          publish: () => 0,
+          async dispose() {
+            pool.connected = false;
+          },
+        };
+        pools.push(pool);
+        // The factory of the replacement pool freezes the set synchronously.
+        if (index === 1) {
+          set.freeze();
+          frozen = true;
+        }
+        return pool;
+      },
+    };
+    set = createRelaySet({
+      relays: ['ws://127.0.0.1:7000'],
+      clock,
+      random: { nextUint32: () => 0 },
+      perRelayTimeoutMs: PER_RELAY_TIMEOUT_MS,
+      subscriptionId: SUBSCRIPTION_ID,
+      filter: FILTER,
+      transport,
+    });
+    try {
+      const starting = set.start();
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+      const phase = [...timers.values()].find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS);
+      expect(phase).toBeDefined();
+      phase.callback();
+      expect(await starting).toEqual({ connectedRelays: 1 });
+      pools[0].connected = false;
+      set.supervise();
+      const reconnectEntry = [...timers.entries()].find(([, entry]) => entry.delayMs === 500);
+      expect(reconnectEntry).toBeDefined();
+      const [handle, reconnect] = reconnectEntry;
+      timers.delete(handle);
+      reconnect.callback();
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+      expect(pools).toHaveLength(2);
+      expect(frozen).toBe(true);
+      expect(connectionsAfterFreeze).toEqual([]);
+    } finally {
+      await set.dispose();
+      expect(timers.size).toBe(0);
+    }
+  });
+
+  test('a freeze() made by a pool method during preparation also opens no connection (cycle 3, r3-H3)', async () => {
+    const timers = new Map();
+    let nextHandle = 0;
+    const clock = {
+      now: () => 0,
+      setTimer(callback, delayMs) {
+        nextHandle += 1;
+        timers.set(nextHandle, { callback, delayMs });
+        return nextHandle;
+      },
+      clearTimer(handle) {
+        timers.delete(handle);
+      },
+    };
+    const pools = [];
+    const connectionsAfterFreeze = [];
+    let set = null;
+    let frozen = false;
+    const transport = {
+      create() {
+        const index = pools.length;
+        const pool = {
+          connected: false,
+          messages: { on() {}, off() {} },
+          disconnectAll() {
+            pool.connected = false;
+          },
+          subscribe() {
+            if (index === 1) {
+              set.freeze();
+              frozen = true;
+            }
+          },
+          connectAll() {
+            if (frozen) connectionsAfterFreeze.push(index);
+            pool.connected = true;
+            return Promise.resolve(1);
+          },
+          healthCheck() {
+            return [{ isConnected: pool.connected }];
+          },
+          publish: () => 0,
+          async dispose() {
+            pool.connected = false;
+          },
+        };
+        pools.push(pool);
+        return pool;
+      },
+    };
+    set = createRelaySet({
+      relays: ['ws://127.0.0.1:7000'],
+      clock,
+      random: { nextUint32: () => 0 },
+      perRelayTimeoutMs: PER_RELAY_TIMEOUT_MS,
+      subscriptionId: SUBSCRIPTION_ID,
+      filter: FILTER,
+      transport,
+    });
+    try {
+      const starting = set.start();
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+      [...timers.values()].find((entry) => entry.delayMs === PER_RELAY_TIMEOUT_MS).callback();
+      expect(await starting).toEqual({ connectedRelays: 1 });
+      pools[0].connected = false;
+      set.supervise();
+      const [handle, reconnect] = [...timers.entries()].find(([, entry]) => entry.delayMs === 500);
+      timers.delete(handle);
+      reconnect.callback();
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+      expect(pools).toHaveLength(2);
+      expect(frozen).toBe(true);
+      expect(connectionsAfterFreeze).toEqual([]);
+    } finally {
+      await set.dispose();
+      expect(timers.size).toBe(0);
+    }
+  });
+});
+
+/* --- review probes r1 to r4 (cycle 4) --- */
+describe('review probe r2: probe-r2-late-freeze (regression)', () => {
+
+  test('a late-publication gate cannot publish after freezing the set', async () => {
+    const timers = new Map();
+    let nextHandle = 0;
+    const clock = {
+      now: () => 0,
+      setTimer(callback, delayMs) {
+        const handle = ++nextHandle;
+        timers.set(handle, { callback, delayMs });
+        return handle;
+      },
+      clearTimer(handle) {
+        timers.delete(handle);
+      },
+    };
+
+    const pools = [];
+    const publishedAfterFreeze = [];
+    let openSecond = null;
+    let frozen = false;
+
+    const transport = {
+      create(url) {
+        const index = pools.length;
+        const pool = {
+          connected: false,
+          messages: { on() {}, off() {} },
+          disconnectAll() {
+            pool.connected = false;
+          },
+          subscribe() {},
+          connectAll() {
+            if (index === 0) {
+              pool.connected = true;
+              return Promise.resolve(1);
+            }
+            return new Promise((resolve) => {
+              openSecond = () => {
+                pool.connected = true;
+                resolve(1);
+              };
+            });
+          },
+          healthCheck() {
+            return [{ isConnected: pool.connected }];
+          },
+          publish() {
+            if (!pool.connected) return 0;
+            if (frozen) publishedAfterFreeze.push(url);
+            return 1;
+          },
+          async dispose() {
+            pool.connected = false;
+          },
+        };
+        pools.push(pool);
+        return pool;
+      },
+    };
+
+    const set = createRelaySet({
+      relays: ['ws://127.0.0.1:7000', 'ws://127.0.0.1:7001'],
+      clock,
+      random: { nextUint32: () => 0 },
+      perRelayTimeoutMs: 11000,
+      subscriptionId: 's'.padEnd(33, '0'),
+      filter: { kinds: [4741, 4742], '#p': ['a'.repeat(64)] },
+      transport,
+    });
+
+    try {
+      const starting = set.start();
+      for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+
+      const phase = [...timers.values()].find(
+        (timer) => timer.delayMs === 11000,
+      );
+      expect(phase).toBeDefined();
+      phase.callback();
+      expect(await starting).toEqual({ connectedRelays: 1 });
+
+      const attempt = set.publish({ id: 'e'.repeat(64) });
+      attempt.latePublishGate = () => {
+        set.freeze();
+        frozen = true;
+        return true;
+      };
+
+      openSecond();
+      for (let turn = 0; turn < 30; turn += 1) await Promise.resolve();
+
+      // Predicted: ['ws://127.0.0.1:7001'].
+      expect(publishedAfterFreeze).toEqual([]);
+    } finally {
+      if (openSecond !== null) openSecond();
+      await set.dispose();
+      expect(timers.size).toBe(0);
+    }
+  });
+});
+
+describe('review probe r3: probe-r3-reconnect-freeze (regression)', () => {
+
+  test('replacement preparation cannot open a connection after freezing the set', async () => {
+    const timers = new Map();
+    let nextHandle = 0;
+    const clock = {
+      now: () => 0,
+      setTimer(callback, delayMs) {
+        const handle = ++nextHandle;
+        timers.set(handle, { callback, delayMs });
+        return handle;
+      },
+      clearTimer(handle) {
+        timers.delete(handle);
+      },
+    };
+
+    const pools = [];
+    const connectionsAfterFreeze = [];
+    let set = null;
+    let frozen = false;
+
+    const transport = {
+      create(url) {
+        const index = pools.length;
+        const pool = {
+          connected: false,
+          messages: { on() {}, off() {} },
+          disconnectAll() {
+            pool.connected = false;
+          },
+          subscribe() {},
+          connectAll() {
+            if (frozen) connectionsAfterFreeze.push(url);
+            pool.connected = true;
+            return Promise.resolve(1);
+          },
+          healthCheck() {
+            return [{ isConnected: pool.connected }];
+          },
+          publish: () => 0,
+          async dispose() {
+            pool.connected = false;
+          },
+        };
+        pools.push(pool);
+
+        if (index === 1) {
+          set.freeze();
+          frozen = true;
+        }
+        return pool;
+      },
+    };
+
+    set = createRelaySet({
+      relays: ['ws://127.0.0.1:7000'],
+      clock,
+      random: { nextUint32: () => 0 },
+      perRelayTimeoutMs: 11000,
+      subscriptionId: 's'.padEnd(33, '0'),
+      filter: { kinds: [4741, 4742], '#p': ['a'.repeat(64)] },
+      transport,
+    });
+
+    try {
+      const starting = set.start();
+      for (let turn = 0; turn < 20; turn += 1) {
+        await Promise.resolve();
+      }
+
+      const phase = [...timers.values()].find(
+        (entry) => entry.delayMs === 11000,
+      );
+      expect(phase).toBeDefined();
+      phase.callback();
+      expect(await starting).toEqual({ connectedRelays: 1 });
+
+      pools[0].connected = false;
+      set.supervise();
+
+      const reconnectEntry = [...timers.entries()].find(
+        ([, entry]) => entry.delayMs === 500,
+      );
+      expect(reconnectEntry).toBeDefined();
+
+      const [handle, reconnect] = reconnectEntry;
+      timers.delete(handle);
+      reconnect.callback();
+
+      for (let turn = 0; turn < 20; turn += 1) {
+        await Promise.resolve();
+      }
+
+      expect(pools).toHaveLength(2);
+      expect(frozen).toBe(true);
+
+      // Predicted: ['ws://127.0.0.1:7000'].
+      expect(connectionsAfterFreeze).toEqual([]);
+    } finally {
+      await set.dispose();
+      expect(timers.size).toBe(0);
+    }
+  });
+});
+
+describe('review probe r4: probe-r4-connection-boundaries (regression)', () => {
+
+  const flush = async () => {
+    for (let turn = 0; turn < 30; turn += 1) {
+      await Promise.resolve();
+    }
+  };
+
+  function harness({
+    freezeGetterAt = null,
+    disposeFactoryAt = null,
+  } = {}) {
+    const timers = new Map();
+    let nextHandle = 0;
+
+    const clock = {
+      now: () => 0,
+      setTimer(callback, delayMs) {
+        const handle = ++nextHandle;
+        timers.set(handle, { callback, delayMs });
+        return handle;
+      },
+      clearTimer(handle) {
+        timers.delete(handle);
+      },
+    };
+
+    const pools = [];
+    const connectionCalls = [];
+    const connectionsAfterFreeze = [];
+    let set = null;
+    let frozen = false;
+    let stopping = null;
+
+    const transport = {
+      create() {
+        const index = pools.length;
+        const pool = {
+          connected: false,
+          messages: { on() {}, off() {} },
+          disconnectAll() {
+            pool.connected = false;
+          },
+          subscribe() {},
+          get connectAll() {
+            if (index === freezeGetterAt) {
+              set.freeze();
+              frozen = true;
+            }
+
+            return function () {
+              connectionCalls.push(index);
+              if (frozen) connectionsAfterFreeze.push(index);
+              pool.connected = true;
+              return Promise.resolve(1);
+            };
+          },
+          healthCheck() {
+            return [{ isConnected: pool.connected }];
+          },
+          publish: () => 0,
+          async dispose() {
+            pool.connected = false;
+          },
+        };
+
+        pools.push(pool);
+
+        if (index === disposeFactoryAt) {
+          // This path never calls freeze().
+          stopping = set.dispose();
+        }
+
+        return pool;
+      },
+    };
+
+    set = createRelaySet({
+      relays: ['ws://127.0.0.1:7000'],
+      clock,
+      random: { nextUint32: () => 0 },
+      perRelayTimeoutMs: 11000,
+      subscriptionId: 's'.padEnd(33, '0'),
+      filter: { kinds: [4741, 4742], '#p': ['a'.repeat(64)] },
+      transport,
+    });
+
+    return {
+      pools,
+      connectionCalls,
+      connectionsAfterFreeze,
+      get frozen() {
+        return frozen;
+      },
+      async start() {
+        const starting = set.start();
+        await flush();
+
+        const phase = [...timers.values()].find(
+          (entry) => entry.delayMs === 11000,
+        );
+        expect(phase).toBeDefined();
+        phase.callback();
+
+        return starting;
+      },
+      async replace() {
+        pools[0].connected = false;
+        set.supervise();
+
+        const entry = [...timers.entries()].find(
+          ([, timer]) => timer.delayMs === 500,
+        );
+        expect(entry).toBeDefined();
+
+        const [handle, timer] = entry;
+        timers.delete(handle);
+        timer.callback();
+        await flush();
+      },
+      async close() {
+        if (stopping !== null) await stopping;
+        await set.dispose();
+        expect(timers.size).toBe(0);
+      },
+    };
+  }
+
+  test.each([
+    ['initial connection', 0],
+    ['replacement connection', 1],
+  ])('%s: a connectAll getter cannot admit a call after freeze',
+    async (_title, freezeGetterAt) => {
+      const h = harness({ freezeGetterAt });
+
+      try {
+        const started = await h.start();
+
+        if (freezeGetterAt === 1) {
+          expect(started).toEqual({ connectedRelays: 1 });
+          await h.replace();
+          expect(h.pools).toHaveLength(2);
+        }
+
+        expect(h.frozen).toBe(true);
+
+        // Predicted at this head: [0] or [1], respectively.
+        expect(h.connectionsAfterFreeze).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    });
+
+  test('S2 preserves the baseline replacement path for dispose alone',
+    async () => {
+      const h = harness({ disposeFactoryAt: 1 });
+
+      try {
+        expect(await h.start()).toEqual({ connectedRelays: 1 });
+        await h.replace();
+
+        expect(h.pools).toHaveLength(2);
+        expect(h.frozen).toBe(false);
+
+        // Baseline/r3 comparison, not a recommendation to restore this behavior.
+        // Predicted at 32f57e0: [0].
+        expect(h.connectionCalls).toEqual([0, 1]);
+      } finally {
+        await h.close();
+      }
+    });
+});
+
+/* --- S2 freeze table: every caller hook of the connection paths (cycle 4) --- */
+
+describe('S2 table: freeze() from every caller hook of a connection path', () => {
+  const flushTurns = async () => {
+    for (let turn = 0; turn < 30; turn += 1) await Promise.resolve();
+  };
+
+  /**
+   * One relay set with one relay, a recording clock and a recording transport.
+   * `hook` names the caller code that stops the set, `at` the pool (0 the
+   * initial one, 1 its replacement) or, for the clock, random and schedule
+   * hooks, the replacement scheduling; `stop` is 'freeze' or 'dispose'.
+   */
+  function harness({ hook, at, stop }) {
+    const timers = new Map();
+    let nextHandle = 0;
+    const pools = [];
+    const connectionCalls = [];
+    const afterStop = [];
+    let set = null;
+    let stopped = false;
+    let disposal = null;
+    let fired = false;
+    const fire = (name, index) => {
+      if (fired || name !== hook || index !== at) return;
+      fired = true;
+      if (stop === 'freeze') set.freeze();
+      else disposal = set.dispose();
+      stopped = true;
+    };
+    const clock = {
+      now: () => 0,
+      setTimer(callback, delayMs) {
+        if (delayMs === 500) fire('clock.setTimer', 'replacement');
+        const handle = ++nextHandle;
+        timers.set(handle, { callback, delayMs });
+        return handle;
+      },
+      clearTimer(handle) {
+        timers.delete(handle);
+      },
+    };
+    const random = {
+      nextUint32() {
+        fire('random.nextUint32', 'replacement');
+        return 0;
+      },
+    };
+    const transport = {
+      create() {
+        const index = pools.length;
+        const pool = {
+          connected: false,
+          messages: {
+            on() { fire('messages.on', index); },
+            off() {},
+          },
+          disconnectAll() {
+            fire('disconnectAll', index);
+            pool.connected = false;
+          },
+          subscribe() { fire('subscribe', index); },
+          get connectAll() {
+            fire('connectAll getter', index);
+            return function connectAll() {
+              fire('connectAll call', index);
+              connectionCalls.push(index);
+              if (stopped) afterStop.push(index);
+              pool.connected = true;
+              return Promise.resolve(1);
+            };
+          },
+          healthCheck() {
+            return [{ isConnected: pool.connected }];
+          },
+          publish: () => 0,
+          async dispose() {
+            pool.connected = false;
+          },
+        };
+        pools.push(pool);
+        fire('transport.create', index);
+        return pool;
+      },
+    };
+    set = createRelaySet({
+      relays: ['ws' + ':' + '//127.0.0.1:7000'],
+      clock,
+      random,
+      perRelayTimeoutMs: 11000,
+      subscriptionId: 's'.padEnd(33, '0'),
+      filter: { kinds: [4741, 4742], '#p': ['a'.repeat(64)] },
+      transport,
+      reconnectDelay: (k, u) => {
+        fire('reconnectDelay', 'replacement');
+        return 500 + 0 * (k + u);
+      },
+    });
+    return {
+      timers,
+      pools,
+      connectionCalls,
+      afterStop,
+      get fired() {
+        return fired;
+      },
+      async run() {
+        const starting = set.start();
+        await flushTurns();
+        const phase = [...timers.entries()].find(([, entry]) => entry.delayMs === 11000);
+        if (phase) {
+          timers.delete(phase[0]);
+          phase[1].callback();
+        }
+        const started = await starting;
+        await flushTurns();
+        if (pools[0]) pools[0].connected = false;
+        set.supervise();
+        const replacement = [...timers.entries()].find(([, entry]) => entry.delayMs === 500);
+        if (replacement) {
+          timers.delete(replacement[0]);
+          replacement[1].callback();
+        }
+        await flushTurns();
+        return started;
+      },
+      async close() {
+        if (disposal !== null) await disposal;
+        await set.dispose();
+        expect(timers.size).toBe(0);
+      },
+    };
+  }
+
+  const POOL_HOOKS = ['transport.create', 'disconnectAll', 'subscribe', 'messages.on', 'connectAll getter', 'connectAll call'];
+  const SCHEDULE_HOOKS = ['random.nextUint32', 'reconnectDelay', 'clock.setTimer'];
+  const ROWS = [
+    ...POOL_HOOKS.flatMap((hook) => [[hook, 0], [hook, 1]]),
+    ...SCHEDULE_HOOKS.map((hook) => [hook, 'replacement']),
+  ];
+
+  test.each(ROWS)('freeze from %s (pool %s): no connection opens after it', async (hook, at) => {
+    const h = harness({ hook, at, stop: 'freeze' });
+    try {
+      await h.run();
+      expect(h.fired).toBe(true);
+      // `connectAll call` is the invocation itself: it may complete; no other
+      // invocation follows it.
+      expect(h.afterStop).toEqual(hook === 'connectAll call' ? [at] : []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  // dispose() alone keeps its behaviour at the exact base (S2): the connection
+  // calls each row makes at a5d5fc2.
+  const BASELINE = Object.freeze({
+    'transport.create@0': [0],
+    'transport.create@1': [0, 1],
+    'disconnectAll@0': [0],
+    'disconnectAll@1': [0, 1],
+    'subscribe@0': [0],
+    'subscribe@1': [0, 1],
+    'messages.on@0': [0],
+    'messages.on@1': [0, 1],
+    'connectAll getter@0': [0],
+    'connectAll getter@1': [0, 1],
+    'connectAll call@0': [0],
+    'connectAll call@1': [0, 1],
+    'random.nextUint32@replacement': [0],
+    'reconnectDelay@replacement': [0],
+    'clock.setTimer@replacement': [0],
+  });
+
+  test.each(ROWS)('dispose alone from %s (pool %s): the base behaviour', async (hook, at) => {
+    const h = harness({ hook, at, stop: 'dispose' });
+    try {
+      await h.run();
+      expect(h.fired).toBe(true);
+      expect(h.connectionCalls).toEqual(BASELINE[`${hook}@${at}`]);
+    } finally {
+      await h.close();
+    }
+  });
+});

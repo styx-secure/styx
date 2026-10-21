@@ -172,7 +172,7 @@ describe('module surface', () => {
   test('the returned object is frozen and carries exactly ingest and shutdown', () => {
     const { module } = makeHarness();
     expect(Object.isFrozen(module)).toBe(true);
-    expect(Object.keys(module).sort()).toEqual(['ingest', 'shutdown']);
+    expect(Object.keys(module).sort()).toEqual(['ingest', 'settled', 'shutdown']);
     expect(typeof module.ingest).toBe('function');
     expect(typeof module.shutdown).toBe('function');
   });
@@ -2431,5 +2431,447 @@ describe('the remaining in-allowlist findings of the round-3 review', () => {
     await flush(8);
     expect(hostileProcess.events).toEqual([]);
     expect(hostileProcess.published).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * Seam S1 (card I-SDK): the client's public key, read once by the client
+ * (C-SDK section 8.3) and handed over as `options.publicKey`.
+ * ------------------------------------------------------------------------- */
+
+describe('seam S1 -- the publicKey option', () => {
+  const MODULE_MEMBERS = ['ingest', 'settled', 'shutdown'];
+
+  test('the inbound processor carries exactly ingest, shutdown and settled', () => {
+    const { module } = makeHarness();
+    expect(Object.isFrozen(module)).toBe(true);
+    expect(Reflect.ownKeys(module).map(String).sort()).toEqual(MODULE_MEMBERS);
+    const keyed = makeHarness({ publicKey: 'a'.repeat(64) });
+    expect(Reflect.ownKeys(keyed.module).map(String).sort()).toEqual(MODULE_MEMBERS);
+  });
+
+  test('with a lowercase 64-hex publicKey the module never calls getPublicKey and uses the key', async () => {
+    const owner = makeKey();
+    let reads = 0;
+    const harness = makeHarness({
+      owner,
+      publicKey: owner.pub,
+      identity: {
+        getPublicKey: () => {
+          reads += 1;
+          return 'f'.repeat(64);
+        },
+        sign: ({ digest }) => schnorr.sign(digest, owner.priv),
+      },
+    });
+    for (let index = 0; index < 3; index += 1) {
+      harness.module.ingest(eventFrame(messageEvent({
+        sender: harness.other, owner: owner.pub, n: index.toString(16).padStart(32, '0'), payload: [index],
+      })));
+    }
+    harness.module.ingest(eventFrame(receiptEvent({ recipient: harness.other, owner: owner.pub, eventId: 'c'.repeat(64) })));
+    expect(await waitFor(() => harness.events.length === 3 && harness.acks.length === 1)).toBe(true);
+    expect(reads).toBe(0);
+    expect(harness.events.map((event) => event.kind)).toEqual(['MESSAGE_RECEIVED', 'MESSAGE_RECEIVED', 'MESSAGE_RECEIVED']);
+    expect(harness.published).toHaveLength(3);
+    for (const receipt of harness.published) expect(receipt.pubkey).toBe(owner.pub);
+    // A frame addressed to another key still fails step 3.
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.other.pub })));
+    expect(await waitFor(() => harness.events.length === 4)).toBe(true);
+    expect(harness.events[3]).toEqual({ kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' });
+    expect(reads).toBe(0);
+  });
+
+  test('a present publicKey of any other value is a failed key reading and getPublicKey is never called', async () => {
+    const owner = makeKey();
+    for (const publicKey of [
+      null,
+      '',
+      owner.pub.toUpperCase(),
+      owner.pub.slice(0, 63),
+      `${owner.pub}0`,
+      `0x${owner.pub.slice(2)}`,
+      'z'.repeat(64),
+      12,
+      true,
+      {},
+      [owner.pub],
+      { toString: () => owner.pub },
+    ]) {
+      let reads = 0;
+      const harness = makeHarness({
+        owner,
+        publicKey,
+        identity: {
+          getPublicKey: () => {
+            reads += 1;
+            return owner.pub;
+          },
+          sign: ({ digest }) => schnorr.sign(digest, owner.priv),
+        },
+      });
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+      harness.module.ingest(eventFrame(receiptEvent({ recipient: harness.other, owner: owner.pub, eventId: 'c'.repeat(64) })));
+      expect(await waitFor(() => harness.events.length === 2)).toBe(true);
+      // Exactly the handling of a failed `getPublicKey` reading: every frame
+      // fails step 3, no port or seam call follows.
+      expect(harness.events).toEqual([
+        { kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' },
+        { kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' },
+      ]);
+      expect(reads).toBe(0);
+      expect(harness.opens).toEqual([]);
+      expect(harness.acks).toEqual([]);
+      expect(harness.published).toEqual([]);
+    }
+  });
+
+  test('a present publicKey of value undefined is a failed key reading too; getPublicKey is never called', async () => {
+    const owner = makeKey();
+    let reads = 0;
+    const base = makeHarness({
+      owner,
+      identity: {
+        getPublicKey: () => {
+          reads += 1;
+          return owner.pub;
+        },
+        sign: ({ digest }) => schnorr.sign(digest, owner.priv),
+      },
+    });
+    // An own property whose value is undefined, built without the harness (which deletes undefined options).
+    const options = { ...base.options, publicKey: undefined };
+    expect(Object.prototype.hasOwnProperty.call(options, 'publicKey')).toBe(true);
+    const module = createReceipts(options);
+    module.ingest(eventFrame(messageEvent({ sender: base.other, owner: owner.pub })));
+    module.ingest(eventFrame(receiptEvent({ recipient: base.other, owner: owner.pub, eventId: 'c'.repeat(64) })));
+    expect(await waitFor(() => base.events.length === 2)).toBe(true);
+    expect(base.events).toEqual([
+      { kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' },
+      { kind: 'INBOUND_DISCARDED', code: 'E_SDK_INBOUND_INVALID' },
+    ]);
+    expect(reads).toBe(0);
+    expect(base.opens).toEqual([]);
+    expect(base.acks).toEqual([]);
+    expect(base.published).toEqual([]);
+  });
+
+  test('an absent publicKey keeps the present behaviour: getPublicKey is read once', async () => {
+    let reads = 0;
+    const harness = makeHarness({
+      publicKey: undefined,
+      identity: {
+        getPublicKey: () => {
+          reads += 1;
+          return harness.owner.pub;
+        },
+        sign: ({ digest }) => schnorr.sign(digest, harness.owner.priv),
+      },
+    });
+    expect('publicKey' in harness.options).toBe(false);
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    harness.module.ingest(eventFrame(messageEvent({
+      sender: harness.other, owner: harness.owner.pub, n: 'c'.repeat(32),
+    })));
+    expect(await waitFor(() => harness.events.length === 2)).toBe(true);
+    expect(reads).toBe(1);
+    expect(harness.events.map((event) => event.kind)).toEqual(['MESSAGE_RECEIVED', 'MESSAGE_RECEIVED']);
+  });
+});
+
+/* ------------------------------------------------------------------------- *
+ * Seam S3 (card I-SDK): the inbound drain of C-DLV section 4.6 step (4).
+ * ------------------------------------------------------------------------- */
+
+describe('seam S3 -- settled()', () => {
+  /** A promise the test resolves by hand. */
+  function held() {
+    let release;
+    const promise = new Promise((resolve) => {
+      release = resolve;
+    });
+    return { promise, release };
+  }
+
+  /** Track whether a promise has settled, and how. */
+  function observe(promise) {
+    const state = { resolved: false, rejected: false, value: 'unset' };
+    promise.then(
+      (value) => {
+        state.resolved = true;
+        state.value = value;
+      },
+      () => {
+        state.rejected = true;
+      },
+    );
+    return state;
+  }
+
+  test('with no call in progress settled() resolves, also after shutdown, and never rejects', async () => {
+    const { module } = makeHarness();
+    await expect(module.settled()).resolves.toBeUndefined();
+    module.shutdown();
+    await expect(module.settled()).resolves.toBeUndefined();
+    await expect(module.settled()).resolves.toBeUndefined();
+  });
+
+  test('settled() waits for a session.open started before shutdown()', async () => {
+    const gate = held();
+    let opens = 0;
+    // A long port-call bound: only the release can settle the call here.
+    const slow = makeHarness({
+      perRelayTimeoutMs: 60000,
+      session: {
+        open: () => {
+          opens += 1;
+          return gate.promise.then(() => ({ plaintext: new Uint8Array([1]) }));
+        },
+      },
+    });
+    slow.module.ingest(eventFrame(messageEvent({ sender: slow.other, owner: slow.owner.pub })));
+    expect(await waitFor(() => opens === 1)).toBe(true);
+    slow.module.shutdown();
+    const state = observe(slow.module.settled());
+    await flush(4);
+    expect(state.resolved).toBe(false);
+    gate.release();
+    expect(await waitFor(() => state.resolved)).toBe(true);
+    expect(state.rejected).toBe(false);
+    expect(state.value).toBeUndefined();
+    expect(slow.events).toEqual([]);
+  });
+
+  test('settled() waits for an identity.sign started before shutdown()', async () => {
+    const gate = held();
+    const owner = makeKey();
+    let signs = 0;
+    const harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      identity: {
+        getPublicKey: () => owner.pub,
+        sign: ({ digest }) => {
+          signs += 1;
+          return gate.promise.then(() => schnorr.sign(digest, owner.priv));
+        },
+      },
+    });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+    expect(await waitFor(() => signs === 1)).toBe(true);
+    harness.module.shutdown();
+    const state = observe(harness.module.settled());
+    await flush(4);
+    expect(state.resolved).toBe(false);
+    gate.release();
+    expect(await waitFor(() => state.resolved)).toBe(true);
+    expect(state.rejected).toBe(false);
+    expect(harness.published).toEqual([]);
+  });
+
+  test('settled() waits for an acceptReceipt started before shutdown()', async () => {
+    const gate = held();
+    const owner = makeKey();
+    let accepts = 0;
+    const harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      acceptReceipt: () => {
+        accepts += 1;
+        return gate.promise.then(() => Object.freeze({ ok: false, code: 'E_SDK_UNKNOWN_DELIVERY' }));
+      },
+    });
+    harness.module.ingest(eventFrame(receiptEvent({ recipient: harness.other, owner: owner.pub, eventId: 'c'.repeat(64) })));
+    expect(await waitFor(() => accepts === 1)).toBe(true);
+    harness.module.shutdown();
+    const state = observe(harness.module.settled());
+    await flush(4);
+    expect(state.resolved).toBe(false);
+    gate.release();
+    expect(await waitFor(() => state.resolved)).toBe(true);
+    expect(state.rejected).toBe(false);
+    expect(harness.events).toEqual([]);
+  });
+
+  test('settled() waits for an identity.getPublicKey started before shutdown()', async () => {
+    const gate = held();
+    const owner = makeKey();
+    const harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      identity: {
+        getPublicKey: () => gate.promise.then(() => owner.pub),
+        sign: ({ digest }) => schnorr.sign(digest, owner.priv),
+      },
+    });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+    await flush(2);
+    harness.module.shutdown();
+    const state = observe(harness.module.settled());
+    await flush(4);
+    expect(state.resolved).toBe(false);
+    gate.release();
+    expect(await waitFor(() => state.resolved)).toBe(true);
+    expect(harness.opens).toEqual([]);
+  });
+
+  test('settled() waits for a promise publishReceipt returned before shutdown(), and a rejection is absorbed', async () => {
+    const gate = held();
+    const owner = makeKey();
+    let publishes = 0;
+    const harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      publishReceipt: () => {
+        publishes += 1;
+        return gate.promise.then(() => {
+          throw new Error('the receipt publication rejects');
+        });
+      },
+    });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+    expect(await waitFor(() => publishes === 1)).toBe(true);
+    harness.module.shutdown();
+    const state = observe(harness.module.settled());
+    await flush(4);
+    expect(state.resolved).toBe(false);
+    gate.release();
+    expect(await waitFor(() => state.resolved)).toBe(true);
+    expect(state.rejected).toBe(false);
+  });
+
+  test('a call that never settles is waited for only up to its port-call timeout', async () => {
+    for (const kind of ['open', 'sign', 'acceptReceipt', 'publishReceipt']) {
+      const owner = makeKey();
+      const never = () => new Promise(() => {});
+      let started = 0;
+      const mark = (fn) => (...args) => {
+        started += 1;
+        return fn(...args);
+      };
+      const overrides = { owner };
+      if (kind === 'open') overrides.session = { open: mark(never) };
+      if (kind === 'sign') {
+        overrides.identity = { getPublicKey: () => owner.pub, sign: mark(never) };
+      }
+      if (kind === 'acceptReceipt') overrides.acceptReceipt = mark(never);
+      if (kind === 'publishReceipt') overrides.publishReceipt = mark(never);
+      const harness = makeHarness(overrides);
+      const frameEvent = kind === 'acceptReceipt'
+        ? receiptEvent({ recipient: harness.other, owner: owner.pub, eventId: 'c'.repeat(64) })
+        : messageEvent({ sender: harness.other, owner: owner.pub });
+      harness.module.ingest(eventFrame(frameEvent));
+      expect(await waitFor(() => started === 1)).toBe(true);
+      harness.module.shutdown();
+      const startedAt = Date.now();
+      const state = observe(harness.module.settled());
+      // One port-call timeout is PORT_CALL_TIMEOUT_MS here; a generous margin
+      // only absorbs scheduling delays of the test host.
+      expect(await waitFor(() => state.resolved, PORT_CALL_TIMEOUT_MS + 2000)).toBe(true);
+      expect(Date.now() - startedAt).toBeLessThan(PORT_CALL_TIMEOUT_MS + 2000);
+      expect(state.rejected).toBe(false);
+    }
+  });
+
+  test('called before shutdown(), settled() waits for the calls in progress at that moment only', async () => {
+    const first = held();
+    const second = held();
+    const owner = makeKey();
+    const gates = [first, second];
+    let opens = 0;
+    const harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      session: {
+        open: () => {
+          const gate = gates[opens];
+          opens += 1;
+          return gate.promise.then(() => ({ plaintext: new Uint8Array([1]) }));
+        },
+      },
+    });
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+    expect(await waitFor(() => opens === 1)).toBe(true);
+    const state = observe(harness.module.settled());
+    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub, n: 'c'.repeat(32) })));
+    await flush(4);
+    expect(state.resolved).toBe(false);
+    first.release();
+    // The second frame's open starts after `settled()` was called and is not
+    // waited for.
+    expect(await waitFor(() => state.resolved)).toBe(true);
+    expect(await waitFor(() => opens === 2)).toBe(true);
+    const later = observe(harness.module.settled());
+    await flush(4);
+    expect(later.resolved).toBe(false);
+    second.release();
+    expect(await waitFor(() => later.resolved)).toBe(true);
+    harness.module.shutdown();
+  });
+
+  test('settled() covers a session.open whose own invocation stops the module (cycle 3, r3-H1)', async () => {
+    const gate = held();
+    const owner = makeKey();
+    let opens = 0;
+    let state = null;
+    let harness = null;
+    harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      session: {
+        open: () => {
+          opens += 1;
+          // The caller's method stops the module and asks for the drain before
+          // it returns: its own call is in progress and must be waited for.
+          harness.module.shutdown();
+          state = observe(harness.module.settled());
+          return gate.promise.then(() => ({ plaintext: new Uint8Array([1]) }));
+        },
+      },
+    });
+    try {
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+      expect(await waitFor(() => opens === 1)).toBe(true);
+      await flush(8);
+      expect(state.resolved).toBe(false);
+      gate.release();
+      expect(await waitFor(() => state.resolved)).toBe(true);
+      expect(state.rejected).toBe(false);
+    } finally {
+      // The held call is released also when an assertion above fails, so no
+      // port-call timer outlives the test.
+      gate.release();
+    }
+  });
+
+  test('settled() covers a publishReceipt whose own invocation stops the module (cycle 3, r3-H1)', async () => {
+    const gate = held();
+    const owner = makeKey();
+    let publishes = 0;
+    let state = null;
+    let harness = null;
+    harness = makeHarness({
+      owner,
+      perRelayTimeoutMs: 60000,
+      publishReceipt: () => {
+        publishes += 1;
+        harness.module.shutdown();
+        state = observe(harness.module.settled());
+        return gate.promise;
+      },
+    });
+    try {
+      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: owner.pub })));
+      expect(await waitFor(() => publishes === 1)).toBe(true);
+      await flush(8);
+      expect(state.resolved).toBe(false);
+      gate.release();
+      expect(await waitFor(() => state.resolved)).toBe(true);
+      expect(state.rejected).toBe(false);
+    } finally {
+      // The held call is released also when an assertion above fails, so no
+      // port-call timer outlives the test.
+      gate.release();
+    }
   });
 });

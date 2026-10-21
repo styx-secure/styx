@@ -426,14 +426,15 @@ function isTagList(tags) {
  * seam of C-DLV section 7.2; `acceptReceipt` -- the item-side seam of C-DLV
  * section 7.3, which is card I-QUEUE's `acceptReceipt`; and `onEvent` -- the
  * sink for the frozen `MESSAGE_RECEIVED` and `INBOUND_DISCARDED` events of
- * C-SDK section 7.
+ * C-SDK section 7; and, optionally, `publicKey` -- the client's public key as
+ * the client read it once (C-SDK section 8.3), described below.
  *
  * This function never throws, for any `options`: a fault while reading them is
  * remembered as an internal fault, and every operation then answers as if the
  * affected port were absent.
  *
  * @param {object} options
- * @returns {{ ingest: Function, shutdown: Function }}
+ * @returns {{ ingest: Function, shutdown: Function, settled: Function }}
  */
 export function createReceipts(options) {
   /* --- options, read once, guarded ------------------------------------- */
@@ -448,6 +449,10 @@ export function createReceipts(options) {
       publishReceipt: source.publishReceipt,
       acceptReceipt: source.acceptReceipt,
       onEvent: source.onEvent,
+      publicKey: source.publicKey,
+      // S1: the option is present when the property exists, own or inherited,
+      // whatever its value, `undefined` included.
+      publicKeyPresent: 'publicKey' in Object(source),
     };
   } catch {
     read = null;
@@ -474,6 +479,63 @@ export function createReceipts(options) {
   let publicKeyRead = false;
   let publicKey = null;
   let publicKeyUnknown = false;
+
+  /* C-SDK section 8.3: the client reads its public key once and may hand it
+   * over as `options.publicKey`. The option is present when the property
+   * exists, whatever its value (S1). A lowercase 64-hex string is the
+   * client's key; any other value, `undefined` included, is a failed reading
+   * of the key (no `p` tag can equal it, so every frame fails C-DLV section
+   * 7.1 step 3 exactly as after a failed `getPublicKey`). In both cases
+   * `identity.getPublicKey()` is never called. */
+  if (read !== null && read.publicKeyPresent) {
+    publicKeyRead = true;
+    publicKey = typeof read.publicKey === 'string' && HEX64.test(read.publicKey) ? read.publicKey : null;
+    publicKeyUnknown = false;
+  }
+
+  /* C-DLV section 4.6 step (4): every port call and seam call in progress,
+   * each bounded by its port-call timeout, so `settled()` can wait for them. */
+  const inFlight = new Set();
+
+  /**
+   * Register one bounded call before it is invoked: the caller's method runs
+   * synchronously inside the invocation and may itself stop the client, so a
+   * call registered only once its promise exists would be missing from the
+   * snapshot `settled()` takes (C-DLV section 4.6 step (4)).
+   *
+   * @returns {() => void} ends the registration; called once the call has
+   *   settled or reached its bound
+   */
+  function begin() {
+    let end;
+    const pending = new Promise((resolve) => {
+      end = () => resolve(undefined);
+    });
+    inFlight.add(pending);
+    pending.then(() => inFlight.delete(pending));
+    return end;
+  }
+
+  /**
+   * One port call of this module, registered from before its invocation
+   * until it settles or reaches its bound.
+   *
+   * @param {unknown} port
+   * @param {string} name
+   * @param {unknown[]} args
+   * @returns {ReturnType<typeof callPort>}
+   */
+  function trackedCall(port, name, args) {
+    const end = begin();
+    let call;
+    try {
+      call = callPort(port, name, args, portCallTimeoutMs, () => stopped);
+    } catch {
+      call = Promise.resolve({ ok: false });
+    }
+    call.then(end, end);
+    return call;
+  }
 
   const failure = (code) => Object.freeze({ ok: false, code });
   const success = (value) => Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -525,8 +587,7 @@ export function createReceipts(options) {
   async function ownPublicKey() {
     if (publicKeyRead) return { key: publicKey, unknown: publicKeyUnknown };
     publicKeyRead = true;
-    const called = await callPort(read === null ? null : read.identity, 'getPublicKey', [],
-      portCallTimeoutMs, () => stopped);
+    const called = await trackedCall(read === null ? null : read.identity, 'getPublicKey', []);
     if (!called.ok) {
       publicKey = null;
       publicKeyUnknown = false;
@@ -735,8 +796,8 @@ export function createReceipts(options) {
     if (id === null) return { ok: false };
     /* C-DLV section 4.6 step (1): no port call starts after the stop. */
     if (stopped) return { ok: false };
-    const signed = await callPort(read === null ? null : read.identity, 'sign',
-      [{ digest: hexToBytes(id) }], portCallTimeoutMs, () => stopped);
+    const signed = await trackedCall(read === null ? null : read.identity, 'sign',
+      [{ digest: hexToBytes(id) }]);
     if (!signed.ok) return { ok: false };
     /* C-DLV section 4.5 ahead of every other code: a signature return that
      * carries a closed slot outside its closed set is an unknown value, not a
@@ -768,12 +829,20 @@ export function createReceipts(options) {
       return;
     }
     if (typeof seam !== 'function') return;
+    /* C-DLV section 4.6 step (4): the call is waited for by `settled()`,
+     * bounded by the port-call timeout, from before the seam is invoked. */
+    const end = begin();
     try {
       const returned = seam(receipt);
-      if (isThenable(returned)) consume(returned);
+      if (isThenable(returned)) {
+        consume(returned);
+        settleWithin(returned, portCallTimeoutMs).then(end, end);
+        return;
+      }
     } catch {
       // Receipt publication is best effort (C-DLV section 7.2).
     }
+    end();
   }
 
   /* --- C-DLV sections 7.1 and 7.2: one frame ---------------------------- */
@@ -813,8 +882,8 @@ export function createReceipts(options) {
     }
     /* C-DLV section 4.6 step (1): no port call starts after the stop. */
     if (stopped) return null;
-    const opened = await callPort(read === null ? null : read.session, 'open',
-      [{ sender: event.pubkey, ciphertext }], portCallTimeoutMs, () => stopped);
+    const opened = await trackedCall(read === null ? null : read.session, 'open',
+      [{ sender: event.pubkey, ciphertext }]);
     /* ... and no event follows it either. */
     if (stopped) return null;
     if (!opened.ok) {
@@ -885,8 +954,8 @@ export function createReceipts(options) {
     }
     /* C-DLV section 4.6 step (1): no seam call starts after the stop. */
     if (stopped) return;
-    const called = await callPort({ acceptReceipt: seam }, 'acceptReceipt',
-      [{ eventId: event.tags[1][1], recipient: event.pubkey }], portCallTimeoutMs, () => stopped);
+    const called = await trackedCall({ acceptReceipt: seam }, 'acceptReceipt',
+      [{ eventId: event.tags[1][1], recipient: event.pubkey }]);
     /* ... and no event follows it either. */
     if (stopped) return;
     if (!called.ok) {
@@ -1099,7 +1168,22 @@ export function createReceipts(options) {
     return success({ dropped });
   }
 
-  return Object.freeze({ ingest, shutdown });
+  /**
+   * C-DLV section 4.6 step (4): a promise that never rejects and resolves once
+   * every port call and seam call this module started before the call of
+   * `settled()` -- `session.open`, `identity.sign`, `identity.getPublicKey`,
+   * `acceptReceipt`, and every promise a `publishReceipt` call returned -- has
+   * settled or reached its port-call timeout. After `shutdown()` no such call
+   * starts, so it then covers every call started before `shutdown()`.
+   *
+   * @returns {Promise<void>}
+   */
+  function settled() {
+    const pending = [...inFlight];
+    return Promise.all(pending).then(() => undefined, () => undefined);
+  }
+
+  return Object.freeze({ ingest, shutdown, settled });
 }
 
 /**
