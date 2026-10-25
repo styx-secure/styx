@@ -1,12 +1,16 @@
 // B-CHR dedicated worker (act #317 6091950328 §1 "Harness"): the I-TXN driver and the port run here,
 // in one dedicated worker that the harness creates and that dies with its page. Port-neutral: it uses
 // only the port's public C-FMT/I-TXN interface and the public VaultDb reads.
+// instrument.mjs is imported FIRST: it captures every intrinsic the observer uses at its top-level
+// evaluation, before any other module of the worker (owner act v2 §3), and installs the observer there
+// (K19 continuous collection, owner decision on #317 6384613341 §1), before the port module is imported.
+import { append, WORKER_OBSERVER, keyEnc, digestValue } from './instrument.mjs';
 import { openVaultDb } from '/src/storage/vault-db.js';
 import { M2_KIND, decodeEnvelope, decodePlaintext, encodePlaintext } from '/src/storage/m2/session-codec.js';
 import {
   M2_OUTCOME, classifyAuthority, mutationRow, reconcileIndeterminate, runMutation, validateCommitResultEvidence,
 } from '/src/storage/m2/session-transaction.js';
-import { instrument } from './instrument.mjs';
+import { checkCorrespondence, checkReemission, CITE } from './expectations.mjs';
 import {
   PORT_CONTEXT, evidenceFor, manifestRootKey, mutationInput, noneHoldEncodable, parentFixture, prepareFixtures, restage, selfSelector,
 } from './fixtures.mjs';
@@ -28,39 +32,96 @@ function tracked(target) {
   const worker = hex(crypto.getRandomValues(new Uint8Array(8)));
   const writes = [];
   const reads = [];
-  const puts = [];
+  // K19: the write records and selector reads are the observer's continuous collection of this worker
+  // life (instrument.mjs), not lists attached when the port is installed: a request of `createPort`, or of
+  // any interval between operations, is in them (D14, D15).
+  const puts = lifeWrites;
   let seq = 0;
-  let putSeq = 0;
-  /** Every selector `put` request a port issues, one event each, in the section owning its transaction (R4-2). */
-  const notePut = (value, section) => {
-    for (const s of selectorEnvelopesIn(value)) puts.push({ token: `${worker}:put${putSeq++}`, section, ...s });
-  };
+  const known = []; // envelopes known to the port, with the observer sequence number since when (item 10)
+  const physical = (section) => puts.filter((r) => r.section === section).map((r) => structuredClone(r));
   const envelopeOf = (e) => (e instanceof Uint8Array && e.length > 0 ? { envelope: hex(e), nonce: hex(decodeEnvelope(e).nonce) } : null);
+  // Every port call is counted while it runs (act §5: requests issued during a port call), and every
+  // REPLACE_SELECTOR event carries the observer sequence numbers of its start and of its settlement.
+  const call = (fn, settle = () => {}) => {
+    state.portCalls += 1;
+    let r;
+    try { r = fn(); } catch (e) { state.portCalls -= 1; settle(false); throw e; }
+    Promise.resolve(r).then(() => { state.portCalls -= 1; settle(true); }, () => { state.portCalls -= 1; settle(false); });
+    return r;
+  };
   const wrapper = {
     apply: (step) => {
-      if (step.kind !== 'REPLACE_SELECTOR') return target.apply(step);
+      if (step.kind !== 'REPLACE_SELECTOR') return call(() => target.apply(step));
       const ev = {
         token: `${worker}:${seq++}`, section: state.section, status: 'pending', envelope: null, nonce: null,
         expected: step.payload.expectedSelectorBytes instanceof Uint8Array ? hex(step.payload.expectedSelectorBytes) : null,
+        startSeq: tick(), endSeq: null,
       };
-      writes.push(ev);
-      let r;
-      try { r = target.apply(step); } catch (e) { ev.status = 'refused'; throw e; }
-      Promise.resolve(r).then(() => { ev.status = 'written'; }, () => { ev.status = 'refused'; });
-      return r;
+      append(writes, ev);
+      if (ev.expected !== null) append(known, { envelope: ev.expected, nonce: nonceOfHex(ev.expected), seq: ev.startSeq, via: 'the expected envelope of a REPLACE_SELECTOR' });
+      return call(() => target.apply(step), (ok) => { ev.status = ok ? 'written' : 'refused'; ev.endSeq = tick(); });
     },
-    readSelector: async () => {
+    readSelector: () => {
       const section = state.section;
-      const r = await target.readSelector();
-      const seen = r === null ? null : envelopeOf(r.envelope);
-      if (seen !== null) reads.push({ section, ...seen });
-      return r;
+      return call(async () => {
+        const r = await target.readSelector();
+        const seen = r === null ? null : envelopeOf(r.envelope);
+        if (seen !== null) append(reads, { section, ...seen });
+        return r;
+      });
     },
-    readGeneration: (g) => target.readGeneration(g),
-    readMemoryHold: () => target.readMemoryHold(),
-    readGenerationNumbers: () => target.readGenerationNumbers(),
-    readbackEvidence: (a) => target.readbackEvidence(a),
+    readGeneration: (g) => call(() => target.readGeneration(g)),
+    readMemoryHold: () => call(() => target.readMemoryHold()),
+    readGenerationNumbers: () => call(() => target.readGenerationNumbers()),
+    readbackEvidence: (a) => call(() => target.readbackEvidence(a)),
   };
+  /**
+   * The act §5 correspondence over every settled REPLACE_SELECTOR event and every terminal transaction
+   * not yet audited, and the wrapper check of act §3. Runs unarmed, after an operation returned; what is
+   * still pending is kept for the next audit. Returns failures.
+   */
+  const auditedEvents = new Set(); const auditedTx = new Set(); let lastStored; let carried = null;
+  // CP2: the §5 read-back of an audit that judged events or transactions is an obligation: while the read
+  // was not settled it stays due, every later audit reads again, and the final audit fails if it is due.
+  let readbackDue = false;
+  async function audit() {
+    const failures = judgeWrites(known);
+    // D21: a snapshot of the transactions BEFORE the audit's own read of the selector. The read opens a
+    // readonly transaction of its own, which must neither defer the §5 read-back rule nor be judged here.
+    const all = [...transactions()];
+    const pending = writes.filter((e) => !auditedEvents.has(e.token));
+    // An event is judged once it settled and every transaction opened in its window is terminal; a
+    // transaction is judged once it is terminal and lies in no window still open or deferred.
+    const inWindow = (t, e) => t.openSeq > e.startSeq && (e.endSeq === null || t.openSeq < e.endSeq);
+    const ready = pending.filter((e) => e.endSeq !== null && all.every((t) => !inWindow(t, e) || t.terminal !== null));
+    const deferred = pending.filter((e) => !ready.includes(e));
+    const txs = all.filter((t) => !auditedTx.has(t.gid) && t.terminal !== null && !deferred.some((e) => inWindow(t, e)));
+    if (ready.length === 0 && txs.length === 0 && !readbackDue) return failures;
+    let stored = null;
+    try { const s = await target.readSelector(); stored = s === null ? null : hex(s.envelope); } catch (e) {
+      failures.push({ harnessError: true, what: `audit: the stored selector could not be read (${e?.code ?? e?.name})`, cite: 'owner act v2 §5' });
+      return failures;
+    }
+    // Settled: every transaction of the snapshot is terminal, and every transaction opened while the
+    // selector was read is readonly, or already terminal with no write or schema record (it changed
+    // nothing); otherwise the read-back stays due for the next audit.
+    const openedDuringRead = transactions().slice(all.length);
+    // Requests the port issued while the audit read the selector are judged now (Argon C2).
+    failures.push(...judgeWrites(known));
+    const settledAll = deferred.length === 0 && all.every((t) => t.terminal !== null || auditedTx.has(t.gid) || txs.includes(t))
+      && openedDuringRead.every((t) => t.mode === 'readonly' || (t.terminal !== null && t.writes.length === 0 && t.schema.length === 0));
+    readbackDue = !settledAll;
+    // A transaction opened during the read that changed nothing (readonly, or terminal without a write or
+    // schema record) is accounted here (Argon, giro 2).
+    for (const t of openedDuringRead) if ((t.mode === 'readonly' || t.terminal !== null) && t.writes.length === 0 && t.schema.length === 0) auditedTx.add(t.gid);
+    const out = { last: null };
+    failures.push(...checkCorrespondence({ events: ready, txs: txs.map(txView), stored: settledAll ? stored : undefined, lastStored: settledAll ? lastStored : undefined, carried, out }));
+    carried = settledAll ? null : out.last;
+    for (const e of ready) auditedEvents.add(e.token);
+    for (const t of txs) auditedTx.add(t.gid);
+    if (settledAll) lastStored = stored;
+    return failures;
+  }
   /**
    * The selector observations of `section`, taken at a harness boundary after the operation returned
    * and its promises settled: the reads it issued and its write events, each with the envelope it
@@ -82,11 +143,47 @@ function tracked(target) {
     return {
       reads: reads.filter((x) => x.section === section).map(({ envelope, nonce }) => ({ envelope, nonce })),
       writes: writes.filter((x) => x.section === section).map(({ token, status, envelope, nonce, expected }) => ({ token, status, envelope, nonce, expected })),
-      puts: puts.filter((x) => x.section === section).map(({ token, envelope, nonce }) => ({ token, envelope, nonce })),
+      puts: physical(section),
     };
   }
-  return { port: wrapper, observe, notePut };
+  return { port: wrapper, observe, physical, audit, readbackDue: () => readbackDue, known: () => known };
 }
+
+/**
+ * The port-independent part of every audit (act §3/§4, K19): the wrapper check, then every write record
+ * of this worker life not judged yet, in any operation, interval, section or transaction mode, before any
+ * filter on issuance. `known` adds the expected envelopes of REPLACE_SELECTOR events.
+ */
+const auditedPuts = new Set();
+let auditedReads = 0;
+function judgeWrites(known = []) {
+  const failures = checkInstalled().map((what) => ({ harnessError: true, what, cite: 'owner act v2 §3 (an observer or harness error is never PASS)' }));
+  for (; deliveryErrorsJudged < deliveryErrors.length; deliveryErrorsJudged++) failures.push({ harnessError: true, what: `K19: ${deliveryErrors[deliveryErrorsJudged]}`, cite: CITE.K19 });
+  const fresh = lifeWrites.filter((w) => !auditedPuts.has(w.token));
+  const seen = lifeReads.filter((r) => r.limit !== true).map((r) => ({ envelope: r.envelope, nonce: r.nonce, seq: r.seq, via: `a ${r.via} result` }));
+  // D19 (read side): a read result beyond the object limit leaves its envelopes unknown: never PASS.
+  for (let i = auditedReads; i < lifeReads.length; i++) if (lifeReads[i].limit === true) failures.push({ unobserved: true, what: `K19: a ${lifeReads[i].via} result exceeded the object limit; the selector envelopes it returned are unknown`, cite: CITE.FRESH_NONCE });
+  auditedReads = lifeReads.length;
+  const before = lifeWrites.filter((w) => w.issued === true).flatMap((w) => (w.envelopes ?? []).map((e) => ({ envelope: e.envelope, nonce: e.nonce, seq: w.seq, token: w.token, via: `request ${w.token}` })));
+  // Item 10 on the continuous collection (D17, D18): every request of this life, in or out of a port call,
+  // whatever its fate, against every envelope and nonce known before it.
+  failures.push(...checkReemission(fresh, [...seen, ...known, ...before]));
+  for (const w of fresh) {
+    auditedPuts.add(w.token);
+    if (w.nonCanonical) failures.push({ what: `NON_CANONICAL_WRITE: ${w.token} (${w.method}${w.store ? ` on ${w.store}` : ''}): ${w.reasons.join(', ')}`, cite: CITE.NON_CANONICAL });
+    if (w.observerError) failures.push({ harnessError: true, what: `observer error on ${w.token}: ${w.observerError}`, cite: 'owner act v2 §3 (an observer or harness error is never PASS)' });
+  }
+  return failures;
+}
+/** The audit of this worker life after an operation: with the port's §5 correspondence once it is installed. */
+async function auditLife() {
+  if (tracker !== null) return tracker.audit();
+  const f = judgeWrites();
+  // Writes in a life whose port was never installed cannot be checked under §5: never PASS.
+  for (const w of lifeWrites) if (!auditedSelectorless.has(w.token)) { auditedSelectorless.add(w.token); f.push({ harnessError: true, what: `K19: write ${w.token} in a worker life without an installed port (§5 cannot be checked)`, cite: CITE.K19 }); }
+  return f;
+}
+const auditedSelectorless = new Set();
 
 const params = new URL(self.location.href).searchParams;
 // The one line that selects the factory (act §1: no other line of the suite branches on it).
@@ -97,39 +194,81 @@ const LOCK_NAME = 'styx-m2-bchr-suite-writer';
 const API = { EMPTY: 1, ACTIVE: 2 };
 const K = M2_KIND;
 const hex = (b) => (b === null || b === undefined ? null : Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, '0')).join(''));
-const state = { armed: false, section: 0, fault: null, tamperAt: null, plan: {}, trace: [], probes: [], pending: [], next: 0, reads: 0, faulted: false, onOpen: null, onPut: null };
+/** The nonce of a selector envelope given in hex (null if it does not decode). */
+const nonceOfHex = (h) => { try { return hex(decodeEnvelope(Uint8Array.from(h.match(/../g), (x) => parseInt(x, 16))).nonce); } catch { return null; } };
+if (WORKER_OBSERVER === null) throw new Error('B-CHR: the observer was not installed at the evaluation of instrument.mjs');
+// The worker state is the observer's (instrument.mjs creates it with the observer, K19).
+const { state } = WORKER_OBSERVER;
 const hook = (point, data = null) => {
   const x = new XMLHttpRequest();
-  x.open('GET', `/hook?p=${encodeURIComponent(point)}${data === null ? '' : `&d=${encodeURIComponent(JSON.stringify(data))}`}`, false);
-  x.send();
+  // The K19 records, reads and delivery errors of this life that no channel delivered yet (a record an RPC
+  // reply already carried is not repeated, so the hook stays within the request size the host accepts): a
+  // killed context leaves them with the host. The hook cursor advances only once the host accepted the
+  // hook (status 200); a rejected hook keeps everything for the next delivery (consensus plan P6, CP6).
+  const delta = lifeDelta(hookCursor, replyCursor);
+  const evidence = { ...(data ?? {}), section: state.section, writes: tracker?.physical(state.section) ?? [], k19: delta.payload };
+  const url = `/hook?p=${encodeURIComponent(point)}&d=${encodeURIComponent(JSON.stringify(evidence))}`;
+  let status = 0;
+  try { x.open('GET', url, false); x.send(); status = x.status; } catch { status = -1; }
+  if (status === 200) delta.commit();
+  // A hook the host did not accept loses a kill point: a delivery error of this life, carried by every later
+  // hook and reply until the host has it, and judged by the next audit (never silent).
+  else deliveryErrors.push(`hook ${point} of worker life ${LIFE} was not accepted by the host (status ${status}, URL of ${url.length} characters)`);
 };
-const { keepAlive } = instrument({ hook: (p, d) => { if (state.armed) hook(p, d); }, state });
+const deliveryErrors = []; let deliveryErrorsJudged = 0;
+state.hook = hook;
+const { watchTransaction, tick, transactions, checkInstalled, writes: lifeWrites, reads: lifeReads, schema: lifeSchema, session: LIFE, lateLog } = WORKER_OBSERVER.api;
 
 /**
- * Every selector envelope inside a value a port puts (cycle 4, review impl4 R4-2): the C-FMT envelope of
- * record kind GENERATION_SELECTOR, wherever the port's layout places it in the value. Port-neutral: it
- * depends on the frozen envelope format only, never on a store key.
+ * K19 delivery to the host (owner decision §1, existing channels only): every write and schema record of
+ * this worker life, in a shape the host's durable model reads (expectations.mjs lifeChain), its selector
+ * reads and the expected envelopes of its REPLACE_SELECTOR events (the run-wide nonce ledger), and its
+ * delivery errors. Each channel (RPC replies, /hook) has its own cursor; a reply carries everything it did
+ * not carry yet, a hook everything no channel carried yet. `commit()` records the delivery.
  */
-function selectorEnvelopesIn(v, out = [], depth = 0) {
-  if (depth > 4 || v === null || v === undefined) return out;
-  if (v instanceof ArrayBuffer) return selectorEnvelopesIn(new Uint8Array(v), out, depth);
-  if (v instanceof Uint8Array) {
-    try { const e = decodeEnvelope(v); if (e.recordKind === K.GENERATION_SELECTOR) out.push({ envelope: hex(v), nonce: hex(e.nonce) }); } catch { /* not an envelope */ }
-    return out;
+const replyCursor = new Map(); const hookCursor = new Map();
+const viewOf = (r) => (r.kind === 'schema'
+  ? { token: r.token, kind: 'schema', method: r.method, db: r.db, store: r.store ?? null, from: r.from ?? null, oldVersion: r.oldVersion ?? null, newVersion: r.newVersion ?? null,
+    txg: r.txg, status: r.status, terminal: r.terminal, terminalSeq: r.terminalSeq, seq: r.seq, settledSeq: r.settledSeq, opaque: r.opaque === true }
+  : { token: r.token, kind: 'write', method: r.method, db: r.db, store: r.store, txg: r.txg, key: r.key, digest: r.digest, status: r.status,
+    issued: r.issued, nonCanonical: r.nonCanonical, reasons: [...(r.reasons ?? [])], observerError: r.observerError ?? null, terminal: r.terminal,
+    issuedSeq: r.issuedSeq ?? null, settledSeq: r.settledSeq ?? null, terminalSeq: r.terminalSeq, seq: r.seq, opaque: r.opaque === true,
+    envelopes: (r.envelopes ?? []).map((e) => ({ envelope: e.envelope, nonce: e.nonce })) });
+function lifeDelta(cursor, delivered = null) {
+  const records = []; const marks = [];
+  for (const r of [...lifeWrites, ...lifeSchema]) {
+    const v = viewOf(r); const s = JSON.stringify(v);
+    if (cursor.get(v.token) !== s && delivered?.get(v.token) !== s) { records.push(v); marks.push([v.token, s]); }
   }
-  if (Array.isArray(v)) { for (const x of v) selectorEnvelopesIn(x, out, depth + 1); return out; }
-  if (typeof v === 'object') for (const x of Object.values(v)) selectorEnvelopesIn(x, out, depth + 1);
-  return out;
+  const from = (k) => Math.max(cursor.get(k) ?? 0, delivered?.get(k) ?? 0);
+  const reads = [];
+  for (let i = from('#reads'); i < lifeReads.length; i++) reads.push({ envelope: lifeReads[i].envelope, nonce: lifeReads[i].nonce, seq: lifeReads[i].seq, via: lifeReads[i].via, limit: lifeReads[i].limit === true });
+  const known = tracker?.known() ?? [];
+  for (let i = from('#known'); i < known.length; i++) reads.push({ envelope: known[i].envelope, nonce: known[i].nonce, seq: known[i].seq, via: 'expected envelope', limit: false });
+  const errors = deliveryErrors.slice(from('#errors'));
+  const ends = { '#reads': lifeReads.length, '#known': known.length, '#errors': deliveryErrors.length };
+  return {
+    payload: { life: LIFE, closed: state.closed === true, late: lateLog.length, records, reads, deliveryErrors: errors },
+    commit() { for (const [t, s] of marks) cursor.set(t, s); for (const [k, n] of Object.entries(ends)) cursor.set(k, n); },
+  };
 }
+/** An RPC reply: always delivered (the page relays it), so its delta is committed at once. */
+const replyDelta = () => { const d = lifeDelta(replyCursor); d.commit(); return d.payload; };
+/** A transaction lifetime as the act §5 checker sees it (write records copied). */
+const txView = (t) => ({ gid: t.gid, openSeq: t.openSeq, mode: t.mode, terminal: t.terminal, terminalSeq: t.terminalSeq,
+  writes: t.writes.map((w) => structuredClone(w)) });
+
 
 let db = null;
 let port = null;
 let tracker = null;
 let lock = null;
 /** Install the port behind the observing wrapper. */
-function install(p) { tracker = tracked(p); port = tracker.port; state.onPut = tracker.notePut; }
+function install(p) { tracker = tracked(p); port = tracker.port; }
 
 async function init({ dbName }) {
+  if (state.initialized) throw new Error('B-CHR: one initialization per worker life');
+  state.initialized = true; // K19: the trusted reader (durable) runs only before this point
   // Harness-owned Web Lock (no product lock claim, act §1 non-claims): it shows that the lock of a dead
   // context is released and re-acquired before readback (act §1 item 4). A bounded wait, not
   // ifAvailable: the release by a dead context is asynchronous.
@@ -142,8 +281,79 @@ async function init({ dbName }) {
   await prepareFixtures();
   db = await openVaultDb({ name: dbName });
   const { createPort } = await import(FACTORY);
-  install(await createPort({ db, context: PORT_CONTEXT }));
+  // `createPort` is a port call (act §5 "issued during a port call"); its requests are collected (K19).
+  state.portCalls += 1;
+  let p;
+  try { p = await createPort({ db, context: PORT_CONTEXT }); } finally { state.portCalls -= 1; }
+  install(p);
   return { lock, noneHoldEncodable: noneHoldEncodable() };
+}
+
+/**
+ * K19 trusted reader (owner decision §1, "Durable reconciliation"): in a fresh worker life, after the
+ * previous life was terminated and before any initialization, it reads the complete durable state of the
+ * origin, every database (side databases included), store, key and value, without importing or
+ * initializing the port and without modifying data. Keys and values are encoded with the observer's
+ * keyEnc/digestValue, as the observer recorded the judged requests.
+ */
+async function durable() {
+  if (state.initialized || port !== null) throw Object.assign(new Error('the durable reader runs before any initialization'), { code: 'K19_READER_AFTER_INIT' });
+  const req = (r) => new Promise((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+  const list = [...await indexedDB.databases()].sort((a, b) => (a.name < b.name ? -1 : (a.name > b.name ? 1 : 0)));
+  const dbs = [];
+  for (const { name } of list) {
+    const conn = await new Promise((resolve) => {
+      const r = indexedDB.open(name);
+      let upgrading = false;
+      // A database listed but absent would be created by the open: the reader aborts that instead.
+      r.onupgradeneeded = () => { upgrading = true; r.transaction.abort(); };
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => resolve(upgrading ? 'vanished' : `error:${r.error?.name}`);
+      r.onblocked = () => resolve('blocked');
+    });
+    if (typeof conn === 'string') { dbs.push({ name, error: conn }); continue; }
+    const stores = [];
+    for (const s of [...conn.objectStoreNames].sort()) {
+      const st = conn.transaction(s, 'readonly').objectStore(s);
+      const [keys, values] = await Promise.all([req(st.getAllKeys()), req(st.getAll())]);
+      stores.push({ name: s, entries: keys.map((k, i) => [keyEnc(k), digestValue(values[i])]) });
+    }
+    dbs.push({ name, version: conn.version, stores });
+    conn.close();
+  }
+  return { life: LIFE, dbs };
+}
+
+/** Wait until no port call, transaction or write request of this life is pending, stable for `stable` checks. */
+async function quiesce({ bound = 10000, stable = 5 } = {}) {
+  const t0 = performance.now(); let quiet = 0;
+  while (performance.now() - t0 < bound) {
+    await new Promise((r) => setTimeout(r, 10));
+    const busy = state.portCalls > 0 || transactions().some((t) => t.terminal === null)
+      || lifeWrites.some((w) => w.status === 'pending' || (w.issued === true && w.terminal === null && w.txg !== null))
+      || lifeSchema.some((s) => s.status === 'pending');
+    quiet = busy ? 0 : quiet + 1;
+    if (quiet >= stable) return true;
+  }
+  return false;
+}
+
+/**
+ * K19 closure (owner decision §1, "Closure to termination"): the final audit of this worker life, after
+ * quiescence. It judges everything collected (with the §5 correspondence once a port is installed), then
+ * closes the life: from then on every IndexedDB request is an observer error reported to the host by the
+ * observer (instrument.mjs `late`), and the worker answers no further operation. Quiescence alone proves
+ * nothing: the host also requires the closed reply and reconciles the durable state in the next life.
+ */
+async function finalAudit() {
+  state.armed = false; // between operations only: no kill point is reported from here on
+  const quiet = await quiesce();
+  const failures = await auditLife();
+  if (!quiet) failures.push({ harnessError: true, what: `K19: worker life ${LIFE} did not reach quiescence before its final audit`, cite: CITE.K19 });
+  if (tracker !== null && tracker.readbackDue()) failures.push({ harnessError: true, what: `K19: worker life ${LIFE} closes with the act v2 §5 read-back still due (the stored selector was never read settled)`, cite: 'owner act v2 §5' });
+  for (const w of lifeWrites) if (!auditedPuts.has(w.token)) failures.push({ harnessError: true, what: `K19: write ${w.token} was not judged by the final audit`, cite: CITE.K19 });
+  state.closed = true;
+  return { closed: true, life: LIFE, quiet, failures };
 }
 
 /** Write a generation and a selector through the public port interface only (I-TXN step shapes). */
@@ -367,20 +577,12 @@ async function close(r) {
 // elapsed) is insufficient observation, which the run reports apart from port failures.
 const HOLD_PROBE_KEEPALIVE_MS = 5000;
 function holdProbe(id, tx) {
-  let done = false;
-  const { probes, trace } = state;
-  tx.addEventListener('complete', () => { done = true; });
-  tx.addEventListener('abort', () => { done = true; });
-  const answer = Promise.resolve()
-    .then(() => port.readMemoryHold())
-    .then((h) => {
-      probes.push({ tx: id, late: done, held: h !== null });
-      trace.push(done ? { ev: 'HOLD_AFTER_COMPLETE', tx: id, held: h !== null } : { ev: 'HOLD_BEFORE_COMPLETE', tx: id, held: h !== null });
-    }, (e) => {
-      probes.push({ tx: id, late: true, error: String(e?.code ?? e?.message ?? e) });
-      trace.push({ ev: 'HOLD_PROBE_FAILED', tx: id, error: String(e?.code ?? e?.message ?? e) });
-    });
-  keepAlive(tx, answer, HOLD_PROBE_KEEPALIVE_MS);
+  const { probes, trace, pending } = state;
+  const answer = watchTransaction(tx, () => port.readMemoryHold(), (a) => {
+    const p = Object.assign(a, { tx: id }); probes.push(p);
+    trace.push({ ev: 'HOLD_SAMPLE', ...p });
+  }, HOLD_PROBE_KEEPALIVE_MS);
+  pending.push(answer);
 }
 
 /**
@@ -521,19 +723,26 @@ async function readback({ parent = '1', candidate = '2' }) {
   return out;
 }
 
-const OPS = { init, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, contradict, forgeHistorical, readback };
+const OPS = { init, durable, finalAudit, seed, seedDebris, snapshot, delayedReplace, arm, original, reconcile, produceAfterCommit, contradict, forgeHistorical, readback };
 self.onmessage = async (ev) => {
   // A dedicated worker only receives messages from the page that created it (same origin; the event
   // origin is empty or ours). Anything else is ignored; an unknown op is answered with an error.
   if (ev.origin !== '' && ev.origin !== self.location.origin) return;
   const { id, op, args } = ev.data ?? {};
-  if (!Object.hasOwn(OPS, op)) { self.postMessage({ id, error: { code: 'UNKNOWN_OP', message: String(op) } }); return; }
+  if (!Object.hasOwn(OPS, op)) { self.postMessage({ id, error: { code: 'UNKNOWN_OP', message: String(op) }, k19: replyDelta() }); return; }
+  // K19: a closed life answers no operation (the harness issues no request after the final audit).
+  if (state.closed === true) { self.postMessage({ id, error: { code: 'K19_LIFE_CLOSED', message: String(op) }, k19: replyDelta() }); return; }
   // Every operation the harness did not arm runs in a section of its own (cycle 3, R3-7).
   if (!state.armed && op !== 'arm') beginSection();
-  try {
-    self.postMessage({ id, value: await OPS[op](args ?? {}) });
-  } catch (e) {
-    self.postMessage({ id, error: { code: errorCode(e), message: String(e?.message ?? e) } });
+  let reply;
+  try { reply = { id, value: await OPS[op](args ?? {}) }; } catch (e) { reply = { id, error: { code: errorCode(e), message: String(e?.message ?? e) } }; }
+  // Act §3/§5: after every operation that leaves the worker unarmed, the observer audits what settled
+  // (K19: whether or not a port is installed). The final audit closed the life and carries its own.
+  if (op === 'finalAudit' && reply.value !== undefined) reply.audit = reply.value.failures;
+  else if (!state.armed && state.closed !== true) {
+    try { reply.audit = await auditLife(); } catch (e) { reply.audit = [{ harnessError: true, what: `audit failed: ${e?.message ?? e}`, cite: 'owner act v2 §5' }]; }
   }
+  reply.k19 = replyDelta();
+  self.postMessage(reply);
 };
 self.postMessage({ ready: true });

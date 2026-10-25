@@ -77,12 +77,16 @@ export const CITE = Object.freeze({
   PRODUCER_COMMITTED: 'B-CHR obligation v2 item 13 (a selector naming the candidate whose complete new generation validates gives COMMITTED; identity fields are copied from the authenticated COMMIT_RESULT and the hold, none invented) and #468 B2 (a staged INDETERMINATE in selected authority is historical evidence); I-TXN validateCommitResultEvidence',
   PRODUCER_WRITES_NOTHING: 'B-CHR obligation v2 item 13 (the producer writes nothing: no write request, the store byte-identical)',
   ESCROW: 'B-CHR obligation v2 item 14 and C-REC §4 (after COMMITTED the generation keeps its OUTPUT_ESCROW as commit-result evidence; it is never cleared by restore)',
+  NON_CANONICAL: 'owner act v2 §4 (a write with any argument outside domain D is NON_CANONICAL_WRITE: a FAIL of the port under B-CHR obligation v2 item 10, recorded before any native issuance, never PASS, partial or INCOMPLETE)',
+  CORRESPONDENCE: 'owner act v2 §5 (each completed REPLACE_SELECTOR has exactly one complete readwrite transaction opened while it was pending, holding exactly one successful write request carrying its produced envelope; every such request belongs to exactly one completed event; the selector read back is the last such envelope, or unchanged) with B-CHR obligation v2 item 10',
   FRESH_NONCE: 'B-CHR obligation v2 item 10 and C-FMT §4 nonce rule (every selector write is sealed with a fresh 96-bit CSPRNG nonce, also when the plaintext is unchanged; a nonce is never reused under the selector key)',
   HISTORICAL: '#468 B1 (neither WRITE_HOLD nor a selector replacement changes an immutable generation record; a selected candidate keeps its present kind-13 record); C-FMT generationCommit.historicalHoldRule',
   HISTORICAL_READER: '#468 B4 (the trusted authenticating reader validates a present kind-13 record in selected authority under C-FMT historicalHoldRule; a failure is never authority); C-FMT generationCommit.historicalHoldRule',
   EMISSION_RETRY: '#468 B3 (the interrupted committed-emission retry, with canonical kind-13 records); C-MUT §6 (CAPI-S020/S022: only the local emission call is outstanding; it returns the committed escrow and clears the hold; the selection happens exactly once)',
   NEXT: '#468 B3 (the next COMMITTED and the next INDETERMINATE from the resulting authority, with canonical kind-13 records; a classification after every terminal reconciliation); C-FMT historicalHoldRule (historical evidence is never authority for another mutation)',
   R3: 'R3 (#468 6123056674; #468 act 6171085366 §3a): for CAPI-S006/S016, while no present NONE-output kind-13 hold is encodable, an INDETERMINATE request staging a tombstone gives EVIDENCE_MISMATCH before any write',
+  K19: 'owner act on #317 6379513740 §2 and owner decision on #317 6384613341 §1 (K19: every port request of every worker life is collected and judged; a final audit after quiescence closes each life not intentionally killed; a request after it is an observer error; an unjudged request is an observer error, never PASS)',
+  DURABLE: 'owner decision on #317 6384613341 §1 "Durable reconciliation" (after termination and before any new initialization, the complete durable state, side databases included, equals the state rebuilt from the documented initial state and the judged requests; any difference, omission or irreconcilable outcome prevents PASS)',
 });
 
 const authority = (classify) => (classify && !classify.error ? `${classify.authority}${classify.held ? '+HELD' : ''}` : `ERROR(${classify?.error?.code ?? '?'})`);
@@ -261,17 +265,23 @@ export function checkProbeCoverage(cell, response, { earlyHoldAsserts = true, ex
   const probes = response?.probes ?? [];
   for (const tx of txs) {
     const answers = probes.filter((p) => p.tx === tx);
-    if (answers.length === 0) { f.push({ unobserved: true, what: `${cell}: the memory-hold probe of transaction T${tx} was not answered by the operation's return (insufficient observation)`, cite: CITE.NO_EARLY_HOLD }); continue; }
-    if (answers.some((a) => a.error !== undefined)) f.push({ what: `${cell}: the memory-hold probe of T${tx} answered with the port's hold (${answers.find((a) => a.error !== undefined).error})`, cite: CITE.NO_EARLY_HOLD });
-    if (!earlyHoldAsserts) continue;
-    const timely = answers.filter((a) => a.error === undefined && a.late === false);
-    if (timely.length === 0) {
-      if (answers.some((a) => a.error === undefined)) f.push({ unobserved: true, what: `${cell}: the memory-hold probe of T${tx} was answered only after the transaction completed (insufficient observation, not a proven hold)`, cite: CITE.NO_EARLY_HOLD });
-      continue;
+    const aborted = (response.trace ?? []).some((e) => e.tx === tx && e.ev === 'ABORT');
+    for (const a of answers.filter((p) => p.phase === 'AUX')) {
+      const d = a.diagnostic;
+      if (d.kind === 'timeout') f.push({ unobserved: true, what: `${cell}: T${tx} probe bound elapsed`, cite: CITE.NO_EARLY_HOLD });
+      else if (d.kind !== 'inactive' && !(aborted && d.error === 'AbortError')) f.push({ harnessError: true, what: `${cell}: T${tx} observer ${d.kind}: ${d.error}`, cite: CITE.NO_EARLY_HOLD });
     }
-    const wrong = timely.find((a) => a.held !== expectedHoldAtOpen);
-    if (wrong !== undefined) {
-      f.push({ what: `${cell}: the memory-hold probe of T${tx} reports ${wrong.held ? 'a hold' : 'no hold'} before the transaction completed, where this operation had ${expectedHoldAtOpen ? 'one' : 'none'} when it opened`, cite: CITE.NO_EARLY_HOLD });
+    for (const phase of aborted ? ['OPEN'] : ['OPEN', 'POST']) {
+      const phaseAnswers = answers.filter((a) => a.phase === phase && !a.invalidated);
+      if (!phaseAnswers.length) { f.push({ unobserved: true, what: `${cell}: T${tx} ${phase} sample unavailable`, cite: CITE.NO_EARLY_HOLD }); continue; }
+      const timely = phaseAnswers.filter((a) => a.error === undefined && a.late === false);
+      if (!timely.length) { f.push({ unobserved: true, what: `${cell}: T${tx} ${phase} sample late/error`, cite: CITE.NO_EARLY_HOLD }); continue; }
+      if (earlyHoldAsserts) {
+        // A surviving reconciliation hold may be legitimately cleared before POST.
+        // An absent original hold may never become a new authoritative hold early.
+        const wrong = timely.find((a) => expectedHoldAtOpen ? phase === 'OPEN' && !a.held : a.held);
+        if (wrong) f.push({ what: `${cell}: T${tx} ${phase} premature/new or missing opening hold`, cite: CITE.NO_EARLY_HOLD });
+      }
     }
   }
   return f;
@@ -415,6 +425,7 @@ export function nonceBook() {
   const byNonce = new Map();
   const byEnvelope = new Map();
   const putEnvelopes = new Map();
+  const readEnvelopes = new Set(); // envelopes read in earlier calls: a later put of one reuses its nonce
   const tokens = new Set();
   const f = [];
   const noteNonce = (sel) => {
@@ -424,7 +435,7 @@ export function nonceBook() {
   };
   return {
     add(selector) {
-      if (selector?.envelope && selector.nonce) noteNonce(selector);
+      if (selector?.envelope && selector.nonce) { noteNonce(selector); readEnvelopes.add(selector.envelope); }
     },
     addWrite(w) {
       if (!w?.token || tokens.has(w.token)) return;
@@ -444,20 +455,112 @@ export function nonceBook() {
     addPut(p) {
       if (!p?.token || tokens.has(p.token)) return;
       tokens.add(p.token);
-      if (!p.envelope || !p.nonce) return;
-      noteNonce(p);
-      const other = putEnvelopes.get(p.envelope);
-      if (other !== undefined) f.push({ what: `selector puts ${other} and ${p.token} wrote the same envelope (a reused nonce)`, cite: CITE.FRESH_NONCE });
-      else putEnvelopes.set(p.envelope, p.token);
+      // Act §4: read BEFORE any filter on issuance; a non-canonical write fails even if never issued.
+      if (p.nonCanonical === true) {
+        f.push({ what: `request ${p.token} (${p.method}): NON_CANONICAL_WRITE (${(p.reasons ?? []).join(',')})`, cite: CITE.NON_CANONICAL });
+      }
+      if (typeof p.observerError === 'string') f.push({ harnessError: true, what: `request ${p.token}: observer error: ${p.observerError}`, cite: CITE.NON_CANONICAL });
+      if (p.issued === false) return; // PRECLONE_REJECTED or a synchronous throw is not issuance (A2)
+      if (p.issued !== true) {
+        f.push({ unobserved: true, what: `request ${p.token}: native issuance metadata unavailable`, cite: CITE.FRESH_NONCE }); return;
+      }
+      if (p.nonCanonical !== true && p.attribution !== 'complete') {
+        f.push({ unobserved: true, what: `request ${p.token}: byte attribution ${p.attribution} (${(p.reasons ?? []).join(',')})`, cite: CITE.FRESH_NONCE });
+      }
+      for (const s of p.envelopes ?? []) {
+        noteNonce(s);
+        if (readEnvelopes.has(s.envelope)) f.push({ what: `selector put ${p.token} re-emits an envelope already read before it (a reused nonce, even if the request fails or aborts)`, cite: CITE.FRESH_NONCE });
+        const other = putEnvelopes.get(s.envelope);
+        if (other !== undefined && other !== p.token) f.push({ what: `selector puts ${other} and ${p.token} wrote the same envelope (a reused nonce)`, cite: CITE.FRESH_NONCE });
+        else putEnvelopes.set(s.envelope, p.token);
+      }
     },
     /** Everything a worker response observed: `{ reads, writes, puts }`. */
     addObserved(selectors) {
-      for (const s of selectors?.reads ?? []) this.add(s);
-      for (const w of selectors?.writes ?? []) this.addWrite(w);
+      // Puts first: reads of the same response (read-backs of its own writes) are not "before" its puts.
       for (const p of selectors?.puts ?? []) this.addPut(p);
+      for (const w of selectors?.writes ?? []) this.addWrite(w);
+      for (const s of selectors?.reads ?? []) this.add(s);
     },
+    /** Audit failures the worker attached to a reply (act §3 wrapper check, act §5 correspondence). */
+    addAudit(list) { for (const x of list ?? []) f.push(x); },
     failures: () => f,
   };
+}
+
+/**
+ * Owner act v2 §5, judged on observer records: `events` are the settled REPLACE_SELECTOR events of the
+ * worker (status, startSeq, endSeq, derived envelope), `txs` the terminal transactions opened since the
+ * last audit with their write records, `stored` the stored selector envelope read after them and
+ * `lastStored` the one read at the previous audit (undefined when unknown, e.g. a fresh worker).
+ */
+const SELECTOR_WRITES = new Set(['put', 'add', 'update']);
+/**
+ * `carried`: the last completed selector request of earlier batches judged while the read-back was still
+ * deferred; `out.last` receives this batch's last completed request (or `carried`) for the next batch.
+ */
+/**
+ * Item 10 on observer order (red-team Fase 4): a port write whose envelope was known before it was
+ * issued (returned by an earlier read, given as the expected envelope of a REPLACE_SELECTOR, or written by
+ * an earlier request) reuses that envelope's nonce, whatever the request's fate. `known`: [{ envelope, seq }].
+ */
+export function checkReemission(puts, known) {
+  // Every request, whether or not it was issued during a port call (D17): the obligation is on what the
+  // port writes, not on when. A request reuses a nonce if it carries an envelope known before it, or a
+  // different envelope sealed with a nonce known before it (D18), or two different envelopes under one
+  // nonce; whatever the fate of the request or of its transaction.
+  const f = [];
+  for (const p of puts) {
+    // Emission, not attempt (act v2 §4): PRECLONE_REJECTED or a synchronous throw is not issuance; missing
+    // issuance metadata is never read as "not issued" (CP1).
+    if (p.issued === false) continue;
+    if (p.issued !== true) { f.push({ unobserved: true, what: `request ${p.token}: native issuance metadata unavailable`, cite: CITE.FRESH_NONCE }); continue; }
+    const env = p.envelopes ?? [];
+    for (let i = 0; i < env.length; i++) {
+      for (let j = i + 1; j < env.length; j++) {
+        if (env[i].nonce && env[i].nonce === env[j].nonce && env[i].envelope !== env[j].envelope) f.push({ what: `selector put ${p.token} carries two different envelopes sealed with nonce ${env[i].nonce} (a reused nonce)`, cite: CITE.FRESH_NONCE });
+      }
+      const s = env[i];
+      const k = known.find((x) => x.seq < p.seq && x.token !== p.token && (x.envelope === s.envelope || (typeof x.nonce === 'string' && x.nonce === s.nonce)));
+      if (k !== undefined) {
+        const how = k.envelope === s.envelope ? 'an envelope' : `a different envelope with nonce ${s.nonce}, a nonce`;
+        f.push({ what: `selector put ${p.token} re-emits ${how} known since ${k.via ?? 'an earlier request'} at ${k.seq} (a reused nonce)`, cite: CITE.FRESH_NONCE });
+      }
+    }
+  }
+  return f;
+}
+export function checkCorrespondence({ events, txs, stored, lastStored, carried = null, out = null }) {
+  const f = [];
+  const want = (ok, what) => { if (!ok) f.push({ what, cite: CITE.CORRESPONDENCE }); };
+  const carrying = (t) => t.writes.filter((w) => SELECTOR_WRITES.has(w.method) && w.status === 'success' && (w.envelopes ?? []).length > 0);
+  const matched = new Set();
+  let last = null;
+  for (const e of events) {
+    if (e.status !== 'written') continue;
+    const cands = txs.filter((t) => t.mode === 'readwrite' && t.openSeq > e.startSeq && t.openSeq < e.endSeq && t.terminal === 'complete' && carrying(t).length > 0);
+    want(cands.length === 1, `REPLACE_SELECTOR ${e.token}: exactly one complete transaction opened while it was pending carries a selector write (got ${cands.length})`);
+    if (cands.length !== 1) continue;
+    const reqs = carrying(cands[0]);
+    want(reqs.length === 1, `REPLACE_SELECTOR ${e.token}: its transaction holds exactly one successful selector-carrying request (got ${reqs.length})`);
+    if (reqs.length !== 1) continue;
+    const r = reqs[0];
+    want(r.envelopes.length === 1, `REPLACE_SELECTOR ${e.token}: request ${r.token} carries exactly one selector envelope (got ${r.envelopes.length})`);
+    if (e.envelope !== null && e.envelope !== undefined) want(r.envelopes[0].envelope === e.envelope, `REPLACE_SELECTOR ${e.token}: request ${r.token} carries its produced envelope`);
+    want(!matched.has(r.token), `request ${r.token} corresponds to more than one completed REPLACE_SELECTOR`);
+    matched.add(r.token);
+    if (last === null || (r.settledSeq ?? r.issuedSeq) > (last.settledSeq ?? last.issuedSeq)) last = r;
+  }
+  for (const t of txs) {
+    if (t.terminal !== 'complete') continue;
+    for (const r of carrying(t)) want(matched.has(r.token), `request ${r.token} (${r.method}) wrote a selector envelope that belongs to no completed REPLACE_SELECTOR`);
+  }
+  if (last === null) last = carried;
+  // `stored` is undefined while an event or transaction is still pending: the read-back rule waits for it.
+  if (stored !== undefined && last !== null) want(stored === last.envelopes[0].envelope, 'the selector read back is the envelope of the last completed selector request');
+  else if (stored !== undefined && lastStored !== undefined) want(stored === lastStored, 'with no completed selector request the stored selector is unchanged');
+  if (out !== null) out.last = last;
+  return f;
 }
 
 /** Debris, then a second mutation over it. */
@@ -559,4 +662,270 @@ export function checkHistoricalForged(d) {
     want(d.classify?.error !== undefined, `the forged generation is never classified as authority (got ${authority(d.classify)})`);
   }
   return f;
+}
+
+// ---- K19 durable reconciliation (owner decision on #317 6384613341 §1) --------------------------------------
+/**
+ * The durable state rebuilt from the documented initial state (no database: a fresh profile or browser
+ * context) and the effects of the judged requests of every worker life, as the observer recorded them:
+ * database identity and version, object stores, and per store the key -> value digest map. Effects apply
+ * per transaction in commit order (its `terminalSeq`), requests in issue order: put/add/cursor update set
+ * a key, delete/cursor delete remove it, clear empties the store; an aborted transaction applies nothing.
+ * A transaction of an intentionally killed life without an observed outcome may or may not have
+ * committed: every combination is a candidate, and the trusted reader's state selects one. Anything the
+ * model cannot rebuild (an opaque key or value, a write into an unknown store, no outcome in a life that
+ * was not killed) is a failure: an irreconcilable outcome never passes.
+ */
+export function durableModel() {
+  let state = new Map(); // db -> { version, stores: Map(store -> Map(key -> digest)) }
+  const copy = (s) => new Map([...s].map(([d, v]) => [d, { version: v.version, stores: new Map([...v.stores].map(([n, m]) => [n, new Map(m)])) }]));
+  const order = (r) => r.issuedSeq ?? r.seq;
+  const fail = (f, what) => f.push({ what: `K19 durable model: ${what}`, cite: CITE.DURABLE });
+  function applyGroup(s, rs, unknown, f) {
+    for (const r of [...rs].sort((a, b) => order(a) - order(b))) {
+      if (r.kind === 'schema') {
+        if (r.opaque) { fail(f, `schema record ${r.token} (${r.method}) cannot be rebuilt`); continue; }
+        if (r.method === 'upgrade') { if (!s.has(r.db)) s.set(r.db, { version: r.newVersion, stores: new Map() }); else s.get(r.db).version = r.newVersion; continue; }
+        if (r.method === 'deleteDatabase') { s.delete(r.db); continue; }
+        const db = s.get(r.db);
+        if (db === undefined) { fail(f, `schema record ${r.token} (${r.method}) on database ${r.db} absent from the model`); continue; }
+        if (r.method === 'createObjectStore') db.stores.set(r.store, new Map());
+        else if (r.method === 'deleteObjectStore') db.stores.delete(r.store);
+        else if (r.method === 'renameObjectStore') {
+          // D23: a rename keeps the store's content under its new name.
+          const m = db.stores.get(r.from);
+          if (m === undefined) { fail(f, `schema record ${r.token} renames ${r.db}/${r.from}, a store absent from the model`); continue; }
+          db.stores.delete(r.from); db.stores.set(r.store, m);
+        } else fail(f, `schema record ${r.token}: unknown method ${r.method}`);
+        continue;
+      }
+      if (r.issued !== true) continue; // PRECLONE_REJECTED, synchronous throw: never issued, no effect
+      if (r.status === 'error') continue; // a failed request of a committed transaction has no effect
+      if (r.status !== 'success' && !(unknown && r.status === 'pending')) { fail(f, `request ${r.token} (${r.method}) in a committed transaction has status ${r.status}`); continue; }
+      const m = s.get(r.db)?.stores.get(r.store);
+      if (m === undefined) { fail(f, `request ${r.token} (${r.method}) on ${r.db}/${r.store}, a store absent from the model`); continue; }
+      if (r.method === 'clear') { m.clear(); continue; }
+      if (r.opaque || r.key === null || r.key === undefined) { fail(f, `request ${r.token} (${r.method}) on ${r.db}/${r.store} has no rebuildable key`); continue; }
+      if (r.method === 'put' || r.method === 'add' || r.method === 'update') {
+        if (r.digest === null || r.digest === undefined) { fail(f, `request ${r.token} (${r.method}) has no value digest`); continue; }
+        m.set(r.key, r.digest);
+      } else if (r.method === 'delete' || r.method === 'cursor-delete') m.delete(r.key);
+      else fail(f, `request ${r.token}: unknown method ${r.method}`);
+    }
+  }
+  const canonical = (s) => JSON.stringify([...s].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([d, v]) => [d, v.version,
+    [...v.stores].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([n, m]) => [n, [...m].sort((a, b) => (a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0)))])]));
+  // Each candidate is a durable state with the failures of its own reconstruction (D26): an unknown outcome
+  // of a killed life is a choice between explicit alternatives (committed or not), and only the alternative
+  // the trusted reader's state selects is judged; one that cannot be rebuilt never passes.
+  let candidates = [{ s: state, f: [] }];
+  return {
+    /** Apply one finished worker life ({ id, records: Map, killed }). Returns failures. */
+    applyLife(life) {
+      const f = [];
+      const groups = new Map(); const events = []; const unknown = [];
+      for (const r of life.records.values()) {
+        if (r.txg === null || r.txg === undefined) {
+          if (r.kind === 'schema' && r.method === 'deleteDatabase') {
+            if (r.status === 'success') events.push({ seq: r.settledSeq, rs: [r] });
+            else if (r.status === 'pending' && life.killed) unknown.push({ seq: r.seq, rs: [r] });
+            else if (r.status === 'pending') fail(f, `deleteDatabase ${r.token} of life ${life.id} has no outcome after its closure`);
+          } else if (r.issued === true || r.kind === 'schema') fail(f, `record ${r.token} (${r.method}) of life ${life.id} belongs to no transaction`);
+          continue;
+        }
+        if (!groups.has(r.txg)) groups.set(r.txg, []);
+        groups.get(r.txg).push(r);
+      }
+      for (const [g, rs] of groups) {
+        const t = rs.find((r) => r.terminal !== null && r.terminal !== undefined);
+        if (t?.terminal === 'complete') events.push({ seq: t.terminalSeq, rs });
+        else if (t?.terminal === 'abort') continue;
+        else if (life.killed) unknown.push({ seq: Math.min(...rs.map(order)), rs });
+        else if (rs.some((r) => r.issued === true || r.kind === 'schema')) fail(f, `transaction ${g} of life ${life.id} has no outcome after its closure`);
+      }
+      events.sort((a, b) => a.seq - b.seq); unknown.sort((a, b) => a.seq - b.seq);
+      if (unknown.length > 6) { fail(f, `${unknown.length} transactions of the killed life ${life.id} without an outcome: irreconcilable`); return f; }
+      const next = [];
+      for (const base of candidates) {
+        const s0 = copy(base.s);
+        for (const e of events) applyGroup(s0, e.rs, false, f);
+        for (let mask = 0; mask < 2 ** unknown.length; mask++) {
+          const s = copy(s0); const own = [...base.f];
+          unknown.forEach((u, i) => { if (mask & (1 << i)) applyGroup(s, u.rs, true, own); });
+          next.push({ s, f: own });
+        }
+      }
+      // Identical states: a clean reconstruction is kept in preference to an unrebuildable one.
+      const byState = new Map();
+      for (const c of next) { const k = canonical(c.s); const o = byState.get(k); if (o === undefined || (o.f.length > 0 && c.f.length === 0)) byState.set(k, c); }
+      candidates = [...byState.values()];
+      const once = new Set(); return f.filter((x) => (once.has(x.what) ? false : (once.add(x.what), true)));
+    },
+    /** Compare the trusted reader's state ({ dbs }) with the model; on a match the model becomes it. */
+    match(read) {
+      const f = [];
+      if (!Array.isArray(read?.dbs)) { f.push({ harnessError: true, what: 'K19: the trusted reader returned no durable state', cite: CITE.DURABLE }); return f; }
+      const s = new Map();
+      for (const d of read.dbs) {
+        if (d.error) { f.push({ what: `K19 durable reconciliation: database ${d.name} could not be read (${d.error})`, cite: CITE.DURABLE }); continue; }
+        s.set(d.name, { version: d.version, stores: new Map(d.stores.map((x) => [x.name, new Map(x.entries)])) });
+      }
+      const got = canonical(s);
+      const hit = candidates.find((c) => canonical(c.s) === got);
+      if (hit !== undefined && hit.f.length > 0) {
+        // The durable state is explained only by an alternative that could not be rebuilt.
+        const once = new Set();
+        for (const x of hit.f) if (!once.has(x.what)) { once.add(x.what); f.push(x); }
+      }
+      if (hit === undefined) {
+        const want = candidates.find((c) => c.f.length === 0)?.s ?? candidates[0]?.s ?? new Map();
+        const diffs = [];
+        for (const name of new Set([...want.keys(), ...s.keys()])) {
+          const a = want.get(name); const b = s.get(name);
+          if (a === undefined || b === undefined) { diffs.push(`database ${name} ${a === undefined ? 'present but not rebuilt' : 'rebuilt but absent'}`); continue; }
+          if (a.version !== b.version) diffs.push(`database ${name} version ${b.version}, rebuilt ${a.version}`);
+          for (const st of new Set([...a.stores.keys(), ...b.stores.keys()])) {
+            const x = a.stores.get(st); const y = b.stores.get(st);
+            if (x === undefined || y === undefined) { diffs.push(`store ${name}/${st} ${x === undefined ? 'present but not rebuilt' : 'rebuilt but absent'}`); continue; }
+            for (const k of new Set([...x.keys(), ...y.keys()])) if (x.get(k) !== y.get(k)) diffs.push(`${name}/${st} key ${k.slice(0, 40)}: durable ${y.has(k) ? y.get(k).slice(0, 12) : 'absent'}, rebuilt ${x.has(k) ? x.get(k).slice(0, 12) : 'absent'}`);
+          }
+        }
+        f.push({ what: `K19 durable reconciliation: the durable state differs from the state rebuilt from the judged requests (${candidates.length} candidate(s)): ${diffs.slice(0, 6).join('; ')}`, cite: CITE.DURABLE });
+      }
+      candidates = [{ s, f: [] }]; // continue from what is durable, so one difference is reported once
+      return f;
+    },
+    candidates: () => candidates.length,
+  };
+}
+
+/**
+ * The worker lives of one run, from the documented initial state (a fresh profile or context) on, as the
+ * host sees them through the existing channels (RPC replies and /hook): their K19 records, how each life
+ * ended (its final audit, or an intentional kill), late requests after a final audit, and the trusted
+ * reader's state at the start of each new life. Every life must end by its final audit or by an
+ * intentional kill; every life is reconciled by the reader of the next one.
+ */
+export function nonceLedger() {
+  const byNonce = new Map(); // nonce -> { envelope, life, via }
+  const f = [];
+  return {
+    /**
+     * Enter one finished worker life, in run order: its issued requests and its selector reads (and the
+     * expected envelopes of its REPLACE_SELECTOR events) in the life's own sequence order. An issued
+     * request that carries an envelope or a nonce known before it, in this life or an earlier one, or two
+     * different envelopes under one nonce, reuses a nonce, whatever the fate of the request or of its
+     * transaction (CP1: a killed life never reaches its own final judgement).
+     */
+    enter(L) {
+      const events = [];
+      for (const r of L.records.values()) {
+        if (r.kind !== 'write') continue;
+        if (r.issued !== true && r.issued !== false) { f.push({ unobserved: true, what: `request ${r.token} (life ${L.id}): native issuance metadata unavailable`, cite: CITE.FRESH_NONCE }); continue; }
+        if (r.issued === true && (r.envelopes ?? []).length > 0) events.push({ seq: r.seq, write: r });
+      }
+      for (const x of L.reads) {
+        if (typeof x?.envelope === 'string') events.push({ seq: x.seq, read: x });
+        else if (x?.limit === true) f.push({ unobserved: true, what: `K19: a ${x.via ?? 'read'} result (life ${L.id}) exceeded the object limit; the selector envelopes it returned are unknown`, cite: CITE.FRESH_NONCE });
+      }
+      events.sort((a, b) => a.seq - b.seq || (a.read ? -1 : 0) - (b.read ? -1 : 0));
+      for (const e of events) {
+        if (e.read) {
+          const n = byNonce.get(e.read.nonce);
+          if (n === undefined) byNonce.set(e.read.nonce, { envelope: e.read.envelope, life: L.id, via: `a ${e.read.via ?? 'read'} in life ${L.id}` });
+          else if (n.envelope !== e.read.envelope) f.push({ what: `selector nonce ${e.read.nonce} sealed two different envelopes (read in life ${L.id}, known since ${n.via}) (a reused nonce)`, cite: CITE.FRESH_NONCE });
+          continue;
+        }
+        const r = e.write; const env = r.envelopes;
+        for (let i = 0; i < env.length; i++) {
+          for (let j = i + 1; j < env.length; j++) if (env[i].nonce === env[j].nonce && env[i].envelope !== env[j].envelope) f.push({ what: `selector put ${r.token} (life ${L.id}) carries two different envelopes sealed with nonce ${env[i].nonce} (a reused nonce)`, cite: CITE.FRESH_NONCE });
+          const n = byNonce.get(env[i].nonce);
+          if (n !== undefined && n.via !== `request ${r.token}`) {
+            f.push({ what: `selector put ${r.token} (life ${L.id}) re-emits ${n.envelope === env[i].envelope ? 'an envelope' : `a different envelope with nonce ${env[i].nonce}, a nonce`} known since ${n.via} (a reused nonce)`, cite: CITE.FRESH_NONCE });
+          } else if (n === undefined) byNonce.set(env[i].nonce, { envelope: env[i].envelope, life: L.id, via: `request ${r.token}` });
+        }
+      }
+    },
+    failures: () => f.splice(0),
+  };
+}
+
+/**
+ * The worker lives of one run, from the documented initial state (a fresh profile or context) on, as the
+ * host sees them through the existing channels (RPC replies and /hook): their K19 records, how each life
+ * ended (its final audit, or an intentional kill), late requests after a final audit, and the trusted
+ * reader's state at the start of each new life. Every life must end by its final audit or by an
+ * intentional kill; every life is reconciled by the reader of the next one. `ledger`: the nonce ledger,
+ * shared by every lifeChain of one launcher invocation (it survives a fresh profile).
+ */
+export function lifeChain({ ledger = nonceLedger() } = {}) {
+  const model = durableModel(); const lives = new Map(); const order = []; const f = [];
+  const life = (id) => {
+    if (!lives.has(id)) { lives.set(id, { id, records: new Map(), reads: [], readSeen: new Set(), errorSeen: new Set(), closed: false, killed: false, applied: false, ledgered: false, late: 0 }); order.push(id); }
+    return lives.get(id);
+  };
+  const enter = (L) => {
+    if (!L.ledgered) {
+      L.ledgered = true; ledger.enter(L);
+      // A killed life never reached its final audit: its write records are judged here too (act v2 §4: a
+      // NON_CANONICAL_WRITE is read before any filter on issuance; an observer error is never PASS).
+      if (L.killed) {
+        for (const r of L.records.values()) {
+          if (r.kind !== 'write') continue;
+          if (r.nonCanonical === true) f.push({ what: `NON_CANONICAL_WRITE: ${r.token} (${r.method}${r.store ? ` on ${r.store}` : ''}, killed life ${L.id}): ${(r.reasons ?? []).join(', ')}`, cite: CITE.NON_CANONICAL });
+          if (typeof r.observerError === 'string') f.push({ harnessError: true, what: `observer error on ${r.token} (killed life ${L.id}): ${r.observerError}`, cite: CITE.NON_CANONICAL });
+        }
+      }
+    }
+    f.push(...ledger.failures());
+  };
+  // A record delivered twice (RPC reply and /hook) or updated (pending -> settled -> terminal) is one
+  // request; an update never moves it back.
+  const rank = (r) => (r.terminal !== null && r.terminal !== undefined ? 3 : (r.status === 'success' || r.status === 'error' ? 2 : (r.issued === true ? 1 : 0)));
+  return {
+    /** A `k19` delta of a reply or a hook. */
+    absorb(k19) {
+      if (typeof k19?.life !== 'string') return;
+      const L = life(k19.life);
+      for (const r of k19.records ?? []) { const o = L.records.get(r.token); if (o === undefined || rank(r) >= rank(o)) L.records.set(r.token, r); }
+      for (const x of k19.reads ?? []) { const k = `${x.seq}:${x.via}:${x.envelope ?? 'limit'}`; if (!L.readSeen.has(k)) { L.readSeen.add(k); L.reads.push(x); } }
+      // CP6: a delivery the host did not receive (a rejected hook) is a harness error of the run, whatever
+      // happens to the life afterwards (killed before its next audit included).
+      for (const e of k19.deliveryErrors ?? []) if (!L.errorSeen.has(e)) { L.errorSeen.add(e); f.push({ harnessError: true, what: `K19: ${e}`, cite: CITE.K19 }); }
+      if (k19.closed === true) L.closed = true;
+    },
+    killed(id) { if (typeof id === 'string') life(id).killed = true; },
+    /** A K19:LATE report of the observer (a request after the final audit of its life). */
+    late(rep) {
+      if (typeof rep?.life === 'string') life(rep.life).late += 1;
+      f.push({ harnessError: true, what: `K19: request ${rep?.op} attempted after the final audit of worker life ${rep?.life} (seq ${rep?.seq})`, cite: CITE.K19 });
+    },
+    /** The trusted reader's state, read at the start of life `read.life`, before its initialization. */
+    reconcile(read) {
+      const reader = typeof read?.life === 'string' ? life(read.life) : null;
+      for (const id of order) {
+        const L = lives.get(id);
+        if (L === reader || L.applied) continue;
+        if (!L.closed && !L.killed) f.push({ harnessError: true, what: `K19: worker life ${id} ended neither by its final audit nor by an intentional kill (closure not demonstrated)`, cite: CITE.K19 });
+        L.applied = true;
+        f.push(...model.applyLife(L));
+        enter(L);
+      }
+      if (reader !== null && reader.records.size > 0) f.push({ harnessError: true, what: `K19: worker life ${reader.id} issued requests before its trusted read`, cite: CITE.K19 });
+      f.push(...model.match(read));
+    },
+    /** End of the run: the last life must be closed by its final audit and reconciled (a reader life with no request). */
+    finish() {
+      for (const id of order) {
+        const L = lives.get(id);
+        enter(L);
+        if (L.applied) continue;
+        if (!L.closed) f.push({ harnessError: true, what: `K19: worker life ${id} was not closed by its final audit at the end of the run`, cite: CITE.K19 });
+        else if (L.records.size > 0) f.push({ harnessError: true, what: `K19: worker life ${id} has requests no trusted reader reconciled`, cite: CITE.K19 });
+      }
+      return f.splice(0);
+    },
+    failures: () => f.splice(0),
+    lives: () => order.map((id) => ({ id, closed: lives.get(id).closed, killed: lives.get(id).killed, applied: lives.get(id).applied, records: lives.get(id).records.size, late: lives.get(id).late })),
+  };
 }

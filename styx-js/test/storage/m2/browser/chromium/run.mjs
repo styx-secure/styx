@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import {
   ROWS, OUTCOMES, PHASES, KILL_KINDS, T9_CELLS, CELLS_PER_ROW, HAS_OUTPUT, NEXT_ROW, checkUninterrupted, checkKilled,
   checkResumed, checkSurvives, checkRestartReconcile, checkProducer, checkPutThrow, checkDelayedWriter, checkDebris,
-  checkDurability, checkR3Refusal, checkEmissionRetry, checkNext, checkHistoricalForged, nonceBook, endStates, CITE,
+  checkDurability, checkR3Refusal, checkEmissionRetry, checkNext, checkHistoricalForged, nonceBook, endStates, CITE, lifeChain, nonceLedger,
 } from './suite/expectations.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,14 @@ const log = (s) => { fs.appendFileSync(LOG, `${s}\n`); console.log(s); };
 // The hook rendezvous answers every hook and records the transaction metadata the OPEN hook carries,
 // so a killed context still leaves it with the host (B-CHR PR-r1 F9).
 let hostOpens = [];
-const noteOpen = (p, d) => { if (d !== null && /^T\d+:OPEN$/.test(p)) hostOpens.push({ ev: 'OPEN', tx: Number(p.slice(1, p.indexOf(':'))), ...d }); };
+let hostWrites = new Map();
+let hostMetadataMissing = false;
+const noteOpen = (p, d) => {
+  chain.absorb(d?.k19); // K19: the records a hook carries stay with the host, even if the context is killed here
+  if (d !== null && /^T\d+:OPEN$/.test(p)) hostOpens.push({ ev: 'OPEN', tx: Number(p.slice(1, p.indexOf(':'))), ...d });
+  if (!Array.isArray(d?.writes)) hostMetadataMissing = true;
+  else for (const w of d.writes) hostWrites.set(w.token, w);
+};
 const answer = (p, res, d) => { noteOpen(p, d); res.end('ok'); };
 let hookHandler = answer;
 const server = http.createServer((req, res) => {
@@ -50,6 +57,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/hook') {
     let data = null;
     try { data = url.searchParams.has('d') ? JSON.parse(url.searchParams.get('d')) : null; } catch { data = null; }
+    // K19: a request after the final audit of a worker life, reported by the observer; never a kill point.
+    if (url.searchParams.get('p') === 'K19:LATE') { chain.late(data); return res.end('ok'); }
     return hookHandler(url.searchParams.get('p'), res, data);
   }
   if (url.pathname === '/') {
@@ -65,6 +74,12 @@ const server = http.createServer((req, res) => {
   res.setHeader('content-type', 'text/javascript');
   res.setHeader('cache-control', 'no-store');
   return res.end(fs.readFileSync(file));
+});
+// CP6: a request the HTTP server rejects before any handler runs (e.g. a hook beyond the header size limit)
+// is a harness error of the run, never silent.
+server.on('clientError', (err, socket) => {
+  pendingAudit.push({ harnessError: true, what: `K19: the host rejected a request before its handler (${err?.code ?? err?.message})`, cite: CITE.K19 });
+  try { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); } catch { /* gone */ }
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const ORIGIN = `http://127.0.0.1:${server.address().port}`;
@@ -115,8 +130,44 @@ async function call(page, op, args) {
   } finally {
     clearTimeout(timer);
   }
+  // Act §3/§5: the worker's audit of what settled during the call joins the next recorded entry.
+  if (Array.isArray(r.audit)) pendingAudit.push(...r.audit);
+  chain.absorb(r.k19); // K19: the records of this worker life, delivered with every reply
   if (r.error) throw Object.assign(new Error(`${op}: ${r.error.code} ${r.error.message}`), { code: r.error.code });
   return r.value;
+}
+/** Audit failures (wrapper check, act §5 correspondence) not yet attached to a recorded entry. */
+let pendingAudit = [];
+/**
+ * K19 (owner decision on #317 6384613341 §1): the worker lives of the current run, from its documented
+ * initial state (a fresh, empty profile) on. Every life starts with the trusted reader, before its
+ * initialization, which reconciles the durable state with the lives before it; every life not killed
+ * intentionally ends with its final audit; the run ends with a last reader life.
+ */
+// Item 10 across the whole launcher invocation (consensus plan P1): one nonce ledger for every worker life
+// of every cell; it survives fresh(), which only resets the durable model of the profile.
+const LEDGER = nonceLedger();
+let chain = lifeChain({ ledger: LEDGER });
+/** The trusted read at the start of a new worker life, before its initialization. */
+async function readerStart(page) {
+  tally.k19Reads += 1;
+  chain.reconcile(await call(page, 'durable', {}));
+  pendingAudit.push(...chain.failures());
+}
+/** The final audit that closes the current worker life (no kill point moves: it runs only between operations). */
+async function closeLife(page) { await call(page, 'finalAudit', {}); }
+/** End of a run whose context is alive: close the life, reconcile in a reader life, close that one, close the context. */
+async function endRun(ctx, page) {
+  try {
+    await closeLife(page);
+    await page.evaluate(() => window.bchr.restart());
+    await readerStart(page);
+    await closeLife(page);
+  } catch (e) {
+    pendingAudit.push({ harnessError: true, what: `K19: the run could not be closed and reconciled: ${String(e?.message ?? e).split('\n')[0]}`, cite: CITE.K19 });
+  } finally { await closeHard(ctx); openContexts.delete(ctx); }
+  pendingAudit.push(...chain.finish());
+  for (const L of chain.lives()) { tally.k19Lives += 1; if (L.killed) tally.k19KilledLives += 1; if (L.closed) tally.k19ClosedLives += 1; }
 }
 /** Every browser context a cell opened, so that a failure anywhere still closes them all. */
 const openContexts = new Set();
@@ -143,6 +194,7 @@ async function tearDown() {
 /** A cell as a whole is bounded and always cleaned up, whatever fails inside it (review impl1 F5). */
 async function withCell(id, fn) {
   const cell = { cancelled: false, id };
+  pendingAudit = [];
   let watchdog = null;
   try {
     return await Promise.race([cellOf.run(cell, fn), new Promise((_, reject) => {
@@ -197,6 +249,7 @@ async function launchBody(owner) {
   await navigate(page, `${ORIGIN}/?factory=${encodeURIComponent(factory)}`);
   await page.waitForFunction(() => window.bchrReady === true, null, { timeout: NAVIGATION_TIMEOUT_MS });
   await page.evaluate(() => window.bchr.start());
+  await readerStart(page); // K19: the trusted read, before this life's initialization
   const init = await call(page, 'init', { dbName: DB_NAME });
   if (NONE_HOLD === null) NONE_HOLD = init.noneHoldEncodable;
   try { maxProcs = Math.max(maxProcs, processTree().length); } catch { /* ignore */ }
@@ -208,6 +261,8 @@ async function launch() {
 }
 async function fresh() {
   fs.rmSync(PROFILE, { recursive: true, force: true });
+  pendingAudit.push(...chain.finish()); // a run left behind is never silently dropped
+  chain = lifeChain({ ledger: LEDGER }); // the documented initial state: no database (the nonce ledger stays)
   return launch();
 }
 async function closeHard(ctx) {
@@ -217,7 +272,9 @@ async function closeHard(ctx) {
 }
 /** Context death: the dedicated worker (the SS) dies; a fresh worker and a fresh port start at EMPTY memory. */
 async function contextDeath(page) {
+  await closeLife(page); // K19: the life ends with its final audit before the context death
   await page.evaluate(() => window.bchr.restart());
+  await readerStart(page);
   return call(page, 'init', { dbName: DB_NAME });
 }
 // R3 (#468 6171085366 §3a): a row without an output while the served codec cannot encode its hold.
@@ -225,9 +282,14 @@ const r3 = (row) => !HAS_OUTPUT(row) && NONE_HOLD !== true;
 
 /** Every selector envelope the worker's port read, and every selector write event, during `r`, into the nonce book. */
 function addSelectors(book, r) {
+  // In time order: the snapshot before the operation, its observations, then the read-back after it.
   book.add(r.snap);
-  book.add(r.rb?.selector);
   book.addObserved(r.response?.selectors);
+  if (r.response?.crashed !== undefined || r.response === null) {
+    book.addObserved({ puts: r.hostEvidence?.writes ?? [] });
+    if (!r.hostEvidence || r.hostEvidence.missing) book.addPut({ token: 'missing-killed-worker-metadata' });
+  }
+  book.add(r.rb?.selector);
 }
 /** Every selector observation of the operations `calls` (their worker responses, producer sections included). */
 function addSelectorsOf(book, ...calls) {
@@ -235,7 +297,7 @@ function addSelectorsOf(book, ...calls) {
 }
 
 // ---- results ----------------------------------------------------------------------------------------
-const tally = { cells: 0, runs: 0, kills: 0, notKilled: 0, failures: 0, unobserved: 0 };
+const tally = { cells: 0, runs: 0, kills: 0, notKilled: 0, failures: 0, unobserved: 0, observerErrors: 0, k19Lives: 0, k19ClosedLives: 0, k19KilledLives: 0, k19Reads: 0 };
 /**
  * One run's entry. A failure marked `unobserved` (the memory-hold probe could not observe in time, review
  * impl4 R4-1) is insufficient observation, not a port failure: it is counted, logged and kept apart, and
@@ -243,6 +305,8 @@ const tally = { cells: 0, runs: 0, kills: 0, notKilled: 0, failures: 0, unobserv
  */
 function record(entry) {
   tally.runs += 1;
+  entry.failures = [...entry.failures, ...pendingAudit.splice(0)];
+  tally.observerErrors += entry.failures.filter((f) => f.harnessError === true).length;
   const unobserved = entry.failures.filter((f) => f.unobserved === true);
   entry.failures = entry.failures.filter((f) => f.unobserved !== true);
   if (unobserved.length > 0) {
@@ -268,7 +332,7 @@ async function r3CellBody(row, id, phase) {
   await call(page, 'arm', {});
   const response = await call(page, 'original', { scenario: row, outcome: 'INDETERMINATE' });
   const rb = await call(page, 'readback', {});
-  await closeHard(ctx);
+  await endRun(ctx, page);
   record({ id, row, phase, r3: true, response: response.error?.code ?? 'success', failures: checkR3Refusal(id, response, rb, before.dbDigest) });
 }
 /** An INDETERMINATE setup that must succeed (rows outside R3). */
@@ -294,10 +358,11 @@ async function runArmed(cell, { killAt = null, killKind = null, plan = {}, fault
   const points = [];
   let killed = null;
   hostOpens = [];
+  hostWrites = new Map(); hostMetadataMissing = false;
   hookHandler = (p, res, d) => {
     points.push(p);
     noteOpen(p, d);
-    if (killAt !== null && p === killAt && killed === null) { killed = kill(killKind); return; } // never answer
+    if (killAt !== null && p === killAt && killed === null) { chain.killed(d?.k19?.life); killed = kill(killKind); return; } // never answer
     res.end('ok');
   };
   await call(page, 'arm', { plan, fault, tamperAt });
@@ -310,20 +375,20 @@ async function runArmed(cell, { killAt = null, killKind = null, plan = {}, fault
   } catch (e) { response = { crashed: String(e.message).split('\n')[0] }; } finally { clearTimeout(watchdogTimer); }
   hookHandler = answer;
   const opened = hostOpens;
+  const hostEvidence = { writes: [...hostWrites.values()], missing: hostMetadataMissing };
   // The kind-13 record the operation's candidate stages: from the setup (RECONCILIATION) or the operation.
   const stagedHold = setupHold !== undefined ? setupHold : response?.stagedHold;
   if (killAt === null && response?.crashed === undefined) {
     const rb = await call(page, 'readback', {});
-    await closeHard(ctx);
-    openContexts.delete(ctx);
-    return { points, killed, response, rb, snap, ctx: null, opened, stagedHold, beforeDigest };
+    await endRun(ctx, page);
+    return { points, killed, response, rb, snap, ctx: null, opened, hostEvidence, stagedHold, beforeDigest };
   }
   await closeHard(ctx);
   openContexts.delete(ctx);
   ({ ctx, page } = await launch());
   openContexts.add(ctx);
   const rb = await call(page, 'readback', {});
-  return { points, killed, response, rb, snap, ctx, page, opened, stagedHold, beforeDigest };
+  return { points, killed, response, rb, snap, ctx, page, opened, hostEvidence, stagedHold, beforeDigest };
 }
 
 function txPlan(trace) {
@@ -396,6 +461,7 @@ async function killCell(row, phase, outcome) {
         failures.push(...checkDelayedWriter(point, delayed, r.rb.dbDigest, after.dbDigest));
       }
       if (committed.has(point) && got === final) { // T6b: the classified state survives another restart
+        await closeLife(r.page);
         await closeHard(r.ctx);
         openContexts.delete(r.ctx);
         const again = await launch();
@@ -403,8 +469,7 @@ async function killCell(row, phase, outcome) {
         r.ctx = again.ctx;
         r.page = again.page;
       }
-      await closeHard(r.ctx);
-      openContexts.delete(r.ctx);
+      await endRun(r.ctx, r.page);
       failures.push(...book.failures());
       record({ id: `${row}/${phase}/${outcome}/${kind}@${point}`, ...base, kill: kind, point, killed: r.killed, got, resumed: resumed?.result?.reconciliation ?? resumed?.error?.code ?? null, failures });
     }
@@ -438,8 +503,7 @@ async function debris(row, outcome) {
   addSelectorsOf(nonces, reuse, second);
   failures.push(...checkDebris({ ...cell, stagedHold: second.stagedHold }, 'SECOND', { response: second, rb, debrisDigest: d.candidateDigest, debrisAfter, beforeDigest: afterReuse.dbDigest }));
   failures.push(...nonces.failures());
-  await closeHard(ctx);
-  openContexts.delete(ctx);
+  await endRun(ctx, page);
   record({ id: `${row}/DEBRIS/${outcome}`, row, outcome, phase: 'DEBRIS', reuse: reuse.error?.code ?? 'success', second: second.result?.commitOutcome ?? second.error?.code, failures });
 }
 
@@ -478,15 +542,16 @@ async function restartCell(row, id, outcome) {
     const repeat = outcome === 'INDETERMINATE' ? null : await call(page, 'reconcile', { scenario: row, outcome });
     const failures = checkRestartReconcile({ row, outcome, stagedHold }, pre, response, rb, repeat);
     const nonces = nonceBook();
-    for (const s of [...selectors, pre.selector, rb.selector]) nonces.add(s);
+    // In time order (item 10 re-emission rule): reads before the reconciliation, then its observations and read-back.
+    for (const s of [...selectors, pre.selector]) nonces.add(s);
     addSelectors(nonces, { response, rb, opened: [] });
     failures.push(...nonces.failures());
+    await closeLife(page);
     await closeHard(ctx);
     openContexts.delete(ctx);
     const again = await launch();
     failures.push(...checkSurvives(rb, await call(again.page, 'readback', {})));
-    await closeHard(again.ctx);
-    openContexts.delete(again.ctx);
+    await endRun(again.ctx, again.page);
     record({ id, row, outcome, phase: 'RESTART', response: response.result?.reconciliation ?? response.error?.code, repeat: repeat?.error?.code ?? repeat?.result?.reconciliation ?? null, failures });
   }
 }
@@ -512,7 +577,7 @@ async function faultCell(row, id, kind) {
         const response = kind.startsWith('CONTRADICT_')
           ? await call(page, 'contradict', { scenario: row, kind })
           : await call(page, 'produceAfterCommit', { scenario: row, tamper: kind === 'TAMPER_COMMITTED' });
-        await closeHard(ctx);
+        await endRun(ctx, page);
         record({ id, row, phase: 'T9', fault: kind, produced: response.produced, response: response.error?.code ?? null, setup: response.setup?.code ?? null, failures: checkProducer(kind, null, response, null) });
         return;
       }
@@ -534,8 +599,7 @@ async function faultCell(row, id, kind) {
       const book = nonceBook();
       addSelectorsOf(book, response);
       book.add(rb.selector); book.add(pre.selector);
-      await closeHard(ctx);
-      openContexts.delete(ctx);
+      await endRun(ctx, page);
       record({ id, row, phase: 'T9', fault: kind, produced: response.produced, response: response.result?.reconciliation ?? response.error?.code,
         failures: [...checkProducer(kind, pre, response, rb, { memoryHold: kind === 'READ_FAIL_MEMORY' }), ...book.failures()] });
   }
@@ -569,8 +633,7 @@ async function emissionRetry(row) {
   const repeat = await call(page, 'reconcile', { scenario: row, outcome: 'COMMITTED' });
   addSelectorsOf(nonces, h, first, retry, repeat);
   nonces.add(rb.selector);
-  await closeHard(ctx);
-  openContexts.delete(ctx);
+  await endRun(ctx, page);
   record({ id: `${row}/KIND13/EMISSION_RETRY`, row, phase: 'KIND13', response: retry.result?.reconciliation ?? retry.error?.code,
     failures: [...checkEmissionRetry({ row }, { first, mid, retry, rb, repeat, stagedHold: h.stagedHold }), ...nonces.failures()] });
 }
@@ -611,8 +674,7 @@ async function nextCell(row, outcome) {
   // Item 10 over every write of this cell: setup, the next mutation and the restart reconciliation.
   addSelectorsOf(nonces, ...setupCalls, d.next, d.recon);
   for (const rb of [baseRb, d.nextRb, d.reconRb, old, d.pre]) if (rb !== undefined) nonces.add(rb.selector);
-  await closeHard(ctx);
-  openContexts.delete(ctx);
+  await endRun(ctx, page);
   record({ id: `${row}/KIND13/NEXT_${outcome}`, row, next, phase: 'KIND13', response: d.next.result?.commitOutcome ?? d.next.error?.code,
     failures: [...checkNext(cell, d), ...nonces.failures()] });
 }
@@ -622,8 +684,7 @@ async function historicalCell(row) {
   const { ctx, page } = await fresh();
   await call(page, 'seed', { scenario: row });
   const d = await call(page, 'forgeHistorical', { scenario: row });
-  await closeHard(ctx);
-  openContexts.delete(ctx);
+  await endRun(ctx, page);
   record({ id: `${row}/KIND13/HISTORICAL_FORGED`, row, phase: 'KIND13', response: d.setup?.code ?? (d.classify?.error?.code ?? d.classify?.authority), failures: checkHistoricalForged(d) });
 }
 
@@ -648,6 +709,7 @@ async function putThrowCell(row, outcome, id) {
 }
 
 const t0 = Date.now();
+// K19: every worker life of a cell is closed and reconciled (endRun, readerStart, closeLife above).
 const rows = SMOKE ? ROWS.slice(0, 1) : ROWS;
 log(`# B-CHR frozen suite: browser=${browserName} factory=${factory} rows=${rows.join(',')} smoke=${SMOKE}`);
 let crashed = null;
@@ -671,7 +733,7 @@ server.close();
 const harnessErrorKind = crashed === null ? null
   : (/page\.goto|navigation|Navigation/.test(crashed) ? 'NAVIGATION' : (/rpc \S+ timed out/.test(crashed) ? 'RPC_TIMEOUT' : (/exceeded 900 s/.test(crashed) ? 'CELL_WATCHDOG' : 'OTHER')));
 const failureClasses = [
-  ...(crashed !== null ? ['HARNESS_ERROR'] : []), ...(tally.failures > 0 ? ['ASSERTION'] : []),
+  ...(crashed !== null ? ['HARNESS_ERROR'] : []), ...(tally.observerErrors > 0 ? ['OBSERVER_ERROR'] : []), ...(tally.failures > 0 ? ['ASSERTION'] : []),
   ...(tally.notKilled > 0 ? ['NOT_KILLED'] : []), ...(tally.unobserved > 0 ? ['UNOBSERVED'] : []),
 ];
 const verdict = crashed !== null || tally.failures > 0 || tally.notKilled > 0 ? 'FAIL'
