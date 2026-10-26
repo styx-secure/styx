@@ -146,9 +146,10 @@
     "terminalPredicateRelationRows": 33,
     "signatureVerificationPathRows": 17,
     "nativeDependencies": 65,
-    "readOnlyNativeDependencies": 60,
+    "readOnlyNativeDependencies": 58,
     "seededExtensionNativeDependencies": 4,
     "ratifiedExactRepinNativeDependencies": 1,
+    "ownerMergedGovernanceStateNativeDependencies": 2,
     "historicalProviderIncrements": 5,
     "seedRegistryRowsPendingPostBase": 87,
     "structuralWitnessRowsPendingPostBase": 1553
@@ -232,12 +233,12 @@
     {
       "path": "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json",
       "role": "EXACT_BASE_AND_RATIFIED_REPIN_NATIVE_DEPENDENCY_RELATION",
-      "sha256": "ef99c5b3e453f4f3642d2337df35736d71a6efdfa7ec853d33735daf4d0de128"
+      "sha256": "23d1cf007ed1a3acd1ff5f1abaa6d4af27b869ae47e8c0fbda54526252fc0175"
     },
     {
       "path": "derive_app_core_native_dependencies.py",
       "role": "EXACT_GIT_OBJECT_DEPENDENCY_DERIVER",
-      "sha256": "dc594a2be7f3a59f3081fcea7f80b3b7df7e988d97fb78226ac3cadbbc2170b2"
+      "sha256": "3ead135d89c6a13ff2e643bf5a12732f1cc5ed22259680f6c407d416e292d23a"
     },
     {
       "path": "APP-CORE-IFACE-0-PROVIDER-BINDINGS-CANDIDATE.json",
@@ -252,7 +253,7 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "428ffc46661adcf00929bec0bab364aca7a03dc06ae369acaa32f5e1b94fed67"
+      "sha256": "ff21e703ddfe32812a18d8d30768941c7fd4e5199ed0c3959d76818e7acfe8df"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
