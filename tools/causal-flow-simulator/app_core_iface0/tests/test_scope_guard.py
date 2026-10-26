@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import subprocess
@@ -23,6 +24,12 @@ from scope_guard import (
     _verify_native_read_only,
     _verify_subtree,
     build_report,
+)
+from inventory import (
+    GOVERNANCE_STATE_PATHS,
+    GOVERNANCE_STATE_POLICY,
+    OWNER_MERGED_GOVERNANCE_STATES,
+    governance_state_by_identity,
 )
 
 
@@ -159,7 +166,7 @@ class GitObjectScopeGuardTests(unittest.TestCase):
                 NATIVE_BASE_SHA,
                 "HEAD",
             ),
-            60,
+            58,
         )
 
     def test_pr_candidate_with_out_of_scope_path_fails(self) -> None:
@@ -210,6 +217,168 @@ class GitObjectScopeGuardTests(unittest.TestCase):
         tree = self._git("write-tree")
         with self.assertRaisesRegex(ScopeError, "exact native dependency repin drift"):
             _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree)
+
+    # Owner-merged governance states: AGENTS.md and the hardening plan must
+    # form exactly one listed joint state in the candidate's Git objects.
+
+    def _governance_blob(self, state_id: str, path: str) -> str:
+        state = next(
+            state for state in OWNER_MERGED_GOVERNANCE_STATES
+            if state["stateId"] == state_id
+        )
+        oid = state["files"][path]["gitBlobOid"]
+        present = subprocess.run(
+            ["git", "cat-file", "-e", f"{oid}^{{blob}}"],
+            cwd=self.repo,
+            capture_output=True,
+            timeout=60,
+        )
+        if present.returncode != 0:
+            self.skipTest(f"governance blob {oid} of {state_id} is not in this clone")
+        return oid
+
+    def _governance_tree(self, agents_state: str, plan_state: str) -> str:
+        for path, state_id in zip(GOVERNANCE_STATE_PATHS, (agents_state, plan_state)):
+            oid = self._governance_blob(state_id, path)
+            self._git("update-index", "--add", "--cacheinfo", "100644", oid, path)
+        return self._git("write-tree")
+
+    def test_every_owner_merged_governance_state_passes(self) -> None:
+        for state in OWNER_MERGED_GOVERNANCE_STATES:
+            with self.subTest(state=state["stateId"]):
+                tree = self._governance_tree(state["stateId"], state["stateId"])
+                self.assertEqual(
+                    _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree), 58
+                )
+
+    def test_mixed_governance_states_fail(self) -> None:
+        for agents_state, plan_state in (
+            ("BASE_E0AF4E1", "MAIN_PHASE_480_490"),
+            ("M3_PROC_497", "MAIN_PHASE_480_490"),
+            ("MAIN_PHASE_480_490", "BASE_E0AF4E1"),
+        ):
+            with self.subTest(agents=agents_state, plan=plan_state):
+                tree = self._governance_tree(agents_state, plan_state)
+                with self.assertRaisesRegex(ScopeError, "unratified governance state"):
+                    _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree)
+
+    def test_unlisted_governance_bytes_fail(self) -> None:
+        for path in GOVERNANCE_STATE_PATHS:
+            for label, edit in (
+                ("one-byte", lambda data: data + b" "),
+                ("normative", lambda data: data.replace(b"human", b"agent", 1)),
+                (
+                    "phase-exit-block",
+                    lambda data: data.replace(
+                        b"<!-- styx-protocol-phase-exit-status:v1:start -->", b"", 1
+                    ),
+                ),
+            ):
+                with self.subTest(path=path, edit=label):
+                    self._git("read-tree", "HEAD")
+                    current = subprocess.run(
+                        ["git", "cat-file", "blob", f"HEAD:{path}"],
+                        cwd=self.repo,
+                        capture_output=True,
+                        check=True,
+                        timeout=60,
+                    ).stdout
+                    changed = edit(current)
+                    self.assertNotEqual(changed, current)
+                    oid = subprocess.run(
+                        ["git", "hash-object", "-w", "--stdin"],
+                        cwd=self.repo,
+                        input=changed,
+                        capture_output=True,
+                        check=True,
+                        timeout=60,
+                    ).stdout.decode().strip()
+                    self._git("update-index", "--add", "--cacheinfo", "100644", oid, path)
+                    tree = self._git("write-tree")
+                    with self.assertRaisesRegex(ScopeError, "unratified governance state"):
+                        _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree)
+
+    def test_governance_document_mode_drift_fails(self) -> None:
+        oid = self._git("rev-parse", "HEAD:AGENTS.md")
+        self._git("update-index", "--add", "--cacheinfo", "100755", oid, "AGENTS.md")
+        tree = self._git("write-tree")
+        with self.assertRaisesRegex(ScopeError, "governance document mode drift"):
+            _verify_native_read_only(self.repo, NATIVE_BASE_SHA, tree)
+
+    def test_governance_registry_tampering_fails(self) -> None:
+        original = copy.deepcopy(self.registry)
+        tamperings = {
+            "fourth-state": lambda registry: registry["ownerMergedGovernanceStates"].append(
+                copy.deepcopy(registry["ownerMergedGovernanceStates"][1])
+                | {"stateId": "EXTRA"}
+            ),
+            "removed-state": lambda registry: registry["ownerMergedGovernanceStates"].pop(),
+            "substituted-sha256": lambda registry: registry[
+                "ownerMergedGovernanceStates"
+            ][2]["files"]["AGENTS.md"].update(sha256="0" * 64),
+            "path-set": lambda registry: registry[
+                "ownerMergedGovernanceStatePaths"
+            ].pop(),
+        }
+        for label, tamper in tamperings.items():
+            with self.subTest(tampering=label):
+                self.registry = copy.deepcopy(original)
+                tamper(self.registry)
+                self._write_registry()
+                with self.assertRaisesRegex(
+                    ScopeError, "owner-merged governance state registry drift"
+                ):
+                    _verify_native_read_only(self.repo, NATIVE_BASE_SHA, "HEAD")
+
+    def test_governance_policy_rows_are_closed(self) -> None:
+        original = copy.deepcopy(self.registry)
+        for label in ("foreign-path", "repin"):
+            with self.subTest(row=label):
+                self.registry = copy.deepcopy(original)
+                rows = self.registry["dependencies"]
+                if label == "foreign-path":
+                    row = next(
+                        row for row in rows
+                        if row["mutationPolicy"] == "READ_ONLY_BYTE_IDENTICAL"
+                    )
+                    row["mutationPolicy"] = GOVERNANCE_STATE_POLICY
+                else:
+                    row = next(row for row in rows if row["path"] == "AGENTS.md")
+                    row["repin"] = {"reason": "negative control only"}
+                self._write_registry()
+                with self.assertRaisesRegex(ScopeError, "unauthorized governance-state row"):
+                    _verify_native_read_only(self.repo, NATIVE_BASE_SHA, "HEAD")
+
+    def test_governance_states_match_exact_pairs_only(self) -> None:
+        identities = {
+            state["stateId"]: {
+                path: (
+                    state["files"][path]["gitBlobOid"],
+                    state["files"][path]["byteSize"],
+                )
+                for path in GOVERNANCE_STATE_PATHS
+            }
+            for state in OWNER_MERGED_GOVERNANCE_STATES
+        }
+        agents, plan = GOVERNANCE_STATE_PATHS
+        accepted = set()
+        for agents_state in identities:
+            for plan_state in identities:
+                observed = {
+                    agents: identities[agents_state][agents],
+                    plan: identities[plan_state][plan],
+                }
+                result = governance_state_by_identity(observed, "gitBlobOid")
+                if result is not None:
+                    accepted.add((agents, identities[agents_state][agents], plan, identities[plan_state][plan], result))
+        self.assertEqual(
+            {row[-1] for row in accepted},
+            {"BASE_E0AF4E1", "M3_PROC_497", "MAIN_PHASE_480_490"},
+        )
+        self.assertEqual(len({row[:4] for row in accepted}), 3)
+        self.assertIsNone(
+            governance_state_by_identity({agents: identities["MAIN_PHASE_480_490"][agents]}, "gitBlobOid")
+        )
 
 
 if __name__ == "__main__":

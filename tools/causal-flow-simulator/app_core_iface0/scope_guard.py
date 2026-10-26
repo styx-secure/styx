@@ -17,8 +17,12 @@ sys.dont_write_bytecode = True
 from canonical_report import ReportError, store_report
 from inventory import (
     BASE_SHA as NATIVE_BASE_SHA,
+    GOVERNANCE_STATE_PATHS,
+    GOVERNANCE_STATE_POLICY,
+    OWNER_MERGED_GOVERNANCE_STATES,
     InventoryError,
     _load_json,
+    governance_state_by_identity,
     verify_contract_package,
 )
 
@@ -201,8 +205,24 @@ def _verify_native_read_only(repo: Path, base: str, candidate: str) -> int:
     inventory = _load_json(
         contract / "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
     )
+    expected_states = [
+        {
+            "stateId": state["stateId"],
+            "provenance": state["provenance"],
+            "files": {
+                path: dict(state["files"][path]) for path in GOVERNANCE_STATE_PATHS
+            },
+        }
+        for state in OWNER_MERGED_GOVERNANCE_STATES
+    ]
+    if (
+        inventory.get("ownerMergedGovernanceStatePaths") != list(GOVERNANCE_STATE_PATHS)
+        or inventory.get("ownerMergedGovernanceStates") != expected_states
+    ):
+        raise ScopeError("owner-merged governance state registry drift")
     count = 0
     repinned: set[str] = set()
+    governance: dict[str, tuple[str, int]] = {}
     for row in inventory["dependencies"]:
         policy = row["mutationPolicy"]
         if policy == "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS":
@@ -212,6 +232,20 @@ def _verify_native_read_only(repo: Path, base: str, candidate: str) -> int:
         after = _git(repo, "rev-parse", f"{candidate}:{path}").strip()
         if before != row["gitBlobOid"]:
             raise ScopeError(f"native dependency Base identity drift: {path}")
+        if policy == GOVERNANCE_STATE_POLICY:
+            if path not in GOVERNANCE_STATE_PATHS or "repin" in row:
+                raise ScopeError(f"unauthorized governance-state row: {path}")
+            if OWNER_MERGED_GOVERNANCE_STATES[0]["files"][path] != {
+                "gitBlobOid": row["gitBlobOid"],
+                "sha256": row["sha256"],
+                "byteSize": row["byteSize"],
+            }:
+                raise ScopeError(f"Base governance state drift: {path}")
+            if _git(repo, "ls-tree", candidate, "--", path).split()[0] != "100644":
+                raise ScopeError(f"governance document mode drift: {path}")
+            size = int(_git(repo, "cat-file", "-s", after).strip())
+            governance[path] = (after, size)
+            continue
         if policy == "READ_ONLY_BYTE_IDENTICAL" and before != after:
             raise ScopeError(f"read-only native dependency changed: {path}")
         if policy == "READ_ONLY_BYTE_IDENTICAL":
@@ -232,10 +266,14 @@ def _verify_native_read_only(repo: Path, base: str, candidate: str) -> int:
         ):
             raise ScopeError(f"exact native dependency repin drift: {path}")
         repinned.add(path)
-    if count != 60:
+    if count != 58:
         raise ScopeError("read-only native dependency count drift")
     if repinned != {"tools/causal-flow-simulator/c03/corpus_model.py"}:
         raise ScopeError("ratified exact native dependency repin set drift")
+    if set(governance) != set(GOVERNANCE_STATE_PATHS):
+        raise ScopeError("owner-merged governance state path drift")
+    if governance_state_by_identity(governance, "gitBlobOid") is None:
+        raise ScopeError("unratified governance state")
     return count
 
 

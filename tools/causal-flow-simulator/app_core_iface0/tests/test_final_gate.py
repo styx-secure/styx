@@ -1719,7 +1719,7 @@ class FinalGateTests(unittest.TestCase):
         decision = {
             "baseSha": BASE_SHA,
             "candidateManifestSha256": (
-                "7765f3a861ddf8e1fdcb6dfb9a21768fee13e63f8f60f64f93fa222ebdd1726e"
+                "d1712097280808205c751d4d2df84941ba6da87c27cb1c4d90ab77c0eed2dd07"
             ),
             "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
             "selectionHead": candidate,
@@ -1885,6 +1885,110 @@ class FinalGateTests(unittest.TestCase):
             Path("/e2"),
             Path("/out/final-gate.json"),
         )
+
+
+
+class Acv049RuntimeGovernanceStateTests(unittest.TestCase):
+    """The real runtime policy binds exactly one owner-merged governance state."""
+
+    def test_runtime_policy_binds_exactly_one_owner_merged_governance_state(self) -> None:
+        import final_gate
+        from inventory import GOVERNANCE_STATE_PATHS, GOVERNANCE_STATE_POLICY
+
+        repo = ROOT.parents[2]
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as raw:
+            temporary = Path(raw)
+            checkout = temporary / "checkout"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", str(repo), str(checkout)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach", head], cwd=checkout, check=True
+            )
+            contract = checkout / "tools/causal-flow-simulator/app_core_iface0/contract"
+            evidence = temporary / "evidence"
+            evidence.mkdir()
+            (evidence / "placeholder.json").write_text("{}\n", encoding="utf-8")
+            output = temporary / "output" / "report.json"
+            output.parent.mkdir()
+
+            policy = final_gate._acv049_runtime_policy(checkout, contract, evidence, output)
+            for path in GOVERNANCE_STATE_PATHS:
+                self.assertIn(str((checkout / path).resolve()), policy["allowed_reads"])
+
+            agents, plan = (checkout / path for path in GOVERNANCE_STATE_PATHS)
+            originals = {path: path.read_bytes() for path in (agents, plan)}
+            base = "e0af4e1e2173deb2481eabdb24d8622282b33455"
+            base_agents = subprocess.run(
+                ["git", "cat-file", "blob", f"{base}:AGENTS.md"], cwd=checkout,
+                check=True, capture_output=True,
+            ).stdout
+            cases = [
+                ("one-byte", originals[agents] + b" ", originals[plan]),
+                ("plan-normative", originals[agents], originals[plan].replace(b"human", b"agent", 1)),
+            ]
+            if originals[agents] != base_agents:
+                cases.append(("base-agents-current-plan", base_agents, originals[plan]))
+            for label, agents_bytes, plan_bytes in cases:
+                with self.subTest(case=label):
+                    agents.write_bytes(agents_bytes)
+                    plan.write_bytes(plan_bytes)
+                    expected = (
+                        "ACV-049 runtime governance state drift"
+                        if label != "base-agents-current-plan"
+                        or plan_bytes != subprocess.run(
+                            ["git", "cat-file", "blob", f"{base}:{GOVERNANCE_STATE_PATHS[1]}"],
+                            cwd=checkout, check=True, capture_output=True,
+                        ).stdout
+                        else None
+                    )
+                    if expected is None:
+                        final_gate._acv049_runtime_policy(checkout, contract, evidence, output)
+                    else:
+                        with self.assertRaisesRegex(FinalGateError, expected):
+                            final_gate._acv049_runtime_policy(
+                                checkout, contract, evidence, output
+                            )
+                    agents.write_bytes(originals[agents])
+                    plan.write_bytes(originals[plan])
+
+            name = "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
+            manifest_path = contract / "APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json"
+            registry_bytes = (contract / name).read_bytes()
+            manifest_text = manifest_path.read_text(encoding="utf-8")
+            old = hashlib.sha256(registry_bytes).hexdigest()
+            for label in ("foreign-path", "repin"):
+                with self.subTest(registry=label):
+                    registry = json.loads(registry_bytes)
+                    if label == "foreign-path":
+                        row = next(
+                            row for row in registry["dependencies"]
+                            if row["mutationPolicy"] == "READ_ONLY_BYTE_IDENTICAL"
+                        )
+                        row["mutationPolicy"] = GOVERNANCE_STATE_POLICY
+                    else:
+                        row = next(
+                            row for row in registry["dependencies"]
+                            if row["path"] == "AGENTS.md"
+                        )
+                        row["repin"] = {"reason": "negative control only"}
+                    data = json.dumps(registry).encode()
+                    (contract / name).write_bytes(data)
+                    manifest_path.write_text(
+                        manifest_text.replace(old, hashlib.sha256(data).hexdigest()),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        FinalGateError, "ACV-049 runtime governance state row drift"
+                    ):
+                        final_gate._acv049_runtime_policy(checkout, contract, evidence, output)
+                    (contract / name).write_bytes(registry_bytes)
+                    manifest_path.write_text(manifest_text, encoding="utf-8")
 
 
 if __name__ == "__main__":
