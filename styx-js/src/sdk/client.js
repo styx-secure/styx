@@ -19,6 +19,7 @@ import { createOutbox } from './delivery/outbox.js';
 import { createReceipts } from './delivery/receipts.js';
 import { createRelaySet } from './delivery/relay-pool.js';
 import { retryDelayMs } from './delivery/retry.js';
+import { createCatchUp } from './delivery/catch-up.js';
 import { bytesToHex, randomBytes } from '../utils.js';
 
 /* ------------------------------------------------------------------------- *
@@ -1352,6 +1353,7 @@ function buildClient(settings) {
   function disposeRelaySet(held) {
     if (held.relaySet === null) return Promise.resolve();
     if (held.disposal === null) {
+      if (held.catchUp !== null) crossBoundary(held.catchUp, 'dispose', []);
       // A disposal fault leaves nothing further to do here.
       // Bounded by its host-time backstop (`BOUND.dispose`), so a disposal
       // that never settles cannot hold the stop open.
@@ -1626,7 +1628,7 @@ function buildClient(settings) {
    */
   async function runStart() {
     const held = {
-      outbox: null, receipts: null, relaySet: null, disposal: null, publicKey: null,
+      outbox: null, receipts: null, relaySet: null, catchUp: null, disposal: null, publicKey: null,
     };
     modules = held;
     const fail = async (code) => {
@@ -1698,6 +1700,19 @@ function buildClient(settings) {
     } catch {
       return fail(SdkResultCode.E_SDK_INTERNAL);
     }
+    const createdCatchUp = crossCall(createCatchUp, undefined, [{
+      relayCount, subscriptionId, clock,
+      isRunning: () => clientState === 'RUNNING' && !stopping,
+      resubscribe: (index, since) => {
+        if (stopping || held.relaySet === null) return;
+        const called = crossBoundary(held.relaySet, 'resubscribe', [index, since]);
+        if (called.settled === 'value' && scanClosedSlots(called.value).unknown) {
+          sink({ kind: 'INBOUND_DISCARDED', code: SdkResultCode.E_SDK_UNKNOWN_CODE });
+        }
+      },
+    }]);
+    if (!isModuleCall(createdCatchUp)) return fail(SdkResultCode.E_SDK_INTERNAL);
+    held.catchUp = createdCatchUp.value;
     const createdSet = crossCall(createRelaySet, undefined, [{
       relays: [...relays],
       clock,
@@ -1706,6 +1721,11 @@ function buildClient(settings) {
       subscriptionId,
       filter: { kinds: [...SUBSCRIBED_KINDS], '#p': [key] },
       reconnectDelay: retryDelayMs,
+      subscriptionSince: (index) => {
+        const called = crossBoundary(held.catchUp, 'subscriptionSince', [index]);
+        return called.settled === 'value' && (called.value === null
+          || (Number.isSafeInteger(called.value) && called.value >= 0)) ? called.value : null;
+      },
     }]);
     if (!isModuleCall(createdSet) || typeof createdSet.value !== 'object') {
       return fail(SdkResultCode.E_SDK_INTERNAL);
@@ -1734,7 +1754,10 @@ function buildClient(settings) {
     held.receipts = createdReceipts.value;
     // A rejection (or a returned thenable that fails) is a failed call, as for
     // every other seam call; the value itself is not a lane result.
-    const subscribed = await crossBoundaryAsync(held.relaySet, 'onFrame', [(frame) => onInboundFrame(held, frame)], {
+    const subscribed = await crossBoundaryAsync(held.relaySet, 'onFrame', [(frame) => {
+      crossBoundary(held.catchUp, 'observe', [frame]);
+      return onInboundFrame(held, frame);
+    }], {
       timeoutMs: BOUND.onFrame,
     });
     if (subscribed.settled !== 'value') return fail(SdkResultCode.E_SDK_INTERNAL);
@@ -1767,6 +1790,7 @@ function buildClient(settings) {
     if (connectedRelays < 1) return fail(SdkResultCode.E_SDK_NO_RELAY_AVAILABLE);
     clientState = 'RUNNING';
     retainedOutbox = held.outbox;
+    crossBoundary(held.catchUp, 'start', []);
     recordClientState('RUNNING');
     return success(Object.freeze({ clientState: 'RUNNING', connectedRelays }));
   }
@@ -1949,6 +1973,7 @@ function buildClient(settings) {
       // Each call is synchronous at the call; a fault in one never prevents
       // the next (C-SDK section 4.2).
       if (held.receipts !== null) crossBoundary(held.receipts, 'shutdown', []);
+      if (held.catchUp !== null) crossBoundary(held.catchUp, 'freeze', []);
       if (held.relaySet !== null) crossBoundary(held.relaySet, 'freeze', []);
       if (held.outbox !== null) {
         const stop = crossBoundary(held.outbox, 'shutdown', []);
