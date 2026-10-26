@@ -13,6 +13,7 @@
 //   4. every subscription and timer is cleaned up on close.
 
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { WebSocket, WebSocketServer } from 'ws';
 
 import { createRelaySet } from '../../../src/sdk/delivery/relay-pool.js';
 
@@ -2019,6 +2020,95 @@ describe('createRelaySet — the unchanged RelayPool over a fake WebSocket', () 
 // Seam S2 (card I-SDK): freeze before close (C-DLV §4.6 step 1).
 // ---------------------------------------------------------------------------
 
+describe('S6 -- synchronous socket-only receipt publication', () => {
+  test('loopback: only the connected socket receives the drain, not a later handshake', async () => {
+    const original = globalThis.WebSocket;
+    globalThis.WebSocket = WebSocket;
+    let release;
+    const servers = [
+      new WebSocketServer({ host: '127.0.0.1', port: 0 }),
+      new WebSocketServer({ host: '127.0.0.1', port: 0, verifyClient: (_info, done) => { release = () => done(true); } }),
+    ];
+    const counts = [0, 0];
+    const clock = new ManualClock();
+    let set;
+    const wait = async (predicate) => {
+      const end = Date.now() + 2000;
+      while (!predicate() && Date.now() < end) await new Promise((resolve) => host.realSet(resolve, 2));
+      expect(predicate()).toBe(true);
+    };
+    try {
+      await Promise.all(servers.map((server) => new Promise((resolve) => server.once('listening', resolve))));
+      servers.forEach((server, i) => server.on('connection', (socket) => {
+        socket.on('message', (raw) => {
+          const frame = JSON.parse(String(raw));
+          if (frame[0] === 'EVENT' && frame[1].kind === 4742) counts[i] += 1;
+        });
+      }));
+      set = createRelaySet({
+        relays: servers.map((server) => `ws://127.0.0.1:${server.address().port}`),
+        clock, random: { nextUint32: () => 0 }, perRelayTimeoutMs: PER_RELAY_TIMEOUT_MS,
+        filter: FILTER, subscriptionId: SUBSCRIPTION_ID,
+      });
+      const starting = set.start();
+      await wait(() => set.connectedRelays === 1 && release !== undefined);
+      set.publishDrain({ ...EVENT, kind: 4742 });
+      await wait(() => counts[0] === 1);
+      expect(counts).toEqual([1, 0]);
+      release();
+      release = undefined;
+      await wait(() => set.connectedRelays === 2);
+      clock.advance(PER_RELAY_TIMEOUT_MS);
+      await starting;
+      set.freeze();
+      await new Promise((resolve) => host.realSet(resolve, 5));
+      expect(counts).toEqual([1, 0]);
+    } finally {
+      if (release) release();
+      if (set) { clock.advance(PER_RELAY_TIMEOUT_MS); await set.dispose(); }
+      for (const server of servers) for (const socket of server.clients) socket.terminate();
+      await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
+      globalThis.WebSocket = original;
+    }
+  });
+
+  test('works before and after freeze, never after disposal, with no attempt or timer', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'ok-true' }, { behaviour: 'normal' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    const before = [...attempt.outcomes];
+    const timers = h.clock.timers.size;
+    const hostTimers = host.armed.length;
+    expect(set.publishDrain({ ...EVENT, kind: 4742 })).toBeUndefined();
+    expect(attempt.outcomes).toEqual(before);
+    expect(h.clock.timers.size).toBe(timers);
+    expect(host.armed).toHaveLength(hostTimers);
+    set.freeze();
+    expect(set.publishDrain({ ...EVENT, kind: 4742 })).toBeUndefined();
+    expect(attempt.outcomes).toEqual(before);
+    expect(h.created.every((pool) => pool.published.filter((event) => event.kind === 4742).length === 2)).toBe(true);
+    const disposing = set.dispose();
+    set.publishDrain({ ...EVENT, kind: 4742 });
+    await disposing;
+    expect(h.created.every((pool) => pool.published.filter((event) => event.kind === 4742).length === 2)).toBe(true);
+  });
+
+  test.each(['throw', 'reject', 'unconnected'])('faulty connected pool: %s', async (fault) => {
+    const h = makeHarness([{ behaviour: 'normal' }, { behaviour: 'normal' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    if (fault === 'unconnected') h.created[0].connected = false;
+    else h.created[0].publish = () => {
+      if (fault === 'throw') throw new Error('publish fault');
+      return Promise.reject(new Error('publish fault'));
+    };
+    expect(() => set.publishDrain({ ...EVENT, kind: 4742 })).not.toThrow();
+    expect(h.created[1].published).toHaveLength(1);
+    await set.dispose();
+  });
+});
+
 describe('createRelaySet — seam S2, freeze() before dispose()', () => {
   const RELAY_SET_MEMBERS = [
     'connectedRelays',
@@ -2026,6 +2116,7 @@ describe('createRelaySet — seam S2, freeze() before dispose()', () => {
     'freeze',
     'onFrame',
     'publish',
+    'publishDrain',
     'relayCount',
     'running',
     'start',

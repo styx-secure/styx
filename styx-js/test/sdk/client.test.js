@@ -2128,6 +2128,67 @@ async function startedWithDoubles(doubles, { listener = null } = {}) {
   return { client, events, identity };
 }
 
+describe('S6 -- drain seams under model B', () => {
+  test.each(['throw', 'reject', 'never', 'malformed', 'unknown', 'valid'])(
+    'publishDrain: %s cannot prevent bounded stop or cause a normal attempt', async (fault) => {
+      const doubles = makeDoubles();
+      let normal = 0;
+      let drains = 0;
+      doubles.relaySet.publish = () => { normal += 1; return { ignoreAcks() {} }; };
+      doubles.relaySet.publishDrain = () => {
+        drains += 1;
+        if (fault === 'throw') throw new Error('drain fault');
+        if (fault === 'reject') return Promise.reject(new Error('drain fault'));
+        if (fault === 'never') return new Promise(() => {});
+        if (fault === 'malformed') return { ok: true };
+        if (fault === 'unknown') return { code: 'E_FUTURE_RESULT' };
+        return undefined;
+      };
+      doubles.receipts.drained = () => {
+        doubles.receiptsOptions.publishReceipt({ kind: 4742 });
+        return Promise.resolve();
+      };
+      const { client, events } = await startedWithDoubles(doubles);
+      expect((await client.shutdown()).ok).toBe(true);
+      expect(normal).toBe(0);
+      expect(drains).toBe(1);
+      expect(doubles.calls.filter((call) => call === 'dispose')).toHaveLength(1);
+      if (fault === 'unknown') {
+        const discarded = events.findIndex((e) => e.code === 'E_SDK_UNKNOWN_CODE');
+        expect(discarded).toBeGreaterThanOrEqual(0);
+        expect(events.findIndex((e) => e.clientState === 'STOPPED')).toBeGreaterThan(discarded);
+      }
+    },
+  );
+
+  test.each(['throw', 'reject', 'never', 'malformed', 'unknown'])(
+    'drained wait: %s is bounded, concurrent with settled, and precedes disposal', async (fault) => {
+      const doubles = makeDoubles();
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      let settledStarted = false;
+      let drainedStarted = false;
+      doubles.receipts.settled = () => { settledStarted = true; return gate; };
+      doubles.receipts.drained = () => {
+        drainedStarted = true;
+        if (fault === 'throw') throw new Error('wait fault');
+        if (fault === 'reject') return Promise.reject(new Error('wait fault'));
+        if (fault === 'never') return new Promise(() => {});
+        if (fault === 'unknown') return { code: 'E_FUTURE_RESULT' };
+        return 7;
+      };
+      const { client } = await startedWithDoubles(doubles);
+      const stopping = client.shutdown();
+      await flushMicrotasks();
+      expect(settledStarted && drainedStarted).toBe(true);
+      expect(doubles.calls).not.toContain('dispose');
+      release();
+      expect((await stopping).ok).toBe(true);
+      expect(doubles.calls.filter((call) => call === 'dispose')).toHaveLength(1);
+    }, 13000,
+  );
+});
+
 describe('result check and events with lane doubles', () => {
   test('start wires the modules as the contract states', async () => {
     const doubles = makeDoubles();

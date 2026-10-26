@@ -476,6 +476,24 @@ export function createReceipts(options) {
   const windowOrder = [];
   let processing = false;
   let stopped = false;
+  // Pending receipt jobs are registered before MESSAGE_RECEIVED reaches the
+  // client sink. shutdown() fixes this set synchronously, including a stop
+  // called by that message's listener. Only identity.sign may start afterwards.
+  const owed = new Set();
+  let drainExpired = false;
+  let drainTimer = null;
+  let drainResolve = null;
+  let drainPromise = null;
+
+  function finishReceipt(job) {
+    owed.delete(job);
+    if (stopped && owed.size === 0 && drainResolve !== null) {
+      if (drainTimer !== null) clearTimeout(drainTimer);
+      drainTimer = null;
+      drainResolve();
+    }
+  }
+
   let publicKeyRead = false;
   let publicKey = null;
   let publicKeyUnknown = false;
@@ -762,8 +780,7 @@ export function createReceipts(options) {
    * @param {string} own the client's own public key
    * @returns {Promise<object|null>}
    */
-  async function buildAndSignReceipt(message, own) {
-    const reading = callSyncPort(read === null ? null : read.clock, 'now');
+  function prepareReceipt(message, own, reading) {
     if (!reading.ok) return { ok: false };
     /* C-DLV section 4.5 ahead of the number, finite, negative and safe-integer
      * checks: a clock return that carries a closed slot outside its closed set
@@ -794,23 +811,37 @@ export function createReceipts(options) {
     const content = '';
     const id = recomputeId(own, createdAt, EVENT_KIND_RECEIPT, tags, content);
     if (id === null) return { ok: false };
-    /* C-DLV section 4.6 step (1): no port call starts after the stop. */
-    if (stopped) return { ok: false };
-    const signed = await trackedCall(read === null ? null : read.identity, 'sign',
-      [{ digest: hexToBytes(id) }]);
-    if (!signed.ok) return { ok: false };
-    /* C-DLV section 4.5 ahead of every other code: a signature return that
-     * carries a closed slot outside its closed set is an unknown value, not a
-     * bad signature (C-SDK section 5.3). */
-    if (closedSlotViolation(signed.value) !== null) return { ok: false, unknown: true };
-    if (!(signed.value instanceof Uint8Array) || signed.value.length !== 64) return { ok: false };
-    return { ok: true, receipt: Object.freeze({
+    return { ok: true, receipt: {
       id,
       pubkey: own,
       created_at: createdAt,
       kind: EVENT_KIND_RECEIPT,
       tags,
       content,
+    } };
+  }
+
+  /** The sole post-stop port-call exception: signing a fixed owed job. */
+  async function signReceipt(job) {
+    const stoppedBeforeScreening = stopped;
+    const prepared = prepareReceipt(job.message, publicKey, job.reading);
+    if (!stoppedBeforeScreening && stopped) return { ok: false };
+    if (!prepared.ok) return prepared;
+    if (drainExpired || !owed.has(job)) return { ok: false };
+    const end = begin();
+    let signed;
+    try {
+      signed = await callPort(read === null ? null : read.identity, 'sign',
+        [{ digest: hexToBytes(prepared.receipt.id) }], portCallTimeoutMs,
+        () => drainExpired || !owed.has(job));
+    } finally {
+      end();
+    }
+    if (!signed.ok) return { ok: false };
+    if (closedSlotViolation(signed.value) !== null) return { ok: false, unknown: true };
+    if (!(signed.value instanceof Uint8Array) || signed.value.length !== 64) return { ok: false };
+    return { ok: true, receipt: Object.freeze({
+      ...prepared.receipt,
       sig: bytesToHex(signed.value),
     }) };
   }
@@ -921,12 +952,19 @@ export function createReceipts(options) {
     }
     /* C-DLV section 4.6 step (1): no event begins after the stop. */
     if (stopped) return null;
+    // Prepare the clock-dependent structure before recording the message:
+    // its listener may stop the client, after which no clock call may start.
+    const job = event.tags.length === 4 && publicKey !== null
+      ? { reading: callSyncPort(read === null ? null : read.clock, 'now'), message: { sender: event.pubkey, eventId: event.id } }
+      : null;
+    if (stopped) return null;
+    if (job !== null) owed.add(job);
     emit({
       kind: EVENT_KIND_MESSAGE_RECEIVED,
       sender: event.pubkey,
       payload: new Uint8Array(plaintext.value),
     });
-    return event.pubkey;
+    return job;
   }
 
   /**
@@ -1069,28 +1107,19 @@ export function createReceipts(options) {
       return;
     }
 
-    const sender = await openMessage(validated.event);
-    if (sender === null) return;
-    /* C-DLV section 7.2: the receipt is sent only for a message event that
-     * carries the `r` tag, at most once per event id while that id is in the
-     * window; section 4.6 step (1): no receipt starts after the stop. */
-    if (validated.event.tags.length !== 4) return;
-    if (stopped) return;
-    const own = publicKey;
-    if (own === null) return;
-    const built = await buildAndSignReceipt({ sender, eventId: validated.event.id }, own);
-    if (stopped) return;
-    if (built.unknown === true) {
-      /* C-DLV section 4.5: an unknown closed slot in the signature return is
-       * `E_SDK_UNKNOWN_CODE`; the message event emitted above stands, because
-       * section 7.2 emits the message before the receipt is built, and this is
-       * the structure's one terminal event, never a second. */
-      discard(DISCARD_UNKNOWN_CODE);
-      return;
+    const job = await openMessage(validated.event);
+    if (job === null) return;
+    try {
+      const built = await signReceipt(job);
+      if (drainExpired || !owed.has(job)) return;
+      if (built.unknown === true) {
+        discard(DISCARD_UNKNOWN_CODE);
+        return;
+      }
+      if (built.ok === true) publishReceipt(built.receipt);
+    } finally {
+      finishReceipt(job);
     }
-    if (built.ok !== true) return;
-    if (stopped) return;
-    publishReceipt(built.receipt);
   }
 
   /* --- the per-client queue of C-DLV section 7.1 ------------------------ */
@@ -1163,6 +1192,17 @@ export function createReceipts(options) {
   function shutdown() {
     if (stopped) return failure(CODE_CLIENT_STOPPED);
     stopped = true;
+    drainPromise = new Promise((resolve) => { drainResolve = resolve; });
+    if (owed.size === 0) {
+      drainResolve();
+    } else {
+      drainTimer = setTimeout(() => {
+        drainExpired = true;
+        owed.clear();
+        drainTimer = null;
+        drainResolve();
+      }, portCallTimeoutMs);
+    }
     const dropped = queue.length;
     queue.length = 0;
     return success({ dropped });
@@ -1183,7 +1223,12 @@ export function createReceipts(options) {
     return Promise.all(pending).then(() => undefined, () => undefined);
   }
 
-  return Object.freeze({ ingest, shutdown, settled });
+  /** S6's companion wait: the fixed owed set or its one host-time bound. */
+  function drained() {
+    return drainPromise === null ? Promise.resolve() : drainPromise;
+  }
+
+  return Object.freeze({ ingest, shutdown, settled, drained });
 }
 
 /**
