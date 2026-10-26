@@ -1,13 +1,14 @@
 import { describe, expect, jest, test } from '@jest/globals';
+import { sha256 } from '@noble/hashes/sha256';
 import {
-  M2_KIND, encodePlaintext, encodeRecordKey, decodePlaintext,
+  M2_KIND, encodePlaintext, encodeRecordKey, decodePlaintext, encodeAad,
 } from '../../../src/storage/m2/session-codec.js';
 import {
   computeKeyedRoot, ciphertextDigest, encodeManifest, encodeManifestKey, manifestEntry,
   manifestKeyDigest, validateAuthority,
 } from '../../../src/storage/m2/session-root.js';
 import {
-  M2TxnError, M2_OUTCOME, M2_TXN, buildMutationEnvelope, classifyAuthority, mutationRow,
+  M2TxnError, M2_OUTCOME, M2_TXN, buildMutationEnvelope, classifyAuthority, loadBoundHold, mutationRow,
   mutationSteps, reconcileIndeterminate, runMutation, validateCommitResultEvidence,
 } from '../../../src/storage/m2/session-transaction.js';
 
@@ -2641,5 +2642,1050 @@ describe('scenario mapping against O-SCEN', () => {
     expect(MAPPING.length).toBe(54);
     expect(counts.MAPPED).toBe(47);
     expect(counts.UNMAPPED).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// I-RESTART: the bound-hold loader and the restart readback (Changes 1-6 of the exact contract).
+//
+// Every fixture below stages canonical kind-6, 8, 9, 13 and 14 plaintexts under the canonical record
+// keys of the generation, exactly as a C-FMT writer stores them; ciphertext, tag, manifest and keyed
+// root are the module-level fixture's, because a manifest covers sealed bytes only.
+// ---------------------------------------------------------------------------------------------
+
+describe('I-RESTART: bound-hold loader', () => {
+  const K6 = M2_KIND.BINDING_PROFILE;
+  const K8 = M2_KIND.COMMIT_RESULT;
+  const K9 = M2_KIND.OUTPUT_ESCROW;
+  const K13 = M2_KIND.MUTATION_HOLD;
+  const K14 = M2_KIND.COMPONENT_SET;
+  const K17 = M2_KIND.GENERATION_SELECTOR;
+  const OPERATIONS = ['CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
+    'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE'];
+  const OUTPUT_KINDS = ['NONE', 'EMBEDDED_TREE_WELCOME', 'PROTECTED_APPLICATION_BYTES',
+    'APPLICATION_BYTES', 'PROTECTED_COMMIT_BYTES', 'SELECTED_CANDIDATE_REF'];
+  const SUCCESS_CODES = ['CREATED', 'RESTORED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED',
+    'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED',
+    'DUPLICATE_IGNORED'];
+  const ROW_NAMES = M2_TXN.SCENARIOS;
+  const HOLD_ROWS = ROW_NAMES.filter((s) => mutationRow(s).outputKind !== 'NONE');
+  const NONE_ROWS = ROW_NAMES.filter((s) => mutationRow(s).outputKind === 'NONE');
+  const BINDING = bytesOf(389, 0x31);
+  const BINDING_LABEL = 'STYX-M2-BINDING-DIGEST-V1';
+  const EXPECTED_REF = 'ref-0001:admitted-candidate';
+  const FACT_KEYS = ['expectedStateAfter', 'expectedSuccessCode', 'operation', 'operationIdentity',
+    'originalStateBefore', 'outputKind', 'reconciliationReference', 'scenario', 'selectedCandidateRef'];
+  const TE = new TextEncoder();
+  const be32 = (n) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+  const concat = (...parts) => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) { out.set(p, at); at += p.length; }
+    return out;
+  };
+  // C-FMT sessionDomain, exactly as the codec's own AAD layout computes the candidate binding digest.
+  const bindingDigestOf = (binding) => sha256(concat(TE.encode(BINDING_LABEL), be32(389), binding));
+  const stateCode = (s) => (s === 'EMPTY' ? 1 : 2);
+  const outputCode = (kind) => OUTPUT_KINDS.indexOf(kind) + 1;
+  const codeOf = (p) => p.then(() => 'OK', (e) => e.code ?? e.message);
+  const loadOf = (store) => loadBoundHold({ storage: store, manifestRootKey: ROOT_KEY });
+  const refBytesOf = (ref) => TE.encode(ref);
+
+  // A selection of the candidate kinds that get their canonical present plaintext.
+  const ALL_CANONICAL = [K6, K8, K9, K13, K14];
+
+  function canonicalCandidateRecords(scenario, outcome, outputBytes, kinds = ALL_CANONICAL) {
+    const envelope = buildMutationEnvelope(envelopeInput(scenario));
+    const row = mutationRow(scenario);
+    const evidence = evidenceFor(envelope, outcome);
+    const plain = {
+      [K6]: encodePlaintext(K6, {
+        presence: 1, canonicalBinding: BINDING, profileDigest: envelope.bindingProfileIdentity.profile,
+      }),
+      [K8]: encodePlaintext(K8, {
+        presence: 1,
+        operationIdentity: evidence.operationIdentity,
+        originalAuthorityDigest: evidence.originalAuthorityDigest,
+        originalAuthorityReference: evidence.originalAuthorityReference,
+        candidateDigest: evidence.candidateDigest,
+        candidateReference: evidence.candidateReference,
+        mutationSetDigest: evidence.mutationSetDigest,
+        mutationSetReference: evidence.mutationSetReference,
+        expectedOriginalState: evidence.expectedOriginalState,
+        bindingRef: evidence.bindingRef,
+        profileDigest: evidence.profile,
+        outcome,
+        authenticatedByRS: true,
+        // The record mirrors the staged projection member for member, terminal flag included.
+        terminal: evidence.terminal,
+      }),
+      [K13]: row.outputKind === 'NONE' ? undefined : encodePlaintext(K13, holdRecordFor(scenario)),
+      [K14]: encodePlaintext(K14, {
+        presence: 1,
+        mutationSetDigest: evidence.mutationSetDigest,
+        mutationSetReference: evidence.mutationSetReference,
+        entries: bytesOf(64, 0x61),
+      }),
+    };
+    if (row.outputKind !== 'NONE') {
+      plain[K9] = encodePlaintext(K9, {
+        presence: 1,
+        operationIdentity: evidence.operationIdentity,
+        candidateDigest: evidence.candidateDigest,
+        candidateReference: evidence.candidateReference,
+        mutationSetDigest: evidence.mutationSetDigest,
+        mutationSetReference: evidence.mutationSetReference,
+        outputKind: outputCode(row.outputKind),
+        output: outputBytes,
+        resultDigest: bytesOf(32, 0x77),
+      });
+    }
+    return NEW.records.map((r) => ({
+      recordKey: r.recordKey,
+      recordKind: r.recordKind,
+      plaintext: kinds.includes(r.recordKind) && plain[r.recordKind] !== undefined ? plain[r.recordKind] : r.plaintext,
+      ciphertext: r.ciphertext,
+      tag: r.tag,
+    }));
+  }
+
+  // The selected generation of a bound hold: the canonical tombstone of its own kind-13 record.
+  function selectedGeneration() {
+    return {
+      ...OLD,
+      records: OLD.records.map((r) => (r.recordKind === K13
+        ? { ...r, plaintext: encodePlaintext(K13, { presence: 0 }) }
+        : r)),
+    };
+  }
+
+  function storeWith(generations, selector) {
+    const store = makeStore();
+    store.seed(generations, selector);
+    return store;
+  }
+
+  // The store of T1: one INDETERMINATE run over a canonical candidate, then the memory hold dropped.
+  async function boundStore(scenario, { output = null, kinds = ALL_CANONICAL } = {}) {
+    const row = mutationRow(scenario);
+    // A CAPI-S017 row carries a reference string, so its default output bytes are well-formed UTF-8.
+    const outputBytes = output ?? (row.outputKind === 'NONE' ? null
+      : (row.outputKind === 'SELECTED_CANDIDATE_REF'
+        ? refBytesOf(EXPECTED_REF) : Uint8Array.prototype.slice.call(ESCROW.output)));
+    const base = candidateInput(scenario, M2_OUTCOME.INDETERMINATE);
+    const candidate = {
+      ...base,
+      records: canonicalCandidateRecords(scenario, M2_OUTCOME.INDETERMINATE, outputBytes, kinds),
+      sessionBindingDigest: bindingDigestOf(BINDING),
+      escrow: base.escrow === null ? null : { ...base.escrow, output: outputBytes },
+    };
+    const store = storeWith([selectedGeneration()], PARENT_SELECTOR);
+    const result = await runMutation({
+      storage: store, manifestRootKey: ROOT_KEY,
+      envelope: buildMutationEnvelope(envelopeInput(scenario)),
+      candidate, outcome: M2_OUTCOME.INDETERMINATE,
+    });
+    return { store, result, candidate, outputBytes, written: store.generations.get(NEW_GENERATION) };
+  }
+
+  function reconcileWith(store, scenario, outcome, memory) {
+    const envelope = buildMutationEnvelope(envelopeInput(scenario));
+    if (memory === 'LOST') store.memoryHold = null;
+    return reconcileIndeterminate({
+      storage: store,
+      manifestRootKey: ROOT_KEY,
+      hold: memory === 'LOST' ? null : store.memoryHold,
+      evidence: evidenceFor(envelope, outcome, outcome === M2_OUTCOME.INDETERMINATE ? { terminal: false } : {}),
+      reference: envelope.reconciliationIdentity.reference,
+    });
+  }
+
+  const holdOf = (store) => store.generations.get(NEW_GENERATION).mutationHold;
+
+  // T3c's bytes for one candidate reference.
+  const s017Store = (bytes) => boundStore('CAPI-S017', { output: bytes });
+  const s017Load = (bytes) => s017Store(bytes).then(({ store }) => loadOf(store));
+
+function noneRowStore(scenario, { k13 = null, projection = null, escrow = null } = {}) {
+  const envelope = buildMutationEnvelope(envelopeInput(scenario));
+  const records = canonicalCandidateRecords(scenario, M2_OUTCOME.INDETERMINATE, null, [K6, K8, K14]);
+  const store = storeWith([selectedGeneration()], HOLD_SELECTOR);
+  store.generations.set(NEW_GENERATION, {
+    generation: NEW_GENERATION,
+    records: k13 === null ? records : records.map((r) => (r.recordKind === K13 ? { ...r, plaintext: k13 } : r)),
+    manifestKey: NEW.manifestKey,
+    manifestBytes: NEW.manifestBytes,
+    manifestCipherDigest: NEW.manifestCipherDigest,
+    keyedRoot: NEW.keyedRoot,
+    sessionBindingDigest: bindingDigestOf(BINDING),
+    mutationHold: projection ?? { ...holdRecordFor(scenario) },
+    escrow,
+    resultEvidence: evidenceFor(envelope, M2_OUTCOME.INDETERMINATE),
+  });
+  return store;
+}
+
+
+  describe('T1: the loader reads the written hold and the two terminal reconciliations close it', () => {
+    test.each(HOLD_ROWS)('%s: loadBoundHold returns exactly the Observable-1 members and the written hold', async (scenario) => {
+      const isRef = mutationRow(scenario).outputKind === 'SELECTED_CANDIDATE_REF';
+      const { store, candidate, outputBytes, written } = await boundStore(scenario, {
+        output: isRef ? refBytesOf(EXPECTED_REF) : null,
+      });
+      const envelope = buildMutationEnvelope(envelopeInput(scenario));
+      const row = mutationRow(scenario);
+      const writtenHold = written.mutationHold;
+      const appliedBefore = store.applied.length;
+      store.memoryHold = null;
+
+      const result = await loadOf(store);
+
+      expect(Object.keys(result)).toEqual(['hold', 'facts']);
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Object.isFrozen(result.hold)).toBe(true);
+      expect(Object.isFrozen(result.facts)).toBe(true);
+      expect(Object.keys(result.hold).sort()).toEqual(Object.keys(writtenHold).sort());
+      for (const key of Object.keys(writtenHold)) {
+        const a = result.hold[key];
+        const b = writtenHold[key];
+        if (a instanceof Uint8Array || b instanceof Uint8Array) expect([key, hex(a)]).toEqual([key, hex(b)]);
+        else expect([key, a]).toEqual([key, b]);
+      }
+      expect(Object.keys(result.facts).sort()).toEqual([...FACT_KEYS].sort());
+      expect(result.facts).toMatchObject({
+        scenario,
+        operation: row.operation,
+        originalStateBefore: row.stateBefore,
+        expectedStateAfter: row.stateAfterCommitted,
+        expectedSuccessCode: row.successCode,
+        outputKind: row.outputKind,
+        selectedCandidateRef: isRef ? EXPECTED_REF : null,
+      });
+      expect(hex(result.facts.operationIdentity)).toBe(hex(envelope.operationIdentity.value));
+      expect(hex(result.facts.reconciliationReference)).toBe(hex(envelope.reconciliationIdentity.reference));
+      // Reads only: no apply, no memory hold, and the locator of the hold is not returned.
+      expect(store.applied.length).toBe(appliedBefore);
+      expect(store.memoryHold).toBeNull();
+      expect(Object.keys(result.hold)).not.toContain('recordKey');
+      expect(hex(candidate.escrow === null ? new Uint8Array(0) : candidate.escrow.output))
+        .toBe(hex(outputBytes ?? new Uint8Array(0)));
+      if (isRef) expect(result.facts.selectedCandidateRef).toBe(EXPECTED_REF);
+    });
+
+    test.each(HOLD_ROWS)('%s: NOT_COMMITTED after memory loss restores the parent selector and COMPLETE_OLD', async (scenario) => {
+      const { store } = await boundStore(scenario);
+      const row = mutationRow(scenario);
+      store.memoryHold = null;
+      const result = await reconcileWith(store, scenario, M2_OUTCOME.NOT_COMMITTED, 'LOST');
+      expect(result).toMatchObject({ reconciliation: 'NOT_COMMITTED', resultKind: 'NOT_COMMITTED', authority: 'COMPLETE_OLD', output: null, holds: 0 });
+      const stored = decodePlaintext(K17, store.selector);
+      expect(stored.state).toBe(stateCode(row.stateBefore));
+      expect(stored.generation).toBe(OLD_GENERATION);
+      expect(stored.candidateGeneration).toBe(OLD_GENERATION);
+      expect(hex(stored.manifestKeyDigest)).toBe(hex(manifestKeyDigest(OLD.manifestKey)));
+      expect(store.generations.has(NEW_GENERATION)).toBe(false);
+      expect(store.memoryHold).toBeNull();
+      expect(await classify(store)).toMatchObject({ authority: 'COMPLETE_OLD', generation: OLD_GENERATION, held: false });
+    });
+
+    test.each(HOLD_ROWS)('%s: COMMITTED after memory loss gives COMPLETE_NEW and the stored escrow bytes', async (scenario) => {
+      const { store, outputBytes } = await boundStore(scenario);
+      store.memoryHold = null;
+      const result = await reconcileWith(store, scenario, M2_OUTCOME.COMMITTED, 'LOST');
+      expect(result).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', resultKind: 'SUCCESS' });
+      expect(hex(result.output)).toBe(hex(outputBytes));
+      expect(await classify(store)).toMatchObject({ authority: 'COMPLETE_NEW', generation: NEW_GENERATION, held: false });
+      const stored = decodePlaintext(K17, store.selector);
+      expect(stored.state).toBe(2);
+      expect(stored.candidateGeneration).toBe(NEW_GENERATION);
+    });
+  });
+
+  describe('T1b: the R3 rows stay refused by the loader', () => {
+    // A canonical present kind-13 plaintext for a NONE-output row cannot be encoded at all: the
+    // ratified kind-13 layout demands 32-byte output fields, while C-MUT requires them null for a
+    // NONE output. The store that a conformant port can hold for such a row therefore carries either
+    // a non-canonical kind-13 record or a canonical record that is not this row's hold.
+    test.each(NONE_ROWS)('%s: no canonical hold is encodable for a NONE row', (scenario) => {
+      const row = mutationRow(scenario);
+      expect(row.outputKind).toBe('NONE');
+      const hold = holdRecordFor(scenario);
+      expect(hold.heldOutputDigest).toBeNull();
+      expect(hold.heldOutputReference).toBeNull();
+      expect(() => encodePlaintext(K13, hold)).toThrow(/wrong byte width/);
+      expect(() => encodePlaintext(K13, { ...hold, heldOutputDigest: bytesOf(32, 0xee) })).toThrow(/wrong byte width/);
+    });
+
+    test.each(NONE_ROWS)('%s: a candidate without a canonical hold record is refused and nothing is written', async (scenario) => {
+      const store = noneRowStore(scenario);
+      const selectorBefore = hex(store.selector);
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      expect(store.applied).toHaveLength(0);
+      expect(hex(store.selector)).toBe(selectorBefore);
+      expect(store.memoryHold).toBeNull();
+      expect(store.generations.get(NEW_GENERATION).mutationHold).toMatchObject({ presence: 1 });
+    });
+
+    test.each(NONE_ROWS)('%s: a canonical hold with artificial output fields is refused', async (scenario) => {
+      const artificial = {
+        ...holdRecordFor(scenario),
+        heldOutputKind: outputCode('PROTECTED_COMMIT_BYTES'),
+        heldOutputDigest: bytesOf(32, 0xee),
+        heldOutputReference: bytesOf(32, 0xef),
+      };
+      const store = noneRowStore(scenario, { k13: encodePlaintext(K13, artificial) });
+      const selectorBefore = hex(store.selector);
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      expect(store.applied).toHaveLength(0);
+      expect(hex(store.selector)).toBe(selectorBefore);
+      expect(store.memoryHold).toBeNull();
+      expect(store.generations.get(NEW_GENERATION).mutationHold).toMatchObject({ presence: 1 });
+    });
+  });
+
+  test('M2_TXN carries exactly the two loader codes beyond the base surface', () => {
+    expect(M2_TXN.BOUND_HOLD_INVALID).toBe('BOUND_HOLD_INVALID');
+    expect(M2_TXN.READBACK_UNAVAILABLE).toBe('READBACK_UNAVAILABLE');
+    const base = ['SELECTOR_PRECONDITION_FAILED', 'ROW_COUNT', 'BOUNDARY_COUNT', 'COMPONENT_COUNT',
+      'STORAGE_METHODS', 'SCENARIOS', 'BOUNDARIES', 'AUTOMATIC_ROWS'];
+    expect(Object.keys(M2_TXN).sort()).toEqual([...base, 'BOUND_HOLD_INVALID', 'READBACK_UNAVAILABLE'].sort());
+  });
+
+  describe('T2: a continued INDETERMINATE applies nothing and the port is read again', () => {
+    test.each(HOLD_ROWS)('%s: zero apply, every byte unchanged, no cached hold', async (scenario) => {
+      const { store } = await boundStore(scenario);
+      const fingerprint = () => JSON.stringify({
+        selector: hex(store.selector),
+        envelope: hex(store.selectorEnvelope),
+        generations: [...store.generations.entries()].map(([g, v]) => [
+          g.toString(), hex(v.manifestBytes), v.records.map((r) => hex(r.plaintext)).join(''),
+        ]),
+      });
+      const before = fingerprint();
+      const appliedBefore = store.applied.length;
+      store.memoryHold = null;
+
+      const first = await reconcileWith(store, scenario, M2_OUTCOME.INDETERMINATE, 'LOST');
+      expect(first).toMatchObject({
+        reconciliation: 'INDETERMINATE', resultKind: 'INDETERMINATE', state: 'RECONCILIATION_REQUIRED',
+        output: null, holds: 1,
+      });
+      expect(store.applied.length).toBe(appliedBefore);
+      expect(fingerprint()).toBe(before);
+      expect(store.memoryHold).toBeNull();
+
+      const second = await reconcileWith(store, scenario, M2_OUTCOME.INDETERMINATE, 'LOST');
+      expect(second).toEqual(first);
+      const a = await loadOf(store);
+      const b = await loadOf(store);
+      expect(hex(a.hold.operationIdentity)).toBe(hex(b.hold.operationIdentity));
+      expect(a.facts).toEqual(b.facts);
+
+      const envelope = buildMutationEnvelope(envelopeInput(scenario));
+      expect(await codeOf(reconcileIndeterminate({
+        storage: store, manifestRootKey: ROOT_KEY, hold: null,
+        reference: envelope.reconciliationIdentity.reference,
+      }))).toBe('MALFORMED_INPUT');
+      expect(store.applied.length).toBe(appliedBefore);
+    });
+  });
+
+  describe('T3b: only an owned verification code is an authenticated refusal', () => {
+    const VERIFICATION = ['AUTHENTICATION_FAILED', 'CONTEXT_MISMATCH', 'MALFORMED_INPUT', 'UNSUPPORTED_VALUE'];
+    const owned = (code) => Object.assign(new Error(`refused with ${code}`), { code });
+    const wrapped = () => new Error('wrapped', { cause: owned('CONTEXT_MISMATCH') });
+    const inherited = () => Object.create(owned('MALFORMED_INPUT'));
+    const nonString = () => Object.assign(new Error('non-string code'), { code: 42 });
+    const codeless = () => new Error('no code at all');
+    const thrownValue = () => 'a plain string refusal';
+
+    test.each(['readSelector', 'readGeneration'])('%s: each of the four codes is BOUND_HOLD_INVALID with zero apply', async (method) => {
+      for (const code of VERIFICATION) {
+        const { store } = await boundStore('CAPI-S001');
+        const appliedBefore = store.applied.length;
+        store.memoryHold = null;
+        store[method] = async () => { throw owned(code); };
+        expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+        expect(store.applied.length).toBe(appliedBefore);
+      }
+    });
+
+    test.each(['readSelector', 'readGeneration'])('%s: anything else is READBACK_UNAVAILABLE with zero apply', async (method) => {
+      for (const make of [wrapped, inherited, nonString, codeless, thrownValue]) {
+        const { store } = await boundStore('CAPI-S001');
+        const appliedBefore = store.applied.length;
+        store.memoryHold = null;
+        store[method] = async () => { throw make(); };
+        expect(await codeOf(loadOf(store))).toBe('READBACK_UNAVAILABLE');
+        expect(store.applied.length).toBe(appliedBefore);
+      }
+    });
+  });
+
+  describe('T3c: the CAPI-S017 reference round trip (Change 3)', () => {
+    const REFS = [
+      ['an ASCII reference', 'ref-ascii-0001'],
+      ['a non-ASCII reference', 'rif-\u00e8-\u03c0-\u4e2d-01'],
+      ['a reference with a leading U+FEFF', '\uFEFFref-bom-0001'],
+      ['128 non-BMP characters (256 UTF-16 units)', '\u{1F600}'.repeat(128)],
+    ];
+    test.each(REFS)('%s survives the round trip', async (label, ref) => {
+      expect(ref.length <= 256).toBe(true);
+      const { facts } = await s017Load(refBytesOf(ref));
+      expect(facts.outputKind).toBe('SELECTED_CANDIDATE_REF');
+      expect(facts.selectedCandidateRef).toBe(ref);
+    });
+
+    test.each([
+      ['malformed UTF-8', Uint8Array.from([0x72, 0x65, 0x66, 0xff, 0xfe])],
+      ['empty bytes', new Uint8Array(0)],
+      ['257 UTF-16 units', refBytesOf('a'.repeat(257))],
+    ])('%s are refused by the loader', async (label, bytes) => {
+      expect(await codeOf(s017Load(bytes))).toBe('BOUND_HOLD_INVALID');
+    });
+  });
+
+  describe('T3d: the reconcile path keeps the frozen per-record compatibility', () => {
+    test.each(HOLD_ROWS)('%s: a canonical kind-13 hold beside filler kind-6/8/9/14 reconciles with memory lost', async (scenario) => {
+      const { store } = await boundStore(scenario, { kinds: [K13] });
+      store.memoryHold = null;
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      const result = await reconcileWith(store, scenario, M2_OUTCOME.COMMITTED, 'LOST');
+      expect(result).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', resultKind: 'SUCCESS' });
+    });
+
+    test.each(NONE_ROWS)('%s: filler records with a null escrow reconcile under all three outcomes', async (scenario) => {
+      for (const [name, outcome] of [['COMMITTED', M2_OUTCOME.COMMITTED], ['NOT_COMMITTED', M2_OUTCOME.NOT_COMMITTED], ['INDETERMINATE', M2_OUTCOME.INDETERMINATE]]) {
+        const store = noneRowStore(scenario);
+        store.memoryHold = null;
+        const result = await reconcileWith(store, scenario, outcome, 'LOST');
+        expect([name, ['RECONCILED_COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE'].includes(result.reconciliation)])
+          .toEqual([name, true]);
+      }
+    });
+
+    test.each(HOLD_ROWS)('%s: a missing or non-byte escrow for an output row is refused', async (scenario) => {
+      for (const broken of [null, 'not-an-object', { kind: 'PROTECTED_COMMIT_BYTES', digest: null, reference: null, output: null }]) {
+        const { store } = await boundStore(scenario, { kinds: [K13] });
+        store.memoryHold = null;
+        store.generations.get(NEW_GENERATION).escrow = broken;
+        expect(await codeOf(reconcileWith(store, scenario, M2_OUTCOME.COMMITTED, 'LOST'))).toBe('EVIDENCE_MISMATCH');
+      }
+    });
+
+    test('a canonical kind-13 tombstone is refused without falling back to the projection', async () => {
+      for (const both of [true, false]) {
+        const { store } = await boundStore('CAPI-S014', { kinds: [K13] });
+        const g = store.generations.get(NEW_GENERATION);
+        g.records = g.records.map((r) => (r.recordKind === K13
+          ? { ...r, plaintext: encodePlaintext(K13, { presence: 0 }) }
+          : r));
+        if (both) g.mutationHold = { presence: 0 };
+        store.memoryHold = null;
+        // The base reader already refuses the contradiction; no later rule is reached.
+        expect(await codeOf(reconcileWith(store, 'CAPI-S014', M2_OUTCOME.COMMITTED, 'LOST'))).toBe('PARTIAL_APPLICATION');
+        expect(store.applied.filter((a) => a.kind === 'RELEASE_ESCROW')).toHaveLength(0);
+      }
+    });
+  });
+
+  describe('T3e: returned and port-owned bytes are isolated', () => {
+    test('mutating returned bytes does not change a later result', async () => {
+      const { store } = await boundStore('CAPI-S014');
+      store.memoryHold = null;
+      const first = await loadOf(store);
+      first.hold.operationIdentity.fill(0x00);
+      first.facts.reconciliationReference.fill(0x00);
+      const second = await loadOf(store);
+      const third = await loadOf(store);
+      expect(hex(second.hold.operationIdentity)).toBe(hex(third.hold.operationIdentity));
+      expect(hex(second.hold.operationIdentity)).not.toBe(hex(first.hold.operationIdentity));
+      const record = store.generations.get(NEW_GENERATION).records.find((r) => r.recordKind === K13);
+      expect(hex(second.hold.operationIdentity)).toBe(hex(decodePlaintext(K13, record.plaintext).operationIdentity));
+      expect(hex(second.facts.reconciliationReference)).not.toBe(hex(first.facts.reconciliationReference));
+    });
+  });
+
+  describe('T4: a wrong reference after memory loss', () => {
+    test('REFERENCE_MISMATCH with every byte preserved', async () => {
+      const { store } = await boundStore('CAPI-S014');
+      store.memoryHold = null;
+      const selectorBefore = hex(store.selector);
+      const envelopeBefore = hex(store.selectorEnvelope);
+      const appliedBefore = store.applied.length;
+      const envelope = buildMutationEnvelope(envelopeInput('CAPI-S014'));
+      const wrong = Uint8Array.prototype.slice.call(envelope.reconciliationIdentity.reference);
+      wrong[0] ^= 0xff;
+      const error = await reconcileIndeterminate({
+        storage: store, manifestRootKey: ROOT_KEY, hold: null,
+        evidence: evidenceFor(envelope, M2_OUTCOME.COMMITTED), reference: wrong,
+      }).then(() => null, (e) => e);
+      expect(error.code).toBe('REFERENCE_MISMATCH');
+      expect(hex(store.selector)).toBe(selectorBefore);
+      expect(hex(store.selectorEnvelope)).toBe(envelopeBefore);
+      expect(store.applied.length).toBe(appliedBefore);
+      expect(store.memoryHold).toBeNull();
+      expect(store.generations.has(NEW_GENERATION)).toBe(true);
+    });
+  });
+
+  describe('T5: memory RETAINED and LOST produce identical work', () => {
+    test.each(HOLD_ROWS)('%s: the step list, the payloads and the results match under all three outcomes', async (scenario) => {
+      for (const outcome of [M2_OUTCOME.COMMITTED, M2_OUTCOME.NOT_COMMITTED, M2_OUTCOME.INDETERMINATE]) {
+        const retained = await boundStore(scenario);
+        const lost = await boundStore(scenario);
+        const a = await reconcileWith(retained.store, scenario, outcome, 'RETAINED');
+        const b = await reconcileWith(lost.store, scenario, outcome, 'LOST');
+        expect(lost.store.applied.map((x) => x.kind)).toEqual(retained.store.applied.map((x) => x.kind));
+        expect(b).toEqual(a);
+        expect(hex(lost.store.selector)).toBe(hex(retained.store.selector));
+        expect(hex(lost.store.selectorEnvelope)).not.toBe(hex(retained.store.selectorEnvelope));
+      }
+    });
+
+    // r4 S3: the steps must carry the same payloads, not only the same kinds. The payloads are
+    // captured by a local wrapper, so the shared fake port stays unchanged. The two stores seal their
+    // selector under different envelopes by construction (asserted above), so the CAS member is
+    // compared with the envelope the store holds at that apply; every other member must be equal.
+    const capturePayloads = (store) => {
+      const seen = [];
+      const inner = store.apply;
+      store.apply = async (step) => {
+        let payload = step.payload;
+        if (payload !== null && typeof payload === 'object' && Object.hasOwn(payload, 'expectedSelectorBytes')) {
+          const cas = payload.expectedSelectorBytes;
+          const env = store.selectorEnvelope;
+          const same = cas === null ? env === null : env !== null && hex(cas) === hex(env);
+          payload = { ...payload, expectedSelectorBytes: same ? 'THE_STORED_ENVELOPE' : cas };
+        }
+        seen.push({ boundary: step.boundary, kind: step.kind, payload });
+        return inner(step);
+      };
+      return seen;
+    };
+    test.each(HOLD_ROWS)('%s: every applied step carries the same payload under all three outcomes', async (scenario) => {
+      for (const outcome of [M2_OUTCOME.COMMITTED, M2_OUTCOME.NOT_COMMITTED, M2_OUTCOME.INDETERMINATE]) {
+        const retained = await boundStore(scenario);
+        const lost = await boundStore(scenario);
+        const a = capturePayloads(retained.store);
+        const b = capturePayloads(lost.store);
+        await reconcileWith(retained.store, scenario, outcome, 'RETAINED');
+        await reconcileWith(lost.store, scenario, outcome, 'LOST');
+        expect([outcome, b]).toEqual([outcome, a]);
+      }
+    });
+  });
+
+  describe('T1a: the two recovery positives', () => {
+    const SC = 'CAPI-S010';
+    const envelopeOf = (scenario) => buildMutationEnvelope(envelopeInput(scenario));
+
+    // The recovery binding after a COMMITTED run that faulted before its selector write: the staged
+    // generation keeps the INDETERMINATE hold and a complete COMMITTED result.
+    function withCommittedResult(store, scenario) {
+      const envelope = envelopeOf(scenario);
+      const g = store.generations.get(NEW_GENERATION);
+      g.resultEvidence = evidenceFor(envelope, M2_OUTCOME.COMMITTED);
+      g.records = g.records.map((r) => (r.recordKind === K8
+        ? { ...r, plaintext: encodePlaintext(K8, resultRecordOf(envelope, M2_OUTCOME.COMMITTED)) }
+        : r));
+      return store;
+    }
+
+    test('a COMMITTED result staged beside the INDETERMINATE hold reconciles both ways', async () => {
+      const loaded0 = await boundStore(SC);
+      withCommittedResult(loaded0.store, SC);
+      loaded0.store.memoryHold = null;
+      const loaded = await loadOf(loaded0.store);
+      expect(loaded.hold.resultStatus).toBe(M2_OUTCOME.INDETERMINATE);
+
+      const committed = await boundStore(SC);
+      withCommittedResult(committed.store, SC);
+      committed.store.memoryHold = null;
+      expect((await reconcileWith(committed.store, SC, M2_OUTCOME.COMMITTED, 'LOST')).reconciliation)
+        .toBe('RECONCILED_COMMITTED');
+
+      const notCommitted = await boundStore(SC);
+      withCommittedResult(notCommitted.store, SC);
+      notCommitted.store.memoryHold = null;
+      expect((await reconcileWith(notCommitted.store, SC, M2_OUTCOME.NOT_COMMITTED, 'LOST')).reconciliation)
+        .toBe('NOT_COMMITTED');
+    });
+
+    test('a selected parent that carries historical hold evidence is accepted', async () => {
+      const { store } = await boundStore(SC);
+      withHistoricalParent(store, SC);
+      store.memoryHold = null;
+      const loaded = await loadOf(store);
+      expect(loaded.hold.parentGeneration).toBe(OLD_GENERATION);
+      expect(await codeOf(reconcileWith(store, SC, M2_OUTCOME.COMMITTED, 'LOST'))).toBe('OK');
+    });
+  });
+
+  function resultRecordOf(envelope, outcome) {
+    const evidence = evidenceFor(envelope, outcome);
+    return {
+      presence: 1,
+      operationIdentity: evidence.operationIdentity,
+      originalAuthorityDigest: evidence.originalAuthorityDigest,
+      originalAuthorityReference: evidence.originalAuthorityReference,
+      candidateDigest: evidence.candidateDigest,
+      candidateReference: evidence.candidateReference,
+      mutationSetDigest: evidence.mutationSetDigest,
+      mutationSetReference: evidence.mutationSetReference,
+      expectedOriginalState: evidence.expectedOriginalState,
+      bindingRef: evidence.bindingRef,
+      profileDigest: evidence.profile,
+      outcome,
+      authenticatedByRS: true,
+      terminal: evidence.terminal,
+    };
+  }
+
+  // The selected generation keeps a canonical present kind-13 record: historical evidence of the
+  // mutation that produced it, beside its own canonical present commit result.
+  function withHistoricalParent(store, scenario, parentGeneration = 0n) {
+    const envelope = buildMutationEnvelope(envelopeInput(scenario));
+    const historical = { ...holdRecordFor(scenario), parentGeneration, parentKeyedRoot: bytesOf(32, 0x99) };
+    const old = store.generations.get(OLD_GENERATION);
+    old.records = old.records.map((r) => {
+      if (r.recordKind === K13) return { ...r, plaintext: encodePlaintext(K13, historical) };
+      if (r.recordKind === K8) return { ...r, plaintext: encodePlaintext(K8, resultRecordOf(envelope, M2_OUTCOME.COMMITTED)) };
+      return r;
+    });
+    old.mutationHold = { ...historical };
+    old.resultEvidence = evidenceFor(envelope, M2_OUTCOME.COMMITTED);
+    return store;
+  }
+
+  describe('T3: one negative per compared field of Changes 1-2', () => {
+    const SC = 'CAPI-S014';
+    const flip = (value) => {
+      const out = Uint8Array.prototype.slice.call(value);
+      out[0] ^= 0x5a;
+      return out;
+    };
+    const reencode = (store, kind, plaintext) => {
+      const g = store.generations.get(NEW_GENERATION);
+      g.records = g.records.map((r) => (r.recordKind === kind ? { ...r, plaintext } : r));
+      return store;
+    };
+    const rewriteSelector = (store, mutate) => {
+      const object = { ...decodePlaintext(K17, store.selector) };
+      mutate(object);
+      store.selector = encodePlaintext(K17, object);
+      return store;
+    };
+    const candidateKey = (generation, kind) => encodeRecordKey({
+      scope: 2, localContextId: LOCAL, secureSessionIdentity: SESSION_ID, writeGeneration: generation, recordKind: kind,
+    });
+    const rekey = (store, kind, recordKey) => {
+      const g = store.generations.get(NEW_GENERATION);
+      g.records = g.records.map((r) => (r.recordKind === kind ? { ...r, recordKey } : r));
+      return store;
+    };
+    // A record-key change is re-sealed through a rebuilt manifest, keyed root and selector, so the
+    // base reader accepts the store and the I-RESTART rule is the one that refuses it.
+    function reseal(store, mutate) {
+      const g = store.generations.get(NEW_GENERATION);
+      const records = mutate(g.records.map((r) => ({ ...r })));
+      const manifestBytes = encodeManifest(records.map((r) => manifestEntry({
+        recordKey: r.recordKey,
+        recordKind: r.recordKind,
+        ciphertextDigest: ciphertextDigest({
+          recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag,
+        }),
+      })));
+      const keyedRoot = computeKeyedRoot({
+        manifestRootKey: ROOT_KEY, manifestKey: g.manifestKey, generation: NEW_GENERATION, manifestBytes,
+      });
+      store.generations.set(NEW_GENERATION, { ...g, records, manifestBytes, keyedRoot });
+      return rewriteSelector(store, (o) => { o.candidateKeyedRoot = keyedRoot; });
+    }
+    const kind8Field = (store, field) => {
+      const envelope = buildMutationEnvelope(envelopeInput(SC));
+      const record = resultRecordOf(envelope, M2_OUTCOME.INDETERMINATE);
+      const value = record[field];
+      record[field] = value instanceof Uint8Array ? flip(value)
+        : (field === 'outcome' ? M2_OUTCOME.COMMITTED
+          : (field === 'expectedOriginalState' ? (value === 1 ? 2 : 1)
+            : (field === 'profileDigest' ? flip(value) : !value)));
+      return reencode(store, K8, encodePlaintext(K8, record));
+    };
+    const escrowField = (store, field) => {
+      const record = { ...decodePlaintext(K9, store.generations.get(NEW_GENERATION).records.find((r) => r.recordKind === K9).plaintext) };
+      record[field] = record[field] instanceof Uint8Array ? flip(record[field])
+        : (field === 'outputKind' ? (record.outputKind === 5 ? 2 : 5) : record[field]);
+      return reencode(store, K9, encodePlaintext(K9, record));
+    };
+    const componentField = (store, field) => {
+      const record = { ...decodePlaintext(K14, store.generations.get(NEW_GENERATION).records.find((r) => r.recordKind === K14).plaintext) };
+      record[field] = flip(record[field]);
+      return reencode(store, K14, encodePlaintext(K14, record));
+    };
+    const holdField = (store, tweak) => {
+      const hold = { ...holdRecordFor(SC), ...tweak };
+      reencode(store, K13, encodePlaintext(K13, hold));
+      store.generations.get(NEW_GENERATION).mutationHold = { ...hold };
+      return store;
+    };
+
+    const CASES = [
+      ['1(a) a stored selector that is ACTIVE, not RECONCILIATION_REQUIRED', (store) => {
+        store.selector = COMMIT_SELECTOR;
+        store.generations.set(OLD_GENERATION, { ...store.generations.get(OLD_GENERATION), unboundDebris: true });
+        return store;
+      }],
+      ['1(b) a candidate locator of another record kind (refused by the selector codec first)', (store) => {
+        expect(() => rewriteSelector(store, (o) => { o.candidateManifestKey = candidateKey(NEW_GENERATION, K13); }))
+          .toThrow(/candidate manifest key/);
+        store.generations.delete(NEW_GENERATION);
+        return store;
+      }],
+      ['1(c) a locator whose digest is not its own (refused by the selector codec first)', (store) => {
+        expect(() => rewriteSelector(store, (o) => { o.candidateManifestKeyDigest = bytesOf(32, 0x5a); }))
+          .toThrow(/candidate manifest key digest/);
+        // The codec refuses the selector, so the loader sees no candidate generation at all.
+        store.generations.delete(NEW_GENERATION);
+        return store;
+      }],
+      ['1(d) a candidate generation that is not stored', (store) => {
+        store.generations.delete(NEW_GENERATION);
+        return store;
+      }],
+      ['1(e) a candidate locator in another context', (store) => {
+        const other = encodeManifestKey({
+          localContextId: bytesOf(32, 0x77), scope: 2, secureSessionIdentity: SESSION_ID, writeGeneration: NEW_GENERATION,
+        });
+        store.generations.get(NEW_GENERATION).manifestKey = other;
+        return rewriteSelector(store, (o) => {
+          o.candidateManifestKey = other;
+          o.candidateManifestKeyDigest = manifestKeyDigest(other);
+        });
+      }],
+      // 1(f): a complete, re-rooted candidate under another session identity of the same context,
+      // while the selector keeps its own locator. validateAuthority would refuse the same mismatch
+      // through the literal locator digest, so only the class, not a new outcome, is claimed.
+      ['1(f) a located candidate manifest key that is not the stored selector locator', (store) => {
+        const g = store.generations.get(NEW_GENERATION);
+        const otherSession = bytesOf(32, 0x43);
+        const records = g.records.map((r) => ({
+          ...r,
+          recordKey: encodeRecordKey({
+            scope: 2, localContextId: LOCAL, secureSessionIdentity: otherSession, writeGeneration: NEW_GENERATION,
+            recordKind: r.recordKind,
+          }),
+        })).sort((a, b) => Buffer.compare(Buffer.from(a.recordKey), Buffer.from(b.recordKey)));
+        const manifestKey = encodeManifestKey({
+          localContextId: LOCAL, scope: 2, secureSessionIdentity: otherSession, writeGeneration: NEW_GENERATION,
+        });
+        const manifestBytes = encodeManifest(records.map((r) => manifestEntry({
+          recordKey: r.recordKey,
+          recordKind: r.recordKind,
+          ciphertextDigest: ciphertextDigest({
+            recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag,
+          }),
+        })));
+        const keyedRoot = computeKeyedRoot({ manifestRootKey: ROOT_KEY, manifestKey, generation: NEW_GENERATION, manifestBytes });
+        store.generations.set(NEW_GENERATION, { ...g, records, manifestKey, manifestBytes, keyedRoot });
+        return rewriteSelector(store, (o) => { o.candidateKeyedRoot = keyedRoot; });
+      }],
+      // The three record-key legs of 1(h) cannot be re-sealed: the manifest entry builder and the
+      // keyed root refuse the same contradiction first, so the base reader is the validator that
+      // catches them here and no later failure is claimed.
+      ['1(h) a record stored under the key of another kind (base manifest reproduction first)', (store) => rekey(store, K14, candidateKey(NEW_GENERATION, K13))],
+      ['1(h) a record stored under the key of another generation (base keyed root first)', (store) => rekey(store, K14, candidateKey(OLD_GENERATION, K14))],
+      ['1(h) a record key in another locator context (base keyed root first)', (store) => rekey(store, K14, encodeRecordKey({
+        scope: 2, localContextId: bytesOf(32, 0x78), secureSessionIdentity: SESSION_ID, writeGeneration: NEW_GENERATION, recordKind: K14,
+      }))],
+      ['1(h) a record key in another secure session (base keyed root first)', (store) => rekey(store, K14, encodeRecordKey({
+        scope: 2, localContextId: LOCAL, secureSessionIdentity: bytesOf(SESSION_ID.length, 0x79), writeGeneration: NEW_GENERATION, recordKind: K14,
+      }))],
+      ['1(h) a record key in another scope (base keyed root first)', (store) => rekey(store, K14, encodeRecordKey({
+        scope: 1, localContextId: LOCAL, secureSessionIdentity: null, writeGeneration: NEW_GENERATION, recordKind: K14,
+      }))],
+      ['1(j) a selected historical hold whose generation stores no canonical commit result', (store) => {
+        withHistoricalParent(store, SC);
+        const old = store.generations.get(OLD_GENERATION);
+        old.records = old.records.map((r) => (r.recordKind === K8
+          ? { ...r, plaintext: encodePlaintext(K8, { presence: 0 }) } : r));
+        return store;
+      }],
+      ['1(j) a selected historical hold that names a later parent', (store) => withHistoricalParent(store, SC, OLD_GENERATION)],
+      ['1(k) a candidate whose binding profile does not hash to its session binding digest', (store) => {
+        store.generations.get(NEW_GENERATION).sessionBindingDigest = bytesOf(32, 0x5b);
+        return store;
+      }],
+      ['2(e) a hold that does not rebuild its row-bound envelope', (store) => holdField(store, {
+        operation: OPERATIONS.indexOf(OPERATIONS.find((o) => o !== mutationRow(SC).operation)) + 1,
+      })],
+      // r4 S3: more than one row-bound field of 2(e).
+      ['2(e) a hold that names another scenario', (store) => holdField(store, {
+        scenario: M2_TXN.SCENARIOS.indexOf(M2_TXN.SCENARIOS.find((s) => s !== SC)) + 1,
+      })],
+      ['2(e) a hold whose original API state is not the row one', (store) => holdField(store, {
+        originalApiState: holdRecordFor(SC).originalApiState === 1 ? 2 : 1,
+      })],
+      ['2(e) a hold whose expected success code is not the row one', (store) => holdField(store, {
+        expectedSuccessCode: holdRecordFor(SC).expectedSuccessCode === 1 ? 2 : 1,
+      })],
+      ['2(e) a hold whose expected state after is not the row one', (store) => holdField(store, {
+        expectedStateAfter: holdRecordFor(SC).expectedStateAfter === 1 ? 2 : 1,
+      })],
+      ['2(h) a component set digest that is not the held one', (store) => componentField(store, 'mutationSetDigest')],
+      ['2(i) a component set reference that is not the held one', (store) => componentField(store, 'mutationSetReference')],
+      ['2(j) an escrow that is not the held output', (store) => {
+        const escrow = { ...store.generations.get(NEW_GENERATION).escrow };
+        escrow.digest = flip(escrow.digest);
+        store.generations.get(NEW_GENERATION).escrow = escrow;
+        return store;
+      }],
+      ['2(j) an output row whose escrow carries no bytes', (store) => {
+        store.generations.get(NEW_GENERATION).escrow = { ...store.generations.get(NEW_GENERATION).escrow, output: null };
+        return store;
+      }],
+      ['2(k) an escrow record operation identity that is not the held one', (store) => escrowField(store, 'operationIdentity')],
+      ['2(k) an escrow record candidate digest that is not the held one', (store) => escrowField(store, 'candidateDigest')],
+      ['2(k) an escrow record candidate reference that is not the held one', (store) => escrowField(store, 'candidateReference')],
+      ['2(k) an escrow record mutation set digest that is not the held one', (store) => escrowField(store, 'mutationSetDigest')],
+      ['2(k) an escrow record mutation set reference that is not the held one', (store) => escrowField(store, 'mutationSetReference')],
+      ['2(l) an escrow record kind that is not the held output kind', (store) => escrowField(store, 'outputKind')],
+      ['2(m) escrow record bytes that are not the escrow projection bytes', (store) => escrowField(store, 'output')],
+      ...['operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference', 'candidateDigest',
+        'candidateReference', 'mutationSetDigest', 'mutationSetReference', 'expectedOriginalState',
+        'bindingRef', 'profileDigest', 'outcome', 'authenticatedByRS', 'terminal'].map((field) => [
+        `2(g) the kind-8 normalization member ${field}`, (store) => kind8Field(store, field),
+      ]),
+    ];
+
+    test.each(CASES)('%s is BOUND_HOLD_INVALID and applies nothing', async (label, corrupt) => {
+      const { store } = await boundStore(SC);
+      const appliedBefore = store.applied.length;
+      corrupt(store);
+      const selectorBefore = hex(store.selector);
+      store.memoryHold = null;
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      expect(store.applied.length).toBe(appliedBefore);
+      expect(hex(store.selector)).toBe(selectorBefore);
+      expect(store.memoryHold).toBeNull();
+    });
+
+    test('an ACTIVE selector with unbound debris never reads the debris generation', async () => {
+      const { store } = await boundStore(SC);
+      store.memoryHold = null;
+      const read = jest.fn(store.readGeneration);
+      store.readGeneration = read;
+      // The stored selector is ACTIVE and names the candidate as its own authority: no candidate is
+      // bound, so the loader refuses before any generation lookup.
+      store.selector = COMMIT_SELECTOR;
+      read.mockClear();
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      expect(read).not.toHaveBeenCalled();
+    });
+
+    // T3, reconcile path (Change 5): the same contradictions reach `reconcileIndeterminate` with the
+    // memory hold dropped. Each refusal applies nothing and carries its named class; a canonical
+    // tombstone counts as an absent record (owner reading of Change 5, accepted 2026-10-21).
+    const historicalResult = (store, tweak) => {
+      withHistoricalParent(store, SC);
+      const old = store.generations.get(OLD_GENERATION);
+      const record = resultRecordOf(buildMutationEnvelope(envelopeInput(SC)), M2_OUTCOME.COMMITTED);
+      tweak(record);
+      old.records = old.records.map((r) => (r.recordKind === K8 ? { ...r, plaintext: encodePlaintext(K8, record) } : r));
+      return store;
+    };
+    const RECONCILE_EXTRA = [
+      ['1(j) a selected historical hold whose commit result plaintext names another mutation',
+        (store) => historicalResult(store, (r) => { r.operationIdentity = flip(r.operationIdentity); })],
+      ['1(j) a selected historical commit result plaintext that differs from its projection',
+        (store) => historicalResult(store, (r) => { r.terminal = !r.terminal; })],
+      ['1(j) a selected historical hold stored under a key that does not derive its generation (base reader first)', (store) => {
+        withHistoricalParent(store, SC);
+        const old = store.generations.get(OLD_GENERATION);
+        old.records = old.records.map((r) => (r.recordKind === K13 ? { ...r, recordKey: candidateKey(OLD_GENERATION, K13) } : r));
+        return store;
+      }],
+      // r4 S2: a canonical kind-8 record that fails the evidence normalization is a contradiction of
+      // the rule that reads it, never MALFORMED_INPUT or NONTERMINAL_NOT_COMMITTED.
+      ['2(g) a candidate COMMIT_RESULT record that is a non-terminal NOT_COMMITTED', (store) => {
+        const record = resultRecordOf(buildMutationEnvelope(envelopeInput(SC)), M2_OUTCOME.INDETERMINATE);
+        record.outcome = M2_OUTCOME.NOT_COMMITTED;
+        record.terminal = false;
+        return reencode(store, K8, encodePlaintext(K8, record));
+      }],
+      ['1(j) a selected historical commit result record that is a non-terminal NOT_COMMITTED',
+        (store) => historicalResult(store, (r) => { r.outcome = M2_OUTCOME.NOT_COMMITTED; r.terminal = false; })],
+    ];
+    const byLabel = new Map([...CASES, ...RECONCILE_EXTRA]);
+    const KIND8 = ['operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference', 'candidateDigest',
+      'candidateReference', 'mutationSetDigest', 'mutationSetReference', 'expectedOriginalState',
+      'bindingRef', 'profileDigest', 'outcome', 'authenticatedByRS', 'terminal'].map((f) => `2(g) the kind-8 normalization member ${f}`);
+    // New behaviour: each of these reconciles at the base (bite evidence in the I-RESTART battery).
+    const RECONCILE_NEW = [
+      ['1(j) a selected historical hold whose commit result plaintext names another mutation', 'PARTIAL_APPLICATION'],
+      ['1(j) a selected historical commit result plaintext that differs from its projection', 'PARTIAL_APPLICATION'],
+      ['1(k) a candidate whose binding profile does not hash to its session binding digest', 'PARTIAL_APPLICATION'],
+      ['2(g) a candidate COMMIT_RESULT record that is a non-terminal NOT_COMMITTED', 'EVIDENCE_MISMATCH'],
+      ['1(j) a selected historical commit result record that is a non-terminal NOT_COMMITTED', 'PARTIAL_APPLICATION'],
+      ['2(h) a component set digest that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(i) a component set reference that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(j) an output row whose escrow carries no bytes', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record operation identity that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record candidate digest that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record candidate reference that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record mutation set digest that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(k) an escrow record mutation set reference that is not the held one', 'EVIDENCE_MISMATCH'],
+      ['2(l) an escrow record kind that is not the held output kind', 'EVIDENCE_MISMATCH'],
+      ['2(m) escrow record bytes that are not the escrow projection bytes', 'EVIDENCE_MISMATCH'],
+      ...KIND8.map((label) => [label, 'EVIDENCE_MISMATCH']),
+    ];
+    // Regression of base behaviour: an earlier base validator (selector codec, base reader, keyed
+    // root, validateAuthority, envelopeFromHold, storedEscrowMatchesHold) already refuses the same
+    // contradiction with the same class, so no later I-RESTART failure is claimed.
+    const RECONCILE_BASE = [
+      ['1(a) a stored selector that is ACTIVE, not RECONCILIATION_REQUIRED', 'NO_RECONCILIATION_PENDING'],
+      ['1(b) a candidate locator of another record kind (refused by the selector codec first)', 'PARTIAL_APPLICATION'],
+      ['1(c) a locator whose digest is not its own (refused by the selector codec first)', 'PARTIAL_APPLICATION'],
+      ['1(d) a candidate generation that is not stored', 'PARTIAL_APPLICATION'],
+      ['1(e) a candidate locator in another context', 'CONTEXT_MISMATCH'],
+      ['1(f) a located candidate manifest key that is not the stored selector locator', 'PARTIAL_APPLICATION'],
+      ['1(h) a record stored under the key of another kind (base manifest reproduction first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record stored under the key of another generation (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record key in another locator context (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record key in another secure session (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(h) a record key in another scope (base keyed root first)', 'PARTIAL_APPLICATION'],
+      ['1(j) a selected historical hold that names a later parent', 'PARTIAL_APPLICATION'],
+      ['1(j) a selected historical hold stored under a key that does not derive its generation (base reader first)', 'PARTIAL_APPLICATION'],
+      ['2(e) a hold that does not rebuild its row-bound envelope', 'INVALID_ENVELOPE'],
+      ['2(e) a hold that names another scenario', 'INVALID_ENVELOPE'],
+      // An earlier authority rule refuses this one before the envelope rebuild of 2(e).
+      ['2(e) a hold whose original API state is not the row one', 'PARTIAL_APPLICATION'],
+      ['2(e) a hold whose expected success code is not the row one', 'INVALID_ENVELOPE'],
+      ['2(e) a hold whose expected state after is not the row one', 'INVALID_ENVELOPE'],
+      ['2(j) an escrow that is not the held output', 'EVIDENCE_MISMATCH'],
+    ];
+    async function reconcileRefusal(label) {
+      const { store } = await boundStore(SC);
+      byLabel.get(label)(store);
+      store.memoryHold = null;
+      const appliedBefore = store.applied.length;
+      const selectorBefore = hex(store.selector);
+      const code = await codeOf(reconcileWith(store, SC, M2_OUTCOME.COMMITTED, 'LOST'));
+      return { code, applied: store.applied.length - appliedBefore, selectorSame: hex(store.selector) === selectorBefore, memory: store.memoryHold };
+    }
+
+    test.each(RECONCILE_NEW)('reconcile after memory loss: %s is %s and applies nothing', async (label, expected) => {
+      expect(await reconcileRefusal(label)).toEqual({ code: expected, applied: 0, selectorSame: true, memory: null });
+    });
+
+    test.each(RECONCILE_BASE)('reconcile after memory loss (base regression): %s is %s and applies nothing', async (label, expected) => {
+      expect(await reconcileRefusal(label)).toEqual({ code: expected, applied: 0, selectorSame: true, memory: null });
+    });
+
+    // r4 S4/M1: the loader checks 1(e)-1(f) on the stored manifest keys before 1(g) reads the
+    // generations, so a 1(f) contradiction is named even when the generation would also fail 1(g).
+    test('the loader names 1(f) before a 1(g) failure of the same candidate', async () => {
+      const { store } = await boundStore(SC);
+      const g = store.generations.get(NEW_GENERATION);
+      g.manifestKey = encodeManifestKey({
+        localContextId: LOCAL, scope: 2, secureSessionIdentity: SESSION_ID, writeGeneration: OLD_GENERATION,
+      });
+      g.keyedRoot = flip(g.keyedRoot);
+      store.memoryHold = null;
+      const error = await loadOf(store).then(() => null, (e) => e);
+      expect(error.code).toBe('BOUND_HOLD_INVALID');
+      expect(error.message).toMatch(/not the stored selector locator/);
+    });
+
+    test('the loader refuses the S2 normalization contradictions too', async () => {
+      for (const label of ['2(g) a candidate COMMIT_RESULT record that is a non-terminal NOT_COMMITTED',
+        '1(j) a selected historical commit result record that is a non-terminal NOT_COMMITTED']) {
+        const { store } = await boundStore(SC);
+        byLabel.get(label)(store);
+        store.memoryHold = null;
+        expect([label, await codeOf(loadOf(store))]).toEqual([label, 'BOUND_HOLD_INVALID']);
+      }
+    });
+
+    test('the loader refuses the two new historical contradictions too', async () => {
+      for (const [label] of RECONCILE_EXTRA) {
+        const { store } = await boundStore(SC);
+        byLabel.get(label)(store);
+        store.memoryHold = null;
+        expect([label, await codeOf(loadOf(store))]).toEqual([label, 'BOUND_HOLD_INVALID']);
+      }
+    });
+
+    test('a canonical kind-8 tombstone beside a selected historical hold is an absent record on the reconcile path only', async () => {
+      const make = async () => {
+        const { store } = await boundStore(SC);
+        byLabel.get('1(j) a selected historical hold whose generation stores no canonical commit result')(store);
+        store.memoryHold = null;
+        return store;
+      };
+      expect(await codeOf(loadOf(await make()))).toBe('BOUND_HOLD_INVALID');
+      const result = await reconcileWith(await make(), SC, M2_OUTCOME.COMMITTED, 'LOST');
+      expect(result).toMatchObject({ reconciliation: 'RECONCILED_COMMITTED', resultKind: 'SUCCESS' });
+    });
+  });
+
+  describe('T6c: the CAS re-seal of a NOT_COMMITTED reconciliation (Change 6)', () => {
+    const SC = 'CAPI-S014';
+
+    test('the first apply is the parent selector carrying the envelope read at planning', async () => {
+      const { store } = await boundStore(SC);
+      store.memoryHold = null;
+      const before = store.applied.length;
+      await reconcileWith(store, SC, M2_OUTCOME.NOT_COMMITTED, 'LOST');
+      const applied = store.applied.slice(before);
+      expect(applied[0].kind).toBe('REPLACE_SELECTOR');
+      expect(applied[1].kind).toBe('CLEAR_CANDIDATE');
+    });
+
+    test('a port that refuses the selector precondition leaves no CLEAR_CANDIDATE and no result', async () => {
+      const { store } = await boundStore(SC);
+      store.memoryHold = null;
+      const before = store.applied.length;
+      store.apply = async (step) => {
+        store.applied.push({ boundary: step.boundary, kind: step.kind });
+        if (step.kind === 'REPLACE_SELECTOR') throw selectorPreconditionFailed();
+      };
+      const error = await reconcileWith(store, SC, M2_OUTCOME.NOT_COMMITTED, 'LOST').then(() => null, (e) => e);
+      expect(error.code).toBe('SELECTOR_PRECONDITION_FAILED');
+      const kinds = store.applied.slice(before).map((x) => x.kind);
+      expect(kinds).toContain('REPLACE_SELECTOR');
+      expect(kinds).not.toContain('CLEAR_CANDIDATE');
+      expect(store.generations.has(NEW_GENERATION)).toBe(true);
+    });
+
+    // r4 S3: the same re-seal with memory RETAINED.
+    test('with memory RETAINED the first apply is the same parent selector re-seal', async () => {
+      const retained = await boundStore(SC);
+      const lost = await boundStore(SC);
+      lost.store.memoryHold = null;
+      const r0 = retained.store.applied.length;
+      const l0 = lost.store.applied.length;
+      await reconcileWith(retained.store, SC, M2_OUTCOME.NOT_COMMITTED, 'RETAINED');
+      await reconcileWith(lost.store, SC, M2_OUTCOME.NOT_COMMITTED, 'LOST');
+      const kinds = retained.store.applied.slice(r0).map((x) => x.kind);
+      expect(kinds.slice(0, 2)).toEqual(['REPLACE_SELECTOR', 'CLEAR_CANDIDATE']);
+      expect(kinds).toEqual(lost.store.applied.slice(l0).map((x) => x.kind));
+      expect(hex(retained.store.selector)).toBe(hex(lost.store.selector));
+    });
+
+    test('with memory RETAINED a refused selector precondition leaves no CLEAR_CANDIDATE', async () => {
+      const { store } = await boundStore(SC);
+      const before = store.applied.length;
+      store.apply = async (step) => {
+        store.applied.push({ boundary: step.boundary, kind: step.kind });
+        if (step.kind === 'REPLACE_SELECTOR') throw selectorPreconditionFailed();
+      };
+      const error = await reconcileWith(store, SC, M2_OUTCOME.NOT_COMMITTED, 'RETAINED').then(() => null, (e) => e);
+      expect(error.code).toBe('SELECTOR_PRECONDITION_FAILED');
+      const kinds = store.applied.slice(before).map((x) => x.kind);
+      expect(kinds).toContain('REPLACE_SELECTOR');
+      expect(kinds).not.toContain('CLEAR_CANDIDATE');
+      expect(store.generations.has(NEW_GENERATION)).toBe(true);
+    });
   });
 });
