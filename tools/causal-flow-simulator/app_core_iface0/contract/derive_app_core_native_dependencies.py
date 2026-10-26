@@ -123,6 +123,75 @@ RATIFIED_EXACT_REPIN_REASONS = {
     ),
 }
 
+GOVERNANCE_STATE_POLICY = "OWNER_MERGED_GOVERNANCE_EXACT_STATE"
+
+# The two governance documents keep their Base identity in the relation, but
+# the checkout may carry exactly one of these joint states.  Each pair of
+# literal blob identities reached its branch through an owner-merged pull
+# request.  Any other pair, including a mix of two listed states, fails.
+# Recognizing a state only lifts the Base byte-identity obligation for these
+# two documents; it grants no operational authority.
+OWNER_MERGED_GOVERNANCE_STATES = (
+    {
+        "stateId": "BASE_E0AF4E1",
+        "provenance": (
+            "Base e0af4e1e2173deb2481eabdb24d8622282b33455 of Issue #295"
+        ),
+        "files": {
+            "AGENTS.md": {
+                "gitBlobOid": "328914da1864b7ad40fe746631190c9448f6d7be",
+                "sha256": "ae4d3ca7dd7fc2123443c163462f16afddc31183a4287d9039ee66a8a9009078",
+                "byteSize": 8689,
+            },
+            "docs/protocol/protocol-hardening-plan.md": {
+                "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+                "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+                "byteSize": 61955,
+            },
+        },
+    },
+    {
+        "stateId": "M3_PROC_497",
+        "provenance": (
+            "m3/integration pull request #497 (contract #496), merged by the "
+            "owner as 3410059d13210fabfaf58f884ae6604318562644"
+        ),
+        "files": {
+            "AGENTS.md": {
+                "gitBlobOid": "20f7135b4acfde9447fdf1a266fecf2b791e7cc4",
+                "sha256": "476808a9fa1bd60b7cbcc91db90a32647eb216eeef1dce36fce426c7055de64e",
+                "byteSize": 8868,
+            },
+            "docs/protocol/protocol-hardening-plan.md": {
+                "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+                "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+                "byteSize": 61955,
+            },
+        },
+    },
+    {
+        "stateId": "MAIN_PHASE_480_490",
+        "provenance": (
+            "main pull requests #480 (merged by the owner as "
+            "932841b75a24ae2ccc533d466a41795484c1ec2f) and #490 (contract "
+            "#489, merged by the owner as "
+            "4e23c3aa29ceb13eb6286c296556b8b1007eb0b8)"
+        ),
+        "files": {
+            "AGENTS.md": {
+                "gitBlobOid": "d04e0133788a8ee91b60d491774e06cff53daea7",
+                "sha256": "6081e568c9bff5b24fb893b4c8afc702a4eb6be87354db67d4d1c8ecd95aecbb",
+                "byteSize": 10226,
+            },
+            "docs/protocol/protocol-hardening-plan.md": {
+                "gitBlobOid": "529ead4c0e42ffc70e51c502f0b5a15e49c6ae50",
+                "sha256": "0c12117d4c8651b01f25d9f29a385b8a051478bbe29de7b246e233db2f6ed79d",
+                "byteSize": 62782,
+            },
+        },
+    },
+)
+
 CATEGORIES = (
     ("GOVERNANCE_AND_SEQUENCE", GOVERNANCE),
     ("NORMATIVE_SEMANTICS", NORMATIVE_SEMANTICS),
@@ -187,7 +256,11 @@ def dependency(repository: Path, base: str, category: str, path: str) -> dict[st
     )
     working_content = working_path.read_bytes()
     changed = working_content != content
-    if changed and path in RATIFIED_EXACT_REPIN_REASONS:
+    if path in GOVERNANCE:
+        # Base identity stays in the row; the joint working-tree state of both
+        # governance documents is checked by verify_governance_state().
+        mutation_policy = GOVERNANCE_STATE_POLICY
+    elif changed and path in RATIFIED_EXACT_REPIN_REASONS:
         mutation_policy = "RATIFIED_H12_H3_EXACT_REPIN"
     elif path in SEEDED_EXTENSION_PATHS:
         mutation_policy = "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS"
@@ -215,7 +288,83 @@ def dependency(repository: Path, base: str, category: str, path: str) -> dict[st
     return result
 
 
-def derive(repository: Path, base_ref: str) -> dict[str, object]:
+def verify_governance_state(
+    repository: Path, rows: list[dict[str, object]]
+) -> str:
+    """Require the checkout to carry exactly one owner-merged governance state."""
+
+    states = OWNER_MERGED_GOVERNANCE_STATES
+    require(
+        tuple(state["stateId"] for state in states)
+        == ("BASE_E0AF4E1", "M3_PROC_497", "MAIN_PHASE_480_490"),
+        "governance state set drift",
+    )
+    governance_rows = {
+        str(row["path"]): row for row in rows if row["path"] in GOVERNANCE
+    }
+    require(
+        tuple(sorted(governance_rows)) == tuple(sorted(GOVERNANCE))
+        and all(
+            row["mutationPolicy"] == GOVERNANCE_STATE_POLICY and "repin" not in row
+            for row in governance_rows.values()
+        )
+        and all(
+            row["mutationPolicy"] != GOVERNANCE_STATE_POLICY
+            for row in rows
+            if row["path"] not in GOVERNANCE
+        ),
+        "governance state path drift",
+    )
+    for state in states:
+        files = state["files"]
+        require(
+            isinstance(files, dict) and tuple(sorted(files)) == tuple(sorted(GOVERNANCE)),
+            f"governance state file set drift: {state['stateId']}",
+        )
+    base_files = states[0]["files"]
+    for path, row in governance_rows.items():
+        require(
+            base_files[path]
+            == {
+                "gitBlobOid": row["gitBlobOid"],
+                "sha256": row["sha256"],
+                "byteSize": row["byteSize"],
+            },
+            f"Base governance state drift: {path}",
+        )
+    identities = [
+        tuple(
+            (path, state["files"][path]["gitBlobOid"]) for path in sorted(GOVERNANCE)
+        )
+        for state in states
+    ]
+    require(len(set(identities)) == len(identities), "duplicate governance state")
+
+    observed: dict[str, dict[str, object]] = {}
+    for path in GOVERNANCE:
+        working_content = (repository / path).read_bytes()
+        object_id = git(repository, "hash-object", "--stdin", input_bytes=working_content)
+        observed[path] = {
+            "gitBlobOid": object_id.decode().strip(),
+            "sha256": hashlib.sha256(working_content).hexdigest(),
+            "byteSize": len(working_content),
+        }
+    matches = [
+        str(state["stateId"])
+        for state in states
+        if all(state["files"][path] == observed[path] for path in GOVERNANCE)
+    ]
+    require(
+        len(matches) == 1,
+        "unratified governance state: "
+        + ", ".join(f"{path}={observed[path]['gitBlobOid']}" for path in GOVERNANCE),
+    )
+    return matches[0]
+
+
+def derive(repository: Path, base_ref: str) -> tuple[dict[str, object], str]:
+    """Return the branch-independent relation and the observed governance state."""
+
     base = resolve_commit(repository, base_ref)
     require(
         tree_paths(repository, base, "tools/causal-flow-simulator/c03")
@@ -237,6 +386,8 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
             seen.add(path)
             rows.append(dependency(repository, base, category, path))
 
+    governance_state = verify_governance_state(repository, rows)
+
     repinned_paths = sorted(
         str(row["path"])
         for row in rows
@@ -247,6 +398,24 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
         for row in rows
         if row["mutationPolicy"] == "READ_ONLY_BYTE_IDENTICAL"
     )
+    governance_paths = sorted(
+        str(row["path"])
+        for row in rows
+        if row["mutationPolicy"] == GOVERNANCE_STATE_POLICY
+    )
+    governance_lines = [
+        "\0".join(
+            (
+                str(state["stateId"]),
+                path,
+                str(state["files"][path]["gitBlobOid"]),
+                str(state["files"][path]["byteSize"]),
+                str(state["files"][path]["sha256"]),
+            )
+        )
+        for state in OWNER_MERGED_GOVERNANCE_STATES
+        for path in sorted(GOVERNANCE)
+    ]
     seeded_paths = sorted(SEEDED_EXTENSION_PATHS)
     relation_lines = [
         "\0".join(
@@ -276,12 +445,21 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
             "frozenPolicy": "read-only dependencies remain byte-identical",
             "seededPolicy": "only ratified additive projection changes; existing semantics remain covered",
             "workingTreeBytes": "never accepted as native dependency evidence",
+            "governanceStatePolicy": (
+                "the two governance documents keep their Base identity; the "
+                "checkout must carry exactly one listed owner-merged joint "
+                "state of both documents, matched by Git blob id, SHA-256 and "
+                "size; the match lifts only the Base byte-identity obligation "
+                "and grants no operational authority"
+            ),
         },
         "derivedCounts": {
             "dependencies": len(rows),
             "readOnlyDependencies": len(frozen_paths),
             "seededExtensionDependencies": len(seeded_paths),
             "ratifiedExactRepinDependencies": len(repinned_paths),
+            "ownerMergedGovernanceStateDependencies": len(governance_paths),
+            "ownerMergedGovernanceStates": len(OWNER_MERGED_GOVERNANCE_STATES),
             "c03CanonicalFiles": len(C03_CANONICAL_DATA),
             "c03ImplementationAndTestFiles": len(C03_EVIDENCE_IMPLEMENTATION),
             "protocolReviewToolFiles": len(PROTOCOL_REVIEW_TOOL),
@@ -291,12 +469,25 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
             "readOnlyPathSetSha256": digest_lines(frozen_paths),
             "seededExtensionPathSetSha256": digest_lines(seeded_paths),
             "ratifiedExactRepinPathSetSha256": digest_lines(repinned_paths),
+            "ownerMergedGovernanceStatePathSetSha256": digest_lines(governance_paths),
+            "ownerMergedGovernanceStateRelationSha256": digest_lines(governance_lines),
             "dependencyRelationSha256": digest_lines(relation_lines),
         },
         "seededExtensionPaths": seeded_paths,
         "ratifiedExactRepinPaths": repinned_paths,
+        "ownerMergedGovernanceStatePaths": governance_paths,
+        "ownerMergedGovernanceStates": [
+            {
+                "stateId": state["stateId"],
+                "provenance": state["provenance"],
+                "files": {
+                    path: dict(state["files"][path]) for path in sorted(GOVERNANCE)
+                },
+            }
+            for state in OWNER_MERGED_GOVERNANCE_STATES
+        ],
         "dependencies": rows,
-    }
+    }, governance_state
 
 
 def canonical_bytes(value: object) -> bytes:
@@ -311,7 +502,8 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
 
-    result = canonical_bytes(derive(args.repository.resolve(), args.base_ref))
+    relation, governance_state = derive(args.repository.resolve(), args.base_ref)
+    result = canonical_bytes(relation)
     if args.check:
         require(args.output.is_file() and not args.output.is_symlink(), "missing generated inventory")
         require(args.output.read_bytes() == result, "native dependency inventory drift")
@@ -324,7 +516,7 @@ def main() -> int:
         "PASS "
         f"base={parsed['baseSha']} dependencies={counts['dependencies']} "
         f"read_only={counts['readOnlyDependencies']} seeded={counts['seededExtensionDependencies']} "
-        f"sha256={digest}"
+        f"governance_state={governance_state} sha256={digest}"
     )
     return 0
 

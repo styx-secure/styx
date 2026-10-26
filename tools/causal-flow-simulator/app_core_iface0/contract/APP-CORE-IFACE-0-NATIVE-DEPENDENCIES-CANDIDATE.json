@@ -10,23 +10,28 @@
     "pathSet": "literal and closed at Base",
     "frozenPolicy": "read-only dependencies remain byte-identical",
     "seededPolicy": "only ratified additive projection changes; existing semantics remain covered",
-    "workingTreeBytes": "never accepted as native dependency evidence"
+    "workingTreeBytes": "never accepted as native dependency evidence",
+    "governanceStatePolicy": "the two governance documents keep their Base identity; the checkout must carry exactly one listed owner-merged joint state of both documents, matched by Git blob id, SHA-256 and size; the match lifts only the Base byte-identity obligation and grants no operational authority"
   },
   "derivedCounts": {
     "dependencies": 65,
-    "readOnlyDependencies": 60,
+    "readOnlyDependencies": 58,
     "seededExtensionDependencies": 4,
     "ratifiedExactRepinDependencies": 1,
+    "ownerMergedGovernanceStateDependencies": 2,
+    "ownerMergedGovernanceStates": 3,
     "c03CanonicalFiles": 6,
     "c03ImplementationAndTestFiles": 26,
     "protocolReviewToolFiles": 16
   },
   "setDigests": {
     "allPathSetSha256": "236b0419285085d92e7b7bfe5967b8292c46da43bed09e0bceedf37eddd52028",
-    "readOnlyPathSetSha256": "107c9f61ffc6bd44c4cf36f132c40380b5726af813399601ea5d94f1e75c3499",
+    "readOnlyPathSetSha256": "0df299a7728b4109e862c637810cacaba599a2288bb0fdbb5395bc15166661d0",
     "seededExtensionPathSetSha256": "cb8be3acdfd8cfa9dac993c1c1e158dbd847f5206659fc1de5f91701f9551520",
     "ratifiedExactRepinPathSetSha256": "626f1f4719aea4a6046ee036826277514c31b97fc25c7bd5757ef58918b823d3",
-    "dependencyRelationSha256": "ba67224da7a79df7b11e6a6c4f29d1308b2361ec383e16b5b9822cebf9627eb2"
+    "ownerMergedGovernanceStatePathSetSha256": "627aa4da35c722dd2e8c71c4574e9eca2d78c593ff12316876b3cb3fede6b002",
+    "ownerMergedGovernanceStateRelationSha256": "8ee7ddc920585c63e964a23173ad0fbc5318f4fb17566103eae02b0cecfde7de",
+    "dependencyRelationSha256": "f08bc38ce4c058bfa606f41996e41c8116953ad2d693dfe238ef74d800dad20a"
   },
   "seededExtensionPaths": [
     "docs/protocol/review/README.md",
@@ -37,11 +42,65 @@
   "ratifiedExactRepinPaths": [
     "tools/causal-flow-simulator/c03/corpus_model.py"
   ],
+  "ownerMergedGovernanceStatePaths": [
+    "AGENTS.md",
+    "docs/protocol/protocol-hardening-plan.md"
+  ],
+  "ownerMergedGovernanceStates": [
+    {
+      "stateId": "BASE_E0AF4E1",
+      "provenance": "Base e0af4e1e2173deb2481eabdb24d8622282b33455 of Issue #295",
+      "files": {
+        "AGENTS.md": {
+          "gitBlobOid": "328914da1864b7ad40fe746631190c9448f6d7be",
+          "sha256": "ae4d3ca7dd7fc2123443c163462f16afddc31183a4287d9039ee66a8a9009078",
+          "byteSize": 8689
+        },
+        "docs/protocol/protocol-hardening-plan.md": {
+          "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+          "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+          "byteSize": 61955
+        }
+      }
+    },
+    {
+      "stateId": "M3_PROC_497",
+      "provenance": "m3/integration pull request #497 (contract #496), merged by the owner as 3410059d13210fabfaf58f884ae6604318562644",
+      "files": {
+        "AGENTS.md": {
+          "gitBlobOid": "20f7135b4acfde9447fdf1a266fecf2b791e7cc4",
+          "sha256": "476808a9fa1bd60b7cbcc91db90a32647eb216eeef1dce36fce426c7055de64e",
+          "byteSize": 8868
+        },
+        "docs/protocol/protocol-hardening-plan.md": {
+          "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+          "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+          "byteSize": 61955
+        }
+      }
+    },
+    {
+      "stateId": "MAIN_PHASE_480_490",
+      "provenance": "main pull requests #480 (merged by the owner as 932841b75a24ae2ccc533d466a41795484c1ec2f) and #490 (contract #489, merged by the owner as 4e23c3aa29ceb13eb6286c296556b8b1007eb0b8)",
+      "files": {
+        "AGENTS.md": {
+          "gitBlobOid": "d04e0133788a8ee91b60d491774e06cff53daea7",
+          "sha256": "6081e568c9bff5b24fb893b4c8afc702a4eb6be87354db67d4d1c8ecd95aecbb",
+          "byteSize": 10226
+        },
+        "docs/protocol/protocol-hardening-plan.md": {
+          "gitBlobOid": "529ead4c0e42ffc70e51c502f0b5a15e49c6ae50",
+          "sha256": "0c12117d4c8651b01f25d9f29a385b8a051478bbe29de7b246e233db2f6ed79d",
+          "byteSize": 62782
+        }
+      }
+    }
+  ],
   "dependencies": [
     {
       "path": "AGENTS.md",
       "category": "GOVERNANCE_AND_SEQUENCE",
-      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "mutationPolicy": "OWNER_MERGED_GOVERNANCE_EXACT_STATE",
       "fileMode": "100644",
       "gitBlobOid": "328914da1864b7ad40fe746631190c9448f6d7be",
       "byteSize": 8689,
@@ -50,7 +109,7 @@
     {
       "path": "docs/protocol/protocol-hardening-plan.md",
       "category": "GOVERNANCE_AND_SEQUENCE",
-      "mutationPolicy": "READ_ONLY_BYTE_IDENTICAL",
+      "mutationPolicy": "OWNER_MERGED_GOVERNANCE_EXACT_STATE",
       "fileMode": "100644",
       "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
       "byteSize": 61955,
