@@ -1018,6 +1018,21 @@ export function createRelaySet(options) {
     return publicAttempt(attempt);
   };
 
+  /** S6: one socket publication per currently connected pool, even frozen. */
+  const publishDrain = (event) => {
+    if (stopped) return;
+    for (const state of states) {
+      if (!readsConnected(state)) continue;
+      try {
+        const returned = state.pool.publish(event);
+        // Faulty synchronous seams may return a rejected promise.
+        Promise.resolve(returned).catch(() => {});
+      } catch {
+        // Best effort: a disconnected or faulty pool changes nothing.
+      }
+    }
+  };
+
   /**
    * Orderly close (C-DLV §5.3, §5.5): synchronously stop supervision and
    * reconnection, clear every timer and freeze every relay outcome at its
@@ -1098,6 +1113,7 @@ export function createRelaySet(options) {
     },
     start,
     publish,
+    publishDrain,
     supervise: superviseOnce,
     dispose,
     freeze,

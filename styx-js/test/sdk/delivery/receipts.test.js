@@ -172,7 +172,7 @@ describe('module surface', () => {
   test('the returned object is frozen and carries exactly ingest and shutdown', () => {
     const { module } = makeHarness();
     expect(Object.isFrozen(module)).toBe(true);
-    expect(Object.keys(module).sort()).toEqual(['ingest', 'settled', 'shutdown']);
+    expect(Object.keys(module).sort()).toEqual(['drained', 'ingest', 'settled', 'shutdown']);
     expect(typeof module.ingest).toBe('function');
     expect(typeof module.shutdown).toBe('function');
   });
@@ -2120,7 +2120,8 @@ describe('the terminal stop at every awaited boundary', () => {
     harness.module.shutdown();
     release();
     await flush(16);
-    expect(harness.events).toHaveLength(1);
+    expect(harness.events).toHaveLength(2);
+    expect(harness.events[1]).toEqual({ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' });
     expect(harness.published).toEqual([]);
   });
 
@@ -2439,8 +2440,81 @@ describe('the remaining in-allowlist findings of the round-3 review', () => {
  * (C-SDK section 8.3) and handed over as `options.publicKey`.
  * ------------------------------------------------------------------------- */
 
+describe('owed set and drained companion', () => {
+  test('no owed receipt resolves drained without rejecting', async () => {
+    const h = makeHarness();
+    h.module.shutdown();
+    await expect(h.module.drained()).resolves.toBeUndefined();
+  });
+
+  test.each(['published', 'failed', 'bound'])(
+    'settled and drained run together under one host drain bound: %s', async (outcome) => {
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      const h = makeHarness({ perRelayTimeoutMs: 400 });
+      let signed;
+      h.options.identity.sign = ({ digest }) => {
+        signed = schnorr.sign(digest, h.owner.priv);
+        return gate;
+      };
+      h.module.ingest(eventFrame(messageEvent({ sender: h.other, owner: h.owner.pub })));
+      await flush(4);
+      expect(h.events[0].kind).toBe('MESSAGE_RECEIVED');
+      const at = Date.now();
+      h.module.shutdown();
+      const waits = Promise.all([h.module.settled(), h.module.drained()]);
+      if (outcome !== 'bound') release(outcome === 'published' ? signed : new Uint8Array(63));
+      await expect(waits).resolves.toEqual([undefined, undefined]);
+      expect(Date.now() - at).toBeLessThan(400);
+      expect(h.published).toHaveLength(outcome === 'published' ? 1 : 0);
+      if (outcome === 'bound') {
+        release(signed);
+        await flush(16);
+        expect(h.published).toHaveLength(0);
+      }
+    },
+  );
+
+  test('shutdown inside MESSAGE_RECEIVED owes that job; no clock or new key read after stop', async () => {
+    let stop;
+    let afterStop = false;
+    const h = makeHarness({ onEvent: (event) => {
+      h.events.push(event);
+      if (event.kind === 'MESSAGE_RECEIVED') {
+        stop = h.module.shutdown();
+        afterStop = true;
+      }
+    } });
+    const now = h.options.clock.now;
+    h.options.clock.now = () => { expect(afterStop).toBe(false); return now(); };
+    const key = h.options.identity.getPublicKey;
+    h.options.identity.getPublicKey = () => { expect(afterStop).toBe(false); return key(); };
+    h.module.ingest(eventFrame(messageEvent({ sender: h.other, owner: h.owner.pub })));
+    await flush(16);
+    expect(stop.ok).toBe(true);
+    await h.module.drained();
+    expect(h.published).toHaveLength(1);
+    expect(h.module.shutdown().code).toBe('E_SDK_CLIENT_STOPPED');
+  });
+
+  test('queued and open-in-progress frames are outside the fixed owed set', async () => {
+    const h = makeHarness();
+    let release;
+    h.options.session.open = () => new Promise((resolve) => { release = resolve; });
+    h.module.ingest(eventFrame(messageEvent({ sender: h.other, owner: h.owner.pub })));
+    await flush(2);
+    h.module.ingest(eventFrame(messageEvent({ sender: h.other, owner: h.owner.pub, nonce: 'b'.repeat(32) })));
+    h.module.shutdown();
+    await h.module.drained();
+    release({ plaintext: new Uint8Array([1]) });
+    await flush(16);
+    expect(h.events).toEqual([]);
+    expect(h.published).toEqual([]);
+  });
+});
+
 describe('seam S1 -- the publicKey option', () => {
-  const MODULE_MEMBERS = ['ingest', 'settled', 'shutdown'];
+  const MODULE_MEMBERS = ['drained', 'ingest', 'settled', 'shutdown'];
 
   test('the inbound processor carries exactly ingest, shutdown and settled', () => {
     const { module } = makeHarness();
@@ -2666,7 +2740,7 @@ describe('seam S3 -- settled()', () => {
     gate.release();
     expect(await waitFor(() => state.resolved)).toBe(true);
     expect(state.rejected).toBe(false);
-    expect(harness.published).toEqual([]);
+    expect(harness.published).toHaveLength(1); // the pending signature is now owed
   });
 
   test('settled() waits for an acceptReceipt started before shutdown()', async () => {

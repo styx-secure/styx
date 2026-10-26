@@ -1577,6 +1577,16 @@ function buildClient(settings) {
    * @param {object} held
    */
   const publishReceiptSeam = (held) => (receipt) => {
+    if (stopping) {
+      // S6 is synchronous and void: never create an attempt during the drain.
+      const drained = crossBoundary(held.relaySet, 'publishDrain', [receipt]);
+      if (drained.settled !== 'value') return undefined;
+      const scan = scanClosedSlots(drained.value);
+      if (scan.unknown) sink({ kind: 'INBOUND_DISCARDED', code: SdkResultCode.E_SDK_UNKNOWN_CODE });
+      // Any other non-void value (including a promise) is a failed publication,
+      // not an acknowledgement; crossBoundary consumes promise rejections.
+      return undefined;
+    }
     const published = crossBoundary(held.relaySet, 'publish', [receipt]);
     if (published.settled !== 'value') return undefined;
     const attempt = published.value;
@@ -1961,7 +1971,16 @@ function buildClient(settings) {
       // Each wait on a seam has its host-time backstop (`BOUND`): a seam that
       // never settles cannot hold the stop open.
       if (held !== null && held.receipts !== null) {
-        await crossBoundaryAsync(held.receipts, 'settled', [], { timeoutMs: BOUND.settled });
+        // Concurrent under the same host backstop. drained() itself uses the
+        // one drain bound armed synchronously by receipts.shutdown().
+        const waits = await Promise.all([
+          crossBoundaryAsync(held.receipts, 'settled', [], { timeoutMs: BOUND.settled }),
+          crossBoundaryAsync(held.receipts, 'drained', [], { timeoutMs: BOUND.settled }),
+        ]);
+        const drained = waits[1];
+        if (drained.settled === 'value' && scanClosedSlots(drained.value).unknown) {
+          sink({ kind: 'INBOUND_DISCARDED', code: SdkResultCode.E_SDK_UNKNOWN_CODE });
+        }
       }
       if (outboxStop !== null) {
         const stopped = valueOfCall(await adoptReturned(outboxStop, { timeoutMs: BOUND.outboxStop }));
