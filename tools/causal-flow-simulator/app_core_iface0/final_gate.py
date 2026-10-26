@@ -28,12 +28,15 @@ from inventory import (
     ACV049_RELATION_COUNTS,
     BASE_SHA,
     CONTRACT_FILES,
+    GOVERNANCE_STATE_PATHS,
+    GOVERNANCE_STATE_POLICY,
     MANIFEST_SHA256,
     SEMANTIC_COUNT,
     STRUCTURAL_COUNT,
     TOTAL_COUNT,
     InventoryError,
     derive_acv049_relation_members,
+    governance_state_by_identity,
     verify_contract_package,
 )
 
@@ -1515,6 +1518,7 @@ def _acv049_runtime_policy(
     if not isinstance(dependencies, list) or len(dependencies) != 65:
         raise FinalGateError("ACV-049 runtime native dependency relation drift")
     native_files: set[Path] = set()
+    governance: dict[str, tuple[str, int]] = {}
     for row in dependencies:
         relative = row.get("path") if isinstance(row, dict) else None
         digest = row.get("sha256") if isinstance(row, dict) else None
@@ -1535,6 +1539,15 @@ def _acv049_runtime_policy(
         # The exact-repin dependency intentionally binds candidate bytes in its
         # repin object; all others bind the Base bytes, which the validator has
         # already compared to this clean checkout.
+        # The two governance documents bind exactly one owner-merged joint
+        # state, which the validator has already matched for this checkout.
+        if row.get("mutationPolicy") == GOVERNANCE_STATE_POLICY:
+            if relative not in GOVERNANCE_STATE_PATHS or "repin" in row:
+                raise FinalGateError("ACV-049 runtime governance state row drift")
+            current = path.read_bytes()
+            governance[relative] = (_sha256(current), len(current))
+            native_files.add(path)
+            continue
         if row.get("mutationPolicy") == "RATIFIED_H12_H3_EXACT_REPIN":
             repin = row.get("repin")
             expected = repin.get("newSha256") if isinstance(repin, dict) else None
@@ -1543,6 +1556,8 @@ def _acv049_runtime_policy(
         if not isinstance(expected, str) or _sha256(path.read_bytes()) != expected:
             raise FinalGateError("ACV-049 runtime native dependency digest drift")
         native_files.add(path)
+    if governance_state_by_identity(governance, "sha256") is None:
+        raise FinalGateError("ACV-049 runtime governance state drift")
 
     evidence_files = {
         (evidence_root / relative).resolve()
