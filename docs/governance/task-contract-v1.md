@@ -62,6 +62,27 @@ When present, either heading must occur exactly once and satisfy its exact
 syntax below. Contracts that omit them retain the original fail-closed binary
 and two-sided rename/copy behavior.
 
+## Contract size and annex
+
+A new contract body stays within 20,000 characters. Rationale, history, prior
+review rounds and long examples may go to one annex, referenced from an
+optional `## Annex` section that contains exactly this one line and nothing
+else:
+
+- Annex SHA-256: `<64-hex>` (<immutable location: repository blob or Issue attachment>).
+
+The annex is evidence for reviewers, never a rule source. The body must not
+incorporate obligations by reference: allowed and forbidden paths, exceptions,
+binary and copy-source authorizations, acceptance criteria, required tests,
+gates and approval conditions stay in the body. Whoever collects the evidence
+fetches the annex from its location and keeps its bytes; a missing annex, or
+one whose bytes do not match the declared digest, fails evidence verification.
+Contracts published before this section are unaffected. The contract parser
+and the scope guard accept any bytes in an `## Annex` section and do not
+enforce the size limit; the limit and the exact annex line are checked before
+publication and by the contract reviewers, and no automated annex fetcher is
+part of this tool.
+
 ## Code blocks and structural text
 
 Markers and headings are structural only outside code blocks. The parser
@@ -90,11 +111,34 @@ declaration label is a candidate, including prose and inline-code mentions. The
 entire Issue body must contain exactly one candidate, and that candidate must be
 the canonical declaration in `Base`. Missing, duplicate, malformed, uppercase,
 abbreviated, code-only, or misplaced lookalikes make the contract invalid. The
-guard compares the parsed value byte-for-byte with `--base-sha`; a mismatch
-produces the typed `E_CONTRACT_BASE_SHA` error. This intentionally strict,
-fail-closed rule prevents a rendered Issue from presenting a human-visible Base
-lookalike that the machine ignores. It also binds the approved task contract to
-the exact historical diff base without changing the v1 report schema.
+guard accepts the parsed value when it equals `--base-sha`, or when all of
+these hold (tool version `0.5.0`, "ancestor base"):
+
+1. it resolves to a local commit on the first-parent chain of `--base-sha`
+   in the current commit graph (a commit that only reached the target through
+   a merge is not accepted). This is a graph rule only: it does not prove that
+   the commit was ever a published tip of the target branch, nor bind the
+   contract to a lane; lane and branch binding stay with the contract approval,
+   the task branch and the pull-request base. After an authorized history
+   rewrite of the target, open contracts are re-issued;
+2. no commit in contract-base..`--base-sha` touches a path that matches an
+   allowed pattern of the contract. Every commit counts, merges against each
+   parent, renames as delete plus add, even when the change was later
+   reverted or restored.
+
+Otherwise the typed `E_CONTRACT_BASE_SHA` error is produced; when rule 2 fails,
+its `path` names the first touched allowed path, and the contract must be
+re-issued. The change inventory and every path, binary and copy-source check
+still run on `--base-sha`..HEAD, that is on what would actually be merged, so
+forbidden paths keep their full force. The rule is about path scope only: it
+does not refresh frozen interfaces, dependencies, source pins, human gates or
+the freshness of reviews and test evidence, which stay governed by the contract
+text. An accepted ancestor base is logged on standard error. The report keeps
+`base_sha` equal to `--base-sha` (the closed v1 schema has no field for it);
+the declared contract base is recovered from the Issue body bound by
+`issue_body_sha256`, and consumers must not assume it equals `base_sha`.
+The single-declaration rule prevents a rendered Issue from
+presenting a human-visible Base lookalike that the machine ignores.
 
 ## Path declarations
 
@@ -343,8 +387,9 @@ including both optional sections, and therefore binds declarations to the
 evidence without a schema or consumer change. Verified copy sources are exposed
 only by the documented synthetic `allowed_matches` marker while retaining real
 forbidden matches and both `old_path`/`new_path` values. Tool version `0.4.0`
-identifies the mandatory exact Base binding and trusted-tool provenance
-semantics; the contract and report schema remain v1.
+identified the mandatory exact Base binding and trusted-tool provenance
+semantics; `0.5.0` adds the ancestor-base rule above. The contract and report
+schema remain v1.
 
 Canonical encoding is UTF-8 JSON with recursively sorted keys, compact separators and one trailing LF. Wall-clock timestamps are omitted. Equivalent inputs with the same execution ID produce byte-identical report bytes.
 

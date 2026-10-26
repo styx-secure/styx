@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 import support
@@ -116,6 +117,78 @@ class PlannerTest(OrchestratorCase):
         code, stderr = self.invoke(args)
         self.assertEqual(3, code)
         self.assertIn("drift", stderr)
+        self.assertFalse(output.exists())
+
+    def test_ancestor_contract_base_plans_against_evaluated_base(self):
+        fixture = self.fixture(ancestor_drift="README.md")
+        self.assertNotEqual(fixture.contract_base_sha, fixture.base_sha)
+        output = self.workdir / "plan.json"
+        code, stderr = self.invoke(fixture.plan_args(output))
+        self.assertEqual(0, code, stderr)
+        plan = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(fixture.base_sha, plan["base_sha"])
+
+    def test_ancestor_contract_base_with_allowed_drift_blocks_planning(self):
+        # Pure target drift: the task's own changes are not in the interval.
+        fixture = self.fixture(allowed_drift=True, skip_scope_guard=True)
+        output = self.workdir / "plan.json"
+        code, stderr = self.invoke(fixture.plan_args(output))
+        self.assertEqual(3, code)
+        self.assertIn("allowed paths were touched", stderr)
+        self.assertFalse(output.exists())
+
+    def test_candidate_verifier_code_is_never_imported(self):
+        fixture = self.fixture(allowed_drift=True, skip_scope_guard=True)
+        sentinel = self.workdir / "candidate-code-ran"
+        poison = (
+            "from pathlib import Path\n"
+            f"Path({str(sentinel)!r}).write_text('ran')\n"
+            "def ancestor_base_problem(*args, **kwargs):\n"
+            "    return None\n"
+        )
+        fixture.repo.write("tools/agent-enforcement/git_inventory.py", poison)
+        output = self.workdir / "plan.json"
+        code, stderr = self.invoke(fixture.plan_args(output))
+        self.assertEqual(3, code)
+        self.assertIn("allowed paths were touched", stderr)
+        self.assertFalse(sentinel.exists())
+        self.assertFalse(output.exists())
+
+    def test_candidate_contract_parser_cannot_narrow_the_ancestor_check(self):
+        fixture = self.fixture(allowed_drift=True, skip_scope_guard=True)
+        trusted = support.ROOT / "tools" / "agent-enforcement" / "contract.py"
+        poison = (
+            "import dataclasses, importlib.util, sys\n"
+            f"_spec = importlib.util.spec_from_file_location('real_contract', {str(trusted)!r})\n"
+            "_real = importlib.util.module_from_spec(_spec)\n"
+            "_spec.loader.exec_module(_real)\n"
+            "def parse_contract(raw):\n"
+            "    parsed = _real.parse_contract(raw)\n"
+            "    return dataclasses.replace(parsed, allowed_patterns=('tools/sample/tests/**',))\n"
+        )
+        fixture.repo.write("tools/agent-enforcement/contract.py", poison)
+        output = self.workdir / "plan.json"
+        code, stderr = self.invoke(fixture.plan_args(output))
+        self.assertEqual(3, code)
+        self.assertIn("allowed paths were touched", stderr)
+        self.assertFalse(output.exists())
+
+    def test_conflicting_base_declarations_cannot_skip_the_ancestor_check(self):
+        # The Exact base SHA keeps the old contract base while the planner's
+        # `main @ sha` line names the evaluated base: the check must still run.
+        fixture = self.fixture(allowed_drift=True, skip_scope_guard=True)
+        body = fixture.issue_body.read_text(encoding="utf-8")
+        old = f"`main @ {fixture.contract_base_sha}`"
+        self.assertEqual(1, body.count(old))
+        forged = body.replace(old, f"`main @ {fixture.base_sha}`")
+        fixture.issue_body.write_text(forged, encoding="utf-8")
+        document = json.loads(fixture.scope_report_path.read_text(encoding="utf-8"))
+        document["issue_body_sha256"] = hashlib.sha256(forged.encode("utf-8")).hexdigest()
+        fixture.scope_report_path.write_bytes(support.model.canonical_json_bytes(document))
+        output = self.workdir / "plan.json"
+        code, stderr = self.invoke(fixture.plan_args(output))
+        self.assertEqual(3, code)
+        self.assertIn("conflicting base declarations", stderr)
         self.assertFalse(output.exists())
 
     def test_plan_output_must_be_outside_repository(self):
