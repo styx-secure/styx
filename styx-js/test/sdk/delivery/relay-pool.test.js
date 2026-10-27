@@ -339,6 +339,77 @@ async function flush() {
 // 1. Connection phase
 // ---------------------------------------------------------------------------
 
+describe('S7 catch-up subscription seam', () => {
+  test.each([80, 0, null, -1, 1.5, NaN, '80', undefined, 'throw', 'reject'])('pool preparation with subscriptionSince=%s', async (value) => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const calls = [];
+    const set = h.make({ subscriptionSince: (index) => {
+      calls.push(index);
+      if (value === 'throw') throw new Error('since');
+      if (value === 'reject') return Promise.reject(new Error('since'));
+      return value;
+    } });
+    await startSet(set, h.clock);
+    expect(calls).toEqual([0]);
+    expect(h.created[0].subscriptions[0]).toEqual({ subscriptionId: SUBSCRIPTION_ID,
+      filter: Number.isSafeInteger(value) && value >= 0 ? { ...FILTER, since: value } : FILTER });
+    await set.dispose();
+    expect(h.clock.pending).toEqual([]);
+  });
+
+  test('replacement uses current cursor without changing relay identity', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    let since = null;
+    const indexes = [];
+    const set = h.make({ subscriptionSince: (index) => { indexes.push(index); return since; } });
+    await startSet(set, h.clock);
+    expect(h.created[0].subscriptions[0].filter).toEqual(FILTER);
+    since = 75;
+    h.created[0].connected = false;
+    set.supervise();
+    h.clock.advance(500);
+    await flush();
+    expect(h.created).toHaveLength(2);
+    expect(indexes).toEqual([0, 0]);
+    expect(h.created[1].subscriptions[0]).toEqual({ subscriptionId: SUBSCRIPTION_ID, filter: { ...FILTER, since: 75 } });
+    await set.dispose();
+  });
+
+  test('resubscribe preserves id, handles null and invalid values, is inert disconnected/frozen/disposed', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    expect(() => set.resubscribe(0, 80)).not.toThrow();
+    expect(pool.subscriptions.at(-1)).toEqual({ subscriptionId: SUBSCRIPTION_ID, filter: { ...FILTER, since: 80 } });
+    set.resubscribe(0, null);
+    expect(pool.subscriptions.at(-1)).toEqual({ subscriptionId: SUBSCRIPTION_ID, filter: FILTER });
+    const count = pool.subscriptions.length;
+    for (const since of [-1, NaN, undefined, 1.5, '80', Infinity]) set.resubscribe(0, since);
+    for (const index of [-1, 1, NaN, undefined, '0']) set.resubscribe(index, 80);
+    pool.connected = false;
+    set.resubscribe(0, 80);
+    expect(pool.subscriptions).toHaveLength(count);
+    pool.connected = true;
+    pool.subscribe = () => { throw new Error('subscribe'); };
+    expect(() => set.resubscribe(0, 80)).not.toThrow();
+    pool.subscribe = () => Promise.reject(new Error('subscribe rejection'));
+    expect(() => set.resubscribe(0, 80)).not.toThrow();
+    await flush();
+    pool.subscribe = () => { throw new Error('must not invoke after freeze'); };
+    set.freeze();
+    set.resubscribe(0, 80);
+    await set.dispose();
+    set.resubscribe(0, null);
+    expect(h.clock.pending).toEqual([]);
+    expect(host.live.size).toBe(0);
+    expect(Reflect.ownKeys(set).sort()).toEqual([
+      'relayCount', 'connectedRelays', 'stopped', 'running', 'start', 'publish', 'publishDrain',
+      'supervise', 'dispose', 'freeze', 'onFrame', 'resubscribe',
+    ].sort());
+  });
+});
+
 describe('createRelaySet — connection phase', () => {
   test('prepares one pool per relay and subscribes before it connects', async () => {
     const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
@@ -2118,6 +2189,7 @@ describe('createRelaySet — seam S2, freeze() before dispose()', () => {
     'publish',
     'publishDrain',
     'relayCount',
+    'resubscribe',
     'running',
     'start',
     'stopped',

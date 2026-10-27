@@ -3263,6 +3263,179 @@ describe('end to end on loopback relays', () => {
  * shutdown().
  * ------------------------------------------------------------------------- */
 
+describe('CATCHUP-six-handles', () => {
+  // Match the prospective owner-pinned timeline with the composed real client.
+  function assertSixClears(entries, handles) {
+    expect(new Set(handles).size).toBe(6);
+    const lost = entries.map((e, i) => e.type === 'lost' ? i : -1).filter((i) => i >= 0);
+    expect(lost).toHaveLength(2);
+    const stopped = entries.findIndex((e) => e.type === 'stopped');
+    expect(stopped).toBeGreaterThan(lost[1]);
+    const clears = entries.filter((e) => e.type === 'clearTimer');
+    expect(clears.map((e) => e.id).sort()).toEqual([...handles].sort());
+    for (const handle of handles) {
+      const indexes = entries.map((e, i) => e.type === 'clearTimer' && e.id === handle ? i : -1).filter((i) => i >= 0);
+      expect(indexes).toHaveLength(1);
+      expect(indexes[0]).toBeGreaterThan(lost[1]);
+      expect(indexes[0]).toBeLessThan(stopped);
+    }
+  }
+
+  test.each(['omitted', 'duplicate', 'early'])('clear oracle rejects %s clear', (fault) => {
+    const handles = [1, 2, 3, 4, 5, 6];
+    const entries = [{ type: 'lost' }, { type: 'lost' },
+      ...handles.map((id) => ({ type: 'clearTimer', id })), { type: 'stopped' }];
+    assertSixClears(entries, handles);
+    if (fault === 'omitted') entries.splice(7, 1);
+    if (fault === 'duplicate') entries[7].id = 5;
+    if (fault === 'early') entries.unshift(entries.splice(2, 1)[0]);
+    expect(() => assertSixClears(entries, handles)).toThrow();
+  });
+
+  test('failed start arms no catch-up delivery timer', async () => {
+    const manual = manualClock();
+    const store = storagePort();
+    // A real, conforming record from a prior client's retained queue.
+    const relay = await startRelay();
+    const earlier = await startMember([relay], { storage: store });
+    expect((await earlier.client.send({ recipient: 'c'.repeat(64), payload: new Uint8Array([1]) })).ok).toBe(true);
+    await earlier.client.shutdown();
+    const client = createClient(makeConfig({ relays: [relay.url], storage: store, clock: manual.clock }));
+    expect(await client.start()).toEqual({ ok: false, code: 'E_SDK_STORAGE_NOT_EMPTY' });
+    expect(manual.log.filter((e) => e.type === 'setTimer')).toEqual([]);
+    expect(manual.timers.size).toBe(0);
+  });
+
+  test('six identified live clock handles clear once after both LOST and before STOPPED', async () => {
+    // Track host backstops separately; they never enter the six clock handles.
+    const realSet = globalThis.setTimeout;
+    const realClear = globalThis.clearTimeout;
+    const hostLive = new Set();
+    const hostDelays = new Map();
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      const handle = realSet(() => { hostLive.delete(handle); callback(...args); }, delay);
+      hostLive.add(handle);
+      hostDelays.set(handle, { delay, callback: String(callback).slice(0, 200) });
+      return handle;
+    };
+    globalThis.clearTimeout = (handle) => { hostLive.delete(handle); realClear(handle); };
+    cleanups.push(() => { globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; });
+    const relay = await startRelay({ holdFor: ['c'.repeat(64), 'd'.repeat(64)] });
+    let now = 0;
+    let sequence = 0;
+    const timers = new Map();
+    const log = [];
+    const clock = {
+      now: () => now,
+      setTimer(callback, delay) {
+        const id = ++sequence;
+        timers.set(id, { callback, at: now + delay });
+        log.push({ type: 'setTimer', id });
+        return id;
+      },
+      clearTimer(id) { log.push({ type: 'clearTimer', id }); timers.delete(id); },
+    };
+    const advanceTo = (target) => {
+      for (;;) {
+        const next = [...timers].filter(([, t]) => t.at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        timers.delete(next[0]);
+        now = next[1].at;
+        next[1].callback();
+      }
+      now = target;
+    };
+    const client = createClient(makeConfig({ relays: [relay.url], clock, delivery: { receiptMode: 'RECIPIENT_RECEIPT' } }));
+    const events = [];
+    await client.onEvent((event) => {
+      events.push(event);
+      if (event.state === 'LOST_ON_SHUTDOWN') log.push({ type: 'lost' });
+      if (event.clientState === 'STOPPED') log.push({ type: 'stopped' });
+    });
+    const starting = client.start();
+    await waitFor(() => relay.reqs === 1);
+    await sleep(20);
+    advanceTo(12000);
+    expect((await starting).ok).toBe(true);
+    const ids = [];
+    for (const recipient of ['c'.repeat(64), 'd'.repeat(64)]) {
+      const result = await client.send({ recipient, payload: new Uint8Array([1]) });
+      expect(result.ok).toBe(true);
+      ids.push(result.value.deliveryId);
+    }
+    await waitFor(() => relay.kindCounts.get(4741) === 2);
+    advanceTo(20000);
+    const byDue = (at) => [...timers].filter(([, t]) => t.at === at).map(([id]) => id);
+    const deadlines = byDue(132000);
+    const attempts = byDue(24000);
+    const supervision = byDue(21000);
+    const catchup = byDue(22000);
+    expect(deadlines).toHaveLength(2);
+    expect(attempts).toHaveLength(2);
+    expect(supervision).toHaveLength(1);
+    // The exact base must fail on this missing property, not on setup/import.
+    expect(catchup).toHaveLength(1);
+    const handles = [...deadlines, ...attempts, ...supervision, ...catchup];
+    const callbacks = [...timers.values()].map((t) => t.callback);
+    const before = await Promise.all(ids.map((deliveryId) => client.getDelivery({ deliveryId })));
+    const mark = log.length;
+    const reqs = relay.reqs;
+    const stopping = client.shutdown();
+    const inertMark = log.length;
+    for (const callback of callbacks) callback();
+    expect(log.slice(inertMark)).toEqual([]);
+    expect((await stopping).value).toEqual({ clientState: 'STOPPED', lost: 2 });
+    assertSixClears(log.slice(mark), handles);
+    expect(timers.size).toBe(0);
+    // ws owns a 30000ms closing-handshake timer, not an SDK backstop. Wait
+    // for the real socket close under the existing harness bound before
+    // asserting that no host timer remains; do not count it among the six.
+    await relay.waitForClientsClosed();
+    expect([...hostLive].map((handle) => hostDelays.get(handle))).toEqual([]);
+    const snapshots = await Promise.all(ids.map((deliveryId) => client.getDelivery({ deliveryId })));
+    snapshots.forEach((result, i) => {
+      expect(result.value.state).toBe('LOST_ON_SHUTDOWN');
+      expect(result.value.relayOutcomes).toEqual(before[i].value.relayOutcomes);
+    });
+    const frozenEvents = [...events];
+    for (const time of [22000, 24000, 36010]) {
+      advanceTo(time);
+      for (const callback of callbacks) callback();
+      await flushMicrotasks();
+      expect(timers.size).toBe(0);
+      expect(relay.reqs).toBe(reqs);
+      expect(events).toEqual(frozenEvents);
+      expect(await Promise.all(ids.map((deliveryId) => client.getDelivery({ deliveryId })))).toEqual(snapshots);
+    }
+    // Independent clock domain at the scenario's fresh start: success 32100,
+    // own catch-up due 42100. Those handles never belong to the old client.
+    let freshNow = 20100;
+    let freshId = 0;
+    const freshTimers = new Map();
+    const freshClock = {
+      now: () => freshNow,
+      setTimer(callback, delay) { const id = ++freshId; freshTimers.set(id, { callback, at: freshNow + delay }); return id; },
+      clearTimer(id) { freshTimers.delete(id); },
+    };
+    const freshStore = storagePort();
+    const fresh = createClient(makeConfig({ relays: [relay.url], storage: freshStore, clock: freshClock, delivery: {} }));
+    const freshStarting = fresh.start();
+    await waitFor(() => relay.reqs > reqs);
+    await sleep(20);
+    const phase = [...freshTimers].find(([, t]) => t.at === 32100);
+    expect(phase).toBeDefined();
+    freshTimers.delete(phase[0]);
+    freshNow = 32100;
+    phase[1].callback();
+    expect((await freshStarting).ok).toBe(true);
+    expect(freshStore.records.size).toBe(0);
+    expect([...freshTimers.values()].map((t) => t.at).sort()).toEqual([33100, 42100]);
+    expect(timers.size).toBe(0);
+    await fresh.shutdown();
+    expect(freshTimers.size).toBe(0);
+  }, 60000);
+});
+
 describe('shutdown()', () => {
   test('in CREATED: STOPPED, lost 0, one event to the earlier listeners, no port call', async () => {
     const calls = [];

@@ -318,6 +318,7 @@ export function createRelaySet(options) {
     perRelayTimeoutMs,
     subscriptionId,
     filter,
+    subscriptionSince,
     transport,
     reconnectDelay: delayOf = reconnectDelay,
   } = options;
@@ -466,8 +467,17 @@ export function createRelaySet(options) {
     } catch {
       // as above
     }
+    let since = null;
     try {
-      pool.subscribe(subscriptionId, filter);
+      if (typeof subscriptionSince === 'function') since = subscriptionSince(state.index);
+      Promise.resolve(since).catch(() => {});
+    } catch {
+      // Faulty cursor seam: prepare the original unbounded filter.
+    }
+    try {
+      const subscribed = pool.subscribe(subscriptionId,
+        Number.isSafeInteger(since) && since >= 0 ? { ...filter, since } : filter);
+      Promise.resolve(subscribed).catch(() => {});
     } catch {
       // A pool that refuses the subscription simply never delivers frames.
     }
@@ -1096,6 +1106,27 @@ export function createRelaySet(options) {
     for (const attempt of liveAttempts) attempt.frozen = true;
   };
 
+  /** S7: repeat the same subscription only on a currently connected pool. */
+  const resubscribe = (relayIndex, since) => {
+    if (stopped || setFrozen) return;
+    if (!Number.isInteger(relayIndex) || relayIndex < 0 || relayIndex >= states.length) return;
+    if (since !== null && !(Number.isSafeInteger(since) && since >= 0)) return;
+    const state = states[relayIndex];
+    if (!readsConnected(state)) return;
+    try {
+      // The same synchronous notice as pool preparation records issue time;
+      // its return cannot override the explicitly supplied S7 filter.
+      if (typeof subscriptionSince === 'function') Promise.resolve(subscriptionSince(relayIndex)).catch(() => {});
+    } catch {
+      // A faulty observer cannot prevent the best-effort base request.
+    }
+    try {
+      Promise.resolve(state.pool.subscribe(subscriptionId, since === null ? filter : { ...filter, since })).catch(() => {});
+    } catch {
+      // No successful result is inferred from a faulty transport.
+    }
+  };
+
   return {
     /** Relay count of the caller's configuration. */
     get relayCount() {
@@ -1114,6 +1145,7 @@ export function createRelaySet(options) {
     start,
     publish,
     publishDrain,
+    resubscribe,
     supervise: superviseOnce,
     dispose,
     freeze,
