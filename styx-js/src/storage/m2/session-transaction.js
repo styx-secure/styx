@@ -348,12 +348,6 @@ function componentEntries(value, name) {
 }
 
 /**
- * Form and validate the closed C-MUT `MutationEnvelope`, bound to its selected row.
- * An application-originated operation identity, a reusable identity, an identity equal to the C-API
- * request id, a row-binding mismatch or a `NONE` held output carrying bytes fails closed before any
- * RS request.
- */
-/**
  * OUTPUT-DIGEST-BIND: the held-output digest of `output` for output kind `kind` (C-FMT
  * outputEscrow.heldOutputDigestRule). A producer forms `heldOutput.digest` and the escrow `digest` with
  * it; reconciliation and `loadBoundHold` recompute it from the stored escrow bytes.
@@ -374,6 +368,12 @@ function outputBindsDigest(kind, output, digest) {
   return equal(computeHeldOutputDigest(kind, output), digest);
 }
 
+/**
+ * Form and validate the closed C-MUT `MutationEnvelope`, bound to its selected row.
+ * An application-originated operation identity, a reusable identity, an identity equal to the C-API
+ * request id, a row-binding mismatch or a `NONE` held output carrying bytes fails closed before any
+ * RS request.
+ */
 export function buildMutationEnvelope(input) {
   const s = strictObject(input, ENVELOPE_KEYS, 'mutation envelope');
   const identity = strictObject(s.operationIdentity,
@@ -1137,7 +1137,7 @@ export async function runMutation(input) {
         'the candidate\'s staged kind-13 record is not the present hold this INDETERMINATE request writes');
     }
   }
-  // OUTPUT-DIGEST-BIND (Sol r1 ODB-01): the canonical records the candidate stages agree with that bound
+  // OUTPUT-DIGEST-BIND: the canonical records the candidate stages agree with that bound
   // escrow. A canonical present kind-13 record carries the envelope's held-output kind, digest and
   // reference; a canonical present kind-9 record is this mutation's escrow with the projection's bytes
   // (a row with no output stages none). Non-canonical filler keeps the #457 behaviour.

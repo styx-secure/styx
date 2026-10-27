@@ -1,6 +1,7 @@
 // OUTPUT-DIGEST-BIND (#513) tests: the held-output digest HOD bound to the escrow bytes in I-TXN.
 // The fixtures and the in-memory port below are those of session-transaction.test.js, with the
 // held-output digest derived from the staged bytes by a local HOD.
+import fs from 'node:fs';
 import { describe, expect, test } from '@jest/globals';
 import { sha256 } from '@noble/hashes/sha256';
 import {
@@ -29,496 +30,6 @@ function hod(kind, output) {
   framed.set(output, label.length + 5);
   return sha256(framed);
 }
-
-// BASE_RESULT_TABLE (generated from the recorded base run at 33f593c; failed there = bite)
-const BASE_RESULT_TABLE = {
-  "T2 kind-9 filler with arbitrary projection bytes: memory-loss COMMITTED refused": 'bite',
-  "T2 kind-9 filler with arbitrary projection bytes: memory-loss NOT_COMMITTED refused": 'bite',
-  "T2 kind-9 filler, twin with HOD of the projection bytes: memory-loss COMMITTED reconciles": 'regression',
-  "T2 kind-9 filler, twin with HOD of the projection bytes: memory-loss NOT_COMMITTED reconciles": 'regression',
-  "T2 kind-9 filler: the strict loader refuses the counterexample": 'regression',
-  "T2 kind-9 filler: the strict loader refuses the twin": 'regression',
-  "T2 kind-9 tombstone with arbitrary projection bytes: memory-loss COMMITTED refused": 'bite',
-  "T2 kind-9 tombstone with arbitrary projection bytes: memory-loss NOT_COMMITTED refused": 'bite',
-  "T2 kind-9 tombstone, twin with HOD of the projection bytes: memory-loss COMMITTED reconciles": 'regression',
-  "T2 kind-9 tombstone, twin with HOD of the projection bytes: memory-loss NOT_COMMITTED reconciles": 'regression',
-  "T2 kind-9 tombstone: the strict loader refuses the counterexample": 'regression',
-  "T2 kind-9 tombstone: the strict loader refuses the twin": 'regression',
-  "T3 CAPI-S001 appended: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 appended: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 appended: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 appended: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 appended: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 appended: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 appended: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 digest noLength: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noLength: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 digest noLength: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest noLength: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 truncated: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S001 truncated: loadBoundHold refused": 'bite',
-  "T3 CAPI-S001 truncated: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S001 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S001 truncated: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S001 truncated: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S001 truncated: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S001 truncated: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 appended: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 appended: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 appended: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 appended: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 appended: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 appended: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 appended: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 digest noLength: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noLength: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 digest noLength: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest noLength: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 truncated: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S009 truncated: loadBoundHold refused": 'bite',
-  "T3 CAPI-S009 truncated: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S009 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S009 truncated: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S009 truncated: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S009 truncated: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S009 truncated: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 appended: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 appended: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 appended: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 appended: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 appended: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 appended: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 appended: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 digest noLength: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noLength: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 digest noLength: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest noLength: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 truncated: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S010 truncated: loadBoundHold refused": 'bite',
-  "T3 CAPI-S010 truncated: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S010 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S010 truncated: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S010 truncated: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S010 truncated: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S010 truncated: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 appended: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 appended: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 appended: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 appended: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 appended: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 appended: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 appended: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 digest noLength: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noLength: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 digest noLength: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest noLength: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 truncated: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S014 truncated: loadBoundHold refused": 'bite',
-  "T3 CAPI-S014 truncated: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S014 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S014 truncated: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S014 truncated: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S014 truncated: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S014 truncated: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 appended: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 appended: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 appended: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 appended: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 appended: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 appended: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 appended: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 digest noLength: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noLength: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 digest noLength: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest noLength: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 truncated: CAPI-S020/S022 repeat refused": 'bite',
-  "T3 CAPI-S017 truncated: loadBoundHold refused": 'bite',
-  "T3 CAPI-S017 truncated: memory-loss reconcile COMMITTED refused": 'bite',
-  "T3 CAPI-S017 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
-  "T3 CAPI-S017 truncated: retained COMMITTED reconcile refused": 'bite',
-  "T3 CAPI-S017 truncated: runMutation COMMITTED refused": 'bite',
-  "T3 CAPI-S017 truncated: runMutation INDETERMINATE refused": 'bite',
-  "T3 CAPI-S017 truncated: runMutation NOT_COMMITTED refused": 'bite',
-  "T3 over-bound projection: loadBoundHold refused": 'regression',
-  "T3 over-bound projection: memory-loss reconcile refused": 'bite',
-  "T3 over-bound projection: retained COMMITTED reconcile refused": 'bite',
-  "T3 over-bound projection: runMutation refused": 'bite',
-  "T4 CAPI-S006 staged present kind-9: runMutation COMMITTED refused": 'bite',
-  "T4 CAPI-S006 staged present kind-9: runMutation INDETERMINATE refused": 'bite',
-  "T4 CAPI-S006 staged present kind-9: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 CAPI-S016 staged present kind-9: runMutation COMMITTED refused": 'bite',
-  "T4 CAPI-S016 staged present kind-9: runMutation INDETERMINATE refused": 'bite',
-  "T4 CAPI-S016 staged present kind-9: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 CAPI-S020/S022 repeat: a canonical kind-9 with other bytes than the bound projection refused": 'bite',
-  "T4 bound COMMITTED selection: a canonical kind-9 with other bytes than the bound projection refused": 'bite',
-  "T4 positive control: bound COMMITTED selection and repeat release the bound bytes": 'regression',
-  "T4 positive control: runMutation COMMITTED with bound canonical records": 'regression',
-  "T4 positive control: runMutation INDETERMINATE with bound canonical records": 'regression',
-  "T4 positive control: runMutation NOT_COMMITTED with bound canonical records": 'regression',
-  "T4 staged kind-13 digest differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-13 digest differs: runMutation INDETERMINATE refused": 'regression',
-  "T4 staged kind-13 digest differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 staged kind-13 kind differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-13 kind differs: runMutation INDETERMINATE refused": 'regression',
-  "T4 staged kind-13 kind differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 staged kind-13 reference differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-13 reference differs: runMutation INDETERMINATE refused": 'regression',
-  "T4 staged kind-13 reference differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 staged kind-9 mutationSetDigest differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-9 mutationSetDigest differs: runMutation INDETERMINATE refused": 'bite',
-  "T4 staged kind-9 mutationSetDigest differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 staged kind-9 operationIdentity differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-9 operationIdentity differs: runMutation INDETERMINATE refused": 'bite',
-  "T4 staged kind-9 operationIdentity differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 staged kind-9 output differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-9 output differs: runMutation INDETERMINATE refused": 'bite',
-  "T4 staged kind-9 output differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T4 staged kind-9 outputKind differs: runMutation COMMITTED refused": 'bite',
-  "T4 staged kind-9 outputKind differs: runMutation INDETERMINATE refused": 'bite',
-  "T4 staged kind-9 outputKind differs: runMutation NOT_COMMITTED refused": 'bite',
-  "T5 CAPI-S001 COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S001 INDETERMINATE: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S001 NOT_COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S001 loadBoundHold returns the written hold with its digest": 'regression',
-  "T5 CAPI-S001 reconcile COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S001 reconcile COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S001 reconcile NOT_COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S001 reconcile NOT_COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S009 COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S009 INDETERMINATE: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S009 NOT_COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S009 loadBoundHold returns the written hold with its digest": 'regression',
-  "T5 CAPI-S009 reconcile COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S009 reconcile COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S009 reconcile NOT_COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S009 reconcile NOT_COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S010 COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S010 INDETERMINATE: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S010 NOT_COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S010 loadBoundHold returns the written hold with its digest": 'regression',
-  "T5 CAPI-S010 reconcile COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S010 reconcile COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S010 reconcile NOT_COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S010 reconcile NOT_COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S014 COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S014 INDETERMINATE: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S014 NOT_COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S014 loadBoundHold returns the written hold with its digest": 'regression',
-  "T5 CAPI-S014 reconcile COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S014 reconcile COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S014 reconcile NOT_COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S014 reconcile NOT_COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S017 COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S017 INDETERMINATE: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S017 NOT_COMMITTED: the original path gives the planned steps and result": 'regression',
-  "T5 CAPI-S017 loadBoundHold returns the written hold with its digest": 'regression',
-  "T5 CAPI-S017 reconcile COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S017 reconcile COMMITTED with memory RETAINED": 'regression',
-  "T5 CAPI-S017 reconcile NOT_COMMITTED with memory LOST": 'regression',
-  "T5 CAPI-S017 reconcile NOT_COMMITTED with memory RETAINED": 'regression',
-  "T6 CAPI-S006: a non-null escrow in runMutation refused": 'bite',
-  "T6 CAPI-S006: a null escrow runs as at the base": 'regression',
-  "T6 CAPI-S016: a non-null escrow in runMutation refused": 'bite',
-  "T6 CAPI-S016: a null escrow runs as at the base": 'regression',
-  "T6 parsed null output in runMutation COMMITTED refused": 'bite',
-  "T6 parsed null output in runMutation INDETERMINATE refused": 'bite',
-  "T6 parsed null output in runMutation NOT_COMMITTED refused": 'bite',
-  "T6 stored missing output: CAPI-S020/S022 repeat refused": 'bite',
-  "T6 stored missing output: loadBoundHold refused": 'regression',
-  "T6 stored missing output: memory-loss reconcile COMMITTED refused": 'regression',
-  "T6 stored missing output: retained COMMITTED reconcile refused": 'bite',
-  "T6 stored nonByte output: CAPI-S020/S022 repeat refused": 'regression',
-  "T6 stored nonByte output: loadBoundHold refused": 'regression',
-  "T6 stored nonByte output: memory-loss reconcile COMMITTED refused": 'regression',
-  "T6 stored nonByte output: retained COMMITTED reconcile refused": 'regression',
-  "T6 stored null output: CAPI-S020/S022 repeat refused": 'bite',
-  "T6 stored null output: loadBoundHold refused": 'regression',
-  "T6 stored null output: memory-loss reconcile COMMITTED refused": 'regression',
-  "T6 stored null output: retained COMMITTED reconcile refused": 'bite',
-  "T6 structural: a missing escrow output member is MALFORMED_INPUT": 'regression',
-  "T6 structural: a non-byte escrow output is MALFORMED_INPUT": 'regression',
-  "T7 CAPI-S017 empty with a correct HOD: loadBoundHold refused": 'regression',
-  "T7 CAPI-S017 empty with a correct HOD: memory-loss reconcile keeps the bytes opaque": 'regression',
-  "T7 CAPI-S017 malformedUtf8 with a correct HOD: loadBoundHold refused": 'regression',
-  "T7 CAPI-S017 malformedUtf8 with a correct HOD: memory-loss reconcile keeps the bytes opaque": 'regression',
-  "T7 CAPI-S017 units257 with a correct HOD: loadBoundHold refused": 'regression',
-  "T7 CAPI-S017 units257 with a correct HOD: memory-loss reconcile keeps the bytes opaque": 'regression',
-  "T7 staged escrow digestLabel mismatch: runMutation refused": 'bite',
-  "T7 staged escrow kind mismatch: runMutation refused": 'bite',
-  "T7 staged escrow reference mismatch: runMutation refused": 'bite',
-  "T7 stored escrow digestLabel mismatch: memory-loss reconcile refused": 'regression',
-  "T7 stored escrow digestLabel mismatch: retained COMMITTED reconcile refused": 'regression',
-  "T7 stored escrow kind mismatch: memory-loss reconcile refused": 'regression',
-  "T7 stored escrow kind mismatch: retained COMMITTED reconcile refused": 'regression',
-  "T7 stored escrow reference mismatch: memory-loss reconcile refused": 'regression',
-  "T7 stored escrow reference mismatch: retained COMMITTED reconcile refused": 'regression',
-};
-// END BASE_RESULT_TABLE
 
 // ---------------------------------------------------------------------------------------------
 // Fixtures.
@@ -946,6 +457,597 @@ function makeStore() {
   return store;
 }
 
+// BASE_RESULT_TABLE: generated from the recorded base run at 33f593c (failed there = bite).
+const BASE_RESULT_TABLE = {
+  "T2 kind-9 filler with arbitrary projection bytes: memory-loss COMMITTED refused": 'bite',
+  "T2 kind-9 filler with arbitrary projection bytes: memory-loss NOT_COMMITTED refused": 'bite',
+  "T2 kind-9 filler, twin with HOD of the projection bytes: memory-loss COMMITTED reconciles": 'regression',
+  "T2 kind-9 filler, twin with HOD of the projection bytes: memory-loss NOT_COMMITTED reconciles": 'regression',
+  "T2 kind-9 filler: the strict loader refuses the counterexample": 'regression',
+  "T2 kind-9 filler: the strict loader refuses the twin": 'regression',
+  "T2 kind-9 tombstone with arbitrary projection bytes: memory-loss COMMITTED refused": 'bite',
+  "T2 kind-9 tombstone with arbitrary projection bytes: memory-loss NOT_COMMITTED refused": 'bite',
+  "T2 kind-9 tombstone, twin with HOD of the projection bytes: memory-loss COMMITTED reconciles": 'regression',
+  "T2 kind-9 tombstone, twin with HOD of the projection bytes: memory-loss NOT_COMMITTED reconciles": 'regression',
+  "T2 kind-9 tombstone: the strict loader refuses the counterexample": 'regression',
+  "T2 kind-9 tombstone: the strict loader refuses the twin": 'regression',
+  "T3 CAPI-S001 appended: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 appended: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 appended: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 appended: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 appended: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 appended: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 appended: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 digest noLength: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noLength: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 digest noLength: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest noLength: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: loadBoundHold refused": 'regression',
+  "T3 CAPI-S001 over-bound projection: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 over-bound projection: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 truncated: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S001 truncated: loadBoundHold refused": 'bite',
+  "T3 CAPI-S001 truncated: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S001 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S001 truncated: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S001 truncated: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S001 truncated: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S001 truncated: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 appended: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 appended: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 appended: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 appended: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 appended: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 appended: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 appended: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 digest noLength: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noLength: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 digest noLength: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest noLength: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: loadBoundHold refused": 'regression',
+  "T3 CAPI-S009 over-bound projection: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 over-bound projection: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 truncated: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S009 truncated: loadBoundHold refused": 'bite',
+  "T3 CAPI-S009 truncated: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S009 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S009 truncated: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S009 truncated: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S009 truncated: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S009 truncated: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 appended: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 appended: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 appended: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 appended: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 appended: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 appended: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 appended: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 digest noLength: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noLength: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 digest noLength: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest noLength: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: loadBoundHold refused": 'regression',
+  "T3 CAPI-S010 over-bound projection: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 over-bound projection: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 truncated: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S010 truncated: loadBoundHold refused": 'bite',
+  "T3 CAPI-S010 truncated: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S010 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S010 truncated: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S010 truncated: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S010 truncated: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S010 truncated: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 appended: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 appended: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 appended: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 appended: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 appended: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 appended: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 appended: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 digest noLength: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noLength: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 digest noLength: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest noLength: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: loadBoundHold refused": 'regression',
+  "T3 CAPI-S014 over-bound projection: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 over-bound projection: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 truncated: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S014 truncated: loadBoundHold refused": 'bite',
+  "T3 CAPI-S014 truncated: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S014 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S014 truncated: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S014 truncated: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S014 truncated: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S014 truncated: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 appended: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 appended: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 appended: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 appended: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 appended: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 appended: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 appended: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 appended: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 appended: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest noKindByte: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noLength: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 digest noLength: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 digest noLength: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noLength: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest noLength: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noLength: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 digest noLength: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest noLength: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest noLength: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest otherKind: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 digest otherLabel: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 firstFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 lastFlipped: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: loadBoundHold refused": 'regression',
+  "T3 CAPI-S017 over-bound projection: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 over-bound projection: runMutation NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 truncated: CAPI-S020/S022 repeat refused": 'bite',
+  "T3 CAPI-S017 truncated: loadBoundHold refused": 'bite',
+  "T3 CAPI-S017 truncated: memory-loss reconcile COMMITTED refused": 'bite',
+  "T3 CAPI-S017 truncated: memory-loss reconcile INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 truncated: memory-loss reconcile NOT_COMMITTED refused": 'bite',
+  "T3 CAPI-S017 truncated: retained COMMITTED reconcile refused": 'bite',
+  "T3 CAPI-S017 truncated: runMutation COMMITTED refused": 'bite',
+  "T3 CAPI-S017 truncated: runMutation INDETERMINATE refused": 'bite',
+  "T3 CAPI-S017 truncated: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 CAPI-S006 staged present kind-9: runMutation COMMITTED refused": 'bite',
+  "T4 CAPI-S006 staged present kind-9: runMutation INDETERMINATE refused": 'bite',
+  "T4 CAPI-S006 staged present kind-9: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 CAPI-S016 staged present kind-9: runMutation COMMITTED refused": 'bite',
+  "T4 CAPI-S016 staged present kind-9: runMutation INDETERMINATE refused": 'bite',
+  "T4 CAPI-S016 staged present kind-9: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 CAPI-S020/S022 repeat: a canonical kind-9 with other bytes than the bound projection refused": 'bite',
+  "T4 bound COMMITTED selection: a canonical kind-9 with other bytes than the bound projection refused": 'bite',
+  "T4 positive control: bound COMMITTED selection and repeat release the bound bytes": 'regression',
+  "T4 positive control: runMutation COMMITTED with bound canonical records": 'regression',
+  "T4 positive control: runMutation INDETERMINATE with bound canonical records": 'regression',
+  "T4 positive control: runMutation NOT_COMMITTED with bound canonical records": 'regression',
+  "T4 staged kind-13 digest differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-13 digest differs: runMutation INDETERMINATE refused": 'regression',
+  "T4 staged kind-13 digest differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 staged kind-13 kind differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-13 kind differs: runMutation INDETERMINATE refused": 'regression',
+  "T4 staged kind-13 kind differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 staged kind-13 reference differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-13 reference differs: runMutation INDETERMINATE refused": 'regression',
+  "T4 staged kind-13 reference differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 staged kind-9 mutationSetDigest differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-9 mutationSetDigest differs: runMutation INDETERMINATE refused": 'bite',
+  "T4 staged kind-9 mutationSetDigest differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 staged kind-9 operationIdentity differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-9 operationIdentity differs: runMutation INDETERMINATE refused": 'bite',
+  "T4 staged kind-9 operationIdentity differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 staged kind-9 output differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-9 output differs: runMutation INDETERMINATE refused": 'bite',
+  "T4 staged kind-9 output differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T4 staged kind-9 outputKind differs: runMutation COMMITTED refused": 'bite',
+  "T4 staged kind-9 outputKind differs: runMutation INDETERMINATE refused": 'bite',
+  "T4 staged kind-9 outputKind differs: runMutation NOT_COMMITTED refused": 'bite',
+  "T5 CAPI-S001 COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 INDETERMINATE: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 NOT_COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 loadBoundHold returns the written hold with its digest": 'regression',
+  "T5 CAPI-S001 reconcile COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 reconcile COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 reconcile INDETERMINATE with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 reconcile INDETERMINATE with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 reconcile NOT_COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S001 reconcile NOT_COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 INDETERMINATE: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 NOT_COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 loadBoundHold returns the written hold with its digest": 'regression',
+  "T5 CAPI-S009 reconcile COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 reconcile COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 reconcile INDETERMINATE with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 reconcile INDETERMINATE with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 reconcile NOT_COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S009 reconcile NOT_COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 INDETERMINATE: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 NOT_COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 loadBoundHold returns the written hold with its digest": 'regression',
+  "T5 CAPI-S010 reconcile COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 reconcile COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 reconcile INDETERMINATE with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 reconcile INDETERMINATE with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 reconcile NOT_COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S010 reconcile NOT_COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 INDETERMINATE: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 NOT_COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 loadBoundHold returns the written hold with its digest": 'regression',
+  "T5 CAPI-S014 reconcile COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 reconcile COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 reconcile INDETERMINATE with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 reconcile INDETERMINATE with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 reconcile NOT_COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S014 reconcile NOT_COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 INDETERMINATE: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 NOT_COMMITTED: the original path gives the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 loadBoundHold returns the written hold with its digest": 'regression',
+  "T5 CAPI-S017 reconcile COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 reconcile COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 reconcile INDETERMINATE with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 reconcile INDETERMINATE with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 reconcile NOT_COMMITTED with memory LOST: the base steps, payloads and result": 'regression',
+  "T5 CAPI-S017 reconcile NOT_COMMITTED with memory RETAINED: the base steps, payloads and result": 'regression',
+  "T6 CAPI-S006: a non-null escrow in runMutation refused": 'bite',
+  "T6 CAPI-S006: a null escrow runs as at the base": 'regression',
+  "T6 CAPI-S016: a non-null escrow in runMutation refused": 'bite',
+  "T6 CAPI-S016: a null escrow runs as at the base": 'regression',
+  "T6 a null escrow for an output row in runMutation COMMITTED refused": 'bite',
+  "T6 a null escrow for an output row in runMutation INDETERMINATE refused": 'bite',
+  "T6 a null escrow for an output row in runMutation NOT_COMMITTED refused": 'bite',
+  "T6 parsed null output in runMutation COMMITTED refused": 'bite',
+  "T6 parsed null output in runMutation INDETERMINATE refused": 'bite',
+  "T6 parsed null output in runMutation NOT_COMMITTED refused": 'bite',
+  "T6 stored missing output: CAPI-S020/S022 repeat refused": 'bite',
+  "T6 stored missing output: loadBoundHold refused": 'regression',
+  "T6 stored missing output: memory-loss reconcile COMMITTED refused": 'regression',
+  "T6 stored missing output: retained COMMITTED reconcile refused": 'bite',
+  "T6 stored nonByte output: CAPI-S020/S022 repeat refused": 'regression',
+  "T6 stored nonByte output: loadBoundHold refused": 'regression',
+  "T6 stored nonByte output: memory-loss reconcile COMMITTED refused": 'regression',
+  "T6 stored nonByte output: retained COMMITTED reconcile refused": 'regression',
+  "T6 stored null output: CAPI-S020/S022 repeat refused": 'bite',
+  "T6 stored null output: loadBoundHold refused": 'regression',
+  "T6 stored null output: memory-loss reconcile COMMITTED refused": 'regression',
+  "T6 stored null output: retained COMMITTED reconcile refused": 'bite',
+  "T6 structural: a missing escrow output member is MALFORMED_INPUT": 'regression',
+  "T6 structural: a non-byte escrow output is MALFORMED_INPUT": 'regression',
+  "T7 CAPI-S017 empty with a correct HOD: loadBoundHold refused": 'regression',
+  "T7 CAPI-S017 empty with a correct HOD: memory-loss reconcile keeps the bytes opaque": 'regression',
+  "T7 CAPI-S017 malformedUtf8 with a correct HOD: loadBoundHold refused": 'regression',
+  "T7 CAPI-S017 malformedUtf8 with a correct HOD: memory-loss reconcile keeps the bytes opaque": 'regression',
+  "T7 CAPI-S017 units257 with a correct HOD: loadBoundHold refused": 'regression',
+  "T7 CAPI-S017 units257 with a correct HOD: memory-loss reconcile keeps the bytes opaque": 'regression',
+  "T7 staged escrow digestLabel mismatch: runMutation refused": 'bite',
+  "T7 staged escrow kind mismatch: runMutation refused": 'bite',
+  "T7 staged escrow reference mismatch: runMutation refused": 'bite',
+  "T7 stored escrow digestLabel mismatch: memory-loss reconcile refused": 'regression',
+  "T7 stored escrow digestLabel mismatch: retained COMMITTED reconcile refused": 'regression',
+  "T7 stored escrow kind mismatch: memory-loss reconcile refused": 'regression',
+  "T7 stored escrow kind mismatch: retained COMMITTED reconcile refused": 'regression',
+  "T7 stored escrow reference mismatch: memory-loss reconcile refused": 'regression',
+  "T7 stored escrow reference mismatch: retained COMMITTED reconcile refused": 'regression',
+};
+// TRACE_TABLE: SHA-256 of the T5 step traces and results recorded at the base 33f593c.
+const TRACE_TABLE = {
+  "T5 CAPI-S001 COMMITTED original": '02ddcd5f02bfb42646448c455023236fe52f507360be99db509655ac395d8257',
+  "T5 CAPI-S001 INDETERMINATE original": '47f0837712a4b3f2ea7043cc339f1f3287767324157dd6f005ab8e4e5aef8bdd',
+  "T5 CAPI-S001 NOT_COMMITTED original": 'e633d371a352c69829dcf48b74fbae887111a8b1c1cd058600f72438a53428de',
+  "T5 CAPI-S001 reconcile COMMITTED LOST": 'de0dac358aabe166cc15556c8dec122ac5dc8a92094c9283a2f5c037670ee42f',
+  "T5 CAPI-S001 reconcile COMMITTED RETAINED": 'de0dac358aabe166cc15556c8dec122ac5dc8a92094c9283a2f5c037670ee42f',
+  "T5 CAPI-S001 reconcile INDETERMINATE LOST": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S001 reconcile INDETERMINATE RETAINED": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S001 reconcile NOT_COMMITTED LOST": '40afb0728a485dbdad6b67742775906b30ec08391522cb26ff82ebb66d5ae552',
+  "T5 CAPI-S001 reconcile NOT_COMMITTED RETAINED": '40afb0728a485dbdad6b67742775906b30ec08391522cb26ff82ebb66d5ae552',
+  "T5 CAPI-S009 COMMITTED original": '57693cd0bc73ce078ea35dbeece5f0666862cfeca93040e19b14f1bf0deac6eb',
+  "T5 CAPI-S009 INDETERMINATE original": 'ecc02e1af429356199db923984bcb8e070a23d2bebd16e4e0fde7733f80eb402',
+  "T5 CAPI-S009 NOT_COMMITTED original": '40a4768c6b540125391afe82aac73967074c3c17a009a4f4c8ad8823dcb027f2',
+  "T5 CAPI-S009 reconcile COMMITTED LOST": 'af8f440df55a0f8f334e5d3ae31b29cdf1defcc9f116564a66dcf07d471a5fde',
+  "T5 CAPI-S009 reconcile COMMITTED RETAINED": 'af8f440df55a0f8f334e5d3ae31b29cdf1defcc9f116564a66dcf07d471a5fde',
+  "T5 CAPI-S009 reconcile INDETERMINATE LOST": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S009 reconcile INDETERMINATE RETAINED": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S009 reconcile NOT_COMMITTED LOST": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S009 reconcile NOT_COMMITTED RETAINED": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S010 COMMITTED original": 'bc57c86e36d3cec74bd53f2727e82ec5bf7d7c8f959ad5fedd8bd15da4883c95',
+  "T5 CAPI-S010 INDETERMINATE original": 'd83c4a47aa178d8e6f644452fabd4a467c0d9c62db5bd74073c7c8dab7395f3d',
+  "T5 CAPI-S010 NOT_COMMITTED original": '1a8d3488d8f0411bff02348b4cd3fbc3e27eb63c3b0cd9c2d73c5a25b4698453',
+  "T5 CAPI-S010 reconcile COMMITTED LOST": '673101503f09b6ab2d24eab5896fd4b0cdbf618beacb01013da92295cf254a01',
+  "T5 CAPI-S010 reconcile COMMITTED RETAINED": '673101503f09b6ab2d24eab5896fd4b0cdbf618beacb01013da92295cf254a01',
+  "T5 CAPI-S010 reconcile INDETERMINATE LOST": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S010 reconcile INDETERMINATE RETAINED": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S010 reconcile NOT_COMMITTED LOST": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S010 reconcile NOT_COMMITTED RETAINED": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S014 COMMITTED original": '804d983420f6c6476f8cb2eb9909c22f043033a72e3a87c77b95e587fe82ee9d',
+  "T5 CAPI-S014 INDETERMINATE original": '4807868358cd156a9225a030eb12def4457027f0ccf024992a27fb9e8520087b',
+  "T5 CAPI-S014 NOT_COMMITTED original": '11105091c179172687e0cee389a42fe168adf4711f4871760ee9b18a2bcefd04',
+  "T5 CAPI-S014 reconcile COMMITTED LOST": '687063cc4ad9291d522cc9442cb22a661a3e99ef1411f546f1131014c1b45a78',
+  "T5 CAPI-S014 reconcile COMMITTED RETAINED": '687063cc4ad9291d522cc9442cb22a661a3e99ef1411f546f1131014c1b45a78',
+  "T5 CAPI-S014 reconcile INDETERMINATE LOST": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S014 reconcile INDETERMINATE RETAINED": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S014 reconcile NOT_COMMITTED LOST": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S014 reconcile NOT_COMMITTED RETAINED": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S017 COMMITTED original": '8ba24175365e1fb4ca474349ed385575fcfc1b6ba930afef9c1cee816fba299f',
+  "T5 CAPI-S017 INDETERMINATE original": '1e5ab1fbea455f9c692d06a4e42c555ff70213901c60c24e5ac52073d758e5ae',
+  "T5 CAPI-S017 NOT_COMMITTED original": 'deedd62096e753d998154b7615c7557caa3fa83ddb25b46a583b708da7ea32d3',
+  "T5 CAPI-S017 reconcile COMMITTED LOST": '55d63d692822545429c5f77802b49b71ae90a314639abb0c61baa518d8e4143f',
+  "T5 CAPI-S017 reconcile COMMITTED RETAINED": '55d63d692822545429c5f77802b49b71ae90a314639abb0c61baa518d8e4143f',
+  "T5 CAPI-S017 reconcile INDETERMINATE LOST": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S017 reconcile INDETERMINATE RETAINED": '3a4d6048094c20cb6bf014e4d51c2e896e9e8659c65e7f45e106d11c640228e1',
+  "T5 CAPI-S017 reconcile NOT_COMMITTED LOST": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+  "T5 CAPI-S017 reconcile NOT_COMMITTED RETAINED": '13ff771b9b5c097f15a5c66c8c93d1c17fff5f382ec1dbc87c78789da1d848bc',
+};
+
 // ---------------------------------------------------------------------------------------------
 // OUTPUT-DIGEST-BIND (#513): the held-output digest is HOD of the escrow bytes.
 //
@@ -1052,11 +1154,73 @@ function selectedGeneration() {
   return { ...OLD, records: OLD.records.map((r) => (r.recordKind === K13 ? { ...r, plaintext: encodePlaintext(K13, { presence: 0 }) } : r)) };
 }
 
+// Outer integrity data derived from the plaintexts: a fake but deterministic ciphertext and tag per
+// record, then the manifest, its cipher digest and the keyed root, so a changed plaintext changes
+// every commitment above it (the fake port does not decrypt).
+function sealedRecords(records) {
+  return records.map((r) => {
+    const c = sha256(concat(TE.encode('odb-ciphertext'), r.recordKey, r.plaintext));
+    return { ...r, ciphertext: c, tag: sha256(concat(TE.encode('odb-tag'), c)).slice(0, 16) };
+  });
+}
+function sealedGeneration(generation, records, manifestKey, sessionBindingDigest) {
+  const sealed = sealedRecords(records);
+  const manifestBytes = encodeManifest(sealed.map((r) => manifestEntry({
+    recordKey: r.recordKey,
+    recordKind: r.recordKind,
+    ciphertextDigest: ciphertextDigest({ recordKey: r.recordKey, recordKind: r.recordKind, ciphertext: r.ciphertext, tag: r.tag }),
+  })));
+  return {
+    generation,
+    records: sealed,
+    manifestKey,
+    manifestBytes,
+    manifestCipherDigest: sha256(concat(TE.encode('odb-manifest-cipher'), manifestBytes)),
+    keyedRoot: computeKeyedRoot({ manifestRootKey: ROOT_KEY, manifestKey, generation, manifestBytes }),
+    sessionBindingDigest,
+  };
+}
+const SELECTOR_KIND = M2_KIND.GENERATION_SELECTOR;
+const selfSelector = (g, state) => encodePlaintext(SELECTOR_KIND, sameTupleSelector(g, state));
+function boundSelector(parent, cand) {
+  return encodePlaintext(SELECTOR_KIND, {
+    presence: 1,
+    generation: parent.generation,
+    manifestKeyDigest: manifestKeyDigest(parent.manifestKey),
+    manifestCipherDigest: parent.manifestCipherDigest,
+    keyedRoot: parent.keyedRoot,
+    state: 3,
+    candidateGeneration: cand.generation,
+    candidateManifestKey: cand.manifestKey,
+    candidateManifestKeyDigest: manifestKeyDigest(cand.manifestKey),
+    candidateManifestCipherDigest: cand.manifestCipherDigest,
+    candidateKeyedRoot: cand.keyedRoot,
+  });
+}
+
+// Every port call is counted; `rawReadSelector` settles the selector envelope without counting.
+function countedStore() {
+  const store = makeStore();
+  store.seed([selectedGeneration()], PARENT_SELECTOR);
+  store.portCalls = 0;
+  store.rawReadSelector = store.readSelector;
+  for (const m of ['readSelector', 'readGeneration', 'readMemoryHold', 'readGenerationNumbers', 'apply']) {
+    const f = store[m];
+    store[m] = (...args) => { store.portCalls += 1; return f(...args); };
+  }
+  // T5 traces: every applied step with its payload.
+  store.trace = [];
+  const apply = store.apply;
+  store.apply = (step) => { store.trace.push({ boundary: step.boundary, kind: step.kind, payload: step.payload }); return apply(step); };
+  return store;
+}
+
 /**
  * One runMutation request, not yet run. `output` is the escrowed bytes, `digest` the held-output
  * digest the envelope and the escrow label carry (default HOD of `output`), `escrowOutput` the bytes
  * the projection carries (default `output`), `k9Output`/`k9Tweak`/`k13Tweak`/`kinds`/`forceK9` shape
- * the staged canonical records, `escrow` replaces the projection outright.
+ * the staged canonical records, `escrow` replaces the projection outright. The candidate's manifest,
+ * keyed root and selectors are rebuilt from its records.
  */
 function mutationCase(scenario, outcome, opts = {}) {
   const row = mutationRow(scenario);
@@ -1073,13 +1237,23 @@ function mutationCase(scenario, outcome, opts = {}) {
     forceK9: opts.forceK9 ?? false,
   }).map((r) => (r.recordKind === K13 && opts.k13Tweak
     ? { ...r, plaintext: encodePlaintext(K13, { ...decodePlaintext(K13, r.plaintext), ...opts.k13Tweak }) } : r));
+  const facts = sealedGeneration(NEW_GENERATION, records, NEW.manifestKey, bindingDigestOf(BINDING));
   const escrow = Object.hasOwn(opts, 'escrow') ? opts.escrow
     : (none ? null : { kind: held.kind, digest: held.digest, reference: held.reference,
       output: Object.hasOwn(opts, 'escrowOutput') ? opts.escrowOutput : output });
-  const candidate = { ...base, records, sessionBindingDigest: bindingDigestOf(BINDING), escrow };
-  const store = makeStore();
-  store.seed([selectedGeneration()], PARENT_SELECTOR);
-  return { store, envelope, candidate, output, held };
+  const candidate = {
+    ...base,
+    records: facts.records,
+    manifestKey: facts.manifestKey,
+    manifestBytes: facts.manifestBytes,
+    manifestCipherDigest: facts.manifestCipherDigest,
+    keyedRoot: facts.keyedRoot,
+    sessionBindingDigest: facts.sessionBindingDigest,
+    selectorBytes: selfSelector(facts, 2),
+    holdSelectorBytes: boundSelector(OLD, facts),
+    escrow,
+  };
+  return { store: countedStore(), envelope, candidate, output, held };
 }
 const runCaseOf = (c, outcome) => runMutation({ storage: c.store, manifestRootKey: ROOT_KEY, envelope: c.envelope, candidate: c.candidate, outcome });
 
@@ -1112,51 +1286,97 @@ async function interrupted(scenario, opts = {}) {
   return c;
 }
 
-// Stored-state rewrites after a valid run. Plaintexts are not covered by the test manifest, so no
-// root or selector changes; record and projection stay equal unless a test says otherwise.
-function recordIndex(g, kind) { return g.records.findIndex((r) => r.recordKind === kind); }
-function setStoredOutput(c, bytes, { record = true } = {}) {
+/**
+ * A stored-state rewrite after a valid run: `records(records)` and `escrow(escrow)` return the new
+ * values, then the stored generation is resealed (ciphertexts, manifest, keyed root) and the stored
+ * selector is rewritten to name the resealed generation where it named the old one, so only the
+ * changed content can be refused.
+ */
+function restage(c, { records = (r) => r, escrow = (e) => e } = {}) {
   const g = c.store.generations.get(NEW_GENERATION);
-  g.escrow = { ...g.escrow, output: bytes };
-  if (record) {
-    const i = recordIndex(g, K9);
-    const decoded = decodePlaintext(K9, g.records[i].plaintext);
-    g.records = g.records.map((r, j) => (j === i ? { ...r, plaintext: encodePlaintext(K9, { ...decoded, output: bytes }) } : r));
+  const facts = sealedGeneration(NEW_GENERATION, records(g.records), g.manifestKey, g.sessionBindingDigest);
+  Object.assign(g, facts);
+  g.escrow = escrow(g.escrow);
+  const sel = decodePlaintext(SELECTOR_KIND, c.store.selector);
+  if (sel.state === 3 && sel.candidateGeneration === NEW_GENERATION) {
+    c.store.selector = boundSelector(OLD, facts);
+  } else if (sel.generation === NEW_GENERATION) {
+    c.store.selector = selfSelector(facts, sel.state);
   }
 }
+const withRecord = (kind, plaintext) => (records) => records.map((r) => (r.recordKind === kind ? { ...r, plaintext } : r));
+function setStoredOutput(c, bytes, { record = true } = {}) {
+  restage(c, {
+    records: (records) => (record ? records.map((r) => (r.recordKind === K9
+      ? { ...r, plaintext: encodePlaintext(K9, { ...decodePlaintext(K9, r.plaintext), output: bytes }) } : r)) : records),
+    escrow: (e) => ({ ...e, output: bytes }),
+  });
+}
 function setStoredRecord(c, kind, plaintext) {
-  const g = c.store.generations.get(NEW_GENERATION);
-  const i = recordIndex(g, kind);
-  g.records = g.records.map((r, j) => (j === i ? { ...r, plaintext } : r));
+  restage(c, { records: withRecord(kind, plaintext) });
 }
 function setStoredHeld(c, digest) {
   const g = c.store.generations.get(NEW_GENERATION);
-  const i = recordIndex(g, K13);
-  const decoded = decodePlaintext(K13, g.records[i].plaintext);
-  if (decoded.presence === 1) setStoredRecord(c, K13, encodePlaintext(K13, { ...decoded, heldOutputDigest: digest }));
+  const k13 = g.records.find((r) => r.recordKind === K13);
+  const decoded = decodePlaintext(K13, k13.plaintext);
+  restage(c, {
+    records: decoded.presence === 1 ? withRecord(K13, encodePlaintext(K13, { ...decoded, heldOutputDigest: digest })) : (r) => r,
+    escrow: (e) => ({ ...e, digest }),
+  });
   if (g.mutationHold && g.mutationHold.presence === 1) g.mutationHold = { ...g.mutationHold, heldOutputDigest: digest };
   if (c.store.memoryHold !== null) c.store.memoryHold = { ...c.store.memoryHold, heldOutputDigest: digest };
-  g.escrow = { ...g.escrow, digest };
 }
 
 const replacer = (_k, v) => (typeof v === 'bigint' ? `${v}n` : (v instanceof Uint8Array ? hex(v) : v));
-const snapshot = (store) => JSON.stringify({
-  selector: store.selector === null ? null : hex(store.selector),
-  memoryHold: store.memoryHold,
-  generations: [...store.generations.entries()],
-}, replacer);
-
-// Refusal with the class, no apply, nothing changed, never CAPI-S024.
-async function expectRefused(c, promise, code) {
-  const before = snapshot(c.store);
-  const calls = c.store.applyCalls;
-  const got = await codeOf(promise);
-  expect(got).not.toBe('CAPI-S024');
-  expect(got).toBe(code);
-  expect(c.store.applyCalls).toBe(calls);
-  expect(snapshot(c.store)).toBe(before);
+async function snapshot(store) {
+  const settled = await store.rawReadSelector();
+  return JSON.stringify({
+    selector: settled === null ? null : hex(settled.plaintext),
+    selectorEnvelope: settled === null ? null : hex(settled.envelope),
+    memoryHold: store.memoryHold,
+    generations: [...store.generations.entries()],
+  }, replacer);
 }
 
+/**
+ * Refusal with the class (and, if given, the exact message), never CAPI-S024, no apply and nothing
+ * changed (selector, selector envelope, memory hold, generations). `zeroPortCalls` additionally
+ * requires that no port method was called at all (Observable 2: before any port call). `run` is a
+ * thunk: the baseline is taken before it starts.
+ */
+async function expectRefused(c, run, code, { zeroPortCalls = false, message = null } = {}) {
+  const before = await snapshot(c.store);
+  const calls = c.store.portCalls;
+  const applies = c.store.applyCalls;
+  let error = null;
+  try { await run(); } catch (e) { error = e; }
+  const got = error === null ? 'OK' : (error.code ?? error.message);
+  expect(got).not.toBe('CAPI-S024');
+  expect(got).toBe(code);
+  if (message !== null) expect(error.message).toBe(message);
+  expect(c.store.applyCalls).toBe(applies);
+  if (zeroPortCalls) expect(c.store.portCalls).toBe(calls);
+  expect(await snapshot(c.store)).toBe(before);
+}
+
+// T5 traces: the applied steps and the result, with each opaque selector envelope replaced by a token
+// once the port has checked it against the stored envelope (a mismatch throws in the port), hashed.
+function traceDigest(store, result) {
+  const norm = store.trace.map((s) => {
+    const p = { ...s.payload };
+    if (Object.hasOwn(p, 'expectedSelectorBytes')) p.expectedSelectorBytes = p.expectedSelectorBytes === null ? null : 'ENVELOPE';
+    return { boundary: s.boundary, kind: s.kind, payload: p };
+  });
+  return hex(sha256(TE.encode(JSON.stringify({ steps: norm, result }, replacer))));
+}
+const RECORD_OUT = process.env.ODB_RECORD_OUT ?? null;
+function checkTrace(id, digest) {
+  if (process.env.ODB_RECORD_BASE === '1') {
+    if (RECORD_OUT !== null) fs.appendFileSync(RECORD_OUT, `${JSON.stringify({ id, digest })}\n`);
+    return;
+  }
+  expect(digest).toBe(TRACE_TABLE[id]);
+}
 // Byte mutations that keep ASCII ASCII, so the CAPI-S017 string rule is never what refuses.
 const MUTATIONS = {
   firstFlipped: (b) => { const o = Uint8Array.prototype.slice.call(b); o[0] ^= 1; return o; },
@@ -1257,7 +1477,7 @@ describe('OUTPUT-DIGEST-BIND', () => {
       for (const outcome of ['COMMITTED', 'NOT_COMMITTED']) {
         cell(`T2 kind-9 ${shape} with arbitrary projection bytes: memory-loss ${outcome} refused`, async () => {
           const c = await make();
-          await expectRefused(c, reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
         });
         cell(`T2 kind-9 ${shape}, twin with HOD of the projection bytes: memory-loss ${outcome} reconciles`, async () => {
           const c = await make();
@@ -1273,12 +1493,12 @@ describe('OUTPUT-DIGEST-BIND', () => {
       }
       cell(`T2 kind-9 ${shape}: the strict loader refuses the counterexample`, async () => {
         const c = await make();
-        await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
+        await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
       });
       cell(`T2 kind-9 ${shape}: the strict loader refuses the twin`, async () => {
         const c = await make();
         setStoredHeld(c, hod('PROTECTED_COMMIT_BYTES', injected));
-        await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
+        await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
       });
     }
   });
@@ -1292,14 +1512,14 @@ describe('OUTPUT-DIGEST-BIND', () => {
         for (const outcome of Object.keys(OUTCOMES)) {
           cell(`T3 ${s} ${m}: runMutation ${outcome} refused`, async () => {
             const c = mutationCase(s, OUTCOMES[outcome], { digest: hod(kind, base), output: f(base) });
-            await expectRefused(c, runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH');
+            await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
           });
           if (outcome !== 'INDETERMINATE') {
             cell(`T3 ${s} ${m}: memory-loss reconcile ${outcome} refused`, async () => {
               const c = await boundStore(s);
               setStoredOutput(c, f(base));
               c.store.memoryHold = null;
-              await expectRefused(c, reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
+              await expectRefused(c, () => reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
             });
           }
         }
@@ -1307,23 +1527,23 @@ describe('OUTPUT-DIGEST-BIND', () => {
           const c = await boundStore(s);
           setStoredOutput(c, f(base));
           c.store.memoryHold = null;
-          await expectRefused(c, reconcileOf(c, M2_OUTCOME.INDETERMINATE, 'LOST'), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.INDETERMINATE, 'LOST'), 'EVIDENCE_MISMATCH');
         });
         cell(`T3 ${s} ${m}: loadBoundHold refused`, async () => {
           const c = await boundStore(s);
           setStoredOutput(c, f(base));
           c.store.memoryHold = null;
-          await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
+          await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
         });
         cell(`T3 ${s} ${m}: retained COMMITTED reconcile refused`, async () => {
           const c = await boundStore(s);
           setStoredOutput(c, f(base));
-          await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
         });
         cell(`T3 ${s} ${m}: CAPI-S020/S022 repeat refused`, async () => {
           const c = await interrupted(s);
           setStoredOutput(c, f(base));
-          await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
         });
       }
       // Bytes kept, digest computed wrongly: hold, escrow label and envelope carry it.
@@ -1331,59 +1551,73 @@ describe('OUTPUT-DIGEST-BIND', () => {
         for (const outcome of Object.keys(OUTCOMES)) {
           cell(`T3 ${s} digest ${w}: runMutation ${outcome} refused`, async () => {
             const c = mutationCase(s, OUTCOMES[outcome], { digest: f(kind, base) });
-            await expectRefused(c, runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH');
+            await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
           });
           cell(`T3 ${s} digest ${w}: memory-loss reconcile ${outcome} refused`, async () => {
             const c = await boundStore(s);
             setStoredHeld(c, f(kind, base));
             c.store.memoryHold = null;
-            await expectRefused(c, reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
+            await expectRefused(c, () => reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
           });
         }
         cell(`T3 ${s} digest ${w}: loadBoundHold refused`, async () => {
           const c = await boundStore(s);
           setStoredHeld(c, f(kind, base));
           c.store.memoryHold = null;
-          await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
+          await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
         });
         cell(`T3 ${s} digest ${w}: retained COMMITTED reconcile refused`, async () => {
           const c = await boundStore(s);
           setStoredHeld(c, f(kind, base));
-          await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
         });
         cell(`T3 ${s} digest ${w}: CAPI-S020/S022 repeat refused`, async () => {
           const c = await interrupted(s);
           setStoredHeld(c, f(kind, base));
-          await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
         });
       }
     }
-    // Over the bound, labels matching: the kind-9 record cannot hold it, so it is filler there.
-    const big = new Uint8Array(BOUND + 1).fill(0x41);
-    const bigHeld = hod('PROTECTED_COMMIT_BYTES', big);
-    const bigStore = async (memory) => {
-      const c = await boundStore('CAPI-S014', { kinds: [K6, K8, K13, K14] });
-      setStoredHeld(c, bigHeld);
-      setStoredOutput(c, big, { record: false });
-      if (memory === 'LOST') c.store.memoryHold = null;
-      return c;
-    };
-    cell('T3 over-bound projection: runMutation refused', async () => {
-      const c = mutationCase('CAPI-S014', M2_OUTCOME.COMMITTED, { output: big, kinds: [K6, K8, K14] });
-      await expectRefused(c, runCaseOf(c, M2_OUTCOME.COMMITTED), 'EVIDENCE_MISMATCH');
-    });
-    cell('T3 over-bound projection: memory-loss reconcile refused', async () => {
-      const c = await bigStore('LOST');
-      await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'LOST'), 'EVIDENCE_MISMATCH');
-    });
-    cell('T3 over-bound projection: retained COMMITTED reconcile refused', async () => {
-      const c = await bigStore('RETAINED');
-      await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
-    });
-    cell('T3 over-bound projection: loadBoundHold refused', async () => {
-      const c = await bigStore('LOST');
-      await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
-    });
+    // Over the bound, labels matching: the kind-9 record cannot hold it, so it is filler there and the
+    // stored projection alone carries the bytes.
+    const FILLER_K9 = [K6, K8, K13, K14];
+    for (const s of OUTPUT_ROWS) {
+      const kind = mutationRow(s).outputKind;
+      const overBound = async (c) => {
+        const big = new Uint8Array(BOUND + 1).fill(0x41);
+        setStoredHeld(c, hod(kind, big));
+        setStoredOutput(c, big, { record: false });
+      };
+      for (const outcome of Object.keys(OUTCOMES)) {
+        cell(`T3 ${s} over-bound projection: runMutation ${outcome} refused`, async () => {
+          const big = new Uint8Array(BOUND + 1).fill(0x41);
+          const c = mutationCase(s, OUTCOMES[outcome], { output: big, kinds: [K6, K8, K14] });
+          await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
+        });
+        cell(`T3 ${s} over-bound projection: memory-loss reconcile ${outcome} refused`, async () => {
+          const c = await boundStore(s, { kinds: FILLER_K9 });
+          await overBound(c);
+          c.store.memoryHold = null;
+          await expectRefused(c, () => reconcileOf(c, OUTCOMES[outcome], 'LOST'), 'EVIDENCE_MISMATCH');
+        });
+      }
+      cell(`T3 ${s} over-bound projection: loadBoundHold refused`, async () => {
+        const c = await boundStore(s, { kinds: FILLER_K9 });
+        await overBound(c);
+        c.store.memoryHold = null;
+        await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
+      });
+      cell(`T3 ${s} over-bound projection: retained COMMITTED reconcile refused`, async () => {
+        const c = await boundStore(s, { kinds: FILLER_K9 });
+        await overBound(c);
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+      });
+      cell(`T3 ${s} over-bound projection: CAPI-S020/S022 repeat refused`, async () => {
+        const c = await interrupted(s, { kinds: FILLER_K9 });
+        await overBound(c);
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+      });
+    }
   });
 
   describe('T4 staged-record binding', () => {
@@ -1400,7 +1634,10 @@ describe('OUTPUT-DIGEST-BIND', () => {
       for (const [what, k13Tweak] of Object.entries(k13Cases)) {
         cell(`T4 staged kind-13 ${what} differs: runMutation ${outcome} refused`, async () => {
           const c = mutationCase(s, OUTCOMES[outcome], { k13Tweak });
-          await expectRefused(c, runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH');
+          // Under INDETERMINATE the base already refuses it with its own message, which stays.
+          const message = outcome === 'INDETERMINATE'
+            ? 'the candidate\'s staged kind-13 record is not the present hold this INDETERMINATE request writes' : null;
+          await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true, message });
         });
       }
       const k9Cases = {
@@ -1412,13 +1649,13 @@ describe('OUTPUT-DIGEST-BIND', () => {
       for (const [what, opts] of Object.entries(k9Cases)) {
         cell(`T4 staged kind-9 ${what} differs: runMutation ${outcome} refused`, async () => {
           const c = mutationCase(s, OUTCOMES[outcome], opts);
-          await expectRefused(c, runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
         });
       }
       for (const n of NONE_ROWS) {
         cell(`T4 ${n} staged present kind-9: runMutation ${outcome} refused`, async () => {
           const c = mutationCase(n, OUTCOMES[outcome], { forceK9: true });
-          await expectRefused(c, runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH');
+          await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
         });
       }
       cell(`T4 positive control: runMutation ${outcome} with bound canonical records`, async () => {
@@ -1437,12 +1674,12 @@ describe('OUTPUT-DIGEST-BIND', () => {
     cell('T4 bound COMMITTED selection: a canonical kind-9 with other bytes than the bound projection refused', async () => {
       const c = await boundStore(s);
       setStoredRecord(c, K9, otherRecord());
-      await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+      await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
     });
     cell('T4 CAPI-S020/S022 repeat: a canonical kind-9 with other bytes than the bound projection refused', async () => {
       const c = await interrupted(s);
       setStoredRecord(c, K9, otherRecord());
-      await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+      await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
     });
     cell('T4 positive control: bound COMMITTED selection and repeat release the bound bytes', async () => {
       const c = await interrupted(s);
@@ -1454,26 +1691,28 @@ describe('OUTPUT-DIGEST-BIND', () => {
   describe('T5 positives', () => {
     for (const s of OUTPUT_ROWS) {
       for (const outcome of Object.keys(OUTCOMES)) {
-        cell(`T5 ${s} ${outcome}: the original path gives the planned steps and result`, async () => {
+        cell(`T5 ${s} ${outcome}: the original path gives the base steps, payloads and result`, async () => {
           const c = mutationCase(s, OUTCOMES[outcome]);
           const r = await runCaseOf(c, OUTCOMES[outcome]);
           expect(r.commitOutcome).toBe(outcome);
           expect(r.output === null ? null : hex(r.output)).toBe(outcome === 'COMMITTED' ? hex(c.output) : null);
-          const durable = c.store.applied.map((a) => a.kind);
-          expect(durable.length).toBeGreaterThan(0);
-          expect(durable.every((k) => !MEMORY_ONLY_KINDS.has(k))).toBe(true);
+          checkTrace(`T5 ${s} ${outcome} original`, traceDigest(c.store, r));
         });
-        if (outcome === 'INDETERMINATE') continue;
         for (const memory of ['RETAINED', 'LOST']) {
-          cell(`T5 ${s} reconcile ${outcome} with memory ${memory}`, async () => {
+          cell(`T5 ${s} reconcile ${outcome} with memory ${memory}: the base steps, payloads and result`, async () => {
             const c = await boundStore(s);
+            const from = c.store.trace.length;
             const r = await reconcileOf(c, OUTCOMES[outcome], memory);
             if (outcome === 'COMMITTED') {
               expect(r.authority).toBe('COMPLETE_NEW');
               expect(hex(r.output)).toBe(hex(c.output));
-            } else {
+            } else if (outcome === 'NOT_COMMITTED') {
               expect(r).toMatchObject({ authority: 'COMPLETE_OLD', output: null, holds: 0 });
+            } else {
+              expect(r).toMatchObject({ output: null, holds: 1 });
             }
+            c.store.trace = c.store.trace.slice(from);
+            checkTrace(`T5 ${s} reconcile ${outcome} ${memory}`, traceDigest(c.store, r));
           });
         }
       }
@@ -1492,7 +1731,7 @@ describe('OUTPUT-DIGEST-BIND', () => {
         const c = mutationCase(n, M2_OUTCOME.COMMITTED, {
           escrow: { kind: 'PROTECTED_COMMIT_BYTES', digest: bytesOf(32, 1), reference: bytesOf(32, 2), output: bytesOf(4, 3) },
         });
-        await expectRefused(c, runCaseOf(c, M2_OUTCOME.COMMITTED), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => runCaseOf(c, M2_OUTCOME.COMMITTED), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
       });
       cell(`T6 ${n}: a null escrow runs as at the base`, async () => {
         const c = mutationCase(n, M2_OUTCOME.NOT_COMMITTED);
@@ -1501,20 +1740,24 @@ describe('OUTPUT-DIGEST-BIND', () => {
       });
     }
     for (const outcome of Object.keys(OUTCOMES)) {
+      cell(`T6 a null escrow for an output row in runMutation ${outcome} refused`, async () => {
+        const c = mutationCase('CAPI-S014', OUTCOMES[outcome], { escrow: null });
+        await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
+      });
       cell(`T6 parsed null output in runMutation ${outcome} refused`, async () => {
         const c = mutationCase('CAPI-S014', OUTCOMES[outcome], { escrowOutput: null });
-        await expectRefused(c, runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => runCaseOf(c, OUTCOMES[outcome]), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
       });
     }
     cell('T6 structural: a missing escrow output member is MALFORMED_INPUT', async () => {
       const c = mutationCase('CAPI-S014', M2_OUTCOME.COMMITTED);
       const { output: _drop, ...rest } = c.candidate.escrow;
       c.candidate = { ...c.candidate, escrow: rest };
-      await expectRefused(c, runCaseOf(c, M2_OUTCOME.COMMITTED), 'MALFORMED_INPUT');
+      await expectRefused(c, () => runCaseOf(c, M2_OUTCOME.COMMITTED), 'MALFORMED_INPUT', { zeroPortCalls: true });
     });
     cell('T6 structural: a non-byte escrow output is MALFORMED_INPUT', async () => {
       const c = mutationCase('CAPI-S014', M2_OUTCOME.COMMITTED, { escrowOutput: [1, 2, 3] });
-      await expectRefused(c, runCaseOf(c, M2_OUTCOME.COMMITTED), 'MALFORMED_INPUT');
+      await expectRefused(c, () => runCaseOf(c, M2_OUTCOME.COMMITTED), 'MALFORMED_INPUT', { zeroPortCalls: true });
     });
     const STORED = { missing: undefined, null: null, nonByte: [1, 2, 3] };
     for (const [what, value] of Object.entries(STORED)) {
@@ -1527,23 +1770,23 @@ describe('OUTPUT-DIGEST-BIND', () => {
         const c = await boundStore('CAPI-S014');
         strip(c);
         c.store.memoryHold = null;
-        await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
+        await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
       });
       cell(`T6 stored ${what} output: memory-loss reconcile COMMITTED refused`, async () => {
         const c = await boundStore('CAPI-S014');
         strip(c);
         c.store.memoryHold = null;
-        await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'LOST'), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'LOST'), 'EVIDENCE_MISMATCH');
       });
       cell(`T6 stored ${what} output: retained COMMITTED reconcile refused`, async () => {
         const c = await boundStore('CAPI-S014');
         strip(c);
-        await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
       });
       cell(`T6 stored ${what} output: CAPI-S020/S022 repeat refused`, async () => {
         const c = await interrupted('CAPI-S014');
         strip(c);
-        await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
       });
     }
   });
@@ -1561,18 +1804,18 @@ describe('OUTPUT-DIGEST-BIND', () => {
         const g = c.store.generations.get(NEW_GENERATION);
         g.escrow = f(g.escrow);
         c.store.memoryHold = null;
-        await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'LOST'), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'LOST'), 'EVIDENCE_MISMATCH');
       });
       cell(`T7 stored escrow ${what} mismatch: retained COMMITTED reconcile refused`, async () => {
         const c = await boundStore(s);
         const g = c.store.generations.get(NEW_GENERATION);
         g.escrow = f(g.escrow);
-        await expectRefused(c, reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => reconcileOf(c, M2_OUTCOME.COMMITTED, 'RETAINED'), 'EVIDENCE_MISMATCH');
       });
       cell(`T7 staged escrow ${what} mismatch: runMutation refused`, async () => {
         const c = mutationCase(s, M2_OUTCOME.COMMITTED);
         c.candidate = { ...c.candidate, escrow: f(c.candidate.escrow) };
-        await expectRefused(c, runCaseOf(c, M2_OUTCOME.COMMITTED), 'EVIDENCE_MISMATCH');
+        await expectRefused(c, () => runCaseOf(c, M2_OUTCOME.COMMITTED), 'EVIDENCE_MISMATCH', { zeroPortCalls: true });
       });
     }
     const S017_BAD = {
@@ -1584,7 +1827,7 @@ describe('OUTPUT-DIGEST-BIND', () => {
       cell(`T7 CAPI-S017 ${what} with a correct HOD: loadBoundHold refused`, async () => {
         const c = await boundStore('CAPI-S017', { output: bytes });
         c.store.memoryHold = null;
-        await expectRefused(c, loadOf(c), 'BOUND_HOLD_INVALID');
+        await expectRefused(c, () => loadOf(c), 'BOUND_HOLD_INVALID');
       });
       cell(`T7 CAPI-S017 ${what} with a correct HOD: memory-loss reconcile keeps the bytes opaque`, async () => {
         const c = await boundStore('CAPI-S017', { output: bytes });
