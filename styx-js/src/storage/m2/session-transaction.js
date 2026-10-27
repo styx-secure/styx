@@ -74,6 +74,25 @@ const OUTPUT_KINDS = Object.freeze([
   'PROTECTED_COMMIT_BYTES', 'SELECTED_CANDIDATE_REF',
 ]);
 
+// OUTPUT-DIGEST-BIND (C-FMT outputEscrow.heldOutputDigestRule): the held-output digest is computed from
+// the output bytes, never supplied as a label. HOD(kind, output) = SHA-256(ASCII label || u8(C-FMT
+// outputKind code) || be32(byte length) || output). Defined only for a kind other than NONE and for an
+// output inside the kind-9 `output` bound.
+const HELD_OUTPUT_DIGEST_LABEL = 'STYX-M2-HELD-OUTPUT-DIGEST-V1';
+const HELD_OUTPUT_MAX_BYTES = 16777216;
+
+function computeHeldOutputDigest(kind, output) {
+  const code = OUTPUT_KINDS.indexOf(kind) + 1;
+  const label = TE.encode(HELD_OUTPUT_DIGEST_LABEL);
+  const n = output.length;
+  const framed = new Uint8Array(label.length + 5 + n);
+  framed.set(label, 0);
+  framed[label.length] = code;
+  framed.set(Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255), label.length + 1);
+  framed.set(output, label.length + 5);
+  return sha256(framed);
+}
+
 const COMPONENTS = Object.freeze([
   'SESSION_TRANSITION', 'BINDING_METADATA', 'REPLAY_RETENTION_STATE', 'AUTHENTICATED_MANIFEST_UPDATE',
   'COMMIT_RESULT_EVIDENCE', 'KEY_PACKAGE_CONSUMPTION', 'OUTPUT_ESCROW', 'SELECTION_METADATA',
@@ -326,6 +345,27 @@ function componentEntries(value, name) {
     }
     return { id: c.id, disposition: c.disposition, fact: c.fact };
   });
+}
+
+/**
+ * OUTPUT-DIGEST-BIND: the held-output digest of `output` for output kind `kind` (C-FMT
+ * outputEscrow.heldOutputDigestRule). A producer forms `heldOutput.digest` and the escrow `digest` with
+ * it; reconciliation and `loadBoundHold` recompute it from the stored escrow bytes.
+ */
+export function heldOutputDigest(input) {
+  const s = strictObject(input, ['kind', 'output'], 'held output digest input');
+  const kind = text(s.kind, OUTPUT_KINDS, 'kind');
+  if (kind === 'NONE') unsupported('a NONE output has no held-output digest');
+  const output = bytes(s.output, null, 'output');
+  if (output.length > HELD_OUTPUT_MAX_BYTES) malformed('output exceeds the kind-9 output bound');
+  return computeHeldOutputDigest(kind, output);
+}
+
+// True only when `output` is a Uint8Array inside the bound whose held-output digest for `kind` is `digest`.
+function outputBindsDigest(kind, output, digest) {
+  if (kind === 'NONE' || !(output instanceof Uint8Array) || output.length > HELD_OUTPUT_MAX_BYTES) return false;
+  if (!(digest instanceof Uint8Array) || digest.length !== 32) return false;
+  return equal(computeHeldOutputDigest(kind, output), digest);
 }
 
 /**
@@ -1066,6 +1106,19 @@ export async function runMutation(input) {
   if (authenticated.outcome !== outcome) {
     fail(CODE.EVIDENCE_MISMATCH, 'authenticated commit-result evidence does not carry the requested outcome');
   }
+  // OUTPUT-DIGEST-BIND: before any write, the escrow this request stages is the envelope's held output,
+  // and its bytes have the envelope's held-output digest. A row with no output stages no escrow.
+  if (row.outputKind === 'NONE') {
+    if (candidate.escrow !== null) fail(CODE.EVIDENCE_MISMATCH, 'a row with no output stages no escrow');
+  } else {
+    const e = candidate.escrow;
+    if (e === null || e.kind !== envelope.heldOutput.kind
+        || !equal(e.digest, envelope.heldOutput.digest) || !equal(e.reference, envelope.heldOutput.reference)
+        || !outputBindsDigest(e.kind, e.output, envelope.heldOutput.digest)) {
+      fail(CODE.EVIDENCE_MISMATCH,
+        'the staged escrow is not the held output of the envelope, or its bytes do not have the held-output digest');
+    }
+  }
   // KIND13-RESOLVE change 1 (C-FMT historicalHoldRule, row F8), ORIGINAL path: before any write, a
   // canonical present kind-13 record the candidate stages must satisfy the record-derived conjuncts
   // against the candidate's own authenticated COMMIT_RESULT. The selection never tombstones it, so a
@@ -1082,6 +1135,28 @@ export async function runMutation(input) {
     if (staged !== undefined && !sameHold(staged, buildHold(envelope, candidate))) {
       fail(CODE.EVIDENCE_MISMATCH,
         'the candidate\'s staged kind-13 record is not the present hold this INDETERMINATE request writes');
+    }
+  }
+  // OUTPUT-DIGEST-BIND: the canonical records the candidate stages agree with that bound
+  // escrow. A canonical present kind-13 record carries the envelope's held-output kind, digest and
+  // reference; a canonical present kind-9 record is this mutation's escrow with the projection's bytes
+  // (a row with no output stages none). Non-canonical filler keeps the #457 behaviour.
+  {
+    const own = buildHold(envelope, candidate);
+    const staged = canonicalHoldRecord(candidate.records);
+    const sameNullable = (a, b) => (a === null || b === null ? a === b : equal(a, b));
+    if (staged && (staged.heldOutputKind !== own.heldOutputKind
+        || !sameNullable(staged.heldOutputDigest, own.heldOutputDigest)
+        || !sameNullable(staged.heldOutputReference, own.heldOutputReference))) {
+      fail(CODE.EVIDENCE_MISMATCH, 'the staged kind-13 record does not carry the envelope\'s held output');
+    }
+    const refuse = (m) => fail(CODE.EVIDENCE_MISMATCH, m);
+    if (row.outputKind !== 'NONE') {
+      checkEscrowRecord(candidate, own, false, refuse);
+    } else {
+      const k9 = candidate.records.find((r) => r.recordKind === M2_KIND.OUTPUT_ESCROW);
+      const decoded = k9 === undefined ? undefined : optionalCanonicalPlaintext(k9.plaintext, M2_KIND.OUTPUT_ESCROW);
+      if (decoded !== undefined && decoded.presence === 1) refuse('a row with no output stages no present OUTPUT_ESCROW');
     }
   }
 
@@ -2021,7 +2096,7 @@ function storedEscrowMatchesHold(escrow, held) {
     return escrow.kind === kind
       && equal(bytes(escrow.digest, 32, 'stored escrow.digest'), held.heldOutputDigest)
       && equal(bytes(escrow.reference, 32, 'stored escrow.reference'), held.heldOutputReference)
-      && (escrow.output === null || escrow.output === undefined || escrow.output instanceof Uint8Array);
+      && outputBindsDigest(kind, escrow.output, held.heldOutputDigest);
   } catch {
     return false;
   }
@@ -2059,6 +2134,9 @@ async function repeatCommittedEmission(storage, manifestRootKey, held, evidence,
     fail(CODE.EVIDENCE_MISMATCH,
       'the stored escrow is not the held output of this mutation; nothing is emitted and the hold is '
       + 'left unchanged');
+  }
+  if (OUTPUT_KINDS[held.heldOutputKind - 1] !== 'NONE') {
+    checkEscrowRecord(selected, held, false, (m) => fail(CODE.EVIDENCE_MISMATCH, m));
   }
   const steps = mutationSteps({
     envelope,
@@ -2336,6 +2414,9 @@ export async function reconcileIndeterminate(input) {
     fail(CODE.EVIDENCE_MISMATCH,
       'the bound candidate\'s stored escrow is not the held output of this mutation; nothing is selected '
       + 'and the hold is left unchanged');
+  }
+  if (OUTPUT_KINDS[held.heldOutputKind - 1] !== 'NONE') {
+    checkEscrowRecord(candidate, held, false, (m) => fail(CODE.EVIDENCE_MISMATCH, m));
   }
   const steps = mutationSteps({
     envelope: reconciliationEnvelope,

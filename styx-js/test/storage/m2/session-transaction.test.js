@@ -8,7 +8,7 @@ import {
   manifestKeyDigest, validateAuthority,
 } from '../../../src/storage/m2/session-root.js';
 import {
-  M2TxnError, M2_OUTCOME, M2_TXN, buildMutationEnvelope, classifyAuthority, loadBoundHold, mutationRow,
+  M2TxnError, M2_OUTCOME, M2_TXN, buildMutationEnvelope, heldOutputDigest, classifyAuthority, loadBoundHold, mutationRow,
   mutationSteps, reconcileIndeterminate, runMutation, validateCommitResultEvidence,
 } from '../../../src/storage/m2/session-transaction.js';
 
@@ -178,7 +178,7 @@ function envelopeInput(scenario, overrides = {}) {
     },
     heldOutput: row.outputKind === 'NONE'
       ? { kind: 'NONE', digest: null, reference: null }
-      : { kind: row.outputKind, digest: bytesOf(32, 0x0a), reference: bytesOf(32, 0x0b) },
+      : { kind: row.outputKind, digest: heldOutputDigest({ kind: row.outputKind, output: ESCROW.output }), reference: bytesOf(32, 0x0b) },
     expectedSuccess: { code: row.successCode, stateAfter: row.stateAfterCommitted },
     reconciliationIdentity: { reference: bytesOf(32, 0x0c), owner: 'SS_RS' },
   };
@@ -219,8 +219,8 @@ function candidateInput(scenario, outcome, overrides = {}) {
   return { ...base, ...overrides };
 }
 
-function holdRecordFor(scenario) {
-  const envelope = buildMutationEnvelope(envelopeInput(scenario));
+function holdRecordFor(scenario, envelopeOverrides = {}) {
+  const envelope = buildMutationEnvelope(envelopeInput(scenario, envelopeOverrides));
   const row = mutationRow(scenario);
   const OPERATIONS = ['CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 'OPEN_APPLICATION',
     'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE'];
@@ -1977,7 +1977,7 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
       componentSet: { digest: bytesOf(32, seed + 4), reference: bytesOf(32, seed + 5), entries: row.components.map((c) => ({ ...c })) },
       heldOutput: row.outputKind === 'NONE'
         ? { kind: 'NONE', digest: null, reference: null }
-        : { kind: row.outputKind, digest: bytesOf(32, seed + 6), reference: bytesOf(32, seed + 7) },
+        : { kind: row.outputKind, digest: heldOutputDigest({ kind: row.outputKind, output: bytesOf(24, seed + 0x40) }), reference: bytesOf(32, seed + 7) },
       expectedSuccess: { code: row.successCode, stateAfter: row.stateAfterCommitted },
       reconciliationIdentity: { reference: bytesOf(32, seed + 8), owner: 'SS_RS' },
     });
@@ -2694,8 +2694,8 @@ describe('I-RESTART: bound-hold loader', () => {
   // A selection of the candidate kinds that get their canonical present plaintext.
   const ALL_CANONICAL = [K6, K8, K9, K13, K14];
 
-  function canonicalCandidateRecords(scenario, outcome, outputBytes, kinds = ALL_CANONICAL) {
-    const envelope = buildMutationEnvelope(envelopeInput(scenario));
+  function canonicalCandidateRecords(scenario, outcome, outputBytes, kinds = ALL_CANONICAL, envelopeOverrides = {}) {
+    const envelope = buildMutationEnvelope(envelopeInput(scenario, envelopeOverrides));
     const row = mutationRow(scenario);
     const evidence = evidenceFor(envelope, outcome);
     const plain = {
@@ -2719,7 +2719,7 @@ describe('I-RESTART: bound-hold loader', () => {
         // The record mirrors the staged projection member for member, terminal flag included.
         terminal: evidence.terminal,
       }),
-      [K13]: row.outputKind === 'NONE' ? undefined : encodePlaintext(K13, holdRecordFor(scenario)),
+      [K13]: row.outputKind === 'NONE' ? undefined : encodePlaintext(K13, holdRecordFor(scenario, envelopeOverrides)),
       [K14]: encodePlaintext(K14, {
         presence: 1,
         mutationSetDigest: evidence.mutationSetDigest,
@@ -2773,16 +2773,19 @@ describe('I-RESTART: bound-hold loader', () => {
       : (row.outputKind === 'SELECTED_CANDIDATE_REF'
         ? refBytesOf(EXPECTED_REF) : Uint8Array.prototype.slice.call(ESCROW.output)));
     const base = candidateInput(scenario, M2_OUTCOME.INDETERMINATE);
+    // OUTPUT-DIGEST-BIND: the producer derives the held-output digest from the bytes it stages.
+    const held = row.outputKind === 'NONE' ? null
+      : { kind: row.outputKind, digest: heldOutputDigest({ kind: row.outputKind, output: outputBytes }), reference: base.escrow.reference };
     const candidate = {
       ...base,
-      records: canonicalCandidateRecords(scenario, M2_OUTCOME.INDETERMINATE, outputBytes, kinds),
+      records: canonicalCandidateRecords(scenario, M2_OUTCOME.INDETERMINATE, outputBytes, kinds, held === null ? {} : { heldOutput: held }),
       sessionBindingDigest: bindingDigestOf(BINDING),
-      escrow: base.escrow === null ? null : { ...base.escrow, output: outputBytes },
+      escrow: base.escrow === null ? null : { ...base.escrow, digest: held.digest, output: outputBytes },
     };
     const store = storeWith([selectedGeneration()], PARENT_SELECTOR);
     const result = await runMutation({
       storage: store, manifestRootKey: ROOT_KEY,
-      envelope: buildMutationEnvelope(envelopeInput(scenario)),
+      envelope: buildMutationEnvelope(held === null ? envelopeInput(scenario) : envelopeInput(scenario, { heldOutput: held })),
       candidate, outcome: M2_OUTCOME.INDETERMINATE,
     });
     return { store, result, candidate, outputBytes, written: store.generations.get(NEW_GENERATION) };
