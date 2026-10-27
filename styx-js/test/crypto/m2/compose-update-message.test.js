@@ -446,7 +446,7 @@ class Device {
 
   // ----- I-TXN plumbing --------------------------------------------------------------------
 
-  envelopeFor(operation, opBytes, parent) {
+  envelopeFor(operation, opBytes, parent, output) {
     const { txn } = this.P;
     const scenario = SCENARIO_BY_OPERATION[operation];
     const row = txn.mutationRow(scenario);
@@ -464,7 +464,7 @@ class Device {
       },
       heldOutput: row.outputKind === 'NONE'
         ? { kind: 'NONE', digest: null, reference: null }
-        : { kind: row.outputKind, digest: sha256('held', opBytes), reference: sha256('held-ref', opBytes) },
+        : { kind: row.outputKind, digest: txn.heldOutputDigest({ kind: row.outputKind, output }), reference: sha256('held-ref', opBytes) },
       expectedSuccess: { code: row.successCode, stateAfter: row.stateAfterCommitted },
       reconciliationIdentity: { reference: sha256('reconcile-ref', opBytes), owner: 'SS_RS' },
     });
@@ -503,7 +503,7 @@ class Device {
     this.disk.nextGeneration += 1n;
     const scenario = SCENARIO_BY_OPERATION[operation];
     const row = txn.mutationRow(scenario);
-    const envelope = this.envelopeFor(operation, opBytes, parent);
+    const envelope = this.envelopeFor(operation, opBytes, parent, output);
     const outcome = txn.M2_OUTCOME[rs];
     const parentState = cur.selectorState === SEL.RECONCILIATION_REQUIRED ? SEL.ACTIVE : cur.selectorState;
     const escrow = row.outputKind === 'NONE' ? null : {
