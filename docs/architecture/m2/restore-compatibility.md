@@ -10,7 +10,7 @@ It specifies no restore implementation, transaction, migration, rewrite, repair,
 
 ## 2. Frozen input
 
-The only format authority is `docs/architecture/m2/storage-format.md` at `021d6a67b97416a7e35814b745ba3124deaac69e`, SHA-256 `bd94aed08e57a8348157095fda660b189dbc444864b8ba8427630f2659d8d13d`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `237bc09eaff7e3f7576b281f08507d9c8991f50d9bbcedfe89c1221df7a94484`; access is not required. The input remains external and read-only. Drift is BLOCK.
+The only format authority is `docs/architecture/m2/storage-format.md` at `2c6e82de9d4b98ba20b7f15a46107a25fecf4546`, SHA-256 `526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `19fd90f05c8cf89eb3bb60b487c2c17383ff9aedfd108014124785cdccde630e`; access is not required. The input remains external and read-only. Drift is BLOCK.
 
 The exact readable profile is the conjunction copied under `compatibilityRegistry`: all eight versions, algorithms and widths, big-endian integers, framing and zero-salt rules, four 32-byte HKDF outputs, magic/domain/label strings, key/envelope/AAD/plaintext/manifest/selector grammar, all 17 kind IDs and versions, bounds, registries, mappings, generation rules, crash boundaries, vectors, negative classes, and non-claims. ProductProfile is exactly 306 bytes as stated by C-FMT; its layout remains C-BIND-owned and is not independently accepted here. Compatibility is equality, never a range, minimum, semver rule, downgrade, or partial recognition. Unknown, future, missing, mixed, or downgraded versions are `UNSUPPORTED_VERSION`; other profile mismatches are `INCOMPATIBLE_FORMAT`.
 
@@ -46,7 +46,7 @@ The located candidate is a complete immutable unselected generation. Its `MUTATI
 
 Legacy inventory is disjoint. Legacy envelopes, ciphersuites, identifiers, records, and provider states are never decoded as M2, compared against selected SS-0, copied into M2, or used as fallback. Valid M2 plus legacy uses the M2 result with `LEGACY_PRESENT`; invalid M2 plus legacy keeps the M2 failure with that flag. All bytes remain preserved and visible re-establishment guidance may be shown. The legacy shipping ciphersuite at an M2 locator is rejected as incompatible legacy-shaped M2 input without comparing it to SS-0.
 
-Compatible-build guidance identifies reader profile `CFMT_EXACT_BD94AED0` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
+Compatible-build guidance identifies reader profile `CFMT_EXACT_526FC4C3` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
 
 ## 9. Corruption, diagnostics, and immutability
 
@@ -91,10 +91,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "issue": 332,
     "card": "C-REST",
     "exactBase": "e1538ef9c070e463a8256872a3fd0882c424e2ef",
-    "cFmtCommit": "021d6a67b97416a7e35814b745ba3124deaac69e",
+    "cFmtCommit": "2c6e82de9d4b98ba20b7f15a46107a25fecf4546",
     "cFmtPath": "docs/architecture/m2/storage-format.md",
-    "cFmtSha256": "bd94aed08e57a8348157095fda660b189dbc444864b8ba8427630f2659d8d13d",
-    "cFmtEvidenceBundleSha256": "237bc09eaff7e3f7576b281f08507d9c8991f50d9bbcedfe89c1221df7a94484"
+    "cFmtSha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
+    "cFmtEvidenceBundleSha256": "19fd90f05c8cf89eb3bb60b487c2c17383ff9aedfd108014124785cdccde630e"
   },
   "compatibilityRegistry": {
     "versions": {
@@ -1152,7 +1152,53 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "authenticated result"
       ],
       "releaseAuthority": "C-MUT only; format never releases output",
-      "clearRule": "clearing escrow/hold may occur only after terminal rules and cannot erase commit-result evidence required to classify an interrupted generation"
+      "clearRule": "clearing escrow/hold may occur only after terminal rules and cannot erase commit-result evidence required to classify an interrupted generation",
+      "heldOutputDigestRule": {
+        "hash": "SHA-256",
+        "label": "STYX-M2-HELD-OUTPUT-DIGEST-V1",
+        "framing": [
+          "label",
+          "u8 outputKindCode",
+          "be32 length",
+          "output"
+        ],
+        "domain": "every present MUTATION_HOLD whose heldOutputKind is not NONE: heldOutputDigest MUST equal SHA-256(ASCII label || u8 outputKind code of heldOutputKind in valueRegistries.outputKind || be32 byte length of output || output) over the exact kind-9 OUTPUT_ESCROW output of the same mutation, 0 to 16777216 bytes; the label is exactly the 29 ASCII bytes shown, with no terminator; the length is the unsigned 32-bit big-endian byte count; undefined for NONE; producers compute it from the bytes they escrow and never supply it independently of them; no key, AEAD, nonce or KDF is involved",
+        "rejects": [
+          "heldOutputDigest different from the digest of the escrowed output bytes",
+          "present kind-9 output different from the bytes the hold digests",
+          "digest computed under another outputKind code",
+          "digest computed under another label",
+          "digest computed without the be32 length field",
+          "digest supplied independently of the escrowed bytes",
+          "mismatched, forged, stale or cross-domain result/escrow association, whether the kind-9 record is present, a tombstone or unavailable"
+        ]
+      },
+      "digestVectors": [
+        {
+          "id": "HOD-KAT-1",
+          "outputKind": "PROTECTED_COMMIT_BYTES",
+          "outputHex": "616263",
+          "digestHex": "83d4520697f9771ab899c37a3384edcd813552212eef2b359795c7014248cbe9"
+        },
+        {
+          "id": "HOD-KAT-2",
+          "outputKind": "PROTECTED_APPLICATION_BYTES",
+          "outputHex": "616263",
+          "digestHex": "b6e415884dc6f67fe14ce62205049a6ece054e987b015fa75a97dfe3e4b593b1"
+        },
+        {
+          "id": "HOD-KAT-3",
+          "outputKind": "SELECTED_CANDIDATE_REF",
+          "outputHex": "7265662d31",
+          "digestHex": "5f93ec1eeba325f294529c5e0573f05c679d5c366528e03d3364901fb95ea827"
+        },
+        {
+          "id": "HOD-KAT-4",
+          "outputKind": "EMBEDDED_TREE_WELCOME",
+          "outputHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+          "digestHex": "b3b5741314e32445539715012312f88cf7f974de4f59a861fd9568becec5c280"
+        }
+      ]
     },
     "crashModel": [
       {
@@ -1412,7 +1458,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "application identity",
       "production readiness",
       "arbitrary topology",
-      "IndexedDB transaction implementation"
+      "IndexedDB transaction implementation",
+      "byte rule for heldOutputReference, which stays an opaque identifier compared by equality",
+      "byte rule for kind-9 resultDigest",
+      "byte rule for the kind-14 entries value against its C-MUT row"
     ],
     "vectorIdentities": [
       {
@@ -1448,10 +1497,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "selectedGeneration": 2,
         "candidateGeneration": 3,
         "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
-        "keyedRootHex": "a832b12c6edb73305282da4585e40797722daf433755f0f74ac307b5ca40063a",
-        "selectorEnvelopeSha256": "efddea3da8b41abb801e92ef40c45edf54fb16858f6f2ad2281edc8b3df95336",
-        "recordsCanonicalJsonSha256": "24ad85169b879f783ec82944bedec1e2200da40047309c8d560b4cfcbb49f549",
-        "literalVectorCanonicalJsonSha256": "f251da28335d9e02fca3401d435da59b95d782ae25af78822ae1dfb694350809",
+        "keyedRootHex": "5b4778ced3b1370f6c53db2ee09a92b19493ac6a1603ab05f83f73714efa8866",
+        "selectorEnvelopeSha256": "55082ce5edc63f8b6cd9964bf5398afde2c03aa6a53c8e1a734e0300f5b71446",
+        "recordsCanonicalJsonSha256": "acb0d174218a2765a939e3c7cc509c47b89efada073b458df59800a1e40d91ee",
+        "literalVectorCanonicalJsonSha256": "ca4e9079b0d6ad1a120b9802fd8df405ee6666744eac9f31384b2b9a99cd19b8",
         "authorityRule": "selector names FMT-KAT-ACTIVE as authority and binds FMT-KAT-HOLD as immutable non-authoritative evidence"
       },
       {
@@ -1461,10 +1510,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "selectedGeneration": 1,
         "candidateGeneration": 4,
         "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
-        "keyedRootHex": "76991453d9f2093bbbe0c42da018a5ad2f02903f2c544c5fd9923364f2832e3f",
-        "selectorEnvelopeSha256": "fccbbe3e72d6880d5e98e9e9fc307fcdadadbb935a717b1b3bb153e4a618de0e",
-        "recordsCanonicalJsonSha256": "3f7e5fd63da3a27738b79506aa8336b1e5e76408e31241634b9679d64d7a9e38",
-        "literalVectorCanonicalJsonSha256": "6d0dc562748cab0cfbcace64e8604ee2e2c47faa5a8d907ee241c2e6a74a1c30",
+        "keyedRootHex": "4a18eee308bbccd7fd793cf63df0f707b11c74953299513f10c5b47d50fdf8af",
+        "selectorEnvelopeSha256": "d938a6c133077a43a838e40c38518f9b3f3568669283d2fb129c7d77c1013eba",
+        "recordsCanonicalJsonSha256": "f88bb06b6358ce1ba849d6786bddb5bc33bbe6a4c5005ea142abc486de4cbca2",
+        "literalVectorCanonicalJsonSha256": "af025ec11b9465246024d389f01d2aeadaef233b34244492c4d897e016c5e2e1",
         "authorityRule": "selector names FMT-KAT-EMPTY pre-session authority and uses its pre-session selector AAD while the exact candidateManifestKey locates this SESSION-scoped immutable non-authoritative candidate"
       },
       {
@@ -1474,10 +1523,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "selectedGeneration": 2,
         "candidateGeneration": 2,
         "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
-        "keyedRootHex": "a04f8b7406b8dffe559f9d2a159eca80491143a4a8fee97963eeec07149f4542",
+        "keyedRootHex": "6000f289988db82476aeac31950fba64537bc8029ccc710c196fa7854dc58104",
         "selectorEnvelopeSha256": "4ee79d7db2db52c915f3e4e73be05aac6f069fe702217cb62e36501f25243a0e",
-        "recordsCanonicalJsonSha256": "deb939e023ea2485da4143e6337da421ec7331982d95dfc6e726e9ee3753fdc6",
-        "literalVectorCanonicalJsonSha256": "c86267ce4355aae7a25827035836645dd43c31a828b1d1202a2b446af16bdd73",
+        "recordsCanonicalJsonSha256": "14227aac07a32391542e4d172028abcf7d834767b850a7e83e7e82eb276198d6",
+        "literalVectorCanonicalJsonSha256": "7bfac4254ac2b4ec11b214d054e712961045eaa796b22d2efad5f2be48e5e1f7",
         "authorityRule": "fixed selector is byte-identical to FMT-KAT-ACTIVE and names it as sole authority with no bound candidate; this complete immutable non-authoritative SESSION-scoped candidate is reachable only by RECONCILE_INDETERMINATE deriving its locator from the retained MUTATION_HOLD record key; after SS memory loss it is preserved debris and readback is COMPLETE_OLD"
       },
       {
@@ -1487,10 +1536,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "selectedGeneration": 1,
         "candidateGeneration": 1,
         "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
-        "keyedRootHex": "f187a5af559aa6cf895fccf8827a2682ed6311d7f7320a558266c0031533ea45",
+        "keyedRootHex": "2bb628636d5d254f8839e87a2e51d16433c932e9299467aa7924a82e81b7e071",
         "selectorEnvelopeSha256": "8534cf44851d83bed98fbb8669483df30a78afaf00b61eebd23adb3ff559ae4c",
-        "recordsCanonicalJsonSha256": "8d5370502fc4dea22e882bb5e773354bb1773c93808fa46c7b71858cc36104c5",
-        "literalVectorCanonicalJsonSha256": "74b8550901636bd13eb374680b0b25adb5b299d457a482c354aa8de19893d1e7",
+        "recordsCanonicalJsonSha256": "48b6f38a2852790a86e6cfbdbe268aa51f04cf3424a08387a8f23f227f436dd6",
+        "literalVectorCanonicalJsonSha256": "c7636a415a4a31042b2bdde79b39f53ad937ab9f6c79ecc3f304bf14f6edad96",
         "authorityRule": "fixed selector is byte-identical to FMT-KAT-EMPTY and names the pre-session EMPTY generation as sole authority with no bound candidate; this complete immutable non-authoritative SESSION-scoped candidate is reachable only by RECONCILE_INDETERMINATE deriving its locator from the retained MUTATION_HOLD record key; after SS memory loss it is preserved debris and readback is COMPLETE_OLD"
       },
       {
@@ -1500,18 +1549,18 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "selectedGeneration": 7,
         "candidateGeneration": 7,
         "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
-        "keyedRootHex": "15bfff911c380b3b180ed533280fc6a5820e7d70f040a11f8a36766e42783230",
-        "selectorEnvelopeSha256": "286630ffb7915bf3a849f182c6cb4e6407fc8fc5aecfc353d32a2dc33d4fb362",
-        "recordsCanonicalJsonSha256": "78547f74c8d83b3c55128fea52d2e5e4b1f4c97a27577e32720604c222dcdbb7",
-        "literalVectorCanonicalJsonSha256": "d95f4b053505a92db3a2abb14e8ca4ea7b1c290a5913a0b3760a9f76dc81f3d2",
+        "keyedRootHex": "a3c0441bc85a1db18b1c07a29904105d66c530fedbeadd08101f26d4cb600360",
+        "selectorEnvelopeSha256": "6d077b4b7f6d8553034418193c5f7e72eba826bb3ea404be08711241286b4e0e",
+        "recordsCanonicalJsonSha256": "68e59dff3be59e7a1b044198030f98a0583e60981a6b35a78b6522e2dc916d3e",
+        "literalVectorCanonicalJsonSha256": "6793dbdf248deb39e0aa5bce469a7105f3a4a1971976cf7492c3a9b1abdb978b",
         "authorityRule": "selector names this generation and repeats it as the candidate binding; its present MUTATION_HOLD is historical mutation-envelope evidence of its own mutation under historicalHoldRule, never an unresolved hold, a candidate or authority for another mutation"
       }
     ]
   },
   "buildMatrix": [
     {
-      "readerProfile": "CFMT_EXACT_BD94AED0",
-      "cFmtDocumentSha256": "bd94aed08e57a8348157095fda660b189dbc444864b8ba8427630f2659d8d13d",
+      "readerProfile": "CFMT_EXACT_526FC4C3",
+      "cFmtDocumentSha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -1535,8 +1584,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "browserClass": "CHROMIUM"
     },
     {
-      "readerProfile": "CFMT_EXACT_BD94AED0",
-      "cFmtDocumentSha256": "bd94aed08e57a8348157095fda660b189dbc444864b8ba8427630f2659d8d13d",
+      "readerProfile": "CFMT_EXACT_526FC4C3",
+      "cFmtDocumentSha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -2064,7 +2113,7 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "automaticReset": false
   },
   "guidance": {
-    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_BD94AED0 and preserve all bytes.",
+    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_526FC4C3 and preserve all bytes.",
     "destructiveReset": "Explicit, separate, irreversible, never automatic; not implemented here.",
     "passwordChange": "Re-wrap the same Root Storage Key; not migration or repair.",
     "legacy": "Visible re-establishment guidance only; preserve all bytes."
