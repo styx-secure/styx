@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { RelayPool, NostrTransport } from '../../src/transport/nostr-transport.js';
 import { TransportMessage, TransportState } from '../../src/transport/transport-interface.js';
 import { StyxEncryptor } from '../../src/crypto/encryption.js';
@@ -282,5 +282,46 @@ describe('NostrTransport', () => {
     await transport.connect();
     await transport.dispose();
     expect(transport.currentState).toBe(TransportState.DISCONNECTED);
+  });
+});
+
+describe('RelayPool owned shutdown resources', () => {
+  let owned;
+  beforeEach(() => { jest.useFakeTimers(); owned = []; });
+  afterEach(async () => {
+    // Safety cleanup AFTER resource assertions; cannot turn RED into GREEN.
+    for (const pool of owned) await pool.dispose();
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+  async function connectedPool() {
+    const pool = new RelayPool(['ws://127.0.0.1:19998']); owned.push(pool);
+    const pending = pool.connectAll();
+    await jest.advanceTimersByTimeAsync(0); await pending;
+    return pool;
+  }
+  test('dispose cancels scheduled reconnect before timer can fire', async () => {
+    const pool = await connectedPool();
+    pool._connections.values().next().value.close();
+    expect(jest.getTimerCount()).toBe(1);
+    await pool.dispose();
+    expect(jest.getTimerCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(pool.connectedCount).toBe(0);
+  });
+  test('removeRelay does not schedule reconnection of the removed URL', async () => {
+    const pool = await connectedPool();
+    await pool.removeRelay(pool.relayUrls[0]);
+    expect(jest.getTimerCount()).toBe(0);
+    expect(pool.relayUrls).toEqual([]);
+  });
+  test('disconnect during pending connect excludes late open', async () => {
+    const pool = new RelayPool(['ws://127.0.0.1:19998']); owned.push(pool);
+    const pending = pool.connectAll();
+    await pool.disconnectAll();
+    await jest.advanceTimersByTimeAsync(0);
+    await pending;
+    expect(pool.connectedCount).toBe(0);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

@@ -19,6 +19,7 @@ export class RelayPool {
     this._emitter = new EventEmitter();
     this._autoReconnect = true;
     this._reconnectAttempts = new Map(); // url → attempt count
+    this._reconnectTimers = new Map(); // url → owned retry timer
     this._maxReconnectAttempts = 10;
     this._subscriptions = new Map(); // subId → filter (re-issued on (re)connect)
   }
@@ -36,6 +37,7 @@ export class RelayPool {
    * Connect to all relays. Returns count of successful connections.
    */
   async connectAll() {
+    this._autoReconnect = true;
     const results = await Promise.allSettled(
       this._relayUrls.map((url) => this._connectRelay(url))
     );
@@ -44,10 +46,12 @@ export class RelayPool {
 
   async disconnectAll() {
     this._autoReconnect = false;
-    for (const [url, ws] of this._connections) {
-      ws.close();
-    }
+    for (const timer of this._reconnectTimers.values()) clearTimeout(timer);
+    this._reconnectTimers.clear();
+    const sockets = [...this._connections.values()];
+    // Retire identities before close callbacks can observe replacements.
     this._connections.clear();
+    for (const ws of sockets) ws.close();
   }
 
   /**
@@ -134,12 +138,8 @@ export class RelayPool {
    * WebSocket, leaving a half-dead connection that never delivers again).
    */
   async reconnect() {
-    for (const [, ws] of this._connections) {
-      try { ws.onclose = null; ws.close(); } catch { /* ignore */ }
-    }
-    this._connections.clear();
+    await this.disconnectAll();
     this._reconnectAttempts.clear();
-    this._autoReconnect = true;
     return this.connectAll(); // onopen re-issues every stored subscription
   }
 
@@ -159,12 +159,12 @@ export class RelayPool {
   }
 
   async removeRelay(url) {
-    const ws = this._connections.get(url);
-    if (ws) {
-      ws.close();
-      this._connections.delete(url);
-    }
     this._relayUrls = this._relayUrls.filter((u) => u !== url);
+    clearTimeout(this._reconnectTimers.get(url));
+    this._reconnectTimers.delete(url);
+    const ws = this._connections.get(url);
+    this._connections.delete(url);
+    if (ws) ws.close();
   }
 
   async dispose() {
@@ -178,6 +178,7 @@ export class RelayPool {
     return new Promise((resolve, reject) => {
       try {
         const ws = new WebSocket(url);
+        this._connections.set(url, ws); // own CONNECTING sockets as well
         const timeout = setTimeout(() => {
           ws.close();
           reject(new Error(`Timeout connecting to ${url}`));
@@ -185,7 +186,11 @@ export class RelayPool {
 
         ws.onopen = () => {
           clearTimeout(timeout);
-          this._connections.set(url, ws);
+          if (this._connections.get(url) !== ws || ws.readyState !== WebSocket.OPEN) {
+            ws.close();
+            reject(new Error(`Connection cancelled for ${url}`));
+            return;
+          }
           // Re-issue every active subscription so a reconnected relay resumes
           // delivering (and replays anything stored while we were away).
           for (const [subId, filter] of this._subscriptions) {
@@ -202,15 +207,18 @@ export class RelayPool {
         };
 
         ws.onclose = () => {
-          this._connections.delete(url);
-          if (this._autoReconnect) {
+          clearTimeout(timeout);
+          const current = this._connections.get(url) === ws;
+          if (current) this._connections.delete(url);
+          reject(new Error(`Connection closed for ${url}`));
+          if (current && this._autoReconnect) {
             this._scheduleReconnect(url);
           }
         };
 
         ws.onerror = (err) => {
           clearTimeout(timeout);
-          this._connections.delete(url);
+          // Keep ownership until close, including failed in-flight sockets.
           reject(err);
         };
       } catch (e) {
@@ -220,15 +228,21 @@ export class RelayPool {
   }
 
   _scheduleReconnect(url) {
+    if (!this._autoReconnect || !this._relayUrls.includes(url)) return;
     const attempts = (this._reconnectAttempts.get(url) || 0) + 1;
     if (attempts > this._maxReconnectAttempts) return;
     this._reconnectAttempts.set(url, attempts);
     const delay = Math.min(1000 * Math.pow(2, attempts - 1), 30000);
-    setTimeout(() => {
+    clearTimeout(this._reconnectTimers.get(url));
+    const timer = setTimeout(() => {
+      if (this._reconnectTimers.get(url) !== timer) return;
+      this._reconnectTimers.delete(url);
+      if (!this._autoReconnect || !this._relayUrls.includes(url)) return;
       this._connectRelay(url).then(() => {
         this._reconnectAttempts.set(url, 0);
       }).catch(() => {});
     }, delay);
+    this._reconnectTimers.set(url, timer);
   }
 }
 

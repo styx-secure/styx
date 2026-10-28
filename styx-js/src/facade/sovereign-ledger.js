@@ -134,6 +134,7 @@ export class SovereignLedger {
     this._eventFactory = null;
     this._chainValidator = null;
     this._transport = null;
+    this._relayPool = null; // internally owned; NostrTransport only borrows it
     this._outboxWorker = null;
     this._trustStore = null;
     this._qrPairing = null;
@@ -222,7 +223,12 @@ export class SovereignLedger {
     this._setState(StyxState.SHUTTING_DOWN);
 
     if (this._outboxWorker) this._outboxWorker.stop();
-    if (this._transport) await this._transport.dispose();
+    try {
+      if (this._transport) await this._transport.dispose();
+    } finally {
+      if (this._relayPool) await this._relayPool.dispose();
+      this._relayPool = null;
+    }
 
     this._emitter.removeAllListeners();
     this._setState(StyxState.UNINITIALIZED);
@@ -464,6 +470,7 @@ export class SovereignLedger {
     // The p-tag uses the Ed25519 hex pubkeys for subscription matching —
     // relays don't validate p-tag values, they just use them for filtering.
     const relayPool = new RelayPool(this._config.relayUrls);
+    this._relayPool = relayPool;
     const nostrTransport = new NostrTransport(
       relayPool,
       encryptor,

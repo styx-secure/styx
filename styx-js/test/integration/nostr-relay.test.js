@@ -166,18 +166,26 @@ describe('RelayPool (real relay)', () => {
 
 describe('NostrTransport (real relay)', () => {
   let transportA, transportB;
+  let poolA, poolB;
 
   afterEach(async () => {
-    if (transportA) { await transportA.dispose(); transportA = null; }
-    if (transportB) { await transportB.dispose(); transportB = null; }
+    try {
+      if (transportA) await transportA.dispose();
+      if (transportB) await transportB.dispose();
+    } finally {
+      // Transports borrow pools; the tests that create them own their cleanup.
+      if (poolA) await poolA.dispose();
+      if (poolB) await poolB.dispose();
+      transportA = transportB = poolA = poolB = null;
+    }
   });
 
   test('connect to real relay sets CONNECTED state', async () => {
     if (skipIfNoRelay()) return;
     const nostrPriv = randomBytes(32);
     const nostrPub = bytesToHex(schnorr.getPublicKey(nostrPriv));
-    const pool = new RelayPool([RELAY_URL]);
-    transportA = new NostrTransport(pool, new StyxEncryptor(randomBytes(32), randomBytes(32)), nostrPub, 'bb', nostrPriv, nostrPub);
+    poolA = new RelayPool([RELAY_URL]);
+    transportA = new NostrTransport(poolA, new StyxEncryptor(randomBytes(32), randomBytes(32)), nostrPub, 'bb', nostrPriv, nostrPub);
 
     const states = [];
     transportA.onStateChange((s) => states.push(s));
@@ -203,8 +211,8 @@ describe('NostrTransport (real relay)', () => {
     // A sends with p-tag = tagB, B subscribes to tagB
     const tagB = bytesToHex(randomBytes(32)); // opaque subscription tag
 
-    const poolA = new RelayPool([RELAY_URL]);
-    const poolB = new RelayPool([RELAY_URL]);
+    poolA = new RelayPool([RELAY_URL]);
+    poolB = new RelayPool([RELAY_URL]);
     transportA = new NostrTransport(poolA, new StyxEncryptor(encKey, encKey), nostrPubA, tagB, nostrPrivA);
     transportB = new NostrTransport(poolB, new StyxEncryptor(encKey, encKey), nostrPubB, nostrPubA, nostrPrivB, tagB);
 
@@ -236,8 +244,8 @@ describe('NostrTransport (real relay)', () => {
     const dPriv = randomBytes(32);
     const dPub = bytesToHex(schnorr.getPublicKey(dPriv));
     const dk = randomBytes(32);
-    const pool = new RelayPool([RELAY_URL]);
-    transportA = new NostrTransport(pool, new StyxEncryptor(dk, dk), dPub, 'bb', dPriv, dPub);
+    poolA = new RelayPool([RELAY_URL]);
+    transportA = new NostrTransport(poolA, new StyxEncryptor(dk, dk), dPub, 'bb', dPriv, dPub);
     await transportA.connect();
 
     const states = [];
@@ -249,10 +257,15 @@ describe('NostrTransport (real relay)', () => {
 });
 
 describe('TransportFailover (real relay)', () => {
-  let failover;
+  let failover, pool;
 
   afterEach(async () => {
-    if (failover) { await failover.dispose(); failover = null; }
+    try {
+      if (failover) await failover.dispose();
+    } finally {
+      if (pool) await pool.dispose();
+      failover = pool = null;
+    }
   });
 
   test('connect succeeds through failover', async () => {
@@ -260,7 +273,7 @@ describe('TransportFailover (real relay)', () => {
     const fPriv = randomBytes(32);
     const fPub = bytesToHex(schnorr.getPublicKey(fPriv));
     const fk = randomBytes(32);
-    const pool = new RelayPool([RELAY_URL]);
+    pool = new RelayPool([RELAY_URL]);
     const nostr = new NostrTransport(pool, new StyxEncryptor(fk, fk), fPub, 'bb', fPriv, fPub);
 
     failover = new TransportFailover([
@@ -272,6 +285,33 @@ describe('TransportFailover (real relay)', () => {
 });
 
 describe('SovereignLedger with real relay', () => {
+  test('shutdown disposes the ledger internally owned relay pool', async () => {
+    if (skipIfNoRelay()) return;
+    const im = new IdentityManager();
+    const kpA = await im.generate();
+    const kpB = await im.generate();
+    const keyStore = new MemoryKeyStore();
+    await keyStore.storeKeyPair({ keyId: 'primary', keyPair: kpA });
+    const ledger = new SovereignLedger({
+      config: new LedgerConfig({ relayUrls: [RELAY_URL], logLevel: LogLevel.NONE }),
+      ledgerStore: new MemoryLedgerStore(), peerStore: new MemoryPeerStore(),
+      keyStore, outboxStore: new MemoryOutboxStore(),
+    });
+    let ownedPool;
+    try {
+      await ledger.initialize();
+      await ledger.confirmPairing({ peerPublicKey: kpB.publicKey, peerAlias: 'B' });
+      ownedPool = ledger._transport._transports[0].transport._pool;
+      expect(ownedPool.connectedCount).toBe(1);
+      await ledger.shutdown();
+      expect(ownedPool.connectedCount).toBe(0);
+    } finally {
+      // Safety is after the owner-lifecycle assertion, never a leak oracle.
+      await ledger.shutdown();
+      if (ownedPool) await ownedPool.dispose();
+    }
+  });
+
   test('paired ledger transitions to READY', async () => {
     if (skipIfNoRelay()) return;
     const im = new IdentityManager();
