@@ -277,3 +277,113 @@ describe('OutboxWorker', () => {
     expect(worker.isRunning).toBe(false);
   });
 });
+
+describe('TransportFailover shutdown lifecycle regression', () => {
+  class CountingTransport extends MockTransport {
+    constructor() { super(); this.connectCalls = 0; }
+    async connect() { this.connectCalls++; await super.connect(); }
+  }
+  test.each(['disconnect', 'dispose'])('%s does not reconnect on intentional shutdown', async method => {
+    const child = new CountingTransport();
+    const f = new TransportFailover([new TransportPriority(child, 0, 1000)]);
+    await f.connect();
+    await f[method]();
+    expect(child.connectCalls).toBe(1);
+    expect(child.currentState).toBe(TransportState.DISCONNECTED);
+    expect(f.currentState).toBe(TransportState.DISCONNECTED);
+  });
+  test('late connect completion cannot reactivate after disconnect', async () => {
+    const child = new CountingTransport();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    child.connect = async () => { child.connectCalls++; await gate; await MockTransport.prototype.connect.call(child); };
+    const f = new TransportFailover([new TransportPriority(child,0,1000)]);
+    const outcome = f.connect().then(() => 'connected', () => 'cancelled');
+    await f.disconnect();
+    release();
+    await outcome;
+    expect(f.currentState).toBe(TransportState.DISCONNECTED);
+    expect(child.currentState).toBe(TransportState.DISCONNECTED);
+  });
+  test('explicit reconnect remains possible without duplicate forwarding', async () => {
+    const child = new CountingTransport();
+    const f = new TransportFailover([new TransportPriority(child,0,1000)]);
+    await f.connect(); await f.disconnect(); await f.connect();
+    const seen=[]; f.onMessage(x=>seen.push(x)); child.simulateMessage({id:'once'});
+    expect(child.connectCalls).toBe(2); expect(seen).toHaveLength(1);
+    await f.dispose();
+  });
+  test('unexpected active loss still reconnects', async () => {
+    const child = new CountingTransport();
+    const f = new TransportFailover([new TransportPriority(child,0,1000)]);
+    await f.connect();
+    const ready = new Promise(resolve=>f.onStateChange(s=>{if(s===TransportState.CONNECTED)resolve();}));
+    await child.disconnect(); await ready;
+    expect(child.connectCalls).toBe(2); expect(f.currentState).toBe(TransportState.CONNECTED);
+    await f.dispose();
+  });
+});
+
+describe('TransportFailover F-01 stale completion ownership', () => {
+  test('closes stale A while preserving a different active B', async () => {
+    const a = new MockTransport();
+    const b = new MockTransport();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    a.connect = async () => {
+      await gate;
+      await MockTransport.prototype.connect.call(a);
+    };
+    const f = new TransportFailover([
+      new TransportPriority(a, 0, 1000),
+      new TransportPriority(b, 0, 1000),
+    ]);
+    const oldOutcome = f.connect().then(() => 'fulfilled', error => error.message);
+    await f.disconnect();
+    a._available = false;
+    await f.connect();
+    release();
+    const outcome = await oldOutcome;
+    const observed = {
+      outcome,
+      a: a.currentState,
+      b: b.currentState,
+      active: f._activeTransport,
+      state: f.currentState,
+    };
+    await f.dispose();
+    expect(observed.outcome).toBe('Connection cancelled');
+    expect(observed.a).toBe(TransportState.DISCONNECTED);
+    expect(observed.b).toBe(TransportState.CONNECTED);
+    expect(observed.active).toBe(b);
+    expect(observed.state).toBe(TransportState.CONNECTED);
+  });
+
+  test('does not disconnect a valid new activation reusing the same child', async () => {
+    const child = new MockTransport();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let calls = 0;
+    child.connect = async () => {
+      if (++calls === 1) await gate;
+      await MockTransport.prototype.connect.call(child);
+    };
+    const f = new TransportFailover([new TransportPriority(child, 0, 1000)]);
+    const oldOutcome = f.connect().then(() => 'fulfilled', error => error.message);
+    await f.disconnect();
+    await f.connect();
+    release();
+    const outcome = await oldOutcome;
+    const seen = [];
+    f.onMessage(message => seen.push(message));
+    child.simulateMessage({ id: 'same-child-once' });
+    const observed = { state: child.currentState, active: f._activeTransport, wrapper: f.currentState };
+    await f.dispose();
+    expect(outcome).toBe('Connection cancelled');
+    expect(calls).toBe(2);
+    expect(observed.state).toBe(TransportState.CONNECTED);
+    expect(observed.active).toBe(child);
+    expect(observed.wrapper).toBe(TransportState.CONNECTED);
+    expect(seen).toEqual([{ id: 'same-child-once' }]);
+  });
+});

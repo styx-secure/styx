@@ -45,6 +45,7 @@ export class TransportFailover extends TransportInterface {
     this._emitter = new EventEmitter();
     this._activeTransport = null;
     this._messageHandlers = [];
+    this._connectionGeneration = 0;
   }
 
   get currentState() { return this._state; }
@@ -67,6 +68,9 @@ export class TransportFailover extends TransportInterface {
    * Connect using the highest-priority available transport.
    */
   async connect() {
+    const generation = ++this._connectionGeneration;
+    this._clearHandlers();
+    this._activeTransport = null;
     this._setState(TransportState.CONNECTING);
 
     for (const tp of this._transports) {
@@ -74,6 +78,11 @@ export class TransportFailover extends TransportInterface {
 
       try {
         await tp.transport.connect();
+        if (generation !== this._connectionGeneration) {
+          // Close a stale child, but preserve a newer activation of the same object.
+          if (this._activeTransport !== tp.transport) await tp.transport.disconnect();
+          throw new TransportFailoverException('Connection cancelled');
+        }
 
         // Subscribe to messages
         const unsubscribe = tp.transport.onMessage((msg) => {
@@ -82,16 +91,19 @@ export class TransportFailover extends TransportInterface {
         this._messageHandlers.push(unsubscribe);
 
         // Monitor state changes for auto-failover
-        tp.transport.onStateChange((state) => {
-          if (state === TransportState.DISCONNECTED && this._activeTransport === tp.transport) {
+        const unsubscribeState = tp.transport.onStateChange((state) => {
+          if (generation === this._connectionGeneration &&
+              state === TransportState.DISCONNECTED && this._activeTransport === tp.transport) {
             this._handleDisconnect();
           }
         });
+        this._messageHandlers.push(unsubscribeState);
 
         this._activeTransport = tp.transport;
         this._setState(TransportState.CONNECTED);
         return;
       } catch (e) {
+        if (generation !== this._connectionGeneration) throw e;
         console.warn(`[Styx Failover] ${tp.transport.constructor.name} failed:`, e.message);
         continue;
       }
@@ -102,10 +114,10 @@ export class TransportFailover extends TransportInterface {
   }
 
   async disconnect() {
-    for (const unsub of this._messageHandlers) {
-      if (typeof unsub === 'function') unsub();
-    }
-    this._messageHandlers = [];
+    // Invalidate activation and detach state listeners before children emit.
+    ++this._connectionGeneration;
+    this._activeTransport = null;
+    this._clearHandlers();
 
     for (const tp of this._transports) {
       try { await tp.transport.disconnect(); } catch { /* ignore */ }
@@ -143,6 +155,13 @@ export class TransportFailover extends TransportInterface {
 
   // --- Private ---
 
+  _clearHandlers() {
+    for (const unsub of this._messageHandlers) {
+      if (typeof unsub === 'function') unsub();
+    }
+    this._messageHandlers = [];
+  }
+
   _setState(newState) {
     if (this._state !== newState) {
       this._state = newState;
@@ -153,10 +172,12 @@ export class TransportFailover extends TransportInterface {
   async _handleDisconnect() {
     console.warn('[Styx Failover] Active transport disconnected, attempting failover...');
     this._activeTransport = null;
+    const reconnect = this.connect();
+    const generation = this._connectionGeneration;
     try {
-      await this.connect();
+      await reconnect;
     } catch (e) {
-      this._setState(TransportState.DISCONNECTED);
+      if (generation === this._connectionGeneration) this._setState(TransportState.DISCONNECTED);
     }
   }
 }
