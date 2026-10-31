@@ -58,7 +58,7 @@ const EVENT_KIND_MESSAGE = 4741;
 const EVENT_KIND_RECEIPT = 4742;
 
 /** C-DLV section 6.1/6.2/6.3: the interface version string of the `v` tag. */
-const INTERFACE_VERSION = 'styx-m3-sdk/0.2.0-experimental';
+const INTERFACE_VERSION = 'styx-m3-sdk/0.3.0-experimental';
 
 /** C-DLV section 6.1: the seven keys of every SDK-internal event, in no order. */
 const EVENT_KEYS = Object.freeze(['id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig']);
@@ -104,6 +104,10 @@ const SDK_RESULT_CODES = new Set([
   'E_SDK_INBOUND_INVALID',
   'E_SDK_INTERNAL',
   'E_SDK_UNKNOWN_CODE',
+  'E_SDK_NOT_CONFIGURED',
+  'E_SDK_PUBLISH_NOT_ACCEPTED',
+  'E_SDK_KEYPACKAGE_NOT_FOUND',
+  'E_SDK_INVITE_TIMEOUT',
 ]);
 
 /**

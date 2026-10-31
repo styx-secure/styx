@@ -6,11 +6,13 @@ Status: normative candidate for card `C-DLV` of the M3 early lane. It is experim
 
 This document fixes the delivery layer behind the public SDK interface: outbound queue states and their timing, retransmission and backoff bounds, receipts and acknowledgements, duplicate handling, parallel multi-relay publish and subscribe with per-relay timeouts, per-relay outcome reporting, the process-lifetime limit, the SDK-internal non-normative on-wire structures, and the requirements for the loopback relay test harness that card `T-RELAY` builds. **MUST**, **MUST NOT** and **REJECT** are normative.
 
-It is authorized by the owner act in Issue #400 §2(b) and implements card `C-DLV` of the M3 scope record (#400 comment `5950987413`). It sits behind public SDK interface `docs/architecture/m3/sdk-interface.md` (card `C-SDK`, version 0.2.0 candidate SHA-256 `f7c89461dc5ac3cd72ada90098073fcc42ba8f6f5e180b14ee9c3ea3ae01510f`, produced by M3-PUBLIC-RELAYS #522 under prospective approval #400/6489853937). The historical version 0.1.0 was ratified by #400/5960945402; that ratification does not ratify the new bytes. The new C-SDK and C-DLV output hashes require a separately marked owner output ratification and remain candidates until then. That document is called "the interface" below, and its section numbers are cited as "interface §n".
+It is authorized by the owner act in Issue #400 §2(b) and implements card `C-DLV` of the M3 scope record (#400 comment `5950987413`). It sits behind public SDK interface `docs/architecture/m3/sdk-interface.md` (card `C-SDK`, version 0.3.0 candidate SHA-256 `fba08e698bb6801695af1c5a3efc2c774a10c57b72e023ff560be30421cf61f1`, amended by M3-INVITE #525 under prospective approval #400/6544668029; its version-0.2.0 predecessor was integrated and ratified by #400/6544441411). The historical version 0.1.0 was ratified by #400/5960945402; that ratification does not ratify the new bytes. The new C-SDK and C-DLV output hashes require a separately marked owner output ratification and remain candidates until then. That document is called "the interface" below, and its section numbers are cited as "interface §n".
 
 This document fixes the values and rules that the interface assigns to `C-DLV` (its record field `ownedByCDlv`), plus internal delivery parameters that serve them (the inbound pending bound and the relay supervision interval, internal implementation limits that change no public bound, no guarantee and no item of `cDlvMayNotChange`), and nothing that the interface reserves to itself (`cDlvMayNotChange`). It does not add, remove or rename any entry point, configuration field, method, result code, delivery state, transition, per-relay outcome, public SDK event kind or field, port method, outer bound or allowed import of the interface (its record field `cDlvMayNotChange`). Where this document and the interface could be read differently, the interface wins, and the difference is a defect of this document.
 
 It is not protocol authority. It selects no Styx protocol semantic, no Marmot or Nostr envelope standard, and no normative wire or persisted format. It introduces no cryptographic construction: it uses only SHA-256 digests and BIP-340 Schnorr signatures over Nostr event ids, the construction that the existing transport code already uses to sign Nostr events. It obtains every signature from the injected identity port and verifies signatures only on inbound structures, with `schnorr.verify` as interface §9 allows.
+
+Invitation cryptography is delegated entirely to caller session and identity ports (interface §8). Experimental kind 4743 KeyPackages and kind 4744 Welcome rumors in the caller's 13/1059 layers are SDK-internal only. This layer does not implement MLS, NIP-44 or NIP-59, select Marmot semantics or claim compatibility.
 
 ## 2. Outer bounds
 
@@ -54,6 +56,8 @@ Fixed values (not configurable in this version):
 | Reconnect interval | the backoff schedule of §4.3, by consecutive failures of that relay, capped at 30 000 ms | §5.2. |
 
 The SDK does not inspect the size of a ciphertext or a plaintext that the session port returns (interface §8.2). Relays may refuse large events; such a refusal is an ordinary relay outcome (§5.3).
+
+Invitation fixed bounds: KeyPackage lifetime 3 600 seconds; KeyPackage bytes 1–65 536; Welcome and ratchet-tree bytes each 1–262 144; gift-wrap content at most 1 048 576 characters. Port returns obey the same bounds; a violation is that port's failure, except a failing unwrap candidate is ignored. These bounds do not limit existing delivery ciphertext.
 
 ## 4. Outbound queue
 
@@ -134,6 +138,8 @@ Deadline check before success. Immediately before it records a transition into `
 - **`cancel`.** An unknown id returns `E_SDK_UNKNOWN_DELIVERY`; a terminal item returns `E_SDK_DELIVERY_TERMINAL` unchanged. Otherwise the SDK calls `storage.update` with the item's record in state `CANCELLED`, bounded by the port-call timeout. From the call on, no new attempt of the item starts (interface §4.2: `cancel` stops further attempts); a retry that falls due while the write is in progress waits for it. The attempt in progress, its relay outcomes, its acceptance and the deadline continue meanwhile. If the write fails, the failed `cancel` changes nothing: the item keeps whatever state the attempt in progress, the deadline or `shutdown()` gave it, and a retry that fell due meanwhile starts at once, unless the deadline rule of §4.3 applies. If the write succeeds and the item is still non-terminal, the SDK records `CANCELLED` (allowed from every non-terminal state), emits the event and resolves success. If the item became terminal meanwhile, `cancel` resolves `E_SDK_DELIVERY_TERMINAL` and the SDK writes the item's actual terminal record (a failure is ignored), except after `shutdown()` was called: then the `LOST_ON_SHUTDOWN` write of §4.6 step (4) is the item's only further write. If the write fails, `cancel` resolves `E_SDK_STORAGE_FAILED` and the item is unchanged (interface §5.2); the stored record may then differ from the in-memory view, which is never read back. A `cancel` for an item whose cancel write is still in progress resolves with that write's result. A `cancel` still in progress when `shutdown()` is called resolves `E_SDK_CLIENT_STOPPED` once its write has settled, whatever that write returned, and records nothing; the `LOST_ON_SHUTDOWN` write of step (4) is the item's only further write. Relay frames that arrive after cancellation never change the item's state (§5.3). A copy already handed to a relay is not recalled.
 - **`shutdown()`** follows interface §4.2 in this order: (1) synchronously at the call, the client stops admitting calls: for call admission it behaves as `STOPPED` from the call on, so every state-changing method called before `shutdown()` resolves returns `E_SDK_CLIENT_STOPPED`, while `getDelivery` and `onEvent` stay allowed as interface §4.2 allows them in `STOPPED` (interface §4.2 does not define calls made while `shutdown()` is in progress; this document fixes the fail-closed `STOPPED` behaviour for them, and `CLIENT_STATE_CHANGED` with `STOPPED` is emitted in step (5)), the inbound frame queue of §7.1 is dropped so no queued frame is parsed or opened afterwards, no new attempt, retry, reconnection or receipt starts except an owed receipt of §7.2 (left running under its receipt drain bound), relay frames received afterwards are ignored, and every admitted non-terminal item takes the transition to `LOST_ON_SHUTDOWN` with `lastCode: null` in the in-memory view, so no item's terminal state waits for the steps below; in the same synchronous step every relay outcome is frozen at its current value (S2; the sole publication exception is S6 `publishDrain` of §7.2), and every delivery timer callback that runs afterwards (attempt timeout and its host backstop, retry, deadline and its host backstop, relay supervision, reconnection, catch-up) does nothing, so the item states and relay outcomes cannot change in the steps below; the port-call timeouts and the `start()` connection-phase timer with its host backstop stay active until the calls they bound have settled, so every port call and every `start()` in progress still settles within its bound and `shutdown()` always reaches its cleanup; the timer handles themselves are cleared in step (4), after the events of step (3), in the order interface §4.2 gives; (2) it waits until every `start()` and `send` call already in progress has resolved. A `start()` in progress stops at its next step boundary (after the port call in progress settles or times out), starts no further port call or connection, closes what it opened as a failed `start()` does (§5.5) and resolves `E_SDK_CLIENT_STOPPED`. A `send` in progress follows §4.2: before `put` it resolves `E_SDK_CLIENT_STOPPED` with no item; after `put` was issued it completes `put` (and, after a failed `put`, the one `remove`), and an item it admits resolves success as §4.2 states and takes `QUEUED` → `LOST_ON_SHUTDOWN` at once; (3) it delivers the `LOST_ON_SHUTDOWN` events to the listeners registered before the call; (4) it concurrently awaits the unchanged inbound-processor `settled()` and its new `drained()` under one host-time bound before the one relay-set disposal (the latter wait resolves when the fixed owed set is published through S6 or abandoned, or the receipt drain bound elapses); it waits until every port call still in progress has settled or timed out, issues the storage writes of the `LOST_ON_SHUTDOWN` records in parallel (failures ignored, each bounded by the port-call timeout), clears every clock and host timer it armed, and closes every relay connection as §5.5 specifies; (5) it emits `CLIENT_STATE_CHANGED` with `STOPPED`, removes every listener registered before the call, releases its ports, transports and timers, keeps an immutable terminal snapshot of each item, and resolves `{ clientState: 'STOPPED', lost }`, where `lost` counts the items of steps (1) and (2). Storage, listener and internal faults never prevent these effects.
 
+For M3-INVITE, shutdown step (1) also marks every invitation stopped and freezes each independent relay set (S2 and S6/S7 where present), without shortening its connection phase or clearing its timers. Waits end at the next frame/timer callback; no subsequent port call begins and a settling call's value is discarded. Step (2) does not await invitations. Step (4), after all lost-item events, disposes invitation sets concurrently with delivery disposal; each method resolves `E_SDK_CLIENT_STOPPED`, then shutdown resolves. A late successful join leaves caller session state; no rollback is promised.
+
 ## 5. Parallel multi-relay publish and subscribe
 
 ### 5.1 One `RelayPool` per relay, replaced after loss
@@ -181,9 +187,11 @@ At `shutdown()` and before a failed `start()` resolves, the SDK waits until ever
 
 In this document a relay connection is closed when the SDK has started the WebSocket closing handshake on it with `close()`, holds no reference to it, and can neither send on it nor receive from it. This is the strongest closure that the unchanged `RelayPool` lets the SDK establish, since `RelayPool` exposes no socket and no close-completion signal. The closing handshake then completes in the WebSocket implementation, which bounds it on its own (the `ws` implementation, for example, destroys the underlying socket after its fixed closing timeout when a relay does not answer the handshake). No claim is made about the time the handshake takes. Because each pool's automatic reconnection was cleared before it connected (§5.1), no pool opens a new connection afterwards. `shutdown()` therefore resolves within the host time of the `start()` or `send` calls already in progress (each bounded as §5.2 and §4.2 state; a `send` past `put` takes at most two port-call timeouts, for `put` and the one `remove`), plus the step-(4) wait for port calls in progress and the parallel `LOST_ON_SHUTDOWN` writes (one port-call timeout each), plus 10 000 ms for connection attempts to settle; in total at most four port-call timeouts plus 10 000 ms of host time beyond a `start()` in progress, plus one receipt drain bound (§3).
 
+Invitation operations each own a relay set, subscription id and phase; they never touch delivery subscriptions or catch-up cursors. Connection follows §5.2. Invite fetch uses `{ kinds: [4743], authors: [invitee] }` until every connected relay sends EOSE or one `perRelayTimeoutMs` elapses; it chooses newest valid `created_at`, lowest id on ties. Accept uses `{ kinds: [1059], '#p': [own public key] }` and the explicit inviter. Publication follows §5.3 first acceptance/attempt-timeout, with frozen ascending accepting indices and no delivery item or receipt. Every phase wait has the same-delay host timer; accept's admission deadline has a `deadlineMs + 1000` host backstop checked before join. Invocation disposal precedes its result. The §5.5 shutdown host bound increases by at most one `perRelayTimeoutMs` and one port-call timeout for invitation connection/port work; the scopes and waits overlap, not serialized per invitation.
+
 ## 6. SDK-internal on-wire and record structures (non-normative)
 
-Everything in this section is SDK-internal, experimental and tied to the interface version string `styx-m3-sdk/0.2.0-experimental`. It is not a Styx protocol semantic, not a Nostr standard and not a persisted format; a later version may change it without migration. It uses the event shape that Nostr relays already accept, as the existing transport code does, and selects no new semantic.
+Everything in this section is SDK-internal, experimental and tied to the interface version string `styx-m3-sdk/0.3.0-experimental`. It is not a Styx protocol semantic, not a Nostr standard and not a persisted format; a later version may change it without migration. It uses the event shape that Nostr relays already accept, as the existing transport code does, and selects no new semantic.
 
 ### 6.1 Event shape and id
 
@@ -199,7 +207,7 @@ Every structure is a NIP-01-shaped event object with exactly the keys `id`, `pub
 | Field | Value |
 | --- | --- |
 | `kind` | `4741` |
-| `tags` | exactly, in this order: `["p", <recipient>]`, `["v", "styx-m3-sdk/0.2.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]`, and, only in `RECIPIENT_RECEIPT` mode, `["r", "1"]` as a fourth tag |
+| `tags` | exactly, in this order: `["p", <recipient>]`, `["v", "styx-m3-sdk/0.3.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]`, and, only in `RECIPIENT_RECEIPT` mode, `["r", "1"]` as a fourth tag |
 | `content` | `bytesToBase64(ciphertext)`, where `ciphertext` is the non-empty `seal` result |
 
 The `n` tag makes two items distinct events even when they have identical recipient, ciphertext and `created_at` second. The SDK keeps every event id it assigned in the client; if a newly built id equals one of them, it draws a new `n` tag, at most three times, and then moves the item to `FAILED_NOT_ACCEPTED` with `lastCode: 'E_SDK_INTERNAL'`. No two items of a client share an event id. The event id is the message identifier for receipts and duplicate handling. The `r` tag asks the recipient for a receipt.
@@ -210,7 +218,7 @@ The `n` tag makes two items distinct events even when they have identical recipi
 | --- | --- |
 | `pubkey` | the recipient's public key (the receipt's signer) |
 | `kind` | `4742` |
-| `tags` | exactly, in this order: `["p", <original sender pubkey>]`, `["e", <original message event id>]`, `["v", "styx-m3-sdk/0.2.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]` |
+| `tags` | exactly, in this order: `["p", <original sender pubkey>]`, `["e", <original message event id>]`, `["v", "styx-m3-sdk/0.3.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]` |
 | `content` | the empty string |
 
 A receipt carries no payload, plaintext, ciphertext or reading claim.
@@ -218,6 +226,19 @@ A receipt carries no payload, plaintext, ciphertext or reading claim.
 ### 6.4 Item record
 
 The record that the SDK hands to the storage port (`put`, `update`; `remove` receives only the `deliveryId` string, interface §8.1) is a frozen plain object with exactly the fields `deliveryId`, `recipient`, `receiptMode`, `state`, `attempts`, `createdAt`, `deadlineAt`, `lastCode`, `relayOutcomes`, `ciphertext` (a copy of the sealed bytes; `null` once the item is terminal) and `event` (`null` until the first attempt signs it, then the signed event of §6.2; `null` again once the item is terminal). The record is opaque to the port and is not a persisted format. The SDK calls `list` only in `start()` (the emptiness check), `put` once at admission, `update` after every recorded transition (the `LOST_ON_SHUTDOWN` transitions, recorded at the `shutdown()` call, are written in its step (4)) and for a `cancel` (§4.6), and `remove` only to undo a failed admission (§4.2); it does not call `get` in this version. Writes for one item are issued in the order its transitions are recorded, except the `cancel` write.
+
+### 6.5 KeyPackage event (kind 4743)
+
+Seven event keys of §6.1; inviter fetch requires the named invitee's `pubkey`. Tags are exactly, in order, `["v", "styx-m3-sdk/0.3.0-experimental"]`, `["expiration", <created_at + 3600 as decimal>]`. Content is canonical standard base64 of 1–65 536 KeyPackage bytes. Expiration is checked with `clock.now()`. The publisher calls `createKeyPackage`, computes the event id, obtains `identity.sign`, publishes and remembers the id only after acceptance; no secret key crosses the SDK boundary.
+
+### 6.6 Welcome rumor (kind 4744)
+
+Unsigned closed object with exactly `pubkey` (inviter), non-negative safe integer `created_at`, `kind` 4744, `tags`, `content`. Tags are exactly, in order, `["e", <chosen KeyPackage event id>]`, `["v", "styx-m3-sdk/0.3.0-experimental"]`; there is no `relays` tag. Content is JSON of exactly `welcome` and `ratchetTree`, each canonical standard base64 of 1–262 144 bytes. `startSession({ peer: invitee, keyPackage })` supplies those bytes; the SDK delegates `giftWrap({ rumor, recipient: invitee })` and publishes its returned event unchanged.
+
+### 6.7 Gift wrap (kind 1059)
+
+Seven event keys of §6.1, kind 1059, exact tags `[["p", <invitee>]]`, content at most 1 048 576 characters. Before publication only shape/kind/tags/size are checked; malformed output is `E_SDK_IDENTITY_FAILED`, with no publication, and there is no outbound signature self-check. The identity port owns kind-13 sealing, fresh wrap key, NIP-44 v2 and unwrap authenticity. Cleartext signed test layers do not encrypt.
+
 
 ## 7. Receipts and acknowledgements
 
@@ -232,6 +253,8 @@ Inbound `EVENT` frames for the client's subscription are queued per client and p
 5. `schnorr.verify(hexToBytes(sig), hexToBytes(id), hexToBytes(pubkey))` succeeds.
 
 Then the duplicate check of §8 runs; a duplicate is dropped without an event. A frame dropped because the pending bound is full, a duplicate, and a valid receipt that matches no item (§7.3) are not structures that failed parsing, version, signature or `open`, so they emit nothing (interface §4.3 requires `INBOUND_DISCARDED` only for those failures). Inbound delivery carries no guarantee; a relay may deliver a dropped event again.
+
+These delivery-discard rules apply only to the delivery subscription. Invitation candidates are checked independently, fail closed and emit no `INBOUND_DISCARDED`, including other interface versions. KeyPackage checks run shape → kind → exact tags/version → size → expiration → recomputed id → signature, requiring the named invitee. Wrap checks run shape/kind/exact p/size → id → signature before unwrapping. Unwrap throw/reject/timeout/malformed/out-of-set data is ignored; the rumor must have §6.6 exact keys, kind, e/version/tags and sizes, with both `sealSigner` and rumor `pubkey` equal to the explicit inviter. Wrong/third-party candidates are ignored and waiting continues until the deadline. The first passing candidate calls bounded `joinSession`; false/failed/malformed join is `E_SDK_SESSION_FAILED` and ends the operation. No rollback: caller state may be consumed, and restarting needs fresh state on both sides.
 
 ### 7.2 Message events
 
@@ -269,9 +292,10 @@ The delivery layer is split over the implementation cards of the scope record. E
 | `I-QUEUE` | `styx-js/src/sdk/delivery/outbox.js` | the item lifecycle of §4, building the outbound message event of §6.2, the record of §6.4 behind the storage port, retention |
 | `I-ACK` | `styx-js/src/sdk/delivery/receipts.js` | the common structure rules of §6.1 as applied to inbound events, the receipt of §6.3, inbound validation of §7, receipts and duplicate handling of §8 |
 | `M3-CATCHUP` | `styx-js/src/sdk/delivery/catch-up.js` | per-relay local-clock cursors, EOSE observation and catch-up timer of §5.4 |
+| `M3-INVITE` | `styx-js/src/sdk/invite.js` | independent invitation operations and the builders/checks of §6.5–§6.7 |
 | `I-SDK` | `styx-js/src/sdk/index.js`, `styx-js/src/sdk/client.js` | assembly behind the interface |
 
-Imports stay inside interface §9, which is unchanged. The delivery modules need only this subset; each implementation card contract enumerates its own exact list from it:
+Imports stay inside the exact amended interface §9; the only real-engine test exception belongs to #525 and does not extend product imports. The delivery modules need only this subset; each implementation card contract enumerates its own exact list from it:
 
 - `styx-js/src/sdk/**` lane modules present at the importing card's base or in its own allowlist, as interface §9 allows;
 - `styx-js/src/transport/nostr-transport.js`: `RelayPool` only;
@@ -308,6 +332,8 @@ These statements stay in force verbatim:
 
 Implementation of this contract (`I-RETRY`, `I-RELAY`, `I-QUEUE`, `I-ACK`, `I-SDK`, `T-RELAY`) starts only after every `beforeImplementation` gate of the M3 scope record holds, including the owner hash-ratification of this exact file and of `O-SCEN3`, and their merge into `m3/integration`. `O-SCEN3` is written by a model vendor different from the author vendor of this document.
 
+Invitation relays see KeyPackage publishers and the named invitee in p, plus size/timing; protection of the rumor depends entirely on the injected wrap port. Failed join may consume the KeyPackage while the inviter retains a group; fresh engines, ports and clients are required on both sides. A late join after shutdown may leave an unreported group. No Marmot compatibility, service for organizations, deployment or sensitive use is authorized.
+
 ## 12. Machine-readable normative record
 
 The JSON below is normative and closed. Prose clarifies but does not widen it. Duplicate keys are invalid.
@@ -318,13 +344,28 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   "schema": "styx-m3-delivery-layer/v1",
   "closed": true,
   "card": "C-DLV",
-  "sdkInterfaceVersion": "styx-m3-sdk/0.2.0-experimental",
-  "sdkInterfaceDoc": { "path": "docs/architecture/m3/sdk-interface.md", "sha256": "f7c89461dc5ac3cd72ada90098073fcc42ba8f6f5e180b14ee9c3ea3ae01510f" },
+  "sdkInterfaceVersion": "styx-m3-sdk/0.3.0-experimental",
+  "sdkInterfaceDoc": {
+    "path": "docs/architecture/m3/sdk-interface.md",
+    "sha256": "fba08e698bb6801695af1c5a3efc2c774a10c57b72e023ff560be30421cf61f1"
+  },
   "publicSurfaceChanged": false,
   "parameters": {
-    "maxAttempts": { "min": 1, "max": 10, "default": 5 },
-    "deadlineMs": { "min": 30000, "max": 600000, "default": 120000 },
-    "perRelayTimeoutMs": { "min": 11000, "max": 30000, "default": 12000 },
+    "maxAttempts": {
+      "min": 1,
+      "max": 10,
+      "default": 5
+    },
+    "deadlineMs": {
+      "min": 30000,
+      "max": 600000,
+      "default": 120000
+    },
+    "perRelayTimeoutMs": {
+      "min": 11000,
+      "max": 30000,
+      "default": 12000
+    },
     "receiptModeDefault": "RELAY_ACCEPTANCE_ONLY"
   },
   "fixed": {
@@ -339,18 +380,39 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "inboundPendingBound": 1024,
     "relaySupervisionMs": 1000,
     "catchUpIntervalMs": 10000,
-    "catchUpMarginSeconds": 120
+    "catchUpMarginSeconds": 120,
+    "keyPackageLifetimeSeconds": 3600,
+    "keyPackageMaxBytes": 65536,
+    "welcomeMaxBytes": 262144,
+    "ratchetTreeMaxBytes": 262144,
+    "giftWrapMaxContentCharacters": 1048576
   },
   "backoff": {
     "baseMs": 1000,
     "capMs": 30000,
     "formula": "base(n)=min(1000*2^(n-1),30000); delay(n,u)=floor(base(n)/2)+floor(u*base(n)/2^33); u=random.nextUint32()",
     "retryAfterAcceptance": false,
-    "failWhen": ["attempts == maxAttempts", "clock.now() + delay >= deadlineAt"],
+    "failWhen": [
+      "attempts == maxAttempts",
+      "clock.now() + delay >= deadlineAt"
+    ],
     "afterAcceptance": "no further attempt; in RECIPIENT_RECEIPT the accepted attempt is the last and ends only at receipt, deadline, fault, cancel or shutdown"
   },
-  "deadline": { "from": "createdAt", "clock": "clock port", "hostBackstopMs": "deadlineMs + terminalSlackMs", "backstopArmedAt": "admission clock reading", "checkedBeforeSuccessOrAttempt": true, "fromNonAccepted": "FAILED_NOT_ACCEPTED", "fromAwaitingReceipt": "FAILED_NO_RECEIPT" },
-  "hostBackstops": ["deadline", "attemptTimeout", "startConnectionPhase", "portCall"],
+  "deadline": {
+    "from": "createdAt",
+    "clock": "clock port",
+    "hostBackstopMs": "deadlineMs + terminalSlackMs",
+    "backstopArmedAt": "admission clock reading",
+    "checkedBeforeSuccessOrAttempt": true,
+    "fromNonAccepted": "FAILED_NOT_ACCEPTED",
+    "fromAwaitingReceipt": "FAILED_NO_RECEIPT"
+  },
+  "hostBackstops": [
+    "deadline",
+    "attemptTimeout",
+    "startConnectionPhase",
+    "portCall"
+  ],
   "attemptTimerArmedAt": "publication start (after the first signature)",
   "lifecycle": {
     "deliveryId": "d + per-client decimal counter",
@@ -360,19 +422,75 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "uniqueEventIds": "per client, at most 3 n-tag redraws, then E_SDK_INTERNAL",
     "shutdownLostAtCall": true,
     "shutdownWaitsForCallsInProgress": true,
-    "shutdownKeepsActive": ["portCall", "startConnectionPhase", "ownedReceiptDrain"],
-    "shutdownInertDeliveryTimers": ["attemptTimeout", "retry", "deadline", "relaySupervision", "reconnection", "catchUp"],
+    "shutdownKeepsActive": [
+      "portCall",
+      "startConnectionPhase",
+      "ownedReceiptDrain"
+    ],
+    "shutdownInertDeliveryTimers": [
+      "attemptTimeout",
+      "retry",
+      "deadline",
+      "relaySupervision",
+      "reconnection",
+      "catchUp"
+    ],
     "shutdownClearsDeliveryTimersAt": "step 4, after LOST_ON_SHUTDOWN events",
-    "catchUpTimer": { "clock": "clock port only", "armedAt": "successful start", "failedStart": false, "inertFrom": "synchronous shutdown step 1", "clearedAt": "shutdown step 4" },
-    "afterShutdownCall": { "start": "E_SDK_CLIENT_STOPPED", "send": "E_SDK_CLIENT_STOPPED", "getDelivery": "unchanged (interface 4.2)", "cancel": "E_SDK_CLIENT_STOPPED", "onEvent": "unchanged (interface 4.2)", "shutdown": "E_SDK_CLIENT_STOPPED" },
-    "callsInProgressAtShutdown": { "startBeforeCompletion": "E_SDK_CLIENT_STOPPED", "sendBeforePut": "E_SDK_CLIENT_STOPPED", "sendAfterPut": "completes; admitted item LOST_ON_SHUTDOWN", "cancel": "E_SDK_CLIENT_STOPPED after its write settles" },
+    "catchUpTimer": {
+      "clock": "clock port only",
+      "armedAt": "successful start",
+      "failedStart": false,
+      "inertFrom": "synchronous shutdown step 1",
+      "clearedAt": "shutdown step 4"
+    },
+    "afterShutdownCall": {
+      "start": "E_SDK_CLIENT_STOPPED",
+      "send": "E_SDK_CLIENT_STOPPED",
+      "getDelivery": "unchanged (interface 4.2)",
+      "cancel": "E_SDK_CLIENT_STOPPED",
+      "onEvent": "unchanged (interface 4.2)",
+      "shutdown": "E_SDK_CLIENT_STOPPED"
+    },
+    "callsInProgressAtShutdown": {
+      "startBeforeCompletion": "E_SDK_CLIENT_STOPPED",
+      "sendBeforePut": "E_SDK_CLIENT_STOPPED",
+      "sendAfterPut": "completes; admitted item LOST_ON_SHUTDOWN",
+      "cancel": "E_SDK_CLIENT_STOPPED after its write settles"
+    },
     "connectionClosed": "close() started, no reference held, no send or receive"
   },
-  "queueStates": ["QUEUED", "IN_FLIGHT", "RELAY_ACCEPTED_AWAITING_RECEIPT", "RELAY_ACCEPTED", "RECIPIENT_RECEIPT_RECEIVED", "FAILED_NOT_ACCEPTED", "FAILED_NO_RECEIPT", "CANCELLED", "LOST_ON_SHUTDOWN"],
+  "queueStates": [
+    "QUEUED",
+    "IN_FLIGHT",
+    "RELAY_ACCEPTED_AWAITING_RECEIPT",
+    "RELAY_ACCEPTED",
+    "RECIPIENT_RECEIPT_RECEIVED",
+    "FAILED_NOT_ACCEPTED",
+    "FAILED_NO_RECEIPT",
+    "CANCELLED",
+    "LOST_ON_SHUTDOWN"
+  ],
   "transitionsUsed": {
-    "QUEUED": ["IN_FLIGHT", "CANCELLED", "FAILED_NOT_ACCEPTED", "LOST_ON_SHUTDOWN"],
-    "IN_FLIGHT": ["QUEUED", "RELAY_ACCEPTED_AWAITING_RECEIPT", "RELAY_ACCEPTED", "FAILED_NOT_ACCEPTED", "CANCELLED", "LOST_ON_SHUTDOWN"],
-    "RELAY_ACCEPTED_AWAITING_RECEIPT": ["RECIPIENT_RECEIPT_RECEIVED", "FAILED_NO_RECEIPT", "CANCELLED", "LOST_ON_SHUTDOWN"],
+    "QUEUED": [
+      "IN_FLIGHT",
+      "CANCELLED",
+      "FAILED_NOT_ACCEPTED",
+      "LOST_ON_SHUTDOWN"
+    ],
+    "IN_FLIGHT": [
+      "QUEUED",
+      "RELAY_ACCEPTED_AWAITING_RECEIPT",
+      "RELAY_ACCEPTED",
+      "FAILED_NOT_ACCEPTED",
+      "CANCELLED",
+      "LOST_ON_SHUTDOWN"
+    ],
+    "RELAY_ACCEPTED_AWAITING_RECEIPT": [
+      "RECIPIENT_RECEIPT_RECEIVED",
+      "FAILED_NO_RECEIPT",
+      "CANCELLED",
+      "LOST_ON_SHUTDOWN"
+    ],
     "RELAY_ACCEPTED": [],
     "RECIPIENT_RECEIPT_RECEIVED": [],
     "FAILED_NOT_ACCEPTED": [],
@@ -380,22 +498,69 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "CANCELLED": [],
     "LOST_ON_SHUTDOWN": []
   },
-  "lastCodes": [null, "E_SDK_STORAGE_FAILED", "E_SDK_IDENTITY_FAILED", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE"],
-  "codesUsed": ["E_SDK_INVALID_ARGUMENT", "E_SDK_PAYLOAD_TOO_LARGE", "E_SDK_QUEUE_FULL", "E_SDK_SESSION_FAILED", "E_SDK_STORAGE_FAILED", "E_SDK_IDENTITY_FAILED", "E_SDK_NO_RELAY_AVAILABLE", "E_SDK_STORAGE_NOT_EMPTY", "E_SDK_UNKNOWN_DELIVERY", "E_SDK_DELIVERY_TERMINAL", "E_SDK_CLIENT_STOPPED", "E_SDK_INBOUND_INVALID", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE", "E_SDK_INVALID_CONFIG"],
+  "lastCodes": [
+    null,
+    "E_SDK_STORAGE_FAILED",
+    "E_SDK_IDENTITY_FAILED",
+    "E_SDK_INTERNAL",
+    "E_SDK_UNKNOWN_CODE"
+  ],
+  "codesUsed": [
+    "E_SDK_INVALID_ARGUMENT",
+    "E_SDK_PAYLOAD_TOO_LARGE",
+    "E_SDK_QUEUE_FULL",
+    "E_SDK_SESSION_FAILED",
+    "E_SDK_STORAGE_FAILED",
+    "E_SDK_IDENTITY_FAILED",
+    "E_SDK_NO_RELAY_AVAILABLE",
+    "E_SDK_STORAGE_NOT_EMPTY",
+    "E_SDK_UNKNOWN_DELIVERY",
+    "E_SDK_DELIVERY_TERMINAL",
+    "E_SDK_CLIENT_STOPPED",
+    "E_SDK_INBOUND_INVALID",
+    "E_SDK_INTERNAL",
+    "E_SDK_UNKNOWN_CODE",
+    "E_SDK_INVALID_CONFIG",
+    "E_SDK_NOT_CONFIGURED",
+    "E_SDK_PUBLISH_NOT_ACCEPTED",
+    "E_SDK_KEYPACKAGE_NOT_FOUND",
+    "E_SDK_INVITE_TIMEOUT"
+  ],
   "relays": {
     "poolPerRelay": true,
     "poolReplacedAfterLoss": true,
     "autoReconnectClearedVia": "disconnectAll before connectAll",
     "subscribeBeforeConnect": true,
-    "transportCalls": ["constructor", "disconnectAll", "subscribe", "messages", "connectAll", "healthCheck", "publish", "dispose"],
-    "transportCallsNever": ["reconnect", "addRelay", "removeRelay", "publishAndVerify", "underscorePrefixedProperties"],
+    "transportCalls": [
+      "constructor",
+      "disconnectAll",
+      "subscribe",
+      "messages",
+      "connectAll",
+      "healthCheck",
+      "publish",
+      "dispose"
+    ],
+    "transportCallsNever": [
+      "reconnect",
+      "addRelay",
+      "removeRelay",
+      "publishAndVerify",
+      "underscorePrefixedProperties"
+    ],
     "startPhaseMs": "perRelayTimeoutMs",
     "reconnectInterval": "delay(k,u) by consecutive failures of that relay",
     "closeWaitsForConnectSettleMs": 10000,
     "lateConnection": "tracked until connectAll settles (host time); never counts in connectedRelays; after a successful start it becomes the relay connection, after a failed start it is disposed once settled"
   },
   "relayOutcomeRules": {
-    "outcomes": ["PENDING", "ACCEPTED", "REJECTED", "TIMED_OUT", "UNREACHABLE"],
+    "outcomes": [
+      "PENDING",
+      "ACCEPTED",
+      "REJECTED",
+      "TIMED_OUT",
+      "UNREACHABLE"
+    ],
     "publishReturnedZero": "PENDING",
     "publishAfterOpen": "once, only while RUNNING, IN_FLIGHT in the same attempt and before the deadline",
     "connectionLostAfterPublish": "UNREACHABLE",
@@ -411,28 +576,129 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   },
   "wire": {
     "normative": false,
-    "versionTag": "styx-m3-sdk/0.2.0-experimental",
-    "eventKeys": ["id", "pubkey", "created_at", "kind", "tags", "content", "sig"],
+    "versionTag": "styx-m3-sdk/0.3.0-experimental",
+    "eventKeys": [
+      "id",
+      "pubkey",
+      "created_at",
+      "kind",
+      "tags",
+      "content",
+      "sig"
+    ],
     "id": "sha256(utf8(JSON.stringify([0,pubkey,created_at,kind,tags,content])))",
     "signature": "identity.sign over id (BIP-340); verified on inbound structures only",
     "outboundSelfVerify": false,
-    "message": { "kind": 4741, "tags": ["p", "v", "n"], "optionalTag": "r", "content": "base64(ciphertext)" },
-    "receipt": { "kind": 4742, "tags": ["p", "e", "v", "n"], "content": "" },
-    "subscriptionFilter": { "kinds": [4741, 4742], "pTag": "own public key", "since": { "first": false, "replacementAndReRequest": "syncedUntil - 120 when a cursor exists, otherwise absent" }, "limit": false },
-    "sizeInspected": false
+    "message": {
+      "kind": 4741,
+      "tags": [
+        "p",
+        "v",
+        "n"
+      ],
+      "optionalTag": "r",
+      "content": "base64(ciphertext)"
+    },
+    "receipt": {
+      "kind": 4742,
+      "tags": [
+        "p",
+        "e",
+        "v",
+        "n"
+      ],
+      "content": ""
+    },
+    "subscriptionFilter": {
+      "kinds": [
+        4741,
+        4742
+      ],
+      "pTag": "own public key",
+      "since": {
+        "first": false,
+        "replacementAndReRequest": "syncedUntil - 120 when a cursor exists, otherwise absent"
+      },
+      "limit": false
+    },
+    "sizeInspected": false,
+    "invitation": {
+      "keyPackage": {
+        "kind": 4743,
+        "tags": [
+          "v",
+          "expiration"
+        ],
+        "content": "canonical base64, 1..65536 bytes",
+        "expiration": "created_at + 3600 decimal"
+      },
+      "rumor": {
+        "kind": 4744,
+        "keys": [
+          "pubkey",
+          "created_at",
+          "kind",
+          "tags",
+          "content"
+        ],
+        "tags": [
+          "e",
+          "v"
+        ],
+        "payloadKeys": [
+          "welcome",
+          "ratchetTree"
+        ],
+        "eachBytes": "1..262144"
+      },
+      "wrap": {
+        "kind": 1059,
+        "tags": [
+          "p"
+        ],
+        "contentMaxCharacters": 1048576,
+        "cryptography": "caller identity port; kind 13 seal and fresh wrapping key; NIP-44 v2"
+      },
+      "invalidCandidate": "ignore without event",
+      "inviter": "both rumor.pubkey and sealSigner equal explicit inviter"
+    }
   },
   "record": {
-    "fields": ["deliveryId", "recipient", "receiptMode", "state", "attempts", "createdAt", "deadlineAt", "lastCode", "relayOutcomes", "ciphertext", "event"],
+    "fields": [
+      "deliveryId",
+      "recipient",
+      "receiptMode",
+      "state",
+      "attempts",
+      "createdAt",
+      "deadlineAt",
+      "lastCode",
+      "relayOutcomes",
+      "ciphertext",
+      "event"
+    ],
     "persistedFormat": false,
     "authoritative": "in-memory view",
-    "storageCalls": { "put": "admission", "update": "after every recorded transition and for cancel", "remove": "undo a failed admission", "list": "start emptiness check", "get": "never" }
+    "storageCalls": {
+      "put": "admission",
+      "update": "after every recorded transition and for cancel",
+      "remove": "undo a failed admission",
+      "list": "start emptiness check",
+      "get": "never"
+    }
   },
   "receipts": {
     "requestedBy": "r tag in RECIPIENT_RECEIPT mode",
     "sentAfter": "successful open and MESSAGE_RECEIVED",
     "sentAtMostOncePerEventIdInWindow": true,
     "retry": false,
-    "acceptedWhen": ["every inbound check of section 7.1, including p tag equal to own public key", "e tag is a non-terminal RECIPIENT_RECEIPT item", "pubkey equals item recipient", "first receipt for the item", "clock.now() < deadlineAt"],
+    "acceptedWhen": [
+      "every inbound check of section 7.1, including p tag equal to own public key",
+      "e tag is a non-terminal RECIPIENT_RECEIPT item",
+      "pubkey equals item recipient",
+      "first receipt for the item",
+      "clock.now() < deadlineAt"
+    ],
     "earlyReceiptHeldUntilAcceptance": true,
     "receiptImpliesRelayAcceptance": false,
     "receiptProvesOpening": false,
@@ -459,21 +725,67 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "relayUrlsInjectedOnly": true
   },
   "modules": {
-    "I-RETRY": ["styx-js/src/sdk/delivery/retry.js"],
-    "I-RELAY": ["styx-js/src/sdk/delivery/relay-pool.js"],
-    "I-QUEUE": ["styx-js/src/sdk/delivery/outbox.js"],
-    "I-ACK": ["styx-js/src/sdk/delivery/receipts.js"],
-    "M3-CATCHUP": ["styx-js/src/sdk/delivery/catch-up.js"],
-    "I-SDK": ["styx-js/src/sdk/index.js", "styx-js/src/sdk/client.js"]
+    "I-RETRY": [
+      "styx-js/src/sdk/delivery/retry.js"
+    ],
+    "I-RELAY": [
+      "styx-js/src/sdk/delivery/relay-pool.js"
+    ],
+    "I-QUEUE": [
+      "styx-js/src/sdk/delivery/outbox.js"
+    ],
+    "I-ACK": [
+      "styx-js/src/sdk/delivery/receipts.js"
+    ],
+    "M3-CATCHUP": [
+      "styx-js/src/sdk/delivery/catch-up.js"
+    ],
+    "I-SDK": [
+      "styx-js/src/sdk/index.js",
+      "styx-js/src/sdk/client.js"
+    ],
+    "M3-INVITE": [
+      "styx-js/src/sdk/invite.js"
+    ]
   },
   "imports": {
     "lane": "styx-js/src/sdk/** modules present at the importing card base or in its own allowlist",
-    "transport": { "styx-js/src/transport/nostr-transport.js": ["RelayPool"] },
-    "utils": ["bytesToHex", "hexToBytes", "utf8Encode", "bytesToBase64", "base64ToBytes", "randomBytes"],
-    "packages": { "@noble/hashes/sha256": ["sha256"], "@noble/curves/secp256k1": ["schnorr"] },
+    "transport": {
+      "styx-js/src/transport/nostr-transport.js": [
+        "RelayPool"
+      ]
+    },
+    "utils": [
+      "bytesToHex",
+      "hexToBytes",
+      "utf8Encode",
+      "bytesToBase64",
+      "base64ToBytes",
+      "randomBytes"
+    ],
+    "packages": {
+      "@noble/hashes/sha256": [
+        "sha256"
+      ],
+      "@noble/curves/secp256k1": [
+        "schnorr"
+      ]
+    },
     "srcSchnorrUse": "verify only, inbound",
-    "noImport": ["styx-js/src/storage/**", "styx-js/src/crypto/**", "styx-js/src/config/**", "styx-js/apps/**"],
-    "forbiddenTransportExports": ["NostrTransport", "OutboxWorker", "TransportFailover", "WebRTCTransport", "BroadcastChannelTransport", "NostrChatTransport"],
+    "noImport": [
+      "styx-js/src/storage/**",
+      "styx-js/src/crypto/**",
+      "styx-js/src/config/**",
+      "styx-js/apps/**"
+    ],
+    "forbiddenTransportExports": [
+      "NostrTransport",
+      "OutboxWorker",
+      "TransportFailover",
+      "WebRTCTransport",
+      "BroadcastChannelTransport",
+      "NostrChatTransport"
+    ],
     "newDependency": false,
     "withinSdkInterfaceSection9": true
   },
@@ -482,16 +794,62 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "path": "styx-js/test/sdk/integration/**",
     "builtFrom": "ws WebSocketServer",
     "nodeWebSocketGlobal": "ws WebSocket installed as global before client creation",
-    "hosts": ["127.0.0.1", "::1"],
+    "hosts": [
+      "127.0.0.1",
+      "::1"
+    ],
     "port": "ephemeral",
     "newDependency": false,
     "dockerCompose": false,
-    "nip01Subset": ["EVENT", "OK", "REQ", "EOSE", "CLOSE"],
-    "behaviours": ["normal", "neverAnswering", "rejecting", "dropAfterFrames", "delayFrames", "duplicateDelivery", "reverseOrder"],
+    "nip01Subset": [
+      "EVENT",
+      "OK",
+      "REQ",
+      "EOSE",
+      "CLOSE"
+    ],
+    "behaviours": [
+      "normal",
+      "neverAnswering",
+      "rejecting",
+      "dropAfterFrames",
+      "delayFrames",
+      "duplicateDelivery",
+      "reverseOrder"
+    ],
     "minRelays": 2,
     "signatureVerification": false,
-    "scenarios": ["hungRelay", "clockAheadOfHost", "stalledHandshake", "connectionFailsDuringAttempt", "connectionLostAfterPublish", "lateOpenAfterAcceptanceOrCancel", "signingFailureFirstAttempt", "receiptInLastAttempt", "cancelDuringRetryWait", "shutdownDuringAttempt", "relayLossAndReplacement", "offlineRecipient", "duplicateAndReordered", "shutdownLostThenNewClient", "lateCloseAfterReplacement"],
+    "scenarios": [
+      "hungRelay",
+      "clockAheadOfHost",
+      "stalledHandshake",
+      "connectionFailsDuringAttempt",
+      "connectionLostAfterPublish",
+      "lateOpenAfterAcceptanceOrCancel",
+      "signingFailureFirstAttempt",
+      "receiptInLastAttempt",
+      "cancelDuringRetryWait",
+      "shutdownDuringAttempt",
+      "relayLossAndReplacement",
+      "offlineRecipient",
+      "duplicateAndReordered",
+      "shutdownLostThenNewClient",
+      "lateCloseAfterReplacement"
+    ],
     "cDlvWritesHarnessCode": false
+  },
+  "invitation": {
+    "portCallTimeout": "floor(perRelayTimeoutMs / 2), host timer",
+    "fetch": "every connected EOSE or perRelayTimeoutMs",
+    "publication": "first acceptance or perRelayTimeoutMs",
+    "wait": "deadlineMs from admission, host backstop deadlineMs + 1000, check before join",
+    "hostBounds": {
+      "publishAndInvite": "2 port-call timeouts + 3 perRelayTimeoutMs + 10000",
+      "accept": "deadlineMs + 1000 + 2 port-call timeouts + 10000"
+    },
+    "shutdown": "step 1 freeze; step 2 does not wait; step 4 dispose after lost events concurrently with delivery; resolve stopped",
+    "shutdownAdditionalBound": "one perRelayTimeoutMs plus one port-call timeout",
+    "stateRollback": false
   }
 }
 ```
@@ -506,6 +864,8 @@ Conformance of the owed-receipt drain also demonstrates a shutdown from `MESSAGE
 Conformance of catch-up demonstrates the three default-timing open-socket stalls (reply 2, first inbound event and lost initial EOSE), recovery and recipient acknowledgement within 22 seconds, per-relay local-clock/EOSE cursors with earliest outstanding issue time and no cursor from EVENT fields, re-requests with or without `since`, replacement filters, unchanged duplicate suppression before `session.open`, and the catch-up timer inert from shutdown step (1) and cleared in step (4).
 
 A conforming validator of the record in §12 rejects: an unknown or missing field; a duplicate key; a bound that is not finite or a default outside its bounds; a `maxAttempts` maximum above 10 or a `deadlineMs` maximum above 600 000; a `deadlineMs` minimum below the `perRelayTimeoutMs` maximum; a transition not allowed by the interface; a code or last code outside the interface's closed set; a relay outcome outside the interface's list; retransmission after acceptance; a receipt that implies relay acceptance, opening or reading; outbound self-verification; a normative wire format; an import outside interface §9; and any `outerBounds` value different from the one above.
+
+M3-INVITE conformance additionally exercises the full #525 loopback flow and refusals, optional port groups and four closed codes, faulty-port Model B cases, selection and accepted indices, unchanged delivery behavior, host-time deadline, ordered shutdown of independent sets, and the unchanged real engine/WASM with exported-secret equality, round trips, refused credential/Welcome and fresh-state retry. #525 and #400/6544668029 authorize only the enumerated amendments; these 0.3.0 bytes need later exact-head output ratification. O-SCEN3/C-PREV historical pins and the complete prospective CATCHUP view remain unchanged.
 
 ## 14. Authority and ratification
 
