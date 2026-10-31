@@ -21,13 +21,13 @@ These bounds are part of the interface. No value, state or event defined here cl
 3. **Relay acceptance is not recipient receipt.** `RELAY_ACCEPTED` and `RELAY_ACCEPTED_AWAITING_RECEIPT` mean only that at least one relay acknowledged the publication. `RECIPIENT_RECEIPT_RECEIVED` means only that a receipt attributed to the recipient identity was received and validated as `C-DLV` specifies. Neither proves that a person read the message.
 4. **Process lifetime only.** Delivery guarantees hold only within one process lifetime. On an explicit, orderly `shutdown()`, every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case.
 5. **No normative wire format.** Any on-wire structure the SDK produces or consumes (message identifier, receipt, acknowledgement, event kind or tag) is SDK-internal, experimental and versioned with `sdkInterfaceVersion`. It is not normative. Using the allowed transport exports with the event formats they already produce selects no new semantic.
-6. **Relay URLs are injected only.** Relay endpoints reach the SDK only through `config.relays`. No module under `styx-js/src/sdk/**` contains a relay URL literal, a default relay list or a fallback relay.
+6. **Relay URLs are injected only.** Relay endpoints reach the SDK only through `config.relays`. No module under `styx-js/src/sdk/**` contains a relay URL literal, a relay host name, a default relay list or a fallback relay. Hosts are limited by §4.1 and reach the SDK only through caller configuration.
 
 The SDK makes no confidentiality, integrity, authenticity, identity-hiding, unlinkability, padding, timing or metadata-protection claim of its own. Payload protection is exactly what the injected session port provides, and the SDK does not inspect or attest it. Relays and network observers see public keys, timing, sizes and network metadata.
 
 ## 3. Versioning
 
-- The exact interface version string is `styx-m3-sdk/0.1.0-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
+- The exact interface version string is `styx-m3-sdk/0.2.0-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
 - `createStyxClient(config)` requires `config.interfaceVersion` to equal that string exactly (byte-for-byte, case-sensitive). Any other value, including a missing one, returns `E_SDK_UNSUPPORTED_VERSION` and creates no client. There is no negotiation, range, downgrade or fallback.
 - The version is experimental. It carries no stability, compatibility or deprecation promise to third parties before a later owner act. Any change to an entry point, field, code, state, event kind, port method, bound inherited from §2 or allowed import requires a new hash-ratified version of this document with a new version string.
 - SDK-internal on-wire structures carry or are keyed by this version string as `C-DLV` specifies; an inbound structure from any other version is not interpreted: it emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and nothing else.
@@ -58,11 +58,16 @@ Synchronous. Returns a result envelope (§5.1) for every input value, including 
 | Field | Required | Type and rule |
 | --- | --- | --- |
 | `interfaceVersion` | yes | exactly `SDK_INTERFACE_VERSION` (§3). |
-| `relays` | yes | array of 1 to 16 distinct strings, each a syntactically valid absolute `ws:` or `wss:` URL with no userinfo and no fragment. Order is preserved; no entry is added, removed or reordered by the SDK. In this interface version every relay host must be a loopback IP address literal (an IPv4 address in the loopback block or the IPv6 loopback address); any other host, including a host name, REJECTs with `E_SDK_INVALID_CONFIG`, so the SDK of this version cannot connect to a public or remote relay. Lifting this restriction is a deployment decision that needs a later owner act and a new version of this document. |
+| `relays` | yes | array of 1 to 16 distinct strings. Each is either a syntactically valid absolute `ws:` or `wss:` URL with no userinfo and no fragment whose host is a loopback IP literal (IPv4 in the loopback block or the IPv6 loopback address), under the unchanged I-SDK RFC 3986 loopback rule; or an allowlisted remote URL under the rule below. Order and every accepted string are preserved unchanged; nothing is added, removed, normalised or reordered. Every other value REJECTs with `E_SDK_INVALID_CONFIG`. |
+| `publicRelayHosts` | no | array of 1 to 16 pairwise distinct host-name strings under the exact ASCII rule below. Absent means no remote relay is allowed; present `undefined` is invalid. |
 | `ports` | yes | closed object `{ storage, session, identity }`; each is required and must expose every method of §8 as a function. |
 | `clock` | no | closed object `{ now, setTimer, clearTimer }` (§8.4). Absent means the built-in `Date.now`, `setTimeout` and `clearTimeout`. |
 | `random` | no | closed object `{ nextUint32 }` (§8.4). Absent means the built-in `crypto.getRandomValues`. |
 | `delivery` | no | closed object `{ maxAttempts, deadlineMs, perRelayTimeoutMs, receiptMode }`. Each numeric field, when present, is a positive safe integer within the bounds `C-DLV` fixes; `receiptMode` is `RECIPIENT_RECEIPT` or `RELAY_ACCEPTANCE_ONLY`. An absent field takes the finite default `C-DLV` fixes. `Infinity`, `NaN`, `0`, negatives, non-integers and out-of-bound values REJECT. |
+
+The `publicRelayHosts` host-name rule is: 1–253 characters, at least two labels separated by single dots, no leading or trailing dot; each label has 1–63 characters from lowercase ASCII `a`–`z`, `0`–`9` and `-`, neither starting nor ending with `-`. The last label matches neither `^[0-9]+$` nor `^0x[0-9a-f]*$` (no WHATWG ends-in-a-number IPv4 reading; `0xzz` remains a label). Uppercase, non-ASCII, `%`, `_`, `:` and every other character REJECT; nothing is normalised. Internationalised names use their ASCII `xn--` form.
+
+A remote relay URL requires scheme `wss`, compared case-insensitively (RFC 3986 §3.1), an authority consisting of exactly an RFC 3986 reg-name host whose ASCII-lowercased form equals a `publicRelayHosts` entry byte for byte, an empty path or exactly `/`, and no query or fragment. No userinfo or colon is allowed in that authority: an empty port, explicit `:443` and every other explicit port REJECT; default 443 (RFC 6455) is used. Non-loopback `ws:` and non-loopback IP literals always REJECT. Loopback parsing is unchanged, including its existing path, query and port rules. The lifting is authorized only by the public relays act #317 comments `6316724633` and `6316738209`, adopted by current scope replacement4 #400/6426737491 and M3-PUBLIC-RELAYS #522 approval #400/6489853937; it is not a DNS, TLS or deployment assurance.
 
 Validation is total and happens before any side effect. The first failing rule determines the code: `E_SDK_UNSUPPORTED_VERSION`, then `E_SDK_INVALID_CONFIG` for every other field. No partially constructed client is ever returned.
 
@@ -272,11 +277,11 @@ Rules:
 - No module or test imports `styx-js/src/storage/**`, `styx-js/src/crypto/**`, `styx-js/src/config/**`, `styx-js/apps/**`, any other file under `styx-js/src/transport/**`, or any other export of the two allowed transport files, including `OutboxWorker`, `TransportFailover`, `WebRTCTransport`, `BroadcastChannelTransport` and `NostrChatTransport`.
 - Test files may import test files in their own card's allowlist. No shared test-helper file exists outside a card's allowlist.
 - No new runtime or development dependency, lockfile change, vendored WASM change, pin change or ciphersuite change is allowed. `styx-js/package.json` is not changed.
-- Lane tests connect only to loopback relays they start inside the test. Lane code, tests and examples contain no non-loopback `ws://` or `wss://` URL, and no module under `styx-js/src/sdk/**` contains any relay URL literal.
+- Lane tests connect only to loopback relays they start inside the test; preview and examples stay loopback-only. A non-loopback relay test string, using an RFC 6761 `.test` or `.invalid` host or a non-loopback IP literal, may appear only when assembled at run time from its parts and is never connected to. No module under `styx-js/src/sdk/**` contains a relay URL literal, relay host name, default list or fallback relay; callers alone supply hosts and endpoints under §4.1.
 
 ## 10. Non-claims and gates
 
-The SDK is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message.
+The SDK is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. Third-party relays see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and the client network address; they may store, refuse or drop events. A listed host may resolve to any address, including private or loopback; no DNS policy or TLS pinning is provided, and host WebSocket TLS validation is not attested. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message.
 
 These statements stay in force verbatim:
 
@@ -294,7 +299,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
 {
   "schema": "styx-m3-sdk-interface/v1",
   "closed": true,
-  "sdkInterfaceVersion": "styx-m3-sdk/0.1.0-experimental",
+  "sdkInterfaceVersion": "styx-m3-sdk/0.2.0-experimental",
   "stability": "experimental-no-stability-promise",
   "publicModule": "styx-js/src/sdk/index.js",
   "implementationModule": "styx-js/src/sdk/client.js",
@@ -311,8 +316,18 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   ],
   "config": {
     "required": ["interfaceVersion", "relays", "ports"],
-    "optional": ["clock", "random", "delivery"],
-    "relays": { "minItems": 1, "maxItems": 16, "distinct": true, "schemes": ["ws:", "wss:"], "userinfo": false, "fragment": false, "defaultList": false, "hosts": "loopbackIpLiteralOnly" },
+    "optional": ["clock", "random", "delivery", "publicRelayHosts"],
+    "relays": { "minItems": 1, "maxItems": 16, "distinct": true, "schemes": ["ws:", "wss:"], "userinfo": false, "fragment": false, "defaultList": false, "hosts": "loopbackIpLiteralOrAllowlistedWssHost" },
+    "publicRelayHosts": {
+      "type": "array", "minItems": 1, "maxItems": 16, "distinct": true,
+      "absent": "no remote relay", "hostMinLength": 1, "hostMaxLength": 253,
+      "minLabels": 2, "labelMinLength": 1, "labelMaxLength": 63,
+      "characters": "lowercase ASCII a-z, 0-9, hyphen; single-dot separators",
+      "labelEdgeHyphen": false, "leadingOrTrailingDot": false,
+      "lastLabelReject": ["^[0-9]+$", "^0x[0-9a-f]*$"],
+      "normalise": false,
+      "remoteUrl": { "scheme": "wss (case-insensitive)", "hostMatch": "ASCII-lowercased reg-name equals allowlist entry byte for byte", "userinfo": false, "explicitPort": false, "defaultPort": 443, "paths": ["", "/"], "query": false, "fragment": false, "acceptedStringUnchanged": true }
+    },
     "ports": ["storage", "session", "identity"],
     "delivery": {
       "fields": ["maxAttempts", "deadlineMs", "perRelayTimeoutMs", "receiptMode"],
@@ -448,5 +463,7 @@ A conforming validator of the record in §11 rejects: an unknown or missing fiel
 ## 13. Authority and ratification
 
 This contract implements card `C-SDK` of the M3 scope record (Issue #400 comment `5950987413`) under the owner act in Issue #400, on base `m3/integration` at `e0fe27ae1b02ad35d80fa70cbb0f2ac64fbf812a`. Its only file is `docs/architecture/m3/sdk-interface.md`.
+
+M3-PUBLIC-RELAYS #522 produces version 0.2.0 under #400/6489853937 and the cited public relays act. The historical 0.1.0 ratification is not a ratification of these new bytes; the new C-SDK and C-DLV hashes remain output candidates pending a separately marked owner output ratification. Historical O-SCEN3 and C-PREV pins are unchanged.
 
 The final file SHA-256 must be owner hash-ratified by a `styx-m3-ratification:v1` comment on #400 before `C-DLV` relies on it as ratified and before any dependent implementation. Any byte change voids that ratification. Removing this file fully rolls back `C-SDK`; no code, dependency or persisted bytes are introduced.

@@ -345,7 +345,7 @@ describe('surface', () => {
   });
 
   test('the interface version string', () => {
-    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.1.0-experimental');
+    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.2.0-experimental');
   });
 
   test('the five enumerations are frozen, closed and self-mapped', () => {
@@ -628,32 +628,6 @@ describe('createStyxClient', () => {
     expect(code(config({ relays: [RELAY, , `ws${SEP}127.0.0.2`] }))).toBe('E_SDK_INVALID_CONFIG');
   });
 
-  test('relay strings accepted', () => {
-    const accepted = [
-      `ws${SEP}127.0.0.1:7000`, `wss${SEP}127.255.255.254/x?y=1`, `WS${SEP}127.0.0.1`, `ws${SEP}127.0.0.1:080`,
-      `ws${SEP}127.0.0.1:`, `ws${SEP}[::1]:1`, `ws${SEP}[0:0:0:0:0:0:0:1]`, `ws${SEP}[::0001]/`,
-      `ws${SEP}[::0.0.0.1]`, `wSs${SEP}127.0.0.1/a/b%20c?q=1&r=%2F`, `ws${SEP}127.0.0.1:99999`,
-    ];
-    for (const url of accepted) {
-      expect([url, createStyxClient(config({ relays: [url] })).ok]).toEqual([url, true]);
-    }
-  });
-
-  test('relay strings rejected (non-loopback hosts are assembled at run time)', () => {
-    const ws = (host) => ['ws', SEP, host].join('');
-    const rejected = [
-      ws('localhost'), ws('128.0.0.1'), ws('10.0.0.1'), ws('127.0.0.01'), ws('127.1'),
-      ws('[::ffff:127.0.0.1]'), ws('[v1.x]'), ws('[::1%25lo]'), ws(['u', '@', '127.0.0.1'].join('')),
-      ws('127.0.0.1#f'), ws('127.0.0.1/%zz'), ws('127.0.0.1/%2'), ws('127.0.0.1/a b'), ws('127.0.0.1/a\\b'),
-      ['http', SEP, '127.0.0.1'].join(''), '', ws(''), ws('[::2]'), ws('[1::1]'), ws('[::1'),
-      ws('127.0.0.1:x'), ws('127.0.0.1 '), ['ws', ':', '127.0.0.1'].join(''), ws('256.0.0.1'),
-      ws('[::1:2:3:4:5:6:7:8]'), ws('[::1]x'),
-    ];
-    for (const url of rejected) {
-      expect([url, code(config({ relays: [url] }))]).toEqual([url, 'E_SDK_INVALID_CONFIG']);
-    }
-  });
-
   test('no port, clock or random function is called', () => {
     const calls = [];
     const spy = (name) => (...args) => {
@@ -732,7 +706,7 @@ describe('createStyxClient', () => {
 /* --- review probes r1 to r4, real lane modules (cycle 4) --- */
 describe('review probe r1: probe-relay-results (regression)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+  const VERSION = 'styx-m3-sdk/0.2.0-experimental';
 
   function config() {
     const records = new Map();
@@ -1128,7 +1102,7 @@ describe('review probe r2: probe-r2-attempt-validation (regression)', () => {
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: ['ws://127.0.0.1:7000'],
       ports: {
         storage: {
@@ -1311,7 +1285,7 @@ describe('review probe r3: probe-r3-inbound-drain (regression)', () => {
     let stopResolved = false;
 
     const created = createStyxClient({
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -1353,7 +1327,7 @@ describe('review probe r3: probe-r3-inbound-drain (regression)', () => {
       const kind = 4741;
       const tags = [
         ['p', owner],
-        ['v', 'styx-m3-sdk/0.1.0-experimental'],
+        ['v', 'styx-m3-sdk/0.2.0-experimental'],
         ['n', '0'.repeat(32)],
       ];
       const content = 'AQ==';
@@ -1403,7 +1377,7 @@ describe('review probe r3: probe-r3-unknown-precedence, real lanes (regression)'
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: [
         'ws://127.0.0.1:7000',
         'ws://127.0.0.1:7001',
@@ -1577,7 +1551,7 @@ describe('review probe r4: probe-r4-callable-outcomes (regression)', () => {
     const records = new Map();
 
     return {
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -1738,7 +1712,7 @@ describe('review probe r4: probe-r4-identity-precedence (regression)', () => {
     });
 
     const created = createStyxClient({
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -1776,7 +1750,7 @@ describe('review probe r4: probe-r4-identity-precedence (regression)', () => {
 });
 
 describe('round-3 counterexamples', () => {
-  const V = 'styx-m3-sdk/0.1.0-experimental';
+  const V = 'styx-m3-sdk/0.2.0-experimental';
   const R0 = 'ws' + SEP + '127.0.0.1:7000';
   const R1 = 'ws' + SEP + '127.0.0.1:7001';
   const frozenValue = (value) => Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -3691,7 +3665,7 @@ describe('test harness', () => {
 /* --- review probes r1 to r4, lane doubles (cycle 4) --- */
 describe('review probe r1: probe-result-check (regression)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+  const VERSION = 'styx-m3-sdk/0.2.0-experimental';
   const ok = (value) => Object.freeze({
     ok: true,
     value: Object.freeze(value),
@@ -3924,7 +3898,7 @@ describe('review probe r2: probe-r2-slot-scan (regression)', () => {
 
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: ['ws://127.0.0.1:7000'],
       ports: {
         storage: {
@@ -4007,7 +3981,7 @@ describe('review probe r3: probe-r3-unknown-precedence, lane doubles (regression
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: 'styx-m3-sdk/0.1.0-experimental',
+      interfaceVersion: 'styx-m3-sdk/0.2.0-experimental',
       relays: [
         'ws://127.0.0.1:7000',
         'ws://127.0.0.1:7001',
@@ -4652,7 +4626,7 @@ describe('port boundary: delivery seams (table)', () => {
 
 /* --- review probes r5 within threat model B, lane doubles (cycle 5) --- */
 describe('review probe r5: probe-r5-client-boundary, bounded shutdown waits (regression)', () => {
-  const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+  const VERSION = 'styx-m3-sdk/0.2.0-experimental';
   const KEY = 'a'.repeat(64);
   const ok = (value) =>
     Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -4837,7 +4811,7 @@ describe('review probe r5: probe-r5-client-boundary, bounded shutdown waits (reg
 /* --- review probes r6 within threat model B, lane doubles and the real outbox (cycle 6) --- */
 describe('review probe r6 (Sol): probe-r6-model-b (regression, bounded-wait advance adapted)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+  const VERSION = 'styx-m3-sdk/0.2.0-experimental';
   const KEY = 'a'.repeat(64);
   const P = 5500;
 
@@ -5074,7 +5048,7 @@ describe('review probe r6 (Sol): probe-r6-model-b (regression, bounded-wait adva
 
 describe('review probe r6 (Muse): probe-r6-unbounded-seam (regression)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+  const VERSION = 'styx-m3-sdk/0.2.0-experimental';
   const KEY = 'a'.repeat(64);
   const ok = (v) => Object.freeze({ ok: true, value: Object.freeze(v) });
 
@@ -5190,7 +5164,7 @@ describe('review probe r6 (author): shutdown during a stuck start (regression)',
 
   // Author probe (cycle 5 verification of Muse r6-H3): shutdown() called while start() is stuck in a lane call that
   // never settles. Model B: shutdown() must resolve within a bound anyway.
-  const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+  const VERSION = 'styx-m3-sdk/0.2.0-experimental';
   const KEY = 'a'.repeat(64);
   const ok = (v) => Object.freeze({ ok: true, value: Object.freeze(v) });
 

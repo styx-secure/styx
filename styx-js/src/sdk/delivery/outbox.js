@@ -58,7 +58,7 @@ const MAX_EVENT_ID_REDRAWS = 3;
 const EVENT_KIND_MESSAGE = 4741;
 
 /** C-DLV section 6.2: the interface version string of the `v` tag. */
-const INTERFACE_VERSION = 'styx-m3-sdk/0.1.0-experimental';
+const INTERFACE_VERSION = 'styx-m3-sdk/0.2.0-experimental';
 
 /** C-SDK section 7: the only event kind this module emits. */
 const EVENT_KIND_DELIVERY_STATE_CHANGED = 'DELIVERY_STATE_CHANGED';

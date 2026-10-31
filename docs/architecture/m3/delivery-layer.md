@@ -6,7 +6,7 @@ Status: normative candidate for card `C-DLV` of the M3 early lane. It is experim
 
 This document fixes the delivery layer behind the public SDK interface: outbound queue states and their timing, retransmission and backoff bounds, receipts and acknowledgements, duplicate handling, parallel multi-relay publish and subscribe with per-relay timeouts, per-relay outcome reporting, the process-lifetime limit, the SDK-internal non-normative on-wire structures, and the requirements for the loopback relay test harness that card `T-RELAY` builds. **MUST**, **MUST NOT** and **REJECT** are normative.
 
-It is authorized by the owner act in Issue #400 §2(b) and implements card `C-DLV` of the M3 scope record (#400 comment `5950987413`). It sits behind the ratified public SDK interface `docs/architecture/m3/sdk-interface.md` (card `C-SDK`, SHA-256 `47f75d6cd0bd3d542fd699f99144da6ccd9d6965908e5d1f4b2c1dfd976a9a11`, ratified in #400 comment `5960945402` and merged into `m3/integration`). That document is called "the interface" below, and its section numbers are cited as "interface §n".
+It is authorized by the owner act in Issue #400 §2(b) and implements card `C-DLV` of the M3 scope record (#400 comment `5950987413`). It sits behind public SDK interface `docs/architecture/m3/sdk-interface.md` (card `C-SDK`, version 0.2.0 candidate SHA-256 `f7c89461dc5ac3cd72ada90098073fcc42ba8f6f5e180b14ee9c3ea3ae01510f`, produced by M3-PUBLIC-RELAYS #522 under prospective approval #400/6489853937). The historical version 0.1.0 was ratified by #400/5960945402; that ratification does not ratify the new bytes. The new C-SDK and C-DLV output hashes require a separately marked owner output ratification and remain candidates until then. That document is called "the interface" below, and its section numbers are cited as "interface §n".
 
 This document fixes the values and rules that the interface assigns to `C-DLV` (its record field `ownedByCDlv`), plus internal delivery parameters that serve them (the inbound pending bound and the relay supervision interval, internal implementation limits that change no public bound, no guarantee and no item of `cDlvMayNotChange`), and nothing that the interface reserves to itself (`cDlvMayNotChange`). It does not add, remove or rename any entry point, configuration field, method, result code, delivery state, transition, per-relay outcome, public SDK event kind or field, port method, outer bound or allowed import of the interface (its record field `cDlvMayNotChange`). Where this document and the interface could be read differently, the interface wins, and the difference is a defect of this document.
 
@@ -21,7 +21,7 @@ The outer bounds of #400 §2(b), restated in interface §2, bind every rule belo
 3. Relay acceptance (`RELAY_ACCEPTED`, `RELAY_ACCEPTED_AWAITING_RECEIPT`, per-relay `ACCEPTED`) and recipient receipt (`RECIPIENT_RECEIPT_RECEIVED`) are distinct. A valid receipt establishes only that a structure signed with the recipient identity's key acknowledged this message's event id (§7.3). A conforming recipient SDK sends a receipt only after it opened the message and emitted `MESSAGE_RECEIVED` (§7.2), but the sender cannot verify that. Neither relay acceptance nor a receipt proves that a person read the message.
 4. Process lifetime only. Every queue, timer, window and record of this document lives in the memory of one client in one process. On an explicit, orderly `shutdown()` every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case.
 5. No normative wire format. The structures of §6 are SDK-internal, experimental and versioned with the interface version string. They are not a Styx protocol semantic and not a Nostr standard.
-6. Relay URLs reach the delivery layer only from `config.relays`. No module contains a relay URL literal, a default relay list or a fallback relay. In this interface version every configured relay host is a loopback IP literal (interface §4.1).
+6. Relay URLs reach the delivery layer only from `config.relays`. No module contains a relay URL literal, a default relay list or a fallback relay. Hosts are loopback IP literals or caller-allowlisted `wss:` hosts under interface §4.1, with no host literal or default list in lane code; lane tests, preview and examples remain loopback-only.
 
 ## 3. Parameters, bounds and defaults
 
@@ -183,7 +183,7 @@ In this document a relay connection is closed when the SDK has started the WebSo
 
 ## 6. SDK-internal on-wire and record structures (non-normative)
 
-Everything in this section is SDK-internal, experimental and tied to the interface version string `styx-m3-sdk/0.1.0-experimental`. It is not a Styx protocol semantic, not a Nostr standard and not a persisted format; a later version may change it without migration. It uses the event shape that Nostr relays already accept, as the existing transport code does, and selects no new semantic. In this interface version it only ever reaches loopback relays.
+Everything in this section is SDK-internal, experimental and tied to the interface version string `styx-m3-sdk/0.2.0-experimental`. It is not a Styx protocol semantic, not a Nostr standard and not a persisted format; a later version may change it without migration. It uses the event shape that Nostr relays already accept, as the existing transport code does, and selects no new semantic.
 
 ### 6.1 Event shape and id
 
@@ -199,7 +199,7 @@ Every structure is a NIP-01-shaped event object with exactly the keys `id`, `pub
 | Field | Value |
 | --- | --- |
 | `kind` | `4741` |
-| `tags` | exactly, in this order: `["p", <recipient>]`, `["v", "styx-m3-sdk/0.1.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]`, and, only in `RECIPIENT_RECEIPT` mode, `["r", "1"]` as a fourth tag |
+| `tags` | exactly, in this order: `["p", <recipient>]`, `["v", "styx-m3-sdk/0.2.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]`, and, only in `RECIPIENT_RECEIPT` mode, `["r", "1"]` as a fourth tag |
 | `content` | `bytesToBase64(ciphertext)`, where `ciphertext` is the non-empty `seal` result |
 
 The `n` tag makes two items distinct events even when they have identical recipient, ciphertext and `created_at` second. The SDK keeps every event id it assigned in the client; if a newly built id equals one of them, it draws a new `n` tag, at most three times, and then moves the item to `FAILED_NOT_ACCEPTED` with `lastCode: 'E_SDK_INTERNAL'`. No two items of a client share an event id. The event id is the message identifier for receipts and duplicate handling. The `r` tag asks the recipient for a receipt.
@@ -210,7 +210,7 @@ The `n` tag makes two items distinct events even when they have identical recipi
 | --- | --- |
 | `pubkey` | the recipient's public key (the receipt's signer) |
 | `kind` | `4742` |
-| `tags` | exactly, in this order: `["p", <original sender pubkey>]`, `["e", <original message event id>]`, `["v", "styx-m3-sdk/0.1.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]` |
+| `tags` | exactly, in this order: `["p", <original sender pubkey>]`, `["e", <original message event id>]`, `["v", "styx-m3-sdk/0.2.0-experimental"]`, `["n", <32 lowercase hex digits from randomBytes(16)>]` |
 | `content` | the empty string |
 
 A receipt carries no payload, plaintext, ciphertext or reading claim.
@@ -297,7 +297,7 @@ Unit tests of `I-RELAY` and `I-ACK` that need a relay build their own within the
 
 ## 11. Non-claims and gates
 
-The delivery layer is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. Relays and network observers see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and network metadata; a receipt also tells the sender's relays that a holder of the recipient's key answered. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message. Because every item is retained for the client's lifetime, the client's memory grows with the number of items sent; a long-running caller creates a new client to release it.
+The delivery layer is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. Third-party relays may store, refuse or drop events and may keep synthetic events after clients stop; no retention, deletion, DNS, TLS-pinning or privacy assurance follows from acceptance or readback. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. Relays and network observers see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and network metadata; a receipt also tells the sender's relays that a holder of the recipient's key answered. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message. Because every item is retained for the client's lifetime, the client's memory grows with the number of items sent; a long-running caller creates a new client to release it.
 
 Relays see a re-request every catch-up interval on connected pools. Catch-up is best effort: relays may rate-limit it or ignore `since`; events older than the local cursor minus 120 seconds may be missed, and ids evicted from the unchanged duplicate window may be opened again. A relay's EOSE affects only its own cursor, not another relay's. No catch-up occurs when the injected clock's timers do not fire.
 
@@ -318,8 +318,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   "schema": "styx-m3-delivery-layer/v1",
   "closed": true,
   "card": "C-DLV",
-  "sdkInterfaceVersion": "styx-m3-sdk/0.1.0-experimental",
-  "sdkInterfaceDoc": { "path": "docs/architecture/m3/sdk-interface.md", "sha256": "47f75d6cd0bd3d542fd699f99144da6ccd9d6965908e5d1f4b2c1dfd976a9a11" },
+  "sdkInterfaceVersion": "styx-m3-sdk/0.2.0-experimental",
+  "sdkInterfaceDoc": { "path": "docs/architecture/m3/sdk-interface.md", "sha256": "f7c89461dc5ac3cd72ada90098073fcc42ba8f6f5e180b14ee9c3ea3ae01510f" },
   "publicSurfaceChanged": false,
   "parameters": {
     "maxAttempts": { "min": 1, "max": 10, "default": 5 },
@@ -411,7 +411,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   },
   "wire": {
     "normative": false,
-    "versionTag": "styx-m3-sdk/0.1.0-experimental",
+    "versionTag": "styx-m3-sdk/0.2.0-experimental",
     "eventKeys": ["id", "pubkey", "created_at", "kind", "tags", "content", "sig"],
     "id": "sha256(utf8(JSON.stringify([0,pubkey,created_at,kind,tags,content])))",
     "signature": "identity.sign over id (BIP-340); verified on inbound structures only",

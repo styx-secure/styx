@@ -18,7 +18,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import { bytesToBase64, bytesToHex, hexToBytes, utf8Encode } from '../../../src/utils.js';
 import { createReceipts } from '../../../src/sdk/delivery/receipts.js';
 
-const VERSION = 'styx-m3-sdk/0.1.0-experimental';
+const VERSION = 'styx-m3-sdk/0.2.0-experimental';
 const FRAME_N = 'a'.repeat(32);
 const FRAME_N_2 = 'b'.repeat(32);
 const OWN_CLOCK_MS = 12000;
