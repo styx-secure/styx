@@ -58,7 +58,7 @@ const MAX_EVENT_ID_REDRAWS = 3;
 const EVENT_KIND_MESSAGE = 4741;
 
 /** C-DLV section 6.2: the interface version string of the `v` tag. */
-const INTERFACE_VERSION = 'styx-m3-sdk/0.2.0-experimental';
+const INTERFACE_VERSION = 'styx-m3-sdk/0.3.0-experimental';
 
 /** C-SDK section 7: the only event kind this module emits. */
 const EVENT_KIND_DELIVERY_STATE_CHANGED = 'DELIVERY_STATE_CHANGED';
@@ -157,6 +157,10 @@ const SdkResultCode = Object.freeze({
   E_SDK_INBOUND_INVALID: 'E_SDK_INBOUND_INVALID',
   E_SDK_INTERNAL: 'E_SDK_INTERNAL',
   E_SDK_UNKNOWN_CODE: 'E_SDK_UNKNOWN_CODE',
+  E_SDK_NOT_CONFIGURED: 'E_SDK_NOT_CONFIGURED',
+  E_SDK_PUBLISH_NOT_ACCEPTED: 'E_SDK_PUBLISH_NOT_ACCEPTED',
+  E_SDK_KEYPACKAGE_NOT_FOUND: 'E_SDK_KEYPACKAGE_NOT_FOUND',
+  E_SDK_INVITE_TIMEOUT: 'E_SDK_INVITE_TIMEOUT',
 });
 const RESULT_CODES = new Set(Object.values(SdkResultCode));
 

@@ -15,6 +15,7 @@
  * Consumers import `index.js`, never this file.
  */
 
+import { createInvitations } from './invite.js';
 import { createOutbox } from './delivery/outbox.js';
 import { createReceipts } from './delivery/receipts.js';
 import { createRelaySet } from './delivery/relay-pool.js';
@@ -28,7 +29,7 @@ import { bytesToHex, randomBytes } from '../utils.js';
  * ------------------------------------------------------------------------- */
 
 /** The interface version string of C-SDK section 3. */
-export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.2.0-experimental';
+export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.3.0-experimental';
 
 /**
  * A frozen enumeration whose members map to their own names, with prototype
@@ -63,6 +64,10 @@ export const SdkResultCode = enumeration([
   'E_SDK_INBOUND_INVALID',
   'E_SDK_INTERNAL',
   'E_SDK_UNKNOWN_CODE',
+  'E_SDK_NOT_CONFIGURED',
+  'E_SDK_PUBLISH_NOT_ACCEPTED',
+  'E_SDK_KEYPACKAGE_NOT_FOUND',
+  'E_SDK_INVITE_TIMEOUT',
 ]);
 
 /** The closed delivery-state set of C-SDK section 6.1 (9 states). */
@@ -313,6 +318,14 @@ function validateConfig(config) {
       }
     }
 
+    const inviteMethods = [
+      [ports.session, 'createKeyPackage'], [ports.session, 'startSession'], [ports.session, 'joinSession'],
+      [ports.identity, 'giftWrap'], [ports.identity, 'unwrapGift'],
+    ];
+    const groupPresent = inviteMethods.map(([port, name]) => name in port);
+    const invitationsConfigured = groupPresent.some(Boolean);
+    if (invitationsConfigured && !inviteMethods.every(([port, name]) => methodReadsAsFunction(port, name))) return invalid;
+
     // clock and random, when present: the caller's own objects, kept by reference.
     let clock = null;
     if (hasOwn(top, 'clock')) {
@@ -353,6 +366,7 @@ function validateConfig(config) {
       storage: ports.storage,
       session: ports.session,
       identity: ports.identity,
+      invitationsConfigured,
       clock,
       random,
       delivery: Object.freeze(delivery),
@@ -1855,10 +1869,61 @@ function buildClient(settings) {
     }
   }
 
+  let invitations = null;
+
+  async function invitationMethod(name, argument) {
+    try {
+      const refused = admitRunningCall();
+      if (refused !== null) return refused;
+      if (!settings.invitationsConfigured) return failure(SdkResultCode.E_SDK_NOT_CONFIGURED);
+      if (invitations === null) {
+        const made = crossCall(createInvitations, undefined, [{
+          relays, delivery, identity: ports.identity, session: ports.session, clock, random,
+          publicKey: modules.publicKey, scan: scanClosedSlots, checkAttempt,
+          call: (holder, method, args, timeoutMs) => crossBoundaryAsync(holder, method, args, {
+            timeoutMs, halted: () => stopping && method !== 'dispose', track: trackPortCall,
+          }),
+        }]);
+        if (!isModuleCall(made)) return failure(SdkResultCode.E_SDK_INTERNAL);
+        invitations = made.value;
+      }
+      const codes = new Set([
+        'E_SDK_INVALID_ARGUMENT', 'E_SDK_NO_RELAY_AVAILABLE', 'E_SDK_SESSION_FAILED',
+        'E_SDK_IDENTITY_FAILED', 'E_SDK_CLIENT_STOPPED', 'E_SDK_INTERNAL', 'E_SDK_UNKNOWN_CODE',
+        'E_SDK_PUBLISH_NOT_ACCEPTED', 'E_SDK_KEYPACKAGE_NOT_FOUND', 'E_SDK_INVITE_TIMEOUT',
+      ]);
+      const timeoutMs = name === 'acceptInvite'
+        ? delivery.deadlineMs + 1000 + 2 * P + 10000 : 2 * P + 3 * delivery.perRelayTimeoutMs + 10000;
+      const returned = valueOfCall(await crossBoundaryAsync(invitations, name, [argument], { timeoutMs }));
+      const checked = checkEnvelope(returned, (value) => {
+        if (name === 'acceptInvite') {
+          const fields = exactFields(value, ['inviter']);
+          return fields !== null && HEX64.test(fields.inviter) ? fields : null;
+        }
+        const keys = name === 'invite'
+          ? ['keyPackageEventId', 'welcomeEventId', 'acceptedRelays'] : ['keyPackageEventId', 'acceptedRelays'];
+        const fields = exactFields(value, keys);
+        if (fields === null || !HEX64.test(fields.keyPackageEventId)
+            || (name === 'invite' && !HEX64.test(fields.welcomeEventId))) return null;
+        const accepted = fields.acceptedRelays;
+        if (!Array.isArray(accepted) || !Object.isFrozen(accepted) || !accepted.length
+            || !accepted.every((index, i) => Number.isInteger(index) && index >= 0 && index < relayCount
+              && (i === 0 || index > accepted[i - 1]))) return null;
+        return fields;
+      }, codes, true);
+      if (stopping) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      return checked.verdict === 'ok' ? success(Object.freeze(checked.value)) : failure(verdictCode(checked));
+    } catch { return failure(SdkResultCode.E_SDK_INTERNAL); }
+  }
+  const publishKeyPackage = () => invitationMethod('publishKeyPackage');
+  const invite = (argument) => invitationMethod('invite', argument);
+  const acceptInvite = (argument) => invitationMethod('acceptInvite', argument);
+
   async function shutdown() {
     if (stopping || clientState === 'STOPPED') return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
     // Step (1), synchronous at the call.
     stopping = true;
+    if (invitations !== null) crossBoundary(invitations, 'freeze', []);
     let audience = [];
     try {
       audience = registrations.slice();
@@ -1920,7 +1985,12 @@ function buildClient(settings) {
       // port-call timeout, has settled before the relay set is disposed.
       await portCallsSettled();
       await dispatchQueueEmpty();
-      if (held !== null) await disposeRelaySet(held);
+      await Promise.all([
+        held !== null ? disposeRelaySet(held) : Promise.resolve(),
+        invitations !== null ? crossBoundaryAsync(invitations, 'dispose', [], {
+          timeoutMs: delivery.perRelayTimeoutMs + 2 * P,
+        }) : Promise.resolve(),
+      ]);
     } catch {
       // Faults never prevent the effects of the stop (C-SDK section 4.2).
     }
@@ -1949,5 +2019,5 @@ function buildClient(settings) {
     return success(Object.freeze({ clientState: 'STOPPED', lost }));
   }
 
-  return Object.freeze({ start, send, getDelivery, cancel, onEvent, shutdown });
+  return Object.freeze({ start, send, getDelivery, cancel, onEvent, shutdown, publishKeyPackage, invite, acceptInvite });
 }

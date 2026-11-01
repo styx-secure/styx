@@ -12,6 +12,8 @@ The interface is consumed only inside the repository: by lane tests, by the synt
 
 Delivery behaviour behind this interface (queue transitions, retransmission and backoff bounds, receipts and acknowledgements, duplicate handling, per-relay timeouts and the meaning of each per-relay outcome) is fixed by the separate delivery-layer contract `C-DLV` (`docs/architecture/m3/delivery-layer.md`). `C-DLV` MUST NOT add, remove or rename an entry point, configuration field, method, result code, delivery state, transition, per-relay outcome, public SDK event kind or public SDK event field (§7), port method, outer bound or allowed import defined here; any such change needs a new hash-ratified version of this document. This boundary covers only the public SDK surface seen by a consumer. SDK-internal structures behind it (on-wire message identifiers, receipts, acknowledgements, Nostr event kinds and tags, and the fields of internal records) are owned entirely by `C-DLV` and are not frozen here; the public §7 events are SDK callback objects, not on-wire event kinds.
 
+M3-INVITE #525 adds caller-port invitation orchestration only. The identity port, not the SDK, constructs and reverses the NIP-59 layers (kind 13 seal and kind 1059 wrap, NIP-44 v2); the session port supplies every MLS operation. Experimental kinds 4743 and 4744 are SDK-internal and versioned, not Marmot kinds or compatibility. The SDK implements neither construction. The single real-engine test exception of §8 does not authorize product wiring.
+
 ## 2. Outer bounds inherited from #400
 
 These bounds are part of the interface. No value, state or event defined here claims more than they allow.
@@ -27,10 +29,10 @@ The SDK makes no confidentiality, integrity, authenticity, identity-hiding, unli
 
 ## 3. Versioning
 
-- The exact interface version string is `styx-m3-sdk/0.2.0-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
+- The exact interface version string is `styx-m3-sdk/0.3.0-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
 - `createStyxClient(config)` requires `config.interfaceVersion` to equal that string exactly (byte-for-byte, case-sensitive). Any other value, including a missing one, returns `E_SDK_UNSUPPORTED_VERSION` and creates no client. There is no negotiation, range, downgrade or fallback.
 - The version is experimental. It carries no stability, compatibility or deprecation promise to third parties before a later owner act. Any change to an entry point, field, code, state, event kind, port method, bound inherited from §2 or allowed import requires a new hash-ratified version of this document with a new version string.
-- SDK-internal on-wire structures carry or are keyed by this version string as `C-DLV` specifies; an inbound structure from any other version is not interpreted: it emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and nothing else.
+- SDK-internal on-wire structures carry or are keyed by this version string as `C-DLV` specifies; an inbound delivery structure from any other version is not interpreted: it emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and nothing else. Invitation candidates on their independent subscriptions are instead ignored without an event (§4.2).
 
 ## 4. Entry points
 
@@ -60,7 +62,7 @@ Synchronous. Returns a result envelope (§5.1) for every input value, including 
 | `interfaceVersion` | yes | exactly `SDK_INTERFACE_VERSION` (§3). |
 | `relays` | yes | array of 1 to 16 distinct strings. Each is either a syntactically valid absolute `ws:` or `wss:` URL with no userinfo and no fragment whose host is a loopback IP literal (IPv4 in the loopback block or the IPv6 loopback address), under the unchanged I-SDK RFC 3986 loopback rule; or an allowlisted remote URL under the rule below. Order and every accepted string are preserved unchanged; nothing is added, removed, normalised or reordered. Every other value REJECTs with `E_SDK_INVALID_CONFIG`. |
 | `publicRelayHosts` | no | array of 1 to 16 pairwise distinct host-name strings under the exact ASCII rule below. Absent means no remote relay is allowed; present `undefined` is invalid. |
-| `ports` | yes | closed object `{ storage, session, identity }`; each is required and must expose every method of §8 as a function. |
+| `ports` | yes | closed object `{ storage, session, identity }`; each is required and must expose its required methods of §8 as functions. The optional invitation group comprises all five session/identity methods of §8.2–§8.3 or none; any partial or non-function group REJECTs with `E_SDK_INVALID_CONFIG`. Without the group, every invitation method returns `E_SDK_NOT_CONFIGURED` in `RUNNING` without calling a port. |
 | `clock` | no | closed object `{ now, setTimer, clearTimer }` (§8.4). Absent means the built-in `Date.now`, `setTimeout` and `clearTimeout`. |
 | `random` | no | closed object `{ nextUint32 }` (§8.4). Absent means the built-in `crypto.getRandomValues`. |
 | `delivery` | no | closed object `{ maxAttempts, deadlineMs, perRelayTimeoutMs, receiptMode }`. Each numeric field, when present, is a positive safe integer within the bounds `C-DLV` fixes; `receiptMode` is `RECIPIENT_RECEIPT` or `RELAY_ACCEPTANCE_ONLY`. An absent field takes the finite default `C-DLV` fixes. `Infinity`, `NaN`, `0`, negatives, non-integers and out-of-bound values REJECT. |
@@ -84,6 +86,10 @@ Every method below is asynchronous and **always resolves** to a result envelope 
 | `onEvent(listener)` | any | `{ unsubscribe }` | Registers a function listener for §7 events. Like every method here, `onEvent` resolves to a result envelope; on success its `value` is a frozen object with exactly one property, `unsubscribe`, a function that takes no argument, is synchronous and idempotent, returns `undefined` and never throws. Calling it removes the listener; it is the only synchronous function the SDK hands back. |
 | `shutdown()` | `CREATED`, `RUNNING` | `{ clientState: 'STOPPED', lost }` | Orderly stop, unconditional once called in an allowed state: stops scheduling, moves every non-terminal item to `LOST_ON_SHUTDOWN` and emits its event to the listeners registered before the call, delivering those events before it removes the listeners, closes subscriptions and relay connections, and clears every timer. `lost` is the number of items so reported. After it resolves, the client is `STOPPED`, and the SDK has called `clearTimer` for every timer handle it holds, closed every subscription and relay connection it opened, removed every listener registered before the call, and released its ports, transports and timers; it keeps an immutable terminal snapshot of each of its items so that `getDelivery` in `STOPPED` returns the item's final state (for example `LOST_ON_SHUTDOWN`); it makes no claim about an injected clock that ignores `clearTimer`. A storage port failure, a listener fault or an internal fault during shutdown never prevents these effects: lost reporting uses the SDK's own in-memory view of its items, and the method still resolves success. This is a departure from the no-change-on-failure rule, listed in §5.2. A second call returns `E_SDK_CLIENT_STOPPED`. |
 
+| `publishKeyPackage()` | `RUNNING` | `{ keyPackageEventId, acceptedRelays }` | Create and sign a kind-4743 KeyPackage, publish on an independent relay set and remember its id for this client's lifetime. |
+| `invite({ invitee })` | `RUNNING` | `{ keyPackageEventId, welcomeEventId, acceptedRelays }` | Fetch valid kind-4743 events of the named invitee, choose newest `created_at` and lowest id on a tie, call `startSession`, delegate wrap construction, and publish the wrap unchanged. |
+| `acceptInvite({ inviter, keyPackageEventId })` | `RUNNING` | `{ inviter }` | Wait on an independent kind-1059 subscription addressed to the own key. Ignore failing candidates, require the explicitly named inviter, and pass the first acceptable Welcome to `joinSession`. |
+
 A call in a client state not listed returns: `E_SDK_NOT_STARTED` in `CREATED`, `E_SDK_ALREADY_STARTED` for `start()` in `RUNNING`, and `E_SDK_CLIENT_STOPPED` in `STOPPED`. A `STOPPED` client never restarts; a new client is created instead, and it does not see the old client's items.
 
 `send` argument rules:
@@ -91,6 +97,14 @@ A call in a client state not listed returns: `E_SDK_NOT_STARTED` in `CREATED`, `
 - `recipient` is the recipient identity's public key as a lowercase 64-character hexadecimal string (the form the identity port of §8.3 returns). Anything else REJECTs with `E_SDK_INVALID_ARGUMENT`.
 - `payload` is a `Uint8Array` of 1 byte up to the maximum `C-DLV` fixes. An empty or non-`Uint8Array` payload REJECTs with `E_SDK_INVALID_ARGUMENT`; an oversize one with `E_SDK_PAYLOAD_TOO_LARGE`. The SDK copies the bytes before it resolves; later mutation by the caller has no effect.
 - `deliveryId` is assigned by the SDK, is unique within the client, and is an opaque string. It carries no meaning outside the process and is never derived from the payload, the recipient or a caller-supplied value.
+
+Invitation argument objects are closed. `invitee` and `inviter` are lowercase 64-hex keys different from the own key. `keyPackageEventId` is 64 lowercase hex digits and identifies a KeyPackage successfully published by this client during its lifetime; otherwise `E_SDK_INVALID_ARGUMENT`. `acceptedRelays` is a frozen ascending array of exactly the `config.relays` indices that answered `OK true` during publication; it attests no peer receipt.
+
+Each invocation owns its relay set, subscription id, connection, fetch/wait and publication phases, and disposes it before resolving; it never changes the delivery relay set. The fetch waits for every connected relay's `EOSE` or at most `perRelayTimeoutMs`. Publication ends at the first acceptance or the C-DLV §5.3 attempt timeout, at most `perRelayTimeoutMs`. `acceptInvite` admits a deadline of `deadlineMs`, checks it immediately before each `joinSession`, and a called `joinSession` decides its result. Clock waits have host `setTimeout` backstops of the same delay (deadline: `deadlineMs + 1000`); port calls use the host port-call timeout. Host bounds: publication/invite ≤ two port-call timeouts + three `perRelayTimeoutMs` + 10 000 ms; accept ≤ `deadlineMs + 1000` + two port-call timeouts + 10 000 ms.
+
+Invalid KeyPackages or wraps, other versions, a wrong seal signer or rumor pubkey, and an `unwrapGift` that throws, rejects, times out or returns malformed/out-of-set data are ignored without any event; waiting continues. A failing `startSession` or `joinSession` is `E_SDK_SESSION_FAILED`; malformed wrap construction is `E_SDK_IDENTITY_FAILED` and nothing is published. There is no rollback of caller state: failed join may consume a KeyPackage while the inviter retains its session; retry needs fresh engines, ports and clients on both sides.
+
+At the synchronous `shutdown()` call every invocation is marked stopped and its relay set frozen. Every wait ends at its next frame or timer callback; no new port call begins, and an in-progress result is discarded when it settles. A late successful join can leave an unreported caller session. Shutdown step (2) does not wait for invitations. After all `LOST_ON_SHUTDOWN` events, step (4) disposes invitation sets concurrently with delivery disposal, each method resolves `E_SDK_CLIENT_STOPPED`, then shutdown resolves. Freezing does not shorten an invitation connection phase; the prior shutdown bound grows by at most one `perRelayTimeoutMs` plus one port-call timeout.
 
 ### 4.3 Inbound messages
 
@@ -130,9 +144,17 @@ Nothing else is returned. A failure carries no message text, stack, upstream err
 | `E_SDK_INTERNAL` | An internal fault with no more specific code. |
 | `E_SDK_UNKNOWN_CODE` | A component or port produced a code or state outside the closed sets of this document. |
 
+| `E_SDK_NOT_CONFIGURED` | Invitation port group is absent. |
+
+| `E_SDK_PUBLISH_NOT_ACCEPTED` | No relay acknowledged the invitation publication. |
+
+| `E_SDK_KEYPACKAGE_NOT_FOUND` | Fetch found no valid KeyPackage of the invitee. |
+
+| `E_SDK_INVITE_TIMEOUT` | No acceptable Welcome before the wait deadline. |
+
 `E_SDK_INBOUND_INVALID`, `E_SDK_SESSION_FAILED` and `E_SDK_UNKNOWN_CODE` are the only codes that appear in `INBOUND_DISCARDED`: the first for parsing, version and signature failures, the second for a failed `open`, the third when a lane component or the session port yields a value outside the closed sets (§5.3). `E_SDK_INBOUND_INVALID` never appears in a method result.
 
-When a method other than `shutdown()` fails, it makes no change visible to the caller as a usable item: an item is either fully created (stored, with its `deliveryId` returned) or not created as a deliverable item. If a storage write may have happened before a later step failed, the SDK removes the item before resolving; if that removal itself fails, the method resolves `E_SDK_STORAGE_FAILED`, and the residual item, if present, is never sent and is reported through events as `FAILED_NOT_ACCEPTED`. These are the only two departures from no-change-on-failure: this residual-item rule and the unconditional `shutdown()` of §4.2.
+When a method other than `shutdown()` fails, it makes no change visible to the caller as a usable item: an item is either fully created (stored, with its `deliveryId` returned) or not created as a deliverable item. If a storage write may have happened before a later step failed, the SDK removes the item before resolving; if that removal itself fails, the method resolves `E_SDK_STORAGE_FAILED`, and the residual item, if present, is never sent and is reported through events as `FAILED_NOT_ACCEPTED`. For delivery items these are the only two departures from no-change-on-failure: this residual-item rule and the unconditional `shutdown()` of §4.2. Invitation methods create no delivery item and cannot roll back caller session state or a published event (§4.2). The four invitation codes occur only in invitation method results, never in `INBOUND_DISCARDED`.
 
 ### 5.3 Unknown codes and states fail closed
 
@@ -208,7 +230,7 @@ Rules:
 
 All ports are caller-supplied objects. The SDK calls them only through the methods below, treats every return value as untrusted, and validates its shape. Every storage, session and identity port method may be synchronous or return a promise. A port call that throws, rejects, returns a malformed value, or does not settle within the port-call timeout is a failure of that port (`E_SDK_STORAGE_FAILED`, `E_SDK_SESSION_FAILED` or `E_SDK_IDENTITY_FAILED`). The port-call timeout is always finite: `C-DLV` fixes its value, which never exceeds the client's `delivery.perRelayTimeoutMs`, and the SDK enforces it with the host's own `setTimeout`, not with the injected clock port, so neither a port that never settles nor a clock whose timers never fire can hold a method open past that bound. Clock and random port methods (§8.4) are called synchronously; a promise or other non-synchronous return from them is an invalid value. The SDK never reads a port's other properties, never wraps or replaces a port, and never serialises a port object.
 
-No port may be backed, inside the lane, by `styx-js/src/storage/**`, `styx-js/src/crypto/**`, `styx-js/src/config/**`, `styx-js/apps/**` or the M2 session adapter. Lane code does not import those paths (§9). Wiring the SDK to the M2 adapter or to durable storage is a separate owner act; until then any such wiring is unsupported and carries no claim.
+No port may be backed, inside the lane, by `styx-js/src/storage/**`, `styx-js/src/crypto/**`, `styx-js/src/config/**`, `styx-js/apps/**` or the M2 session adapter. Lane code does not import those paths (§9). Wiring the SDK to the M2 adapter or to durable storage is a separate owner act; until then any such wiring is unsupported and carries no claim. The sole M3-INVITE exception is the unchanged `MlsEngine` and vendored WASM used by `styx-js/test/sdk-mls/invite-mls.test.js`, under #317/6316724633; no product module or other test inherits it.
 
 ### 8.1 Storage port (`ports.storage`)
 
@@ -233,6 +255,16 @@ Records are opaque to the port and SDK-internal; their fields are fixed by `C-DL
 
 The SDK seals every outbound payload once in `send` and stores only the sealed bytes; retransmissions reuse those bytes and never call `seal` again. The SDK never inspects ciphertext. A session port that returns its input unchanged is allowed in tests; then no payload confidentiality exists, and the SDK claims none in any case. The early lane provides no session-backed encryption through the M2 adapter.
 
+Optional invitation session methods, present exactly when both optional identity methods are present:
+
+| Method | Input | Success return |
+| --- | --- | --- |
+| `createKeyPackage()` | — | `Uint8Array`, 1–65 536 bytes |
+| `startSession({ peer, keyPackage })` | lowercase peer key; KeyPackage bytes | closed `{ welcome, ratchetTree }`, each `Uint8Array`, 1–262 144 bytes |
+| `joinSession({ peer, welcome, ratchetTree })` | lowercase peer key and bounded bytes | `true` |
+
+The caller MUST bind the KeyPackage credential to `peer`, create exactly a two-member session in `startSession`, and fail without creation for a wrong credential or existing peer session. `joinSession` MUST fail for a different other member or an existing peer session, else bind the group to `peer`; it may consume local KeyPackage state even on failure. Subsequent `seal`/`open` for that peer use that group. These are caller semantics, not properties the SDK verifies. A size violation is the corresponding session-port failure.
+
 ### 8.3 Signing and identity port (`ports.identity`)
 
 | Method | Input | Success return |
@@ -244,6 +276,15 @@ The SDK seals every outbound payload once in `send` and stores only the sealed b
 - The SDK calls `getPublicKey()` once in `start()` and uses that value for the client's lifetime. A different value later is not observed.
 - The SDK does not verify the meaning of a signature beyond what `C-DLV` specifies for inbound structures. `sign` is used only for SDK-internal outbound structures of this version.
 - The identity is whatever the caller injects. It is not a Milestone 4 per-case identity or return capability.
+
+Optional identity invitation methods, all-or-none with the three session methods:
+
+| Method | Input | Success return |
+| --- | --- | --- |
+| `giftWrap({ rumor, recipient })` | closed unsigned rumor and lowercase recipient key | event object |
+| `unwrapGift({ event })` | received gift-wrap event | closed `{ rumor, sealSigner }` |
+
+The caller MUST implement a kind-1059 NIP-59 wrap for `recipient`, a kind-13 seal signed by its identity key, a fresh wrapping key and NIP-44 v2, and reverse that construction with the authenticated seal signer. The SDK receives no secret key and implements none of those cryptographic operations. Before publication it checks only the wrap shape, kind, exact `p` tag and content bound, without outbound signature self-verification. It checks inbound id and signature before unwrapping. A malformed or oversize `giftWrap` return is `E_SDK_IDENTITY_FAILED`; `unwrapGift` failures only ignore that candidate. Cleartext test wrapping provides no confidentiality.
 
 ### 8.4 Clock and randomness
 
@@ -271,6 +312,8 @@ This section is the upper bound for every lane module under `styx-js/src/sdk/**`
 | Node built-ins `node:assert`, `node:events`, `node:net`, `node:http`, `node:timers`, `node:timers/promises`, `node:crypto` | any | `test/sdk` only | test harness |
 | Web/runtime globals `WebSocket`, `crypto.getRandomValues`, `setTimeout`, `clearTimeout`, `Date`, `TextEncoder`, `TextDecoder`, `Uint8Array`, `Promise`, `queueMicrotask` | — | `src/sdk`, `test/sdk` | runtime |
 
+The one test `styx-js/test/sdk-mls/invite-mls.test.js` additionally imports only the exact names granted by #317/6316724633 and #525: Jest lifecycle/test names; `MlsEngine` from the unchanged engine; `readFileSync` from `node:fs` solely for immutable WASM; `WebSocket`/`WebSocketServer`, `schnorr`, `sha256`, allowed utils and the SDK entry point. It owns its loopback harness. No other file gains crypto or filesystem access. `invite.js` uses only the contract's exact relay/retry, utils, sha256 and verify-only Schnorr imports.
+
 Rules:
 
 - Modules under `styx-js/src/sdk/**` import no `node:` built-in. They run unchanged in a browser, and in Node only when the host provides a global `WebSocket` (Node 18 does not); a test that needs `WebSocket` in Node supplies it from `ws`.
@@ -290,6 +333,8 @@ These statements stay in force verbatim:
 
 Implementation of this interface (`I-SDK`) starts only after every `beforeImplementation` gate of the M3 scope record holds, including the owner hash-ratification of this exact file, of `C-DLV` and of `O-SCEN3`, and their merge into `m3/integration`.
 
+Invitation metadata is also public: relays see KeyPackage publishers, the invitee key in `p`, sizes and timing. What the gift wrap hides is wholly a property of the injected port, not an SDK assurance. There is no Marmot compatibility or implicit migration; no service for organizations, deployment or sensitive-use permission follows.
+
 ## 11. Machine-readable normative record
 
 The JSON below is normative and closed. Prose clarifies but does not widen it. Duplicate keys are invalid.
@@ -299,7 +344,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
 {
   "schema": "styx-m3-sdk-interface/v1",
   "closed": true,
-  "sdkInterfaceVersion": "styx-m3-sdk/0.2.0-experimental",
+  "sdkInterfaceVersion": "styx-m3-sdk/0.3.0-experimental",
   "stability": "experimental-no-stability-promise",
   "publicModule": "styx-js/src/sdk/index.js",
   "implementationModule": "styx-js/src/sdk/client.js",
@@ -315,38 +360,238 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "createStyxClient"
   ],
   "config": {
-    "required": ["interfaceVersion", "relays", "ports"],
-    "optional": ["clock", "random", "delivery", "publicRelayHosts"],
-    "relays": { "minItems": 1, "maxItems": 16, "distinct": true, "schemes": ["ws:", "wss:"], "userinfo": false, "fragment": false, "defaultList": false, "hosts": "loopbackIpLiteralOrAllowlistedWssHost" },
-    "publicRelayHosts": {
-      "type": "array", "minItems": 1, "maxItems": 16, "distinct": true,
-      "absent": "no remote relay", "hostMinLength": 1, "hostMaxLength": 253,
-      "minLabels": 2, "labelMinLength": 1, "labelMaxLength": 63,
-      "characters": "lowercase ASCII a-z, 0-9, hyphen; single-dot separators",
-      "labelEdgeHyphen": false, "leadingOrTrailingDot": false,
-      "lastLabelReject": ["^[0-9]+$", "^0x[0-9a-f]*$"],
-      "normalise": false,
-      "remoteUrl": { "scheme": "wss (case-insensitive)", "hostMatch": "ASCII-lowercased reg-name equals allowlist entry byte for byte", "userinfo": false, "explicitPort": false, "defaultPort": 443, "paths": ["", "/"], "query": false, "fragment": false, "acceptedStringUnchanged": true }
+    "required": [
+      "interfaceVersion",
+      "relays",
+      "ports"
+    ],
+    "optional": [
+      "clock",
+      "random",
+      "delivery",
+      "publicRelayHosts"
+    ],
+    "relays": {
+      "minItems": 1,
+      "maxItems": 16,
+      "distinct": true,
+      "schemes": [
+        "ws:",
+        "wss:"
+      ],
+      "userinfo": false,
+      "fragment": false,
+      "defaultList": false,
+      "hosts": "loopbackIpLiteralOrAllowlistedWssHost"
     },
-    "ports": ["storage", "session", "identity"],
+    "publicRelayHosts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "distinct": true,
+      "absent": "no remote relay",
+      "hostMinLength": 1,
+      "hostMaxLength": 253,
+      "minLabels": 2,
+      "labelMinLength": 1,
+      "labelMaxLength": 63,
+      "characters": "lowercase ASCII a-z, 0-9, hyphen; single-dot separators",
+      "labelEdgeHyphen": false,
+      "leadingOrTrailingDot": false,
+      "lastLabelReject": [
+        "^[0-9]+$",
+        "^0x[0-9a-f]*$"
+      ],
+      "normalise": false,
+      "remoteUrl": {
+        "scheme": "wss (case-insensitive)",
+        "hostMatch": "ASCII-lowercased reg-name equals allowlist entry byte for byte",
+        "userinfo": false,
+        "explicitPort": false,
+        "defaultPort": 443,
+        "paths": [
+          "",
+          "/"
+        ],
+        "query": false,
+        "fragment": false,
+        "acceptedStringUnchanged": true
+      }
+    },
+    "ports": [
+      "storage",
+      "session",
+      "identity"
+    ],
     "delivery": {
-      "fields": ["maxAttempts", "deadlineMs", "perRelayTimeoutMs", "receiptMode"],
+      "fields": [
+        "maxAttempts",
+        "deadlineMs",
+        "perRelayTimeoutMs",
+        "receiptMode"
+      ],
       "numericRule": "positive safe integer within C-DLV bounds; absent means C-DLV finite default",
-      "receiptMode": ["RECIPIENT_RECEIPT", "RELAY_ACCEPTANCE_ONLY"]
+      "receiptMode": [
+        "RECIPIENT_RECEIPT",
+        "RELAY_ACCEPTANCE_ONLY"
+      ]
     },
     "unknownField": "E_SDK_INVALID_CONFIG"
   },
-  "clientStates": ["CREATED", "RUNNING", "STOPPED"],
+  "clientStates": [
+    "CREATED",
+    "RUNNING",
+    "STOPPED"
+  ],
   "methods": {
-    "start": { "allowedIn": ["CREATED"], "codes": ["E_SDK_ALREADY_STARTED", "E_SDK_CLIENT_STOPPED", "E_SDK_STORAGE_NOT_EMPTY", "E_SDK_NO_RELAY_AVAILABLE", "E_SDK_STORAGE_FAILED", "E_SDK_IDENTITY_FAILED", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE"] },
-    "send": { "allowedIn": ["RUNNING"], "codes": ["E_SDK_NOT_STARTED", "E_SDK_CLIENT_STOPPED", "E_SDK_INVALID_ARGUMENT", "E_SDK_PAYLOAD_TOO_LARGE", "E_SDK_QUEUE_FULL", "E_SDK_STORAGE_FAILED", "E_SDK_SESSION_FAILED", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE"] },
-    "getDelivery": { "allowedIn": ["RUNNING", "STOPPED"], "codes": ["E_SDK_NOT_STARTED", "E_SDK_INVALID_ARGUMENT", "E_SDK_UNKNOWN_DELIVERY", "E_SDK_STORAGE_FAILED", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE"] },
-    "cancel": { "allowedIn": ["RUNNING"], "codes": ["E_SDK_NOT_STARTED", "E_SDK_CLIENT_STOPPED", "E_SDK_INVALID_ARGUMENT", "E_SDK_UNKNOWN_DELIVERY", "E_SDK_DELIVERY_TERMINAL", "E_SDK_STORAGE_FAILED", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE"] },
-    "onEvent": { "allowedIn": ["CREATED", "RUNNING", "STOPPED"], "codes": ["E_SDK_INVALID_ARGUMENT", "E_SDK_INTERNAL", "E_SDK_UNKNOWN_CODE"] },
-    "shutdown": { "allowedIn": ["CREATED", "RUNNING"], "codes": ["E_SDK_CLIENT_STOPPED"] }
+    "start": {
+      "allowedIn": [
+        "CREATED"
+      ],
+      "codes": [
+        "E_SDK_ALREADY_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_STORAGE_NOT_EMPTY",
+        "E_SDK_NO_RELAY_AVAILABLE",
+        "E_SDK_STORAGE_FAILED",
+        "E_SDK_IDENTITY_FAILED",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE"
+      ]
+    },
+    "send": {
+      "allowedIn": [
+        "RUNNING"
+      ],
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_PAYLOAD_TOO_LARGE",
+        "E_SDK_QUEUE_FULL",
+        "E_SDK_STORAGE_FAILED",
+        "E_SDK_SESSION_FAILED",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE"
+      ]
+    },
+    "getDelivery": {
+      "allowedIn": [
+        "RUNNING",
+        "STOPPED"
+      ],
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_UNKNOWN_DELIVERY",
+        "E_SDK_STORAGE_FAILED",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE"
+      ]
+    },
+    "cancel": {
+      "allowedIn": [
+        "RUNNING"
+      ],
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_UNKNOWN_DELIVERY",
+        "E_SDK_DELIVERY_TERMINAL",
+        "E_SDK_STORAGE_FAILED",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE"
+      ]
+    },
+    "onEvent": {
+      "allowedIn": [
+        "CREATED",
+        "RUNNING",
+        "STOPPED"
+      ],
+      "codes": [
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE"
+      ]
+    },
+    "shutdown": {
+      "allowedIn": [
+        "CREATED",
+        "RUNNING"
+      ],
+      "codes": [
+        "E_SDK_CLIENT_STOPPED"
+      ]
+    },
+    "publishKeyPackage": {
+      "allowedIn": [
+        "RUNNING"
+      ],
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_NOT_CONFIGURED",
+        "E_SDK_NO_RELAY_AVAILABLE",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE",
+        "E_SDK_SESSION_FAILED",
+        "E_SDK_IDENTITY_FAILED",
+        "E_SDK_PUBLISH_NOT_ACCEPTED"
+      ]
+    },
+    "invite": {
+      "allowedIn": [
+        "RUNNING"
+      ],
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_NOT_CONFIGURED",
+        "E_SDK_NO_RELAY_AVAILABLE",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE",
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_KEYPACKAGE_NOT_FOUND",
+        "E_SDK_SESSION_FAILED",
+        "E_SDK_IDENTITY_FAILED",
+        "E_SDK_PUBLISH_NOT_ACCEPTED"
+      ]
+    },
+    "acceptInvite": {
+      "allowedIn": [
+        "RUNNING"
+      ],
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_NOT_CONFIGURED",
+        "E_SDK_NO_RELAY_AVAILABLE",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE",
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_SESSION_FAILED",
+        "E_SDK_INVITE_TIMEOUT"
+      ]
+    }
   },
-  "createStyxClientCodes": ["E_SDK_UNSUPPORTED_VERSION", "E_SDK_INVALID_CONFIG"],
-  "resultEnvelope": { "success": ["ok", "value"], "failure": ["ok", "code"], "neverRejects": true, "neverThrows": true },
+  "createStyxClientCodes": [
+    "E_SDK_UNSUPPORTED_VERSION",
+    "E_SDK_INVALID_CONFIG"
+  ],
+  "resultEnvelope": {
+    "success": [
+      "ok",
+      "value"
+    ],
+    "failure": [
+      "ok",
+      "code"
+    ],
+    "neverRejects": true,
+    "neverThrows": true
+  },
   "resultCodes": [
     "E_SDK_UNSUPPORTED_VERSION",
     "E_SDK_INVALID_CONFIG",
@@ -365,9 +610,17 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "E_SDK_IDENTITY_FAILED",
     "E_SDK_INBOUND_INVALID",
     "E_SDK_INTERNAL",
+    "E_SDK_UNKNOWN_CODE",
+    "E_SDK_NOT_CONFIGURED",
+    "E_SDK_PUBLISH_NOT_ACCEPTED",
+    "E_SDK_KEYPACKAGE_NOT_FOUND",
+    "E_SDK_INVITE_TIMEOUT"
+  ],
+  "inboundDiscardCodes": [
+    "E_SDK_INBOUND_INVALID",
+    "E_SDK_SESSION_FAILED",
     "E_SDK_UNKNOWN_CODE"
   ],
-  "inboundDiscardCodes": ["E_SDK_INBOUND_INVALID", "E_SDK_SESSION_FAILED", "E_SDK_UNKNOWN_CODE"],
   "unknownValuePolicy": {
     "methodResult": "E_SDK_UNKNOWN_CODE",
     "appliesTo": "nonTerminalOutboundItems",
@@ -378,20 +631,64 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "consumer": "treat as failure; never infer success, acceptance or receipt"
   },
   "deliveryStates": {
-    "QUEUED": { "terminal": false },
-    "IN_FLIGHT": { "terminal": false },
-    "RELAY_ACCEPTED_AWAITING_RECEIPT": { "terminal": false },
-    "RELAY_ACCEPTED": { "terminal": true, "success": true, "mode": "RELAY_ACCEPTANCE_ONLY" },
-    "RECIPIENT_RECEIPT_RECEIVED": { "terminal": true, "success": true, "mode": "RECIPIENT_RECEIPT" },
-    "FAILED_NOT_ACCEPTED": { "terminal": true, "success": false },
-    "FAILED_NO_RECEIPT": { "terminal": true, "success": false, "mode": "RECIPIENT_RECEIPT" },
-    "CANCELLED": { "terminal": true, "success": false },
-    "LOST_ON_SHUTDOWN": { "terminal": true, "success": false }
+    "QUEUED": {
+      "terminal": false
+    },
+    "IN_FLIGHT": {
+      "terminal": false
+    },
+    "RELAY_ACCEPTED_AWAITING_RECEIPT": {
+      "terminal": false
+    },
+    "RELAY_ACCEPTED": {
+      "terminal": true,
+      "success": true,
+      "mode": "RELAY_ACCEPTANCE_ONLY"
+    },
+    "RECIPIENT_RECEIPT_RECEIVED": {
+      "terminal": true,
+      "success": true,
+      "mode": "RECIPIENT_RECEIPT"
+    },
+    "FAILED_NOT_ACCEPTED": {
+      "terminal": true,
+      "success": false
+    },
+    "FAILED_NO_RECEIPT": {
+      "terminal": true,
+      "success": false,
+      "mode": "RECIPIENT_RECEIPT"
+    },
+    "CANCELLED": {
+      "terminal": true,
+      "success": false
+    },
+    "LOST_ON_SHUTDOWN": {
+      "terminal": true,
+      "success": false
+    }
   },
   "transitions": {
-    "QUEUED": ["IN_FLIGHT", "CANCELLED", "FAILED_NOT_ACCEPTED", "LOST_ON_SHUTDOWN"],
-    "IN_FLIGHT": ["QUEUED", "RELAY_ACCEPTED_AWAITING_RECEIPT", "RELAY_ACCEPTED", "FAILED_NOT_ACCEPTED", "CANCELLED", "LOST_ON_SHUTDOWN"],
-    "RELAY_ACCEPTED_AWAITING_RECEIPT": ["RECIPIENT_RECEIPT_RECEIVED", "FAILED_NO_RECEIPT", "CANCELLED", "LOST_ON_SHUTDOWN"],
+    "QUEUED": [
+      "IN_FLIGHT",
+      "CANCELLED",
+      "FAILED_NOT_ACCEPTED",
+      "LOST_ON_SHUTDOWN"
+    ],
+    "IN_FLIGHT": [
+      "QUEUED",
+      "RELAY_ACCEPTED_AWAITING_RECEIPT",
+      "RELAY_ACCEPTED",
+      "FAILED_NOT_ACCEPTED",
+      "CANCELLED",
+      "LOST_ON_SHUTDOWN"
+    ],
+    "RELAY_ACCEPTED_AWAITING_RECEIPT": [
+      "RECIPIENT_RECEIPT_RECEIVED",
+      "FAILED_NO_RECEIPT",
+      "CANCELLED",
+      "LOST_ON_SHUTDOWN"
+    ],
     "RELAY_ACCEPTED": [],
     "RECIPIENT_RECEIPT_RECEIVED": [],
     "FAILED_NOT_ACCEPTED": [],
@@ -399,22 +696,74 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "CANCELLED": [],
     "LOST_ON_SHUTDOWN": []
   },
-  "snapshotFields": ["deliveryId", "recipient", "state", "terminal", "attempts", "createdAt", "deadlineAt", "lastCode", "relayOutcomes"],
-  "relayOutcomes": ["PENDING", "ACCEPTED", "REJECTED", "TIMED_OUT", "UNREACHABLE"],
+  "snapshotFields": [
+    "deliveryId",
+    "recipient",
+    "state",
+    "terminal",
+    "attempts",
+    "createdAt",
+    "deadlineAt",
+    "lastCode",
+    "relayOutcomes"
+  ],
+  "relayOutcomes": [
+    "PENDING",
+    "ACCEPTED",
+    "REJECTED",
+    "TIMED_OUT",
+    "UNREACHABLE"
+  ],
   "events": {
-    "CLIENT_STATE_CHANGED": ["clientState"],
-    "DELIVERY_STATE_CHANGED": ["deliveryId", "state", "terminal", "lastCode"],
-    "MESSAGE_RECEIVED": ["sender", "payload"],
-    "INBOUND_DISCARDED": ["code"]
+    "CLIENT_STATE_CHANGED": [
+      "clientState"
+    ],
+    "DELIVERY_STATE_CHANGED": [
+      "deliveryId",
+      "state",
+      "terminal",
+      "lastCode"
+    ],
+    "MESSAGE_RECEIVED": [
+      "sender",
+      "payload"
+    ],
+    "INBOUND_DISCARDED": [
+      "code"
+    ]
   },
   "ports": {
-    "storage": ["put", "get", "update", "remove", "list"],
-    "session": ["seal", "open"],
-    "identity": ["getPublicKey", "sign"],
-    "clock": ["now", "setTimer", "clearTimer"],
-    "random": ["nextUint32"]
+    "storage": [
+      "put",
+      "get",
+      "update",
+      "remove",
+      "list"
+    ],
+    "session": [
+      "seal",
+      "open"
+    ],
+    "identity": [
+      "getPublicKey",
+      "sign"
+    ],
+    "clock": [
+      "now",
+      "setTimer",
+      "clearTimer"
+    ],
+    "random": [
+      "nextUint32"
+    ]
   },
-  "portFailureCodes": { "storage": "E_SDK_STORAGE_FAILED", "session": "E_SDK_SESSION_FAILED", "identity": "E_SDK_IDENTITY_FAILED", "clock": "E_SDK_INTERNAL", "random": "E_SDK_INTERNAL" },
+  "portFailureCodes": {
+    "storage": "E_SDK_STORAGE_FAILED",
+    "session": "E_SDK_SESSION_FAILED",
+    "identity": "E_SDK_IDENTITY_FAILED",
+    "clock": "E_SDK_INTERNAL",
+    "random": "E_SDK_INTERNAL"
+  },
   "secretKeyMaterialCrossesInterface": false,
   "outerBounds": {
     "finiteAttemptsAndDeadline": true,
@@ -431,25 +780,158 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   },
   "imports": {
     "lane": "styx-js/src/sdk/** modules present at the importing card base or in its own allowlist",
-    "utils": { "path": "styx-js/src/utils.js", "names": ["EventEmitter", "uuidv4", "bytesToHex", "hexToBytes", "utf8Encode", "utf8Decode", "randomBytes", "constantTimeEqual", "concatBytes", "bytesToBase64", "base64ToBytes", "secureZero"] },
+    "utils": {
+      "path": "styx-js/src/utils.js",
+      "names": [
+        "EventEmitter",
+        "uuidv4",
+        "bytesToHex",
+        "hexToBytes",
+        "utf8Encode",
+        "utf8Decode",
+        "randomBytes",
+        "constantTimeEqual",
+        "concatBytes",
+        "bytesToBase64",
+        "base64ToBytes",
+        "secureZero"
+      ]
+    },
     "transport": {
-      "styx-js/src/transport/transport-interface.js": ["TransportInterface", "TransportState", "TransportMessage"],
-      "styx-js/src/transport/nostr-transport.js": ["RelayPool"]
+      "styx-js/src/transport/transport-interface.js": [
+        "TransportInterface",
+        "TransportState",
+        "TransportMessage"
+      ],
+      "styx-js/src/transport/nostr-transport.js": [
+        "RelayPool"
+      ]
     },
     "packages": {
-      "@noble/hashes/sha256": { "names": ["sha256"], "allowedIn": ["src", "test"] },
-      "@noble/curves/secp256k1": { "names": ["schnorr"], "allowedIn": ["src", "test"], "srcUse": "verify only" },
-      "@jest/globals": { "names": ["describe", "test", "it", "expect", "beforeAll", "beforeEach", "afterAll", "afterEach", "jest"], "allowedIn": ["test"] },
-      "ws": { "names": ["WebSocket", "WebSocketServer"], "allowedIn": ["test"] }
+      "@noble/hashes/sha256": {
+        "names": [
+          "sha256"
+        ],
+        "allowedIn": [
+          "src",
+          "test"
+        ]
+      },
+      "@noble/curves/secp256k1": {
+        "names": [
+          "schnorr"
+        ],
+        "allowedIn": [
+          "src",
+          "test"
+        ],
+        "srcUse": "verify only"
+      },
+      "@jest/globals": {
+        "names": [
+          "describe",
+          "test",
+          "it",
+          "expect",
+          "beforeAll",
+          "beforeEach",
+          "afterAll",
+          "afterEach",
+          "jest"
+        ],
+        "allowedIn": [
+          "test"
+        ]
+      },
+      "ws": {
+        "names": [
+          "WebSocket",
+          "WebSocketServer"
+        ],
+        "allowedIn": [
+          "test"
+        ]
+      }
     },
-    "nodeBuiltinsTestOnly": ["node:assert", "node:events", "node:net", "node:http", "node:timers", "node:timers/promises", "node:crypto"],
-    "noImport": ["styx-js/src/storage/**", "styx-js/src/crypto/**", "styx-js/src/config/**", "styx-js/apps/**"],
-    "forbiddenTransportExports": ["OutboxWorker", "TransportFailover", "WebRTCTransport", "BroadcastChannelTransport", "NostrChatTransport"],
+    "nodeBuiltinsTestOnly": [
+      "node:assert",
+      "node:events",
+      "node:net",
+      "node:http",
+      "node:timers",
+      "node:timers/promises",
+      "node:crypto"
+    ],
+    "noImport": [
+      "styx-js/src/storage/**",
+      "styx-js/src/crypto/**",
+      "styx-js/src/config/**",
+      "styx-js/apps/**"
+    ],
+    "forbiddenTransportExports": [
+      "OutboxWorker",
+      "TransportFailover",
+      "WebRTCTransport",
+      "BroadcastChannelTransport",
+      "NostrChatTransport"
+    ],
     "newDependency": false
   },
-  "network": { "laneTestRelays": "loopback only, started inside the test", "relayUrlLiteralInSrcSdk": false },
-  "ownedByCDlv": ["queue transitions timing", "retransmission and backoff bounds", "maxAttempts, deadlineMs, perRelayTimeoutMs bounds and defaults", "payload maximum", "queue bound", "port call timeout value (finite, at most perRelayTimeoutMs, enforced by the host timer)", "receipt structure and validation", "duplicate handling", "per-relay outcome rules", "SDK-internal record and on-wire structures, including message identifiers, receipts, acknowledgements, Nostr event kinds and tags", "terminal processing slack"],
-  "cDlvMayNotChange": ["exports", "config fields", "methods", "result codes", "delivery states", "transitions", "relay outcomes", "public SDK event kinds and fields (section 7)", "port methods", "outer bounds", "imports"]
+  "network": {
+    "laneTestRelays": "loopback only, started inside the test",
+    "relayUrlLiteralInSrcSdk": false
+  },
+  "ownedByCDlv": [
+    "queue transitions timing",
+    "retransmission and backoff bounds",
+    "maxAttempts, deadlineMs, perRelayTimeoutMs bounds and defaults",
+    "payload maximum",
+    "queue bound",
+    "port call timeout value (finite, at most perRelayTimeoutMs, enforced by the host timer)",
+    "receipt structure and validation",
+    "duplicate handling",
+    "per-relay outcome rules",
+    "SDK-internal record and on-wire structures, including message identifiers, receipts, acknowledgements, Nostr event kinds and tags",
+    "terminal processing slack"
+  ],
+  "cDlvMayNotChange": [
+    "exports",
+    "config fields",
+    "methods",
+    "result codes",
+    "delivery states",
+    "transitions",
+    "relay outcomes",
+    "public SDK event kinds and fields (section 7)",
+    "port methods",
+    "outer bounds",
+    "imports"
+  ],
+  "optionalInvitationPorts": {
+    "allOrNone": true,
+    "session": [
+      "createKeyPackage",
+      "startSession",
+      "joinSession"
+    ],
+    "identity": [
+      "giftWrap",
+      "unwrapGift"
+    ],
+    "absent": "E_SDK_NOT_CONFIGURED",
+    "partial": "E_SDK_INVALID_CONFIG",
+    "callerSemantics": "section 8.2 and 8.3; SDK implements no MLS or gift-wrap cryptography",
+    "sourceTestException": "styx-js/test/sdk-mls/invite-mls.test.js only, owner #317/6316724633"
+  },
+  "invitation": {
+    "argumentsClosed": true,
+    "acceptedRelays": "frozen ascending accepting config.relays indices",
+    "relaySets": "independent and disposed before resolution",
+    "newCodesInbound": false,
+    "failedCandidateEmits": false,
+    "shutdown": "section 4.2, disposal in step 4 after LOST_ON_SHUTDOWN",
+    "retry": "fresh engines, ports and clients on both sides after session failure"
+  }
 }
 ```
 <!-- styx-m3-sdk-interface-json:v1:end -->
@@ -460,6 +942,8 @@ A conforming implementation (card `I-SDK`) and its tests demonstrate at least: e
 
 A conforming validator of the record in §11 rejects: an unknown or missing field; a duplicate key; a code, state, outcome, event kind or port method outside the closed lists; a state without `terminal`; a transition from a terminal state; a transition target outside `deliveryStates`; a method code outside `resultCodes`; a method missing from `methods`; and any `outerBounds` value different from the one above. A conforming implementation never returns, from a method, a code outside that method's own `codes` list in the record; such a return is a conformance failure, not merely a validator concern.
 
+M3-INVITE conformance additionally covers every wire refusal and Model B call in #525, all five-or-none port members, nine client members/22 result codes, old-version rejection, exact accepted indices and newest/tie selection, host-time bounds with faulty clocks, shutdown order with pending delivery and invitation work, and the single real-engine flow with equal exported secrets, seal/open, rejected credential/Welcome and fresh-state retry. The cleartext test identity port proves no confidentiality.
+
 ## 13. Authority and ratification
 
 This contract implements card `C-SDK` of the M3 scope record (Issue #400 comment `5950987413`) under the owner act in Issue #400, on base `m3/integration` at `e0fe27ae1b02ad35d80fa70cbb0f2ac64fbf812a`. Its only file is `docs/architecture/m3/sdk-interface.md`.
@@ -467,3 +951,5 @@ This contract implements card `C-SDK` of the M3 scope record (Issue #400 comment
 M3-PUBLIC-RELAYS #522 produces version 0.2.0 under #400/6489853937 and the cited public relays act. The historical 0.1.0 ratification is not a ratification of these new bytes; the new C-SDK and C-DLV hashes remain output candidates pending a separately marked owner output ratification. Historical O-SCEN3 and C-PREV pins are unchanged.
 
 The final file SHA-256 must be owner hash-ratified by a `styx-m3-ratification:v1` comment on #400 before `C-DLV` relies on it as ratified and before any dependent implementation. Any byte change voids that ratification. Removing this file fully rolls back `C-SDK`; no code, dependency or persisted bytes are introduced.
+
+M3-INVITE #525 amends only the enumerated sections under #400/6544668029, scope replacement 5 #400/6544596450 and the existing #317/6316724633 act. The version-0.2.0 predecessor is integrated and ratified by #400/6544441411. These version-0.3.0 bytes remain output candidates until separately exact-head hash-ratified; historical O-SCEN3/C-PREV citations remain unchanged.
