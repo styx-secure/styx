@@ -1,0 +1,98 @@
+{
+  "ok": true,
+  "completeRuns": 3,
+  "totalMessages": 18,
+  "totalRecipientReceipts": 18,
+  "runs": [
+    {
+      "run": "two-host-2",
+      "ok": true,
+      "messages": 6,
+      "recipientReceipts": 6,
+      "attemptsMessage3": 2,
+      "recoveredReply2SecondsAfterReturn": 7.538,
+      "capture": {
+        "inviter": {
+          "wireLines": 141,
+          "websocketFrames": 101,
+          "kinds": {
+            "4743": 3,
+            "1059": 3,
+            "4741": 19,
+            "4742": 21
+          }
+        },
+        "invitee": {
+          "wireLines": 221,
+          "websocketFrames": 166,
+          "kinds": {
+            "4743": 5,
+            "1059": 1,
+            "4741": 29,
+            "4742": 23
+          }
+        }
+      }
+    },
+    {
+      "run": "two-host-3",
+      "ok": true,
+      "messages": 6,
+      "recipientReceipts": 6,
+      "attemptsMessage3": 2,
+      "recoveredReply2SecondsAfterReturn": 1.579,
+      "capture": {
+        "inviter": {
+          "wireLines": 138,
+          "websocketFrames": 94,
+          "kinds": {
+            "4743": 3,
+            "1059": 3,
+            "4741": 18,
+            "4742": 20
+          }
+        },
+        "invitee": {
+          "wireLines": 214,
+          "websocketFrames": 158,
+          "kinds": {
+            "4743": 6,
+            "1059": 2,
+            "4741": 28,
+            "4742": 24
+          }
+        }
+      }
+    },
+    {
+      "run": "two-host-4",
+      "ok": true,
+      "messages": 6,
+      "recipientReceipts": 6,
+      "attemptsMessage3": 2,
+      "recoveredReply2SecondsAfterReturn": 8.621,
+      "capture": {
+        "inviter": {
+          "wireLines": 135,
+          "websocketFrames": 95,
+          "kinds": {
+            "4743": 3,
+            "1059": 3,
+            "4741": 18,
+            "4742": 20
+          }
+        },
+        "invitee": {
+          "wireLines": 217,
+          "websocketFrames": 161,
+          "kinds": {
+            "4743": 5,
+            "1059": 2,
+            "4741": 28,
+            "4742": 22
+          }
+        }
+      }
+    }
+  ]
+}
