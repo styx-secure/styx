@@ -1,0 +1,659 @@
+{
+  "completeRuns": 3,
+  "runs": [
+    {
+      "run": "run-2",
+      "ok": true,
+      "attacks": [
+        {
+          "name": "replay",
+          "ids": [
+            "dccdfd53bc37263f2b5e79f7d717f4069c603c4470e281a1b66ac7844a1e3dd8"
+          ],
+          "relayAnswer": "R1 relay.nostr.net: OK ok=true \"duplicate: have this event\"",
+          "hosts": {
+            "inviter": {
+              "dccdfd53bc37263f2b5e79f7d717f4069c603c4470e281a1b66ac7844a1e3dd8": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "dccdfd53bc37263f2b5e79f7d717f4069c603c4470e281a1b66ac7844a1e3dd8": {
+                "rawCount": 3,
+                "sdkSocketCount": 36,
+                "sanitizedCaptureInboundPrefixCount": 39,
+                "firstSocketAt": "2026-11-01T19:57:27.144Z",
+                "adjacentDiscards": []
+              }
+            }
+          }
+        },
+        {
+          "name": "tamper",
+          "ids": [
+            "9fb4b4a635a1f9632b401eba668766263650e44cde69627229de4811131c549a",
+            "dccdfd53bc37263f2b5e79f7d717f4069c603c4470e281a1b66ac7844a1e3dd8"
+          ],
+          "relayAnswer": "R1 OK ok=true \"duplicate: have this event\"; R2 OK ok=false \"invalid: bad event id\"; R3 OK ok=false \"invalid: bad event id\"; R1 OK ok=true \"\"; R2 OK ok=true \"\"; R3 OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "9fb4b4a635a1f9632b401eba668766263650e44cde69627229de4811131c549a": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "dccdfd53bc37263f2b5e79f7d717f4069c603c4470e281a1b66ac7844a1e3dd8": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "9fb4b4a635a1f9632b401eba668766263650e44cde69627229de4811131c549a": {
+                "rawCount": 3,
+                "sdkSocketCount": 33,
+                "sanitizedCaptureInboundPrefixCount": 36,
+                "firstSocketAt": "2026-11-01T19:57:37.951Z",
+                "adjacentDiscards": [
+                  {
+                    "at": "2026-11-01T19:57:37.958Z",
+                    "ms": 63936,
+                    "role": "invitee",
+                    "phase": "inbound-discarded",
+                    "code": "E_SDK_SESSION_FAILED"
+                  }
+                ]
+              },
+              "dccdfd53bc37263f2b5e79f7d717f4069c603c4470e281a1b66ac7844a1e3dd8": {
+                "rawCount": 3,
+                "sdkSocketCount": 36,
+                "sanitizedCaptureInboundPrefixCount": 39,
+                "firstSocketAt": "2026-11-01T19:57:27.144Z",
+                "adjacentDiscards": []
+              }
+            }
+          }
+        },
+        {
+          "name": "injection",
+          "ids": [
+            "c54ff03c27af0fbd60784dbcc94983c76047a4f506643597e4ec6d959b909322"
+          ],
+          "relayAnswer": "R1 relay.nostr.net: OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "c54ff03c27af0fbd60784dbcc94983c76047a4f506643597e4ec6d959b909322": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "c54ff03c27af0fbd60784dbcc94983c76047a4f506643597e4ec6d959b909322": {
+                "rawCount": 1,
+                "sdkSocketCount": 11,
+                "sanitizedCaptureInboundPrefixCount": 12,
+                "firstSocketAt": "2026-11-01T19:57:39.923Z",
+                "adjacentDiscards": [
+                  {
+                    "at": "2026-11-01T19:57:39.925Z",
+                    "ms": 65903,
+                    "role": "invitee",
+                    "phase": "inbound-discarded",
+                    "code": "E_SDK_SESSION_FAILED"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "forged receipt",
+          "ids": [
+            "01530534d7aa4de8b7c9d4b6112fa7d57d22706bc8f65812904893a7c2c087ad",
+            "569695bf15123bdc6c515169b0a6ebba1ed3687686cf7e9817d22c41a63a3090",
+            "c65c04a13c715a10dc80f7da6393aae341dbe10dd39ed04ca55ebfd61482c2a8"
+          ],
+          "relayAnswer": "R1 OK ok=true \"\"; R2 OK ok=true \"\"; R3 OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "01530534d7aa4de8b7c9d4b6112fa7d57d22706bc8f65812904893a7c2c087ad": {
+                "rawCount": 1,
+                "sdkSocketCount": 10,
+                "sanitizedCaptureInboundPrefixCount": 11,
+                "firstSocketAt": "2026-11-01T19:57:54.455Z",
+                "adjacentDiscards": []
+              },
+              "569695bf15123bdc6c515169b0a6ebba1ed3687686cf7e9817d22c41a63a3090": {
+                "rawCount": 1,
+                "sdkSocketCount": 10,
+                "sanitizedCaptureInboundPrefixCount": 11,
+                "firstSocketAt": "2026-11-01T19:57:52.434Z",
+                "adjacentDiscards": []
+              },
+              "c65c04a13c715a10dc80f7da6393aae341dbe10dd39ed04ca55ebfd61482c2a8": {
+                "rawCount": 1,
+                "sdkSocketCount": 10,
+                "sanitizedCaptureInboundPrefixCount": 11,
+                "firstSocketAt": "2026-11-01T19:57:54.222Z",
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "01530534d7aa4de8b7c9d4b6112fa7d57d22706bc8f65812904893a7c2c087ad": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "569695bf15123bdc6c515169b0a6ebba1ed3687686cf7e9817d22c41a63a3090": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "c65c04a13c715a10dc80f7da6393aae341dbe10dd39ed04ca55ebfd61482c2a8": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            }
+          }
+        }
+      ],
+      "receivedCounts": {
+        "inviter": 1,
+        "invitee": 1
+      },
+      "discardCodes": {
+        "inviter": {},
+        "invitee": {
+          "E_SDK_SESSION_FAILED": 2
+        }
+      },
+      "pendingSnapshotsAfterFalseReceipt": 42,
+      "lastPendingAt": "2026-11-01T19:59:16.007Z",
+      "trueReleaseAt": "2026-11-01T19:59:17.156Z",
+      "terminalAt": "2026-11-01T19:59:17.319Z",
+      "receiptDelaySeconds": 110.25999999046326,
+      "hosts": {
+        "inviter": {
+          "hostname": "AI395",
+          "availableBefore": 86622949376,
+          "role": "inviter",
+          "llamaSwapPid": "7744",
+          "memberExit": 0,
+          "availableMinimum": 86596616192,
+          "availableAfter": 86805372928,
+          "captureBytes": 158048,
+          "pcapSha256": "750c570016cb368901f14f6c1bdac1ee921e0341a4aaee8803f76f51652dd85f",
+          "llamaSwapPidAfter": "7744",
+          "transientCaptureAndKeysRemoved": true
+        },
+        "invitee": {
+          "hostname": "MVLINNA",
+          "availableBefore": 21276000256,
+          "role": "invitee",
+          "llamaSwapPid": "0",
+          "memberExit": 0,
+          "availableMinimum": 21158076416,
+          "availableAfter": 21581418496,
+          "captureBytes": 218128,
+          "pcapSha256": "475271c40aea3503b3d49c6722856ef840bf3885ff726c82200d472998730275",
+          "llamaSwapPidAfter": "0",
+          "transientCaptureAndKeysRemoved": true
+        }
+      }
+    },
+    {
+      "run": "run-3",
+      "ok": true,
+      "attacks": [
+        {
+          "name": "replay",
+          "ids": [
+            "38212c0d5f09d3aec499bd19eb9f0e6a23ac6b5a8946a8380986ecf6d71a82a5"
+          ],
+          "relayAnswer": "R1 relay.nostr.net: OK ok=true \"duplicate: have this event\"",
+          "hosts": {
+            "inviter": {
+              "38212c0d5f09d3aec499bd19eb9f0e6a23ac6b5a8946a8380986ecf6d71a82a5": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "38212c0d5f09d3aec499bd19eb9f0e6a23ac6b5a8946a8380986ecf6d71a82a5": {
+                "rawCount": 3,
+                "sdkSocketCount": 39,
+                "sanitizedCaptureInboundPrefixCount": 34,
+                "firstSocketAt": "2026-11-01T20:03:17.590Z",
+                "adjacentDiscards": []
+              }
+            }
+          }
+        },
+        {
+          "name": "tamper",
+          "ids": [
+            "260855b6d085e173fedee2461e65f8ce2f66f1164cc06ecfc857d3cc27dc5a4c",
+            "38212c0d5f09d3aec499bd19eb9f0e6a23ac6b5a8946a8380986ecf6d71a82a5"
+          ],
+          "relayAnswer": "R1 OK ok=true \"duplicate: have this event\"; R2 OK ok=false \"invalid: bad event id\"; R3 OK ok=false \"invalid: bad event id\"; R1 OK ok=true \"\"; R2 OK ok=true \"\"; R3 OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "260855b6d085e173fedee2461e65f8ce2f66f1164cc06ecfc857d3cc27dc5a4c": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "38212c0d5f09d3aec499bd19eb9f0e6a23ac6b5a8946a8380986ecf6d71a82a5": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "260855b6d085e173fedee2461e65f8ce2f66f1164cc06ecfc857d3cc27dc5a4c": {
+                "rawCount": 3,
+                "sdkSocketCount": 36,
+                "sanitizedCaptureInboundPrefixCount": 31,
+                "firstSocketAt": "2026-11-01T20:03:29.153Z",
+                "adjacentDiscards": [
+                  {
+                    "at": "2026-11-01T20:03:29.156Z",
+                    "ms": 69213,
+                    "role": "invitee",
+                    "phase": "inbound-discarded",
+                    "code": "E_SDK_SESSION_FAILED"
+                  }
+                ]
+              },
+              "38212c0d5f09d3aec499bd19eb9f0e6a23ac6b5a8946a8380986ecf6d71a82a5": {
+                "rawCount": 3,
+                "sdkSocketCount": 39,
+                "sanitizedCaptureInboundPrefixCount": 34,
+                "firstSocketAt": "2026-11-01T20:03:17.590Z",
+                "adjacentDiscards": []
+              }
+            }
+          }
+        },
+        {
+          "name": "injection",
+          "ids": [
+            "c90c0bd5a14f23c5537ee981afa212f5c441d49d07a8a5eeb743e389ecffffc1"
+          ],
+          "relayAnswer": "R1 relay.nostr.net: OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "c90c0bd5a14f23c5537ee981afa212f5c441d49d07a8a5eeb743e389ecffffc1": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "c90c0bd5a14f23c5537ee981afa212f5c441d49d07a8a5eeb743e389ecffffc1": {
+                "rawCount": 1,
+                "sdkSocketCount": 12,
+                "sanitizedCaptureInboundPrefixCount": 13,
+                "firstSocketAt": "2026-11-01T20:03:32.030Z",
+                "adjacentDiscards": [
+                  {
+                    "at": "2026-11-01T20:03:32.032Z",
+                    "ms": 72089,
+                    "role": "invitee",
+                    "phase": "inbound-discarded",
+                    "code": "E_SDK_SESSION_FAILED"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "forged receipt",
+          "ids": [
+            "312d6dcc8581b1dd07b415a5a6502a7d38fa1ba9e57f93eb783142e0939b9d0b",
+            "807910004525001b8acf96f6ef6596bb36b76eed5f90a9497dcc2b56f2b38262",
+            "f2ab66b58e12fd0f3d030823c8f7af107af0e913724090c75603a47e9fe83045"
+          ],
+          "relayAnswer": "R1 OK ok=true \"\"; R2 OK ok=true \"\"; R3 OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "312d6dcc8581b1dd07b415a5a6502a7d38fa1ba9e57f93eb783142e0939b9d0b": {
+                "rawCount": 1,
+                "sdkSocketCount": 10,
+                "sanitizedCaptureInboundPrefixCount": 11,
+                "firstSocketAt": "2026-11-01T20:03:44.147Z",
+                "adjacentDiscards": []
+              },
+              "807910004525001b8acf96f6ef6596bb36b76eed5f90a9497dcc2b56f2b38262": {
+                "rawCount": 1,
+                "sdkSocketCount": 10,
+                "sanitizedCaptureInboundPrefixCount": 11,
+                "firstSocketAt": "2026-11-01T20:03:43.911Z",
+                "adjacentDiscards": []
+              },
+              "f2ab66b58e12fd0f3d030823c8f7af107af0e913724090c75603a47e9fe83045": {
+                "rawCount": 1,
+                "sdkSocketCount": 10,
+                "sanitizedCaptureInboundPrefixCount": 11,
+                "firstSocketAt": "2026-11-01T20:03:43.873Z",
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "312d6dcc8581b1dd07b415a5a6502a7d38fa1ba9e57f93eb783142e0939b9d0b": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "807910004525001b8acf96f6ef6596bb36b76eed5f90a9497dcc2b56f2b38262": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "f2ab66b58e12fd0f3d030823c8f7af107af0e913724090c75603a47e9fe83045": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            }
+          }
+        }
+      ],
+      "receivedCounts": {
+        "inviter": 1,
+        "invitee": 1
+      },
+      "discardCodes": {
+        "inviter": {},
+        "invitee": {
+          "E_SDK_SESSION_FAILED": 2
+        }
+      },
+      "pendingSnapshotsAfterFalseReceipt": 41,
+      "lastPendingAt": "2026-11-01T20:05:06.219Z",
+      "trueReleaseAt": "2026-11-01T20:05:07.663Z",
+      "terminalAt": "2026-11-01T20:05:07.835Z",
+      "receiptDelaySeconds": 110.5920000076294,
+      "hosts": {
+        "inviter": {
+          "hostname": "AI395",
+          "availableBefore": 86501605376,
+          "role": "inviter",
+          "llamaSwapPid": "7744",
+          "memberExit": 0,
+          "availableMinimum": 86024929280,
+          "availableAfter": 86780928000,
+          "captureBytes": 159184,
+          "pcapSha256": "f883792f3f0a7398107bbcda06c410658ea21f9191c6112376e675eee7e18257",
+          "llamaSwapPidAfter": "7744",
+          "transientCaptureAndKeysRemoved": true
+        },
+        "invitee": {
+          "hostname": "MVLINNA",
+          "availableBefore": 21687500800,
+          "role": "invitee",
+          "llamaSwapPid": "0",
+          "memberExit": 0,
+          "availableMinimum": 21404508160,
+          "availableAfter": 21628047360,
+          "captureBytes": 225512,
+          "pcapSha256": "bdaa43487d2df7e3d6c6ccd2d143d1372f55f22d7920a04a4f40425ba798246e",
+          "llamaSwapPidAfter": "0",
+          "transientCaptureAndKeysRemoved": true
+        }
+      }
+    },
+    {
+      "run": "run-4",
+      "ok": true,
+      "attacks": [
+        {
+          "name": "replay",
+          "ids": [
+            "d9d6398b8528802b4a4ac4731a7bd2142d2d8161ce9696f39d469ba6ec29b895"
+          ],
+          "relayAnswer": "R1 relay.nostr.net: OK ok=true \"duplicate: have this event\"",
+          "hosts": {
+            "inviter": {
+              "d9d6398b8528802b4a4ac4731a7bd2142d2d8161ce9696f39d469ba6ec29b895": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "d9d6398b8528802b4a4ac4731a7bd2142d2d8161ce9696f39d469ba6ec29b895": {
+                "rawCount": 3,
+                "sdkSocketCount": 36,
+                "sanitizedCaptureInboundPrefixCount": 39,
+                "firstSocketAt": "2026-11-01T20:06:34.755Z",
+                "adjacentDiscards": []
+              }
+            }
+          }
+        },
+        {
+          "name": "tamper",
+          "ids": [
+            "d9d6398b8528802b4a4ac4731a7bd2142d2d8161ce9696f39d469ba6ec29b895",
+            "de813045d3e8671a1b371a145e16c6ea6295b973fc0f1e1f88bc60b08425695b"
+          ],
+          "relayAnswer": "R1 OK ok=true \"duplicate: have this event\"; R2 OK ok=false \"invalid: bad event id\"; R3 OK ok=false \"invalid: bad event id\"; R1 OK ok=true \"\"; R2 OK ok=true \"\"; R3 OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "d9d6398b8528802b4a4ac4731a7bd2142d2d8161ce9696f39d469ba6ec29b895": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "de813045d3e8671a1b371a145e16c6ea6295b973fc0f1e1f88bc60b08425695b": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "d9d6398b8528802b4a4ac4731a7bd2142d2d8161ce9696f39d469ba6ec29b895": {
+                "rawCount": 3,
+                "sdkSocketCount": 36,
+                "sanitizedCaptureInboundPrefixCount": 39,
+                "firstSocketAt": "2026-11-01T20:06:34.755Z",
+                "adjacentDiscards": []
+              },
+              "de813045d3e8671a1b371a145e16c6ea6295b973fc0f1e1f88bc60b08425695b": {
+                "rawCount": 3,
+                "sdkSocketCount": 35,
+                "sanitizedCaptureInboundPrefixCount": 38,
+                "firstSocketAt": "2026-11-01T20:06:44.569Z",
+                "adjacentDiscards": [
+                  {
+                    "at": "2026-11-01T20:06:44.571Z",
+                    "ms": 61912,
+                    "role": "invitee",
+                    "phase": "inbound-discarded",
+                    "code": "E_SDK_SESSION_FAILED"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "injection",
+          "ids": [
+            "09f3875dcbab4264ce78e29901df6d350e1e3dbb45c7e8d3b2037996ecc87bf0"
+          ],
+          "relayAnswer": "R1 relay.nostr.net: OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "09f3875dcbab4264ce78e29901df6d350e1e3dbb45c7e8d3b2037996ecc87bf0": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "09f3875dcbab4264ce78e29901df6d350e1e3dbb45c7e8d3b2037996ecc87bf0": {
+                "rawCount": 1,
+                "sdkSocketCount": 11,
+                "sanitizedCaptureInboundPrefixCount": 12,
+                "firstSocketAt": "2026-11-01T20:06:47.693Z",
+                "adjacentDiscards": [
+                  {
+                    "at": "2026-11-01T20:06:47.695Z",
+                    "ms": 65036,
+                    "role": "invitee",
+                    "phase": "inbound-discarded",
+                    "code": "E_SDK_SESSION_FAILED"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "name": "forged receipt",
+          "ids": [
+            "6580845006c993054bde09bd3adba216474b691f9425db3639b8d144167af9ad",
+            "8909f0df3f0255b84e067b715a4b0dbfba89ef3bf20d24df9b4c64c451959b1e",
+            "9c85d75297320350558f05b027163e871f79733ede19545b9b3e8fe36378d130"
+          ],
+          "relayAnswer": "R1 OK ok=true \"\"; R2 OK ok=true \"\"; R3 OK ok=true \"\"",
+          "hosts": {
+            "inviter": {
+              "6580845006c993054bde09bd3adba216474b691f9425db3639b8d144167af9ad": {
+                "rawCount": 1,
+                "sdkSocketCount": 11,
+                "sanitizedCaptureInboundPrefixCount": 12,
+                "firstSocketAt": "2026-11-01T20:06:57.730Z",
+                "adjacentDiscards": []
+              },
+              "8909f0df3f0255b84e067b715a4b0dbfba89ef3bf20d24df9b4c64c451959b1e": {
+                "rawCount": 1,
+                "sdkSocketCount": 11,
+                "sanitizedCaptureInboundPrefixCount": 12,
+                "firstSocketAt": "2026-11-01T20:06:58.031Z",
+                "adjacentDiscards": []
+              },
+              "9c85d75297320350558f05b027163e871f79733ede19545b9b3e8fe36378d130": {
+                "rawCount": 1,
+                "sdkSocketCount": 11,
+                "sanitizedCaptureInboundPrefixCount": 12,
+                "firstSocketAt": "2026-11-01T20:06:57.804Z",
+                "adjacentDiscards": []
+              }
+            },
+            "invitee": {
+              "6580845006c993054bde09bd3adba216474b691f9425db3639b8d144167af9ad": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "8909f0df3f0255b84e067b715a4b0dbfba89ef3bf20d24df9b4c64c451959b1e": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              },
+              "9c85d75297320350558f05b027163e871f79733ede19545b9b3e8fe36378d130": {
+                "rawCount": 0,
+                "sdkSocketCount": 0,
+                "sanitizedCaptureInboundPrefixCount": 0,
+                "firstSocketAt": null,
+                "adjacentDiscards": []
+              }
+            }
+          }
+        }
+      ],
+      "receivedCounts": {
+        "inviter": 1,
+        "invitee": 1
+      },
+      "discardCodes": {
+        "inviter": {},
+        "invitee": {
+          "E_SDK_SESSION_FAILED": 2
+        }
+      },
+      "pendingSnapshotsAfterFalseReceipt": 43,
+      "lastPendingAt": "2026-11-01T20:08:23.639Z",
+      "trueReleaseAt": "2026-11-01T20:08:24.765Z",
+      "terminalAt": "2026-11-01T20:08:25.051Z",
+      "receiptDelaySeconds": 110.37100005149841,
+      "hosts": {
+        "inviter": {
+          "hostname": "AI395",
+          "availableBefore": 86781710336,
+          "role": "inviter",
+          "llamaSwapPid": "7744",
+          "memberExit": 0,
+          "availableMinimum": 86217424896,
+          "availableAfter": 86532620288,
+          "captureBytes": 162592,
+          "pcapSha256": "9595ff4ee874b97c36c58d181fa2dd53aa8248bf0fb0d9f593d844c024db710a",
+          "llamaSwapPidAfter": "7744",
+          "transientCaptureAndKeysRemoved": true
+        },
+        "invitee": {
+          "hostname": "MVLINNA",
+          "availableBefore": 21617278976,
+          "role": "invitee",
+          "llamaSwapPid": "0",
+          "memberExit": 0,
+          "availableMinimum": 21166161920,
+          "availableAfter": 21519953920,
+          "captureBytes": 216020,
+          "pcapSha256": "0c45ce58e47f8f3700c5fdd78348e605cbb1037c7bab2ce21a3c8a28947e19d4",
+          "llamaSwapPidAfter": "0",
+          "transientCaptureAndKeysRemoved": true
+        }
+      }
+    }
+  ]
+}

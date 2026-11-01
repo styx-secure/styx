@@ -1,0 +1,15 @@
+name = "styx-sdk-mallory-nov"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+compatibility_flags = ["nodejs_compat"]
+
+# Mallory is a Durable Object: it is her that holds the relay sockets, the log and the state, and her
+# own alarm that drives the fixed script. The Worker in front of it only forwards /arm, /log, /health.
+[[durable_objects.bindings]]
+name = "ARM"
+class_name = "Arm"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Arm"]
