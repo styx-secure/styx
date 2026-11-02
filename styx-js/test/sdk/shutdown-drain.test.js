@@ -311,19 +311,39 @@ describe('owed receipt drain', () => {
     },
   );
 
-  test('an open held at shutdown and later network frames owe nothing', async () => {
+  test('a reserved open held at shutdown delivers once and owes its receipt; later frames owe nothing', async () => {
     let release;
-    let opened = false;
+    let opens = 0;
     const gate = new Promise((resolve) => { release = resolve; });
-    const { a, b, relays } = await setup({ open: () => { opened = true; return gate; } });
-    await b.client.send({ recipient: a.pub, payload: new Uint8Array([5]) });
-    expect(await until(() => opened)).toBe(true);
+    const { a, b, relays } = await setup({ open: () => { opens += 1; return gate; } });
+    await a.client.onEvent((event) => {
+      if (event.kind === 'MESSAGE_RECEIVED') trace.push({ type: 'reserved-invocation' });
+    });
+    const first = await b.client.send({ recipient: a.pub, payload: new Uint8Array([5]) });
+    expect(first.ok).toBe(true);
+    expect(await until(() => opens === 1)).toBe(true);
     const stopping = a.client.shutdown();
     release({ plaintext: new Uint8Array([5]) });
-    await stopping;
-    await b.client.send({ recipient: a.pub, payload: new Uint8Array([6]) });
+    expect((await stopping).ok).toBe(true);
+    expect(await until(() => relays.every((r) => r.events.filter((e) => e.kind === 4742).length === 1))).toBe(true);
+    expect(await until(() => b.events.some((event) => event.deliveryId === first.value.deliveryId
+      && event.state === 'RECIPIENT_RECEIPT_RECEIVED'))).toBe(true);
+    expect((await b.client.send({ recipient: a.pub, payload: new Uint8Array([6]) })).ok).toBe(true);
     await sleep(10);
-    expect(a.events.filter((e) => e.kind === 'MESSAGE_RECEIVED')).toEqual([]);
-    expect(relays.flatMap((r) => r.events).filter((e) => e.kind === 4742)).toEqual([]);
+    expect(opens).toBe(1);
+    expect(a.events.filter((e) => e.kind === 'MESSAGE_RECEIVED')).toEqual([
+      { kind: 'MESSAGE_RECEIVED', sender: b.pub, payload: new Uint8Array([5]) },
+    ]);
+    const receipts = relays.flatMap((r) => r.events).filter((e) => e.kind === 4742);
+    expect(receipts).toHaveLength(2);
+    expect(new Set(receipts.map((event) => event.id)).size).toBe(1);
+    const invoked = trace.findIndex((entry) => entry.type === 'reserved-invocation');
+    expect(invoked).toBeGreaterThanOrEqual(0);
+    const writes = trace.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.type === 'write' && entry.kind === 4742);
+    expect(writes).toHaveLength(2);
+    for (const { entry, index } of writes) {
+      expect(index).toBeGreaterThan(invoked);
+      expect(entry.closed).toBe(false);
+    }
   });
 });
