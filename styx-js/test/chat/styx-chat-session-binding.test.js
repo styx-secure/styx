@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
+import { Group } from '../../vendor/openmls-wasm/openmls_wasm.js';
 import { bytesToBase64, base64ToBytes, utf8Encode, utf8Decode } from '../../src/utils.js';
 
 const wasmBytes = readFileSync(
@@ -123,6 +124,29 @@ describe('StyxChat binds each stored session to its own contact', () => {
       .toBe('to bob');
     expect(dec(reloaded._engine.session(BOB).decrypt(bob.session(me).encrypt(enc('from bob'))).plaintext))
       .toBe('from bob');
+  });
+
+  test('a Welcome whose group cannot be verified after the join is rejected and spends the invite', async () => {
+    const chat = await appChat(memBackend(), 'binding-5');
+    const carol = await MlsEngine.create({ name: CAROL });
+    const rejected = [];
+    chat.onInviteRejected((e) => rejected.push(e));
+    const originalLoad = Group.load;
+    let failures = 0;
+    Group.load = (...args) => {
+      if (failures === 0) { failures += 1; throw new Error('storage unavailable'); }
+      return originalLoad.apply(Group, args);
+    };
+    try {
+      await answerInvite(chat, carol);
+    } finally {
+      Group.load = originalLoad;
+    }
+    expect(failures).toBe(1);
+    expect(rejected).toEqual([{ from: CAROL, reason: 'identity-mismatch' }]);
+    expect(chat._engine.session(CAROL)).toBeFalsy();
+    expect(chat._groups[CAROL]).toBeUndefined();
+    expect(chat._inviteNonce).toBeNull();
   });
 
   test('control: genuine sessions reload for their own contacts after a restart', async () => {

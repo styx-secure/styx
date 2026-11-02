@@ -238,6 +238,83 @@ describe('loadSession re-binds a stored group before registering it', () => {
   });
 });
 
+describe('a failure while checking a group frees it once and registers nothing', () => {
+  beforeAll(async () => {
+    await MlsEngine.initWasm({ wasmBytes });
+  });
+
+  /** Run `body` while Group.join wraps every joined handle to count its free() calls. */
+  async function withJoinedHandles(body) {
+    const originalJoin = Group.join;
+    const handles = [];
+    Group.join = (...args) => {
+      const group = originalJoin.apply(Group, args);
+      const entry = { group, frees: 0 };
+      const originalFree = group.free.bind(group);
+      group.free = () => { entry.frees += 1; return originalFree(); };
+      handles.push(entry);
+      return group;
+    };
+    try {
+      return await body(handles);
+    } finally {
+      Group.join = originalJoin;
+    }
+  }
+
+  test('a failing check of the declared group id is a binding refusal', async () => {
+    const a = await MlsEngine.create({ name: A });
+    const b = await MlsEngine.create({ name: B });
+    const started = a.startSession('b', b.keyPackageBytes());
+    const originalLoad = Group.load;
+    Group.load = () => { throw new Error('storage unavailable'); };
+    try {
+      await withJoinedHandles(async (handles) => {
+        expect(() => b.joinSession('a', started.welcome, started.ratchetTree, { expectedPeer: A, groupId: started.groupId }))
+          .toThrow(BindingError);
+        expect(handles.length).toBe(1);
+        expect(handles[0].frees).toBe(1);
+      });
+    } finally {
+      Group.load = originalLoad;
+    }
+    expect(b.session('a')).toBeUndefined();
+  });
+
+  test('a failing membership or same-group check is a binding refusal', async () => {
+    const a = await MlsEngine.create({ name: A });
+    const b = await MlsEngine.create({ name: B });
+    const started = a.startSession('b', b.keyPackageBytes());
+    const originalJoin = Group.join;
+    await withJoinedHandles(async (handles) => {
+      const counting = Group.join;
+      Group.join = (...args) => {
+        const group = counting(...args);
+        group.export_key = () => { throw new Error('exporter unavailable'); };
+        return group;
+      };
+      try {
+        expect(() => b.joinSession('a', started.welcome, started.ratchetTree, { expectedPeer: A }))
+          .toThrow(BindingError);
+      } finally {
+        Group.join = counting;
+      }
+      expect(handles.length).toBe(1);
+      expect(handles[0].frees).toBe(1);
+    });
+    expect(Group.join).toBe(originalJoin);
+    expect(b.session('a')).toBeUndefined();
+  });
+
+  test('loadSession returns null for a missing group even when the contact has a session', async () => {
+    const { a } = await paired();
+    const before = a.session('b');
+    expect(a.loadSession('b', 'styx:not-stored')).toBeNull();
+    expect(a.session('b')).toBe(before);
+    expect(a.peerIdentity('b')).toBe(B);
+  });
+});
+
 describe('payload and buffer hardening at the session boundary', () => {
   beforeAll(async () => {
     await MlsEngine.initWasm({ wasmBytes });
