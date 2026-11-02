@@ -5,41 +5,52 @@
 > ⚠️ **Experimental software.** Styx is under active development and has **not** completed an
 > independent security audit. Do not use current builds for sensitive, high-risk, or life-critical use.
 
-## Latest progress — October 2026
+## Latest progress — November 2026
 
-[![Recorded test run: on the left, what the relay operator sees with TLS removed (MLS ciphertext); on the right, the text the recipient reads after decryption](docs/media/2026-10-m3-test-run.png)](https://styxsecure.org/#progress)
+▶ The 100-second [October recording](https://styxsecure.org/#progress) shows the earlier test
+harness ([MP4](docs/media/2026-10-m3-test-run.mp4), 2.9 MB, synthetic data).
 
-▶ **[Watch the 100-second test run](https://styxsecure.org/#progress)** ·
-[download the MP4](docs/media/2026-10-m3-test-run.mp4) (2.9 MB, synthetic data, every scene labelled
-with its run)
+In October our delivery work ran inside a prototype test harness. It now runs through the Styx SDK
+client, the library an application calls:
 
-Styx now carries encrypted messages between real machines across the open internet, and keeps their
-content out of reach of the infrastructure in between:
-
-- **End-to-end encrypted messaging across networks.** Two machines on different networks exchanged
-  messages over three public Nostr relays, each message encrypted by Styx's own MLS engine.
-- **The relay operator sees only ciphertext.** With TLS removed using our own session keys, which is
-  exactly what a relay operator receives, the content is MLS ciphertext, byte-identical at both
-  ends. Only a group member reads the text.
-- **Delivery that survives failures.** We cut off a relay and stalled the sender's network; Styx
-  queued the message, retried it, delivered it and got the recipient's signed receipt back.
-- **An outside attacker got nothing through.** A simulated attacker on a server outside both
-  networks, reading everything on the public relays but holding no group key, replayed a message,
-  tampered with one, injected one of her own and forged a delivery receipt. Nothing she published
-  reached the application.
-- **Ahead of plan.** Milestone 1 is [complete](https://github.com/styx-secure/styx/pull/303).
-  [Milestone 2](https://github.com/styx-secure/styx/issues/313) is at 31 of 41 tasks, with all
-  1,514 tests of its 18 suites passing on its integration branch.
-  [Milestone 3](https://github.com/styx-secure/styx/issues/400) started early, and its delivery
-  modules are already running in the recording above.
+- **The SDK client is built.** The [Milestone 3](https://github.com/styx-secure/styx/issues/400)
+  SDK client ([#498](https://github.com/styx-secure/styx/pull/498)) is integrated on its branch,
+  together with per-relay recovery after a stall
+  ([#512](https://github.com/styx-secure/styx/pull/512)), a bounded shutdown that still sends owed
+  receipts ([#510](https://github.com/styx-secure/styx/pull/510)), public relays used only when the
+  calling application allows them ([#524](https://github.com/styx-secure/styx/pull/524)), MLS invitations over
+  Nostr ([#527](https://github.com/styx-secure/styx/pull/527)) and a synthetic-data Flegias preview
+  ([#521](https://github.com/styx-secure/styx/pull/521)).
+- **Two machines join a group and talk through the SDK.** On two machines on different networks,
+  over three public Nostr relays (`relay.nostr.net`, `relay.primal.net`, `offchain.pub`), one side
+  published a signed MLS KeyPackage, the other sent the Welcome inside an encrypted NIP-59 gift
+  wrap, and both joined the same group. No private key or MLS state was copied between the machines.
+  In three complete runs, 18 of 18 messages came back with the recipient's receipt.
+- **Delivery that survives failures, now inside the SDK.** In every run we cut one relay off for
+  the sender and then stalled its other two connections. The SDK retried, and the stalled message
+  was confirmed on its second attempt; a reply sent during the stall arrived exactly once after the
+  network came back. With our own TLS keys removed, message content on the wire is MLS ciphertext.
+- **An outside attacker still got nothing through.** A scripted attacker on a separate cloud
+  worker, reading the public relays but holding no group key, replayed a message, tampered with
+  one, injected one of her own and forged a delivery receipt, in three runs against the SDK client.
+  No foreign message reached the application, and the forged receipt confirmed nothing: the sender
+  kept waiting until the genuine receipt arrived.
+- **Milestone 2 keeps moving.** On the integration branch of
+  [Milestone 2](https://github.com/styx-secure/styx/issues/313), all 2,379 tests of its 20 suites
+  pass, now including the fix for a reproduced transaction-recovery defect and a single-tab lock
+  for the planned controlled beta. Milestone 1 is [complete](https://github.com/styx-secure/styx/pull/303).
 
 **Why it matters:** whistleblowers, journalists and the people who handle their cases need to work
-over infrastructure that anyone can run, without trusting whoever runs it with their words. This
-delivery layer is the base for Flegias, a casework channel for whistleblowers and case
-handlers, and our Milestone 4 goal.
+over infrastructure that anyone can run, without trusting whoever runs it with their words. With
+the SDK, an application reaches this delivery layer through one interface; that is how Flegias, a
+casework channel for whistleblowers and case handlers and our Milestone 4 goal, will use it.
 
-*Limits, in one line: synthetic data; a prototype test harness, not yet the SDK client (that run is
-next); one sample per attack, with the forged-receipt test on a single machine; pre-audit code.*
+*Limits: synthetic data, short-lived identities and one pair of participants; experimental Nostr
+event kinds; metadata and KeyPackages stay public; on the public relays the relays themselves
+filtered the replayed copies, so the replay defence was checked separately with local test relays
+that forward every duplicate (each message still reached the application once); the SDK reports a
+rejected event without its id, so rejections were matched to attacks by their timing in the log; pre-audit
+code, not yet on `main`.*
 
 ## Mission
 
@@ -72,17 +83,19 @@ review, safeguarding procedures, or emergency channels.
   `NO-GO` for implementation alignment, demo, product, and sensitive use.
 - **Now being built:** authenticated persistence of the MLS session in the encrypted browser vault
   ([Milestone 2](https://github.com/styx-secure/styx/issues/313): 31 of 41 tasks complete or
-  approved, including all seven design contracts; 16 components integrated on the
-  `m2/integration` branch, where all 1,514 tests of its 18 suites pass; browser and fault-injection
-  testing, pending fixes and a closing security review remain), and the SDK and reliable-delivery
-  layer, now partly built ([Milestone 3 early lane](https://github.com/styx-secure/styx/issues/400):
-  SDK, delivery and preview contracts ratified; queue, retry, multi-relay and receipt modules
-  integrated on `m3/integration`). Neither branch is on `main` yet, and integrating the vault into
-  the main application is still to come.
+  approved, including all seven design contracts; on the `m2/integration` branch all 2,379 tests
+  of its 20 suites pass; browser and fault-injection testing and a closing security review with
+  fixes and re-run remain), and the SDK and reliable-delivery layer
+  ([Milestone 3 early lane](https://github.com/styx-secure/styx/issues/400): SDK, delivery and
+  preview contracts ratified; the SDK client, with its queue, retry, multi-relay, receipt,
+  recovery and invitation modules and a synthetic-data Flegias preview, integrated on
+  `m3/integration` and run between two machines over public relays). Neither branch is on `main`
+  yet, and integrating the vault into the main application is still to come.
 - **Not yet a complete product:** completion and ratification of the language-neutral application
-  protocol, the SDK client itself, metadata-minimizing case routing, an accountless return channel,
-  organizational workflow, distribution assurance, a targeted independent review of a bounded
-  high-risk scope, and any separately approved exercise or pilot remain future work.
+  protocol, an SDK release on `main` with persistent identity and session state,
+  metadata-minimizing case routing, an accountless return channel, organizational workflow,
+  distribution assurance, a targeted independent review of a bounded high-risk scope, and any
+  separately approved exercise or pilot remain future work.
 - **Current technical direction:** Marmot is the preferred compatibility target for the
   MLS-over-Nostr session profile. At the exact OpenMLS, Marmot and MDK revisions recorded in the
   final Phase B report, Styx interoperated with the pinned MDK peer in an isolated synthetic
