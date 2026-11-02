@@ -120,9 +120,12 @@ export class MlsEngine {
    * @throws {MlsBindingError} when the group cannot be bound to this contact
    */
   loadSession(contactId, groupId, { expectedPeer } = {}) {
-    this._requireNoSession(contactId);
     const group = Group.load(this._provider, groupId);
     if (!group) return null;
+    if (this._sessions.has(contactId)) {
+      freeHandle(group);
+      throw new Error(`MlsEngine: session already exists for ${contactId}`);
+    }
     return this._register(contactId, group, expectedPeer, 'loadSession');
   }
 
@@ -143,7 +146,8 @@ export class MlsEngine {
 
   /**
    * @private Check a group and register it as the session for `contactId`, or
-   * throw MlsBindingError and register nothing. The handle is freed on refusal.
+   * throw MlsBindingError and register nothing. The handle is freed exactly once
+   * on refusal; a failure of the check itself is also a refusal.
    */
   _register(contactId, group, expectedPeer, operation) {
     try {
@@ -165,7 +169,8 @@ export class MlsEngine {
       return session;
     } catch (e) {
       freeHandle(group);
-      throw e;
+      if (e instanceof MlsBindingError) throw e;
+      throw new MlsBindingError(`MlsEngine.${operation}: the group could not be checked`, { cause: e });
     }
   }
 
@@ -233,9 +238,18 @@ export class MlsEngine {
       welcomeBytes,
       RatchetTree.from_bytes(ratchetTreeBytes),
     );
-    if (groupId !== undefined && !this._isStoredAs(group, groupId)) {
-      freeHandle(group);
-      throw new MlsBindingError('MlsEngine.joinSession: the declared group id does not name the joined group');
+    if (groupId !== undefined) {
+      let storedAs;
+      try {
+        storedAs = this._isStoredAs(group, groupId);
+      } catch (e) {
+        freeHandle(group);
+        throw new MlsBindingError('MlsEngine.joinSession: the declared group id could not be checked', { cause: e });
+      }
+      if (!storedAs) {
+        freeHandle(group);
+        throw new MlsBindingError('MlsEngine.joinSession: the declared group id does not name the joined group');
+      }
     }
     return this._register(contactId, group, expectedPeer, 'joinSession');
   }

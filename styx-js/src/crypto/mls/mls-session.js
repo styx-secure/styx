@@ -71,8 +71,8 @@ export function isMlsApplicationMessage(bytes) {
  * the caller declared, or it is already registered under another contact.
  */
 export class MlsBindingError extends Error {
-  constructor(message) {
-    super(message);
+  constructor(message, options) {
+    super(message, options);
     this.name = 'MlsBindingError';
   }
 }
