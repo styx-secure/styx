@@ -6,8 +6,10 @@
 // reaches the engine, so it never changes the group's membership or epoch. No
 // Styx flow sends a handshake message once the session is set up.
 //
-// Every use also re-checks the 1:1 invariant: exactly two members, one carrying
-// our own credential and the other a different credential.
+// Every session is bound to the one peer it was registered for (the expected peer
+// credential). Every use re-checks the 1:1 invariant: exactly two members, one
+// carrying our own credential and the other carrying exactly that peer's
+// credential.
 
 // RFC 9420 §6: an MLSMessage starts with ProtocolVersion (uint16, mls10 = 1) and
 // WireFormat (uint16). A PrivateMessage (wire format 2) then carries, in the
@@ -63,42 +65,78 @@ export function isMlsApplicationMessage(bytes) {
   return bytes[contentTypeOffset] === CONTENT_TYPE_APPLICATION;
 }
 
+/**
+ * Raised when a group cannot be bound, or stay bound, to the session it is
+ * registered for: it is not exactly {us, the expected peer}, it is not the group
+ * the caller declared, or it is already registered under another contact.
+ */
+export class MlsBindingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'MlsBindingError';
+  }
+}
+
+/**
+ * The single peer credential of a group that is exactly {us, one other member},
+ * or null. A group whose other member repeats our own credential has no peer.
+ * @param {string[]} ids member credentials
+ * @param {string} own our own credential
+ * @returns {string|null}
+ */
+export function soleOtherMember(ids, own) {
+  if (!Array.isArray(ids) || ids.length !== 2) return null;
+  if (ids.filter((id) => id === own).length !== 1) return null;
+  const other = ids.find((id) => id !== own);
+  return typeof other === 'string' && other.length > 0 ? other : null;
+}
+
 export class MlsSession {
   /**
    * @param {import('./mls-engine.js').MlsEngine} engine owning engine (provider+identity)
    * @param {object} group the OpenMLS Group handle
+   * @param {string} peer the expected peer credential this session is bound to
    */
-  constructor(engine, group) {
+  constructor(engine, group, peer) {
+    if (typeof peer !== 'string' || peer.length === 0 || peer === engine.name) {
+      throw new MlsBindingError('MlsSession: a session must be bound to one expected peer other than us');
+    }
     this._engine = engine;
     this._group = group;
+    this._peer = peer;
   }
 
+  /** The expected peer credential this session is bound to. @returns {string} */
+  get peer() { return this._peer; }
+
   /**
-   * Whether this group is exactly {us, one peer}: two members, exactly one of
-   * them carrying our own credential.
+   * Whether this group is exactly {us, the expected peer}: two members, exactly
+   * one carrying our own credential and the other carrying the peer's.
    * @returns {boolean}
    */
   isOneToOne() {
-    const ids = this.memberIdentities();
-    if (!Array.isArray(ids) || ids.length !== 2) return false;
-    const own = this._engine.name;
-    return ids.filter((id) => id === own).length === 1;
+    return soleOtherMember(this.memberIdentities(), this._engine.name) === this._peer;
   }
 
   /** @private */
   _requireOneToOne(operation) {
     if (!this.isOneToOne()) {
-      throw new Error(`MlsSession.${operation}: the group is not exactly two members (us and one peer)`);
+      throw new MlsBindingError(
+        `MlsSession.${operation}: the group is not exactly two members (us and the expected peer)`,
+      );
     }
   }
 
   /**
    * Encrypt an application message for the peer.
-   * @param {Uint8Array} plaintext
+   * @param {Uint8Array} plaintext non-empty
    * @returns {Uint8Array} serialized MLS private message (opaque wire bytes)
    */
   encrypt(plaintext) {
     this._requireOneToOne('encrypt');
+    if (!(plaintext instanceof Uint8Array) || plaintext.length === 0) {
+      throw new TypeError('MlsSession.encrypt: plaintext must be a non-empty Uint8Array');
+    }
     return this._group.create_message(this._engine.provider, this._engine.identity, plaintext);
   }
 
@@ -110,15 +148,24 @@ export class MlsSession {
    * plaintext (our own message echoed back, which OpenMLS reports as
    * OwnPrivateMessage, or an empty payload no Styx flow sends) also throws: it is
    * not a message from the peer.
+   *
+   * The input is copied once, before the header check, and only that private
+   * copy is checked and handed to the engine: the bytes that were checked are the
+   * bytes that are processed, even if the caller's buffer changes meanwhile.
+   * Anything that is not a genuine Uint8Array view is refused.
    * @param {Uint8Array} wireBytes
    * @returns {{ kind: 'application', plaintext: Uint8Array }}
    */
   decrypt(wireBytes) {
     this._requireOneToOne('decrypt');
-    if (!isMlsApplicationMessage(wireBytes)) {
+    if (!ArrayBuffer.isView(wireBytes) || !(wireBytes instanceof Uint8Array)) {
       throw new Error('MlsSession.decrypt: not an MLS application message; rejected without applying it');
     }
-    const plaintext = this._group.process_message(this._engine.provider, wireBytes);
+    const bytes = new Uint8Array(wireBytes); // a fresh, private copy
+    if (!isMlsApplicationMessage(bytes)) {
+      throw new Error('MlsSession.decrypt: not an MLS application message; rejected without applying it');
+    }
+    const plaintext = this._group.process_message(this._engine.provider, bytes);
     if (!plaintext || plaintext.length === 0) {
       throw new Error('MlsSession.decrypt: no application plaintext from the peer');
     }
