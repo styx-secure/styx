@@ -219,6 +219,21 @@ those remain governed generated artifacts rather than implementation choices.
 
 Generated reports belong outside the repository and must never be committed.
 
+## Governance documents in the native dependency relation
+
+`AGENTS.md` and `docs/protocol/protocol-hardening-plan.md` keep their Base
+identity in the 65-row native relation, under the policy
+`OWNER_MERGED_GOVERNANCE_EXACT_STATE`. The checkout must carry exactly one of
+the listed joint states of both documents, matched by Git blob id, SHA-256 and
+size: the Base pair, the `m3/integration` pair after pull request #497, or the
+`main` pair after pull requests #480 and #490. Any other bytes, and any mix of
+two listed states, fail in the derivation, the contract validator, the
+interface model, the scope guard and the final-gate runtime policy. The other
+58 read-only dependencies stay byte-identical to the Base. A recognized state
+lifts only the Base byte-identity obligation for these two documents; it grants
+no operational authority, and a later governance change needs a new exact state
+and a new contract-package review.
+
 ## M1 O-04 known deviations
 
 Follow-up issue [#312](https://github.com/styx-secure/styx/issues/312) owns the
