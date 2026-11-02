@@ -944,13 +944,13 @@ export function createReceipts(options) {
       [{ sender: event.pubkey, ciphertext }]);
     if (stopped && (!reservedDelivery || drainExpired)) return null;
     if (!opened.ok) {
-      discard(DISCARD_SESSION_FAILED);
+      if (!stopped) discard(DISCARD_SESSION_FAILED);
       return null;
     }
     const openViolation = closedSlotViolation(opened.value);
     if (stopped && !reservedDelivery) return null;
     if (openViolation !== null) {
-      discard(DISCARD_UNKNOWN_CODE);
+      if (!stopped) discard(DISCARD_UNKNOWN_CODE);
       return null;
     }
     let owned;
@@ -958,12 +958,12 @@ export function createReceipts(options) {
       owned = isPlainObject(opened.value) ? Object.keys(opened.value) : null;
     } catch { owned = null; }
     if (owned === null || owned.length !== 1) {
-      discard(DISCARD_SESSION_FAILED);
+      if (!stopped) discard(DISCARD_SESSION_FAILED);
       return null;
     }
     const plaintext = readField(opened.value, 'plaintext');
     if (!plaintext.ok || !(plaintext.value instanceof Uint8Array)) {
-      discard(DISCARD_SESSION_FAILED);
+      if (!stopped) discard(DISCARD_SESSION_FAILED);
       return null;
     }
     if (stopped && (!reservedDelivery || drainExpired)) return null;
@@ -1101,6 +1101,7 @@ export function createReceipts(options) {
     }
 
     const validated = await validateEvent(event);
+    validating = false;
     /* C-DLV section 4.6 step (1): a stop that landed while `validateEvent`
      * awaited the identity-key reading ends this frame here. */
     if (stopped) return;

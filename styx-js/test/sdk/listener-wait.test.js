@@ -15,7 +15,7 @@ function key() {
   const secret = schnorr.utils.randomPrivateKey();
   return { secret, publicKey: bytesToHex(schnorr.getPublicKey(secret)) };
 }
-function harness() {
+function harness({ session: replacementSession = null } = {}) {
   const own = key();
   const sender = key();
   const calls = [];
@@ -31,7 +31,7 @@ function harness() {
       getPublicKey: () => own.publicKey,
       sign: ({ digest }) => { calls.push('sign'); return schnorr.sign(digest, own.secret); },
     },
-    session: { open: async ({ ciphertext }) => {
+    session: replacementSession ?? { open: async ({ ciphertext }) => {
       calls.push('open');
       if (openingHook !== null) openingHook();
       if (opening !== null) await opening;
@@ -67,6 +67,54 @@ function harness() {
 }
 
 describe('M3-LISTENER bounded encrypted waiting', () => {
+  test.each(['method-getter', 'closed-slot-getter'])('Kimi R1 HIGH: reserved delivery emits no discard after stop from %s', async (fault) => {
+    let h;
+    let invoked = false;
+    const session = fault === 'method-getter' ? {
+      get open() {
+        h.module.shutdown();
+        return () => { invoked = true; return { plaintext: new Uint8Array([1]) }; };
+      },
+    } : {
+      open: () => {
+        invoked = true;
+        return { plaintext: new Uint8Array([1]), get state() { h.module.shutdown(); return 'OUTSIDE'; } };
+      },
+    };
+    h = harness({ session });
+    h.listen(); h.ingest(h.event(1));
+    await sleep(25);
+    await Promise.all([h.module.settled(), h.module.drained()]);
+    expect(invoked).toBe(fault !== 'method-getter');
+    expect(h.messages).toEqual([]);
+    expect(h.discarded).toEqual([]);
+    expect(h.published).toEqual([]);
+  });
+
+  test('Kimi R1 LOW: a validated acknowledgement does not occupy a raw pending slot', async () => {
+    // Surface capacity is already covered by the 1,024-message test below.
+    // This case covers the receipt-side async continuation specifically.
+    const own = key(), sender = key();
+    let release;
+    const blocked = new Promise((resolve) => { release = resolve; });
+    let accepting = false;
+    const processor = createReceipts({ publicKey: own.publicKey, perRelayTimeoutMs: 2000,
+      acceptReceipt: () => { accepting = true; return blocked; }, onEvent: () => {} });
+    const tags = [['p', own.publicKey], ['e', 'd'.repeat(64)], ['v', SDK_WIRE_VERSION], ['n', '1'.repeat(32)]];
+    const id = bytesToHex(sha256(utf8Encode(JSON.stringify([0, sender.publicKey, 12, 4742, tags, '']))));
+    const receipt = { id, pubkey: sender.publicKey, created_at: 12, kind: 4742, tags, content: '',
+      sig: bytesToHex(schnorr.sign(hexToBytes(id), sender.secret)) };
+    const frame = { data: ['EVENT', 'sub', receipt] };
+    processor.ingest(frame);
+    await until(() => accepting);
+    try {
+      for (let i = 0; i < 1024; i += 1) expect(processor.ingest(frame).value.queued).toBe(true);
+      expect(processor.ingest(frame).value.queued).toBe(false);
+    } finally {
+      processor.shutdown(); release({ ok: true, value: {} }); await processor.settled();
+    }
+  });
+
   test('no listener through shutdown: no open, no callback, no receipt', async () => {
     const h = harness();
     h.ingest(h.event(1));

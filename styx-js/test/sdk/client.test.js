@@ -395,6 +395,28 @@ describe('M3-LISTENER encrypted receive waiting', () => {
     expect(received[0]).toEqual([1]);
     expect(received.slice(1).every((payload) => payload[0] === 2)).toBe(true);
   }, 30000);
+
+  test('Kimi R1 HIGH real client: a stopped open getter never invokes open or emits discard/receipt', async () => {
+    const relay = await startRelay();
+    const alice = await startMember([relay], { delivery: { receiptMode: 'RECIPIENT_RECEIPT' } });
+    const identity = identityPort(), manual = manualClock(), session = sessionPort();
+    const bob = createClient(makeConfig({ relays: [relay.url], identity: identity.port,
+      clock: manual.clock, session }));
+    const events = [];
+    await bob.onEvent((event) => events.push(event));
+    expect((await startOnLoopback(bob, manual, [relay])).ok).toBe(true);
+    let stopped = null, invoked = false;
+    Object.defineProperty(session, 'open', { get: () => {
+      stopped = bob.shutdown();
+      return () => { invoked = true; return { plaintext: new Uint8Array([1]) }; };
+    } });
+    expect((await alice.client.send({ recipient: identity.publicKey, payload: new Uint8Array([1]) })).ok).toBe(true);
+    await waitFor(() => stopped !== null);
+    await stopped;
+    expect(invoked).toBe(false);
+    expect(events.filter((event) => ['MESSAGE_RECEIVED', 'INBOUND_DISCARDED'].includes(event.kind))).toEqual([]);
+    expect(relay.kindCounts.get(4742) ?? 0).toBe(0);
+  }, 30000);
 });
 
 const deliveryEvents = (events, id) => events.filter(
