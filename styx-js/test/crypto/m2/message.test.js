@@ -187,6 +187,14 @@ const request = (operation, input, overrides = {}) => ({
   ...overrides,
 });
 
+// C-API §5 (C-API-RR): an SS/RS operation identity is the unpadded base64url encoding of 32 nonzero bytes, and
+// a held mutation carries the SS/RS 32-byte reconciliation reference its `reconciliationRef` is formed from.
+const identityOf = (byte) => Buffer.from(new Uint8Array(32).fill(byte)).toString('base64url');
+const referenceOf = (byte) => Uint8Array.from({ length: 32 }, (_, index) => (byte + index) & 0xff || 1);
+const refOf = (reference) => `I-SM-HOLD:${Buffer.from(reference).toString('base64url')}`;
+const PROTECT_REFERENCE = referenceOf(0x50);
+const OPEN_REFERENCE = referenceOf(0x4f);
+
 const empty = () => createAdapterSnapshot('EMPTY');
 const active = () => createAdapterSnapshot('ACTIVE');
 
@@ -196,16 +204,18 @@ const held = () => transitionAdapter(empty(), {
   applicableErrors: [],
   facts: 'SUPPORTED',
   commitOutcome: 'INDETERMINATE',
-  operationIdentity: 'held-op',
+  operationIdentity: identityOf(0x48),
+  reconciliationReference: referenceOf(0x48),
 }).snapshot;
 
 const bytes = (length, seed = 0x11) => new Uint8Array(length).fill(seed);
 
 /** The closed `PROTECT_APPLICATION` observation: the RS tri-state, the identity and the staged bytes. */
-const protectObservation = (commitOutcome = 'COMMITTED', staged = bytes(6), identity = 'op-protect-1') => ({
+const protectObservation = (commitOutcome = 'COMMITTED', staged = bytes(6), identity = identityOf(0x50)) => ({
   commitOutcome,
   operationIdentity: identity,
   stagedOutput: staged === null ? null : { protectedApplicationBytes: staged },
+  reconciliationReference: commitOutcome === null ? null : PROTECT_REFERENCE,
 });
 
 /**
@@ -214,7 +224,7 @@ const protectObservation = (commitOutcome = 'COMMITTED', staged = bytes(6), iden
  */
 const openObservation = (distance, {
   authentication = 'AUTHENTICATED', replayIdentity = 'UNSEEN',
-  commitOutcome = 'COMMITTED', staged = bytes(6), identity = 'op-open-1', currentEpoch = 9,
+  commitOutcome = 'COMMITTED', staged = bytes(6), identity = identityOf(0x4f), currentEpoch = 9,
 } = {}) => ({
   currentEpoch,
   framingEpoch: currentEpoch - distance,
@@ -223,6 +233,7 @@ const openObservation = (distance, {
   commitOutcome,
   operationIdentity: commitOutcome === null ? null : identity,
   stagedOutput: commitOutcome === null || staged === null ? null : { applicationBytes: staged },
+  reconciliationReference: commitOutcome === null ? null : OPEN_REFERENCE,
 });
 
 /** The two members the framing epoch makes unreachable, set to the exact required `null`s. */
@@ -254,7 +265,7 @@ describe('I-MSG module surface (#411)', () => {
   test('the C-RET window is the C-API profile window, byte for byte', () => {
     // C-RET §12 `epochRule` / `docs/security/m2-retention-and-disposal-limits.md`
     // (sha256 eb051194620d795fc047cae367e4cd8e6c26c568fddae5a2986cdbc7549b31a2) and C-API
-    // `/profile/pastEpochWindow` (sha256 b77d39fbb412b0eba3a579ebf6053408186a4c11f0de07b8727b4e1147305ad9).
+    // `/profile/pastEpochWindow` (sha256 0afd0f21dbaaaab721a269ee92bd8792e5ea83485e609257a37c03850acc3871).
     expect(RETENTION.CURRENT_EPOCHS).toBe(1);
     expect(RETENTION.MAXIMUM_PAST_EPOCHS).toBe(5);
     expect(RETENTION.PAST_EPOCHS_ONCE_AVAILABLE).toBe(5);
@@ -264,17 +275,18 @@ describe('I-MSG module surface (#411)', () => {
 
   test('the observation member sets are exactly the closed per-operation sets', () => {
     expect([...M2_ADAPTER.OBSERVATION_KEYS.PROTECT_APPLICATION])
-      .toEqual(['commitOutcome', 'operationIdentity', 'stagedOutput', 'internalFailure']);
+      .toEqual(['commitOutcome', 'operationIdentity', 'stagedOutput', 'internalFailure', 'reconciliationReference']);
     expect([...M2_ADAPTER.OBSERVATION_KEYS.OPEN_APPLICATION]).toEqual([
       'currentEpoch', 'framingEpoch', 'authentication', 'replayIdentity', 'commitOutcome',
-      'operationIdentity', 'stagedOutput', 'internalFailure',
+      'operationIdentity', 'stagedOutput', 'internalFailure', 'reconciliationReference',
     ]);
-    // The two earlier operations this card does not extend keep their exact sets.
+    // I-RESTART-API adds the SS/RS `reconciliationReference` to every RS_TRI_STATE operation and `restoreHold`
+    // to RESTORE.
     expect([...M2_ADAPTER.OBSERVATION_KEYS.CREATE])
-      .toEqual(['onboarding', 'commitOutcome', 'operationIdentity', 'stagedOutput']);
+      .toEqual(['onboarding', 'commitOutcome', 'operationIdentity', 'stagedOutput', 'reconciliationReference']);
     expect([...M2_ADAPTER.OBSERVATION_KEYS.JOIN_WELCOME])
-      .toEqual(['keyPackage', 'commitOutcome', 'operationIdentity']);
-    expect([...M2_ADAPTER.OBSERVATION_KEYS.RESTORE]).toEqual(['restoreObservation']);
+      .toEqual(['keyPackage', 'commitOutcome', 'operationIdentity', 'reconciliationReference']);
+    expect([...M2_ADAPTER.OBSERVATION_KEYS.RESTORE]).toEqual(['restoreObservation', 'restoreHold']);
   });
 
   test('the selected bounds cover the epoch count of the framing window', () => {
@@ -343,7 +355,7 @@ describe('I-MSG PROTECT_APPLICATION (CAPI-S009, CAPI-G004, CAPI-G012, CAPI-G020)
     expect(transition.result.kind).toBe('INDETERMINATE');
     expect(transition.result.commitOutcome).toBe('INDETERMINATE');
     expect(transition.result.originalStateBefore).toBe('ACTIVE');
-    expect(transition.result.reconciliationRef).toBe('I-SM-HOLD:op-protect-1');
+    expect(transition.result.reconciliationRef).toBe(refOf(PROTECT_REFERENCE));
     expect(Object.hasOwn(transition.result, 'output')).toBe(false);
     // The C-MUT complete logical mutation of CAPI-S009 is held, `REPLAY_RETENTION_STATE` included.
     expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
@@ -565,7 +577,7 @@ describe('I-MSG replay, authentication and the RS tri-state (CAPI-S011, CAPI-S01
       observation: openObservation(3, { commitOutcome: 'INDETERMINATE' }),
     });
     expect(indeterminate.result.kind).toBe('INDETERMINATE');
-    expect(indeterminate.result.reconciliationRef).toBe('I-SM-HOLD:op-open-1');
+    expect(indeterminate.result.reconciliationRef).toBe(refOf(OPEN_REFERENCE));
     expect(Object.hasOwn(indeterminate.result, 'output')).toBe(false);
     expect(indeterminate.snapshot.state).toBe('RECONCILIATION_REQUIRED');
     expect(indeterminate.snapshot.held.scenario).toBe('CAPI-S010');

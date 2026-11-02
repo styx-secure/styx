@@ -8,6 +8,7 @@
 // `validateWorkerResult`). Nothing is mocked.
 
 import { describe, expect, test } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import { M2_ADAPTER, invokeAdapter, invokeAdapterTransition } from '../../../src/crypto/mls/m2/adapter.js';
 import {
   MUTATION_PLANS,
@@ -22,12 +23,20 @@ const EMPTY_OUTPUT_CODES = Object.entries(M2_ADAPTER.OUTPUT_BY_SUCCESS_CODE)
   .map(([successCode]) => successCode)
   .sort();
 
+// C-API §5 (C-API-RR): a test label names one SS/RS mutation; its canonical 43-character identity and its
+// 32-byte reconciliation reference (from which the 53-character `reconciliationRef` is formed) are distinct.
+const labelBytes = (kind, label) => new Uint8Array(createHash('sha256').update(`${kind}:${label}`).digest());
+const identityOf = (label) => Buffer.from(labelBytes('identity', label)).toString('base64url');
+const referenceOf = (label) => labelBytes('reference', label);
+const issuedAs = (label) => ({ operationIdentity: identityOf(label), reconciliationReference: referenceOf(label) });
+const heldRef = (label) => `I-SM-HOLD:${Buffer.from(referenceOf(label)).toString('base64url')}`;
+
 const holdOf = (operation, state, facts, operationIdentity) => transitionAdapter(createAdapterSnapshot(state), {
   operation,
   applicableErrors: [],
   facts,
   commitOutcome: 'INDETERMINATE',
-  operationIdentity,
+  ...issuedAs(operationIdentity),
 }).snapshot;
 
 const reconcile = (snapshot, requestId) => invokeAdapter({
@@ -69,8 +78,9 @@ const expectWireRoundTrip = (result, originalSuccessCode) => {
 const HELD_EMPTY_OUTPUT = ['CAPI-S006', 'CAPI-S016'];
 
 describe('U1: RECONCILED_COMMITTED with an empty original output crosses the worker boundary', () => {
-  test('the empty-output success codes are exactly the four C-API lists', () => {
-    expect(EMPTY_OUTPUT_CODES).toEqual(['DUPLICATE_IGNORED', 'JOINED', 'PEER_UPDATE_APPLIED', 'RESTORED']);
+  test('the empty-output success codes are exactly the five C-API lists', () => {
+    // C-API `0afd0f21` adds `RESTORED_EMPTY_SESSION` (CAPI-S031), which carries no output.
+    expect(EMPTY_OUTPUT_CODES).toEqual(['DUPLICATE_IGNORED', 'JOINED', 'PEER_UPDATE_APPLIED', 'RESTORED', 'RESTORED_EMPTY_SESSION']);
   });
 
   test('every holdable plan with an empty output list is covered, and no other', () => {
@@ -96,10 +106,10 @@ describe('U1: RECONCILED_COMMITTED with an empty original output crosses the wor
         input: { embeddedTreeWelcome: new Uint8Array([0x02]) },
       },
       snapshot: createAdapterSnapshot('EMPTY'),
-      observation: { keyPackage: 'MATCHED', commitOutcome: 'INDETERMINATE', operationIdentity: 'u1-join-1' },
+      observation: { keyPackage: 'MATCHED', commitOutcome: 'INDETERMINATE', ...issuedAs('u1-join-1') },
     });
     expect(join.result.kind).toBe('INDETERMINATE');
-    expect(join.result.reconciliationRef).toBe('I-SM-HOLD:u1-join-1');
+    expect(join.result.reconciliationRef).toBe(heldRef('u1-join-1'));
     const held = join.snapshot;
     expect(held.state).toBe('RECONCILIATION_REQUIRED');
     expect(held.held.scenario).toBe('CAPI-S006');
@@ -132,15 +142,15 @@ describe('U1: RECONCILED_COMMITTED with an empty original output crosses the wor
       { scenario: 'CAPI-S011', originalStateBefore: 'ACTIVE', expectedSuccessCode: 'DUPLICATE_IGNORED', expectedStateAfter: 'ACTIVE' },
     ];
     for (const [index, fields] of forged.entries()) {
-      const operationIdentity = `u1-forged-${index}`;
+      const label = `u1-forged-${index}`;
       const snapshot = {
         state: 'RECONCILIATION_REQUIRED',
         held: {
           ...fields,
           mutationPlanIdentity: fields.scenario,
-          operationIdentity,
+          operationIdentity: identityOf(label),
           outputKind: 'NONE',
-          reconciliationRef: `I-SM-HOLD:${operationIdentity}`,
+          reconciliationRef: heldRef(label),
           selectedCandidateRef: null,
           terminalEvidenceStatus: 'PENDING',
         },

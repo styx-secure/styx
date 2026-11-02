@@ -47,7 +47,7 @@ const EV = {
 };
 
 // ------------------------------------------------------------------------------------------------
-// C-REC §13 rows, transcribed verbatim (C-REC sha256 ab11271c…7149, #327 comment 6035801582).
+// C-REC §13 rows, transcribed verbatim (C-REC sha256 ac66aafa…e8fc22, #514 comment 6433983465).
 // ------------------------------------------------------------------------------------------------
 
 const CREC_OWNED_DISPATCH_ROWS = [
@@ -151,13 +151,17 @@ const RESTORE_OBSERVATIONS = {
 const restore = (result) => ({
   request: request('RESTORE', {}),
   snapshot: createAdapterSnapshot('EMPTY'),
-  observation: { restoreObservation: { ...RESTORE_OBSERVATIONS[result], faults: [...RESTORE_OBSERVATIONS[result].faults] } },
+  observation: { restoreObservation: { ...RESTORE_OBSERVATIONS[result], faults: [...RESTORE_OBSERVATIONS[result].faults] }, restoreHold: null },
 });
+// C-API §5 (C-API-RR): an SS/RS operation identity is the canonical base64url encoding of 32 nonzero bytes, and
+// an observed RS outcome carries the SS/RS 32-byte reconciliation reference.
+const identityOf = (byte) => Buffer.from(new Uint8Array(32).fill(byte)).toString('base64url');
+const referenceOf = (byte) => Uint8Array.from({ length: 32 }, (_, index) => (byte + index) & 0xff || 1);
 const createOp = (commitOutcome = 'COMMITTED') => ({
   request: request('CREATE', { peerFramedKeyPackage: new Uint8Array([0x01]) }),
   snapshot: createAdapterSnapshot('EMPTY'),
   observation: {
-    onboarding: 'SUPPORTED', commitOutcome, operationIdentity: 'op-reest-1',
+    onboarding: 'SUPPORTED', commitOutcome, operationIdentity: identityOf(0x52), reconciliationReference: referenceOf(0x52),
     stagedOutput: { embeddedTreeWelcome: new Uint8Array([0x11, 0x22]) },
   },
 });
@@ -816,7 +820,7 @@ describe('confirmation requires a distinct COMMITTED post-start authority later 
     const join = {
       request: request('JOIN_WELCOME', { embeddedTreeWelcome: new Uint8Array([0x02]) }),
       snapshot: createAdapterSnapshot('EMPTY'),
-      observation: { keyPackage: 'MATCHED', commitOutcome: 'COMMITTED', operationIdentity: 'op-join' },
+      observation: { keyPackage: 'MATCHED', commitOutcome: 'COMMITTED', operationIdentity: identityOf(0x4a), reconciliationReference: referenceOf(0x4a) },
     };
     const d = createNewSession({ lockHeld: true, marker: marker(PENDING), consent: CONSENT(), operation: join });
     expect([d.disposition, d.adapterResult.successCode, d.committed]).toEqual(['SESSION_OPERATION', 'JOINED', true]);

@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from '@jest/globals';
 import fc from 'fast-check';
+import { createHash } from 'node:crypto';
 import {
   M2_ADAPTER,
   M2AdapterError,
@@ -20,7 +21,7 @@ import { createAdapterSnapshot } from '../../../src/crypto/mls/m2/state-machine.
 import { fromWireBytes, toWireBytes, validateWorkerResult } from '../../../src/crypto/mls/m2/worker-protocol.js';
 
 // The ratified O-SCEN rows citing each C-API clause this card implements (registry sha256 0e05f023…abba0,
-// O-SCEN markdown sha256 75d84350…16532; derived by the card's gen_mapping.py with the I-UPD rule).
+// O-SCEN markdown sha256 849c3229…bdbb92; derived by the card's gen_mapping.py with the I-UPD rule).
 const OSCEN_SCENARIOS = Object.freeze({
   '/rules/candidateSelector': ['OSC-0885ca4fd15bf91b'],
   'CAPI-S016': ['OSC-43bc2f410abce99b'],
@@ -67,13 +68,28 @@ const HIGH = id(0xfe);
 const candidate = (committerId, ref) => ({ committerId, ref });
 const eligible = (current, incoming) => ({ kind: 'ELIGIBLE_TWO_CANDIDATE', current, incoming });
 
+// C-API §5 (C-API-RR): a test label names one SS/RS mutation. Its observed operation identity is the canonical
+// 43-character unpadded base64url encoding of 32 bytes, and its SS/RS 32-byte reconciliation reference, from
+// which the 53-character `reconciliationRef` is formed, is distinct from the identity.
+const labelBytes = (kind, label) => new Uint8Array(createHash('sha256').update(`${kind}:${label}`).digest());
+const identityOf = (label) => Buffer.from(labelBytes('identity', label)).toString('base64url');
+const referenceOf = (label) => labelBytes('reference', label);
+const heldRef = (label) => `I-SM-HOLD:${Buffer.from(referenceOf(label)).toString('base64url')}`;
+
 const observation = ({
   authentication = 'AUTHENTICATED',
   candidate: classification = { kind: 'CURRENT_PARENT' },
   commitOutcome = 'COMMITTED',
   operationIdentity = 'op-fork-1',
   slotContext = SLOT.slice(),
-} = {}) => ({ authentication, candidate: classification, commitOutcome, operationIdentity, slotContext });
+} = {}) => {
+  const issued = typeof operationIdentity === 'string' && operationIdentity.length > 0;
+  return {
+    authentication, candidate: classification, commitOutcome,
+    operationIdentity: issued ? identityOf(operationIdentity) : operationIdentity, slotContext,
+    reconciliationReference: issued ? referenceOf(operationIdentity) : null,
+  };
+};
 
 // A rejecting classification (CAPI-S018/S019) carries no RS request.
 const rejectingObservation = (classification) => observation({ candidate: classification, commitOutcome: null, operationIdentity: null });
@@ -98,7 +114,7 @@ describe('I-FORK module surface', () => {
     expect(M2_ADAPTER.INTEGRATED_OPERATIONS).toContain('APPLY_PEER_UPDATE');
     expect(Object.isFrozen(M2_ADAPTER.INTEGRATED_OPERATIONS)).toBe(true);
     expect([...M2_ADAPTER.OBSERVATION_KEYS.APPLY_PEER_UPDATE])
-      .toEqual(['authentication', 'candidate', 'commitOutcome', 'operationIdentity', 'slotContext']);
+      .toEqual(['authentication', 'candidate', 'commitOutcome', 'operationIdentity', 'slotContext', 'reconciliationReference']);
     expect(M2_ADAPTER.BOUNDS.MAX_CANDIDATE_REF_CHARS).toBe(256);
     expect([...M2_ADAPTER.OUTPUT_BY_SUCCESS_CODE.CANDIDATE_SELECTED]).toEqual(['selectedCandidateRef']);
     expect([...M2_ADAPTER.OUTPUT_BY_SUCCESS_CODE.PEER_UPDATE_APPLIED]).toEqual([]);
@@ -139,7 +155,7 @@ describe('CAPI-S016 current-parent peer update (OSC-43bc2f410abce99b)', () => {
   test('INDETERMINATE holds the mutation: RECONCILIATION_REQUIRED snapshot with the S016 hold', () => {
     const { result, snapshot } = transition(active(), observation({ commitOutcome: 'INDETERMINATE', operationIdentity: 'op-s016' }));
     assertEnvelope(result, 'INDETERMINATE', ['commitOutcome', 'reconciliationRef', 'originalStateBefore']);
-    expect(result.reconciliationRef).toBe('I-SM-HOLD:op-s016');
+    expect(result.reconciliationRef).toBe(heldRef('op-s016'));
     expect(snapshot.state).toBe('RECONCILIATION_REQUIRED');
     expect(snapshot.held.scenario).toBe('CAPI-S016');
     expect(snapshot.held.outputKind).toBe('NONE');
@@ -211,7 +227,7 @@ describe('CAPI-S017 bounded two-candidate selection (OSC-850b3351c75edb32, OSC-0
     expect(snapshot.held.selectedCandidateRef).toBe('cand:lo');
 
     const reconcile = (heldOutput, commitOutcome = 'COMMITTED') => invokeAdapterTransition({
-      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: 'I-SM-HOLD:op-s017' }),
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('op-s017') }),
       snapshot,
       observation: {
         slotContext: SLOT.slice(), commitOutcome, responseEmission: commitOutcome === 'COMMITTED' ? 'SUCCEEDED' : null, heldOutput,
@@ -257,10 +273,10 @@ describe('CAPI-S017 bounded two-candidate selection (OSC-850b3351c75edb32, OSC-0
       .toEqual({ selectedCandidateRef: atBound });
   });
 
-  test('an over-bound operation identity is refused up front (P06) and nothing is held (I-UPD p06)', () => {
-    const operationIdentity = 'i'.repeat(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS + 1);
+  test('an operation identity longer than 43 characters is refused up front (P06) and nothing is held (C-API §5)', () => {
+    const operationIdentity = `${identityOf('op-fork-1')}A`;
     for (const classification of [{ kind: 'CURRENT_PARENT' }, eligible(candidate(LOW, 'a'), candidate(HIGH, 'b'))]) {
-      const { result, snapshot } = transition(active(), observation({ candidate: classification, commitOutcome: 'INDETERMINATE', operationIdentity }));
+      const { result, snapshot } = transition(active(), { ...observation({ candidate: classification, commitOutcome: 'INDETERMINATE' }), operationIdentity });
       expect(code(result)).toBe('VALUE_OUT_OF_RANGE');
       expect(snapshot).toBeNull();
     }
@@ -578,12 +594,12 @@ describe('I-FORK review r1 regressions', () => {
     const longRef = 'r'.repeat(bound + 1);
     const opIdentity = 'op-ifork-f2';
     const held = {
-      originalStateBefore: 'ACTIVE', scenario: 'CAPI-S017', mutationPlanIdentity: 'CAPI-S017', operationIdentity: opIdentity,
+      originalStateBefore: 'ACTIVE', scenario: 'CAPI-S017', mutationPlanIdentity: 'CAPI-S017', operationIdentity: identityOf(opIdentity),
       expectedSuccessCode: 'CANDIDATE_SELECTED', expectedStateAfter: 'ACTIVE', outputKind: 'SELECTED_CANDIDATE_REF',
-      reconciliationRef: `I-SM-HOLD:${opIdentity}`, selectedCandidateRef: longRef, terminalEvidenceStatus: 'PENDING',
+      reconciliationRef: heldRef(opIdentity), selectedCandidateRef: longRef, terminalEvidenceStatus: 'PENDING',
     };
     const result = invokeAdapter({
-      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: `I-SM-HOLD:${opIdentity}` }),
+      request: request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef(opIdentity) }),
       snapshot: { state: 'RECONCILIATION_REQUIRED', held },
       observation: { slotContext: SLOT.slice(), commitOutcome: 'COMMITTED', responseEmission: 'SUCCEEDED', heldOutput: { selectedCandidateRef: longRef } },
     });

@@ -273,6 +273,14 @@ const WELCOME = bytes(0x51, 0x52);
 const empty = () => createAdapterSnapshot('EMPTY');
 const active = () => createAdapterSnapshot('ACTIVE');
 
+// C-API §5 (C-API-RR): a test label names one SS/RS mutation. Its observed operation identity is the canonical
+// 43-character unpadded base64url encoding of 32 bytes, and its SS/RS 32-byte reconciliation reference, from
+// which the 53-character `reconciliationRef` is formed, is distinct from the identity.
+const labelBytes = (kind, label) => new Uint8Array(createHash('sha256').update(`${kind}:${label}`).digest());
+const identityOf = (label) => Buffer.from(labelBytes('identity', label)).toString('base64url');
+const referenceOf = (label) => labelBytes('reference', label);
+const issuedAs = (label) => ({ operationIdentity: identityOf(label), reconciliationReference: referenceOf(label) });
+
 // The exact I-SM hold a reconciliation resolves: the hold of one held mutation, produced by the merged
 // core itself and carrying the held row's original state, success code and C-MUT escrow kind.
 const holdOf = (operation, snapshot, operationIdentity) => transitionAdapter(snapshot, {
@@ -280,7 +288,7 @@ const holdOf = (operation, snapshot, operationIdentity) => transitionAdapter(sna
   applicableErrors: [],
   facts: 'SUPPORTED',
   commitOutcome: 'INDETERMINATE',
-  operationIdentity,
+  ...issuedAs(operationIdentity),
 }).snapshot;
 
 const heldUpdate = (id = 'held-upd-1') => holdOf('SELF_UPDATE', active(), id);
@@ -289,15 +297,20 @@ const heldJoin = (id = 'held-join-1') => holdOf('JOIN_WELCOME', empty(), id);
 
 const updateObservation = ({
   updateForm = 'SUPPORTED', commitOutcome = 'COMMITTED', stagedOutput = undefined, operationIdentity = undefined,
-} = {}) => ({
-  slotContext: SLOT.slice(),
-  updateForm,
-  commitOutcome,
-  operationIdentity: operationIdentity === undefined ? (commitOutcome === null ? null : 'op-upd-1') : operationIdentity,
-  stagedOutput: stagedOutput === undefined
-    ? (commitOutcome === null ? null : { protectedCommitBytes: STAGED })
-    : stagedOutput,
-});
+} = {}) => {
+  const label = operationIdentity === undefined ? (commitOutcome === null ? null : 'op-upd-1') : operationIdentity;
+  const issued = typeof label === 'string' && label.length > 0;
+  return {
+    slotContext: SLOT.slice(),
+    updateForm,
+    commitOutcome,
+    operationIdentity: issued ? identityOf(label) : label,
+    stagedOutput: stagedOutput === undefined
+      ? (commitOutcome === null ? null : { protectedCommitBytes: STAGED })
+      : stagedOutput,
+    reconciliationReference: issued ? referenceOf(label) : null,
+  };
+};
 
 const reconcileObservation = ({ commitOutcome = 'COMMITTED', responseEmission = 'SUCCEEDED', heldOutput = undefined } = {}) => ({
   slotContext: SLOT.slice(),
@@ -350,7 +363,7 @@ describe('I-UPD module surface and the widened closed sets', () => {
     expect(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS).toBe(256);
     expect(M2_ADAPTER.BOUNDS.MAX_OPAQUE_BYTES).toBe(1048576);
     expect([...M2_ADAPTER.COMMIT_OUTCOMES]).toEqual(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
-    expect([...M2_ADAPTER.SUCCESS_CODES]).toHaveLength(10);
+    expect([...M2_ADAPTER.SUCCESS_CODES]).toHaveLength(11);
     expect([...M2_ADAPTER.ERROR_CODES]).toHaveLength(25);
     expect(M2_ADAPTER.CODE_TO_KIND.SELF_UPDATED).toBe('SUCCESS');
     expect(M2_ADAPTER.CODE_TO_KIND.RECONCILED_COMMITTED).toBe('SUCCESS');
@@ -462,7 +475,7 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
     expect(transition.result.stateBefore).toBe('ACTIVE');
     expect(transition.result.stateAfter).toBe('RECONCILIATION_REQUIRED');
     expect(transition.result.originalStateBefore).toBe('ACTIVE');
-    expect(transition.result.reconciliationRef).toBe('I-SM-HOLD:op-upd-1');
+    expect(transition.result.reconciliationRef).toBe(heldRef('op-upd-1'));
     expect(transition.result.successCode).toBe(undefined);
     expect(transition.result.output).toBe(undefined);
     expect(transition.snapshot.state).toBe('RECONCILIATION_REQUIRED');
@@ -584,7 +597,7 @@ describe('I-UPD a staged self-update is applied only after COMMITTED', () => {
     }
   });
 });
-const heldRef = (id) => `I-SM-HOLD:${id}`;
+const heldRef = (id) => `I-SM-HOLD:${Buffer.from(referenceOf(id)).toString('base64url')}`;
 const reconcile = (snapshot, observation, reference) => invokeAdapter({
   request: request('RECONCILE_INDETERMINATE', { reconciliationRef: reference }),
   snapshot,
@@ -775,7 +788,7 @@ describe('I-UPD fail-closed request validation', () => {
     ['missing profile member', request('SELF_UPDATE', {}, { profile: withoutMember({ ...PROFILE }, 'adapterApi') }), active(), okUpdate, 'UNSUPPORTED_PROFILE'],
     ['unknown operation', request('ADD_MEMBER', {}), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
     ['operation outside the exact eight (letter-case drift)', request('apply_peer_update', { protectedCommitBytes: bytes(0x01) }), active(), okUpdate, 'UNSUPPORTED_OPERATION'],
-    ['malformed input of APPLY_PEER_UPDATE', request('APPLY_PEER_UPDATE', {}), active(), { authentication: 'AUTHENTICATED', candidate: { kind: 'CURRENT_PARENT' }, commitOutcome: 'COMMITTED', operationIdentity: 'op-apply-1', slotContext: SLOT.slice() }, 'INVALID_REQUEST'],
+    ['malformed input of APPLY_PEER_UPDATE', request('APPLY_PEER_UPDATE', {}), active(), { authentication: 'AUTHENTICATED', candidate: { kind: 'CURRENT_PARENT' }, commitOutcome: 'COMMITTED', ...issuedAs('op-apply-1'), slotContext: SLOT.slice() }, 'INVALID_REQUEST'],
     ['unknown input member', request('SELF_UPDATE', { extra: 1 }), active(), okUpdate, 'UNKNOWN_FIELD'],
     ['missing reconcile reference', request('RECONCILE_INDETERMINATE', {}), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
     ['empty reconcile reference', request('RECONCILE_INDETERMINATE', { reconciliationRef: '' }), heldUpdate(), proofReconcile, 'INVALID_REQUEST'],
@@ -792,7 +805,7 @@ describe('I-UPD fail-closed request validation', () => {
     ['held escrow withheld from a reconciliation with no proof', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: null, heldOutput: null }), 'INVALID_REQUEST'],
     ['supported form without a commit proof', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output without a commit proof', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: null, operationIdentity: null, stagedOutput: { protectedCommitBytes: STAGED } }, 'INVALID_REQUEST'],
-    ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }, 'INVALID_REQUEST'],
+    ['commit proof without a supported form', request('SELF_UPDATE', {}), active(), { slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: 'COMMITTED', ...issuedAs('op-upd-1'), stagedOutput: null }, 'INVALID_REQUEST'],
     ['staged output of the wrong member without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { embeddedTreeWelcome: WELCOME } }), 'UNKNOWN_FIELD'],
     ['staged output of the wrong type without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
     ['out-of-set commit outcome with no request issued', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE', operationIdentity: null }, 'INVALID_REQUEST'],
@@ -828,71 +841,82 @@ describe('I-UPD fail-closed request validation', () => {
       reconciliationRef: 'r'.repeat(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS),
     }))).toEqual({ ok: true, code: null });
     expect(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS).toBe(256);
-    expect(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS).toBe(246);
+    // C-API §5 (C-API-RR) replaces the derived identity bound with the exact 43-character identity rule.
+    expect(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS).toBeUndefined();
     expect(Object.isFrozen(validateAdapterRequest(request('SELF_UPDATE', {})))).toBe(true);
   });
 
-  test('an operation identity past its bound is rejected at P06 before any commit request (probe p06)', () => {
-    const identity = 'i'.repeat(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS);
-    const accepted = invokeAdapter({
-      request: request('SELF_UPDATE', {}), snapshot: active(), observation: updateObservation({ operationIdentity: identity }),
-    });
+  test('an operation identity that is not the exact 43-character identity is refused at P06 before any commit request (C-API §5)', () => {
+    // C-API §5 (C-API-RR): the observed identity is the canonical unpadded base64url encoding of the 32-byte
+    // SS/RS identity. A canonical identity is accepted and its hold carries the 53-character reference.
+    const identity = identityOf('op-upd-1');
+    expect(identity).toHaveLength(43);
+    const accepted = invokeAdapter({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: updateObservation({}) });
     expect(accepted.kind).toBe('SUCCESS');
     expect(accepted.successCode).toBe('SELF_UPDATED');
-    // The longest accepted identity mints a reference that fits the reconciliation bound exactly, and that
-    // reference reconciles.
     const fits = invokeAdapterTransition({
-      request: request('SELF_UPDATE', {}), snapshot: active(),
-      observation: updateObservation({ commitOutcome: 'INDETERMINATE', operationIdentity: identity }),
+      request: request('SELF_UPDATE', {}), snapshot: active(), observation: updateObservation({ commitOutcome: 'INDETERMINATE' }),
     });
     expect(fits.result.kind).toBe('INDETERMINATE');
-    expect(fits.result.reconciliationRef.length).toBe(M2_ADAPTER.BOUNDS.MAX_RECONCILIATION_REF_CHARS);
+    expect(fits.result.reconciliationRef).toHaveLength(53);
+    expect(fits.result.reconciliationRef).toBe(heldRef('op-upd-1'));
     const resolved = invokeAdapter({
       request: request('RECONCILE_INDETERMINATE', { reconciliationRef: fits.result.reconciliationRef }),
       snapshot: fits.snapshot, observation: reconcileObservation({}),
     });
     expect(resolved.successCode).toBe('RECONCILED_COMMITTED');
-    // C-API `CAPI-E014` (P06, REJECTED, UNCHANGED, persistence NONE) and C-MUT §3: one character more is
-    // a structural bound exceeded before any commit request, whatever outcome is reported — nothing is
-    // applied, nothing is held, and no reference this module would refuse is ever minted.
-    for (const commitOutcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
-      const over = invokeAdapterTransition({
-        request: request('SELF_UPDATE', {}), snapshot: active(),
-        observation: updateObservation({ commitOutcome, operationIdentity: `${identity}i` }),
-      });
-      assertEnvelope(over.result, 'REJECTED', ['error']);
-      expect(code(over.result)).toBe('VALUE_OUT_OF_RANGE');
-      expect(over.result.stateAfter).toBe('ACTIVE');
-      expect(over.snapshot).toBe(null);
+    // C-API `CAPI-E014` (P06) for a longer identity, `CAPI-E025` for any other non-conforming one, whatever
+    // outcome is reported: nothing is applied and nothing is held.
+    const lastCharacter = identity[42];
+    const nonCanonical = `${identity.slice(0, 42)}${'AEIMQUYcgkosw048'.includes(lastCharacter) ? String.fromCharCode(lastCharacter.charCodeAt(0) + 1) : 'B'}`;
+    const refused = [
+      [`${identity}A`, 'VALUE_OUT_OF_RANGE'],
+      [identity.slice(0, 42), 'FAIL_CLOSED_INTERNAL'],
+      [`${identity.slice(0, 42)}+`, 'FAIL_CLOSED_INTERNAL'],
+      [nonCanonical, 'FAIL_CLOSED_INTERNAL'],
+      [Buffer.alloc(32).toString('base64url'), 'FAIL_CLOSED_INTERNAL'],
+    ];
+    for (const [observedIdentity, expected] of refused) {
+      for (const commitOutcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
+        const over = invokeAdapterTransition({
+          request: request('SELF_UPDATE', {}), snapshot: active(),
+          observation: { ...updateObservation({ commitOutcome }), operationIdentity: observedIdentity },
+        });
+        assertEnvelope(over.result, 'REJECTED', ['error']);
+        expect(`${observedIdentity}:${commitOutcome}:${code(over.result)}`).toBe(`${observedIdentity}:${commitOutcome}:${expected}`);
+        expect(over.result.stateAfter).toBe('ACTIVE');
+        expect(over.snapshot).toBe(null);
+      }
     }
-    // The P05 state gates still outrank the P06 bound.
+    // The P05 state gates still outrank the P06 rule.
     const gated = invokeAdapter({
       request: request('SELF_UPDATE', {}), snapshot: heldUpdate(),
-      observation: updateObservation({ operationIdentity: `${identity}i` }),
+      observation: { ...updateObservation({}), operationIdentity: `${identity}A` },
     });
     expect(code(gated)).toBe('RECONCILIATION_REQUIRED');
   });
 
-  test('the identity bound leaves the I-MSG operations unchanged (contract R2 step 5, final review)', () => {
-    // R2 scopes the P06 identity bound to CREATE, JOIN_WELCOME and SELF_UPDATE. A PROTECT_APPLICATION
-    // whose RS identity is one character past it keeps its integrated tri-state answer and its hold.
-    const longIdentity = 'i'.repeat(M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS + 1);
-    const protect = (commitOutcome) => invokeAdapterTransition({
+  test('the identity rule covers the I-MSG operations of the seven RS_TRI_STATE rows (C-API §5)', () => {
+    // C-API-RR: the rule binds every RS_TRI_STATE row, `CAPI-S009` and `CAPI-S010` included.
+    const protect = (commitOutcome, operationIdentity) => invokeAdapterTransition({
       request: request('PROTECT_APPLICATION', { applicationBytes: bytes(0x01) }),
       snapshot: active(),
       observation: {
-        commitOutcome, operationIdentity: longIdentity,
+        commitOutcome, operationIdentity, reconciliationReference: referenceOf('protect'),
         stagedOutput: { protectedApplicationBytes: bytes(0x02) },
       },
     });
-    const committed = protect('COMMITTED');
-    expect(committed.result.kind).toBe('SUCCESS');
-    expect(committed.result.successCode).toBe('APPLICATION_PROTECTED');
-    expect(protect('NOT_COMMITTED').result.kind).toBe('NOT_COMMITTED');
-    const held = protect('INDETERMINATE');
+    const canonical = identityOf('protect');
+    expect(protect('COMMITTED', canonical).result.successCode).toBe('APPLICATION_PROTECTED');
+    expect(protect('NOT_COMMITTED', canonical).result.kind).toBe('NOT_COMMITTED');
+    const held = protect('INDETERMINATE', canonical);
     expect(held.result.kind).toBe('INDETERMINATE');
-    expect(held.snapshot.state).toBe('RECONCILIATION_REQUIRED');
-    expect(held.result.reconciliationRef).toBe(`I-SM-HOLD:${longIdentity}`);
+    expect(held.result.reconciliationRef).toBe(heldRef('protect'));
+    for (const commitOutcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
+      const over = protect(commitOutcome, `${canonical}A`);
+      expect(code(over.result)).toBe('VALUE_OUT_OF_RANGE');
+      expect(over.snapshot).toBe(null);
+    }
   });
 
   test('no accessor of any injected record is ever invoked', () => {
@@ -1135,8 +1159,8 @@ describe('I-UPD seeded property sweep', () => {
     const seen = { success: 0, released: 0, rejected: 0, held: 0 };
     fc.assert(fc.property(snapshotArbitrary, fc.oneof(
       observationArbitrary,
-      fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([7]) } }),
-      fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'INDETERMINATE', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([8]) } }),
+      fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', ...issuedAs('op-upd-1'), stagedOutput: { protectedCommitBytes: new Uint8Array([7]) } }),
+      fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'INDETERMINATE', ...issuedAs('op-upd-1'), stagedOutput: { protectedCommitBytes: new Uint8Array([8]) } }),
     ), (snapshot, observation) => {
       let result;
       try {
@@ -1247,8 +1271,8 @@ describe('I-UPD seeded property sweep', () => {
     const sampler = (seed) => {
       const trace = [];
       fc.assert(fc.property(snapshotArbitrary, fc.oneof(
-        fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: { protectedCommitBytes: new Uint8Array([1]) } }),
-        fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: 'op-upd-1', stagedOutput: null }),
+        fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'COMMITTED', ...issuedAs('op-upd-1'), stagedOutput: { protectedCommitBytes: new Uint8Array([1]) } }),
+        fc.constant({ slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', ...issuedAs('op-upd-1'), stagedOutput: null }),
         fc.constant({ slotContext: SLOT.slice(), updateForm: 'UNSUPPORTED_UPDATE_FORM', commitOutcome: null, operationIdentity: null, stagedOutput: null }),
       ), (snapshot, observation) => {
         const result = invokeAdapter({ request: request('SELF_UPDATE', {}), snapshot, observation });
@@ -1595,7 +1619,7 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     // A slot fact is refused on the operations that do not carry one.
     const created = invokeAdapter({
       request: request('CREATE', { peerFramedKeyPackage: bytes(1) }), snapshot: empty(),
-      observation: { onboarding: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'op-c', stagedOutput: { embeddedTreeWelcome: WELCOME }, slotContext: SLOT.slice() },
+      observation: { onboarding: 'SUPPORTED', commitOutcome: 'COMMITTED', ...issuedAs('op-c'), stagedOutput: { embeddedTreeWelcome: WELCOME }, slotContext: SLOT.slice() },
     });
     expect(code(created)).toBe('UNKNOWN_FIELD');
   });
@@ -2058,7 +2082,7 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
   });
 
   test('an issued SELF_UPDATE with an omitted RS outcome or escrow is held, never rejected (cycle 5i review)', () => {
-    const issued = { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', operationIdentity: 'issued', commitOutcome: 'INDETERMINATE', stagedOutput: { protectedCommitBytes: STAGED } };
+    const issued = { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', ...issuedAs('issued'), commitOutcome: 'INDETERMINATE', stagedOutput: { protectedCommitBytes: STAGED } };
     const reference = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation: issued });
     for (const observation of [withoutMember(issued, 'commitOutcome'), withAccessor(issued, 'commitOutcome', { count: 0, value: 'COMMITTED' })]) {
       const answer = invokeAdapterTransition({ request: request('SELF_UPDATE', {}), snapshot: active(), observation });
@@ -2119,7 +2143,7 @@ describe('I-UPD fifth-cycle regressions (probes p06, p08, p12, p14, p16)', () =>
     const answer = invokeAdapterTransition({
       request: proxy,
       snapshot: empty(),
-      observation: { onboarding: 'SUPPORTED', commitOutcome: 'COMMITTED', operationIdentity: 'probe', stagedOutput: { embeddedTreeWelcome: WELCOME } },
+      observation: { onboarding: 'SUPPORTED', commitOutcome: 'COMMITTED', ...issuedAs('probe'), stagedOutput: { embeddedTreeWelcome: WELCOME } },
     });
     expect(reads).toBe(1);
     // The one read said CREATE, so the call is a CREATE throughout: validated, dispatched and released as
