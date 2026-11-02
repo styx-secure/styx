@@ -466,7 +466,8 @@ class Device {
     const cur = this.current();
     const parent = this.disk.generations.get(cur.generation);
     const opBytes = nonzeroBytes(this.rand, 32);
-    const operationIdentity = `op-${hex(opBytes).slice(0, 40)}`;
+    // C-API §5 (C-API-RR): the observed identity is the canonical base64url encoding of the 32 SS/RS bytes.
+    const operationIdentity = Buffer.from(opBytes).toString('base64url');
     const generation = this.disk.nextGeneration;
     this.disk.nextGeneration += 1n;
     const scenario = SCENARIO_BY_OPERATION[operation];
@@ -498,7 +499,7 @@ class Device {
     const port = makePort(this.disk, faults);
     const txnResult = await txn.runMutation({ storage: port, manifestRootKey: ROOT_KEY, envelope, candidate, outcome });
     if (txnResult.commitOutcome !== 'INDETERMINATE') this.disk.pending = null;
-    return { txnResult, operationIdentity, port };
+    return { txnResult, operationIdentity, reconciliationReference: envelope.reconciliationIdentity.reference, port };
   }
 
   // ----- the operations -------------------------------------------------------------------
@@ -507,11 +508,12 @@ class Device {
     const welcome = nonzeroBytes(this.rand, 24);
     const req = this.request('CREATE', { peerFramedKeyPackage: nonzeroBytes(this.rand, 16) });
     const next = { epoch: 0, epochKeys: { 0: epochKey(0) }, accepted: [], sent: 0 };
-    const { txnResult, operationIdentity } = await this.mutate('CREATE', req.input, next, welcome, rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('CREATE', req.input, next, welcome, rs, faults);
     return this.decide(req, {
       onboarding: 'SUPPORTED',
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { embeddedTreeWelcome: txnResult.output },
     });
   }
@@ -528,12 +530,13 @@ class Device {
     epochKeys[epoch] = epochKey(epoch);
     const next = { ...cur, epoch, epochKeys };
     const commitBytes = sha256('commit', String(epoch), nonzeroBytes(this.rand, 8));
-    const { txnResult, operationIdentity } = await this.mutate('SELF_UPDATE', {}, next, commitBytes, rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('SELF_UPDATE', {}, next, commitBytes, rs, faults);
     return this.decide(req, {
       slotContext: SLOT.slice(),
       updateForm: 'SUPPORTED',
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { protectedCommitBytes: txnResult.output },
     });
   }
@@ -544,10 +547,11 @@ class Device {
     const id = `m-${cur.epoch}-${cur.sent + 1}`;
     const message = sealMessage(cur.epoch, id, text);
     const next = { ...cur, sent: cur.sent + 1 };
-    const { txnResult, operationIdentity } = await this.mutate('PROTECT_APPLICATION', req.input, next, message, rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('PROTECT_APPLICATION', req.input, next, message, rs, faults);
     return this.decide(req, {
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { protectedApplicationBytes: txnResult.output },
     });
   }
@@ -581,11 +585,12 @@ class Device {
       });
     }
     const next = { ...cur, accepted: [...cur.accepted, framed.id] };
-    const { txnResult, operationIdentity } = await this.mutate('OPEN_APPLICATION', req.input, next, utf8(framed.text), rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('OPEN_APPLICATION', req.input, next, utf8(framed.text), rs, faults);
     return this.decide(req, {
       currentEpoch: cur.epoch, framingEpoch: framed.epoch, authentication: 'AUTHENTICATED', replayIdentity: 'UNSEEN',
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { applicationBytes: txnResult.output },
     });
   }
@@ -599,7 +604,10 @@ class Device {
     const p = this.disk.pending;
     if (p === null) return null;
     const req = this.request(p.operation, p.requestInput);
-    const base = { commitOutcome: 'INDETERMINATE', operationIdentity: p.operationIdentity, stagedOutput: null };
+    const base = {
+      commitOutcome: 'INDETERMINATE', operationIdentity: p.operationIdentity, stagedOutput: null,
+      reconciliationReference: p.envelope.reconciliationIdentity.reference,
+    };
     const obs = p.operation === 'SELF_UPDATE' ? { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', ...base }
       : p.operation === 'CREATE' ? { onboarding: 'SUPPORTED', ...base }
         : p.operation === 'PROTECT_APPLICATION' ? base

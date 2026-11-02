@@ -228,7 +228,7 @@ describe('the closed metadata', () => {
     expect([...UNSUPPORTED_RUNTIME_CLASSES]).toEqual([
       'MOBILE', 'NATIVE_NON_BROWSER', 'PRIVATE_BROWSING', 'EVICTED_OR_PARTIAL_PROFILE',
     ]);
-    expect(READER_PROFILE).toBe('CFMT_EXACT_9DACE4A0');
+    expect(READER_PROFILE).toBe('CFMT_EXACT_526FC4C3');
   });
 
   test('the copied C-REST value registries are exactly the eleven closed registries', () => {
@@ -341,8 +341,8 @@ describe('fault precedence', () => {
     }
   });
 
-  // Independent transcription of the five rows the C-REST sync (commit bc3b01f, SHA-256
-  // ccbdd3ce…4c9f) adds for the C-FMT rule-only hold locator. The literals below are copied from the
+  // Independent transcription of the five rows C-REST (commit 32075ed, SHA-256 bc3026e7…d5dc0, act #514
+  // 6433983465) carries for the C-FMT rule-only hold locator. The literals below are copied from the
   // ratified record, not derived from the module, so a count-preserving substitution, a wrong code or
   // phase, or a duplicated identity fails here even when every length assertion still holds.
   test('the five hold-locator rows carry exactly the ratified C-REST identities, codes and phases', () => {

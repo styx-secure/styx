@@ -2,8 +2,8 @@
 // Internal-only: no barrel export.
 //
 // This module is the executable form of the ratified C-REST contract
-// (`docs/architecture/m2/restore-compatibility.md` at commit bc3b01f2411615c40a177a913de11dba72c4a8eb,
-// SHA-256 ccbdd3ceb94c0c32c081757bbf6f0d19a84b5c45933f94115c58500e70854c9f): the ordered
+// (`docs/architecture/m2/restore-compatibility.md` at commit 32075ed493a29b1e0d5dd2995531d72ecc400c7a,
+// SHA-256 bc3026e730e78ef259b97fd3cc6290b29aa97481955218efde37483c349d5dc0, #514 6433983465): the ordered
 // fourteen-phase restore decision, the closed result vocabulary, the twenty-six fault-precedence rows,
 // the seventy-seven fixtures, the eight-version allowlist, the two build-matrix rows and the §7
 // reconciliation-candidate rules. It performs no I/O, storage, worker, browser, crypto, lock, network,
@@ -210,8 +210,8 @@ export const DIAGNOSTIC_FORBIDDEN = deepFreeze([
  */
 export const BUILD_MATRIX = deepFreeze([
   {
-    readerProfile: 'CFMT_EXACT_9DACE4A0',
-    cFmtDocumentSha256: '9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b',
+    readerProfile: 'CFMT_EXACT_526FC4C3',
+    cFmtDocumentSha256: '526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2',
     versions: {
       format: 1, envelope: 1, recordKey: 1, plaintext: 1, manifest: 1, keySchedule: 1,
       upstreamBinding: 0, upstreamMutationTable: 1,
@@ -226,8 +226,8 @@ export const BUILD_MATRIX = deepFreeze([
     browserClass: 'CHROMIUM',
   },
   {
-    readerProfile: 'CFMT_EXACT_9DACE4A0',
-    cFmtDocumentSha256: '9dace4a0182c5694857cc1e8efb59257f3e4b276e8c62846d2d329626e8c963b',
+    readerProfile: 'CFMT_EXACT_526FC4C3',
+    cFmtDocumentSha256: '526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2',
     versions: {
       format: 1, envelope: 1, recordKey: 1, plaintext: 1, manifest: 1, keySchedule: 1,
       upstreamBinding: 0, upstreamMutationTable: 1,
@@ -273,7 +273,7 @@ const BUILD_ROW_KEYS = Object.freeze(Object.keys(BUILD_MATRIX[0]));
 /**
  * §3 `readerProfile`.
  */
-export const READER_PROFILE = 'CFMT_EXACT_9DACE4A0';
+export const READER_PROFILE = 'CFMT_EXACT_526FC4C3';
 
 /**
  * §9 `corruptionAction`.
@@ -425,7 +425,7 @@ const VALUE_REGISTRIES = deepFreeze(Object.assign(Object.create(null), {
   "scenario": { "CAPI-S001": 1, "CAPI-S006": 2, "CAPI-S009": 3, "CAPI-S010": 4, "CAPI-S014": 5, "CAPI-S016": 6, "CAPI-S017": 7 },
   "selectorState": { "ACTIVE": 2, "EMPTY": 1, "RECONCILIATION_REQUIRED": 3 },
   "slotState": { "BOUND": 3, "EMPTY": 1, "ISSUANCE_HELD": 2, "RECONCILIATION_REQUIRED": 4 },
-  "successCode": { "APPLICATION_OPENED": 5, "APPLICATION_PROTECTED": 4, "CANDIDATE_SELECTED": 8, "CREATED": 1, "DUPLICATE_IGNORED": 10, "JOINED": 3, "PEER_UPDATE_APPLIED": 7, "RECONCILED_COMMITTED": 9, "RESTORED": 2, "SELF_UPDATED": 6 },
+  "successCode": { "APPLICATION_OPENED": 5, "APPLICATION_PROTECTED": 4, "CANDIDATE_SELECTED": 8, "CREATED": 1, "DUPLICATE_IGNORED": 10, "JOINED": 3, "PEER_UPDATE_APPLIED": 7, "RECONCILED_COMMITTED": 9, "RESTORED": 2, "RESTORED_EMPTY_SESSION": 11, "SELF_UPDATED": 6 },
 }));
 
 // ------------------------------------------------------------------------------------------------

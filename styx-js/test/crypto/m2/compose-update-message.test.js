@@ -498,7 +498,8 @@ class Device {
     const cur = this.current();
     const parent = this.disk.generations.get(cur.generation);
     const opBytes = nonzeroBytes(this.rand, 32);
-    const operationIdentity = identity ?? `op-${hex(opBytes).slice(0, 40)}`;
+    // C-API §5 (C-API-RR): the observed identity is the canonical base64url encoding of the 32 SS/RS bytes.
+    const operationIdentity = identity ?? Buffer.from(opBytes).toString('base64url');
     const generation = this.disk.nextGeneration;
     this.disk.nextGeneration += 1n;
     const scenario = SCENARIO_BY_OPERATION[operation];
@@ -549,7 +550,7 @@ class Device {
       txnResult = { commitOutcome: 'INDETERMINATE', output: null, ioError: e };
     }
     if (txnResult.commitOutcome !== 'INDETERMINATE') this.disk.pending = null;
-    return { txnResult, operationIdentity, port };
+    return { txnResult, operationIdentity, reconciliationReference: envelope.reconciliationIdentity.reference, port };
   }
 
   /**
@@ -579,11 +580,14 @@ class Device {
     const { adapter } = this.P;
     const checked = adapter.validateAdapterRequest(req);
     const foreign = hex(req.bindingRef) !== hex(SLOT);
-    const overBound = identity !== null && identity.length > adapter.M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
+    // C-API §5 (C-API-RR): an SS-assigned identity that is not exactly 43 canonical characters never reaches storage.
+    const overBound = identity !== null
+      && (identity.length !== 43 || Buffer.from(identity, 'base64url').toString('base64url') !== identity);
     if (checked.ok && !foreign && !overBound) return null;
+    const gatedIdentity = identity ?? Buffer.from(sha256('op-gated')).toString('base64url');
     const observation = req.operation === 'SELF_UPDATE'
-      ? { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: identity ?? 'op-gated', stagedOutput: null }
-      : { commitOutcome: 'NOT_COMMITTED', operationIdentity: identity ?? 'op-gated', stagedOutput: null };
+      ? { slotContext: SLOT.slice(), updateForm: 'SUPPORTED', commitOutcome: 'NOT_COMMITTED', operationIdentity: gatedIdentity, stagedOutput: null, reconciliationReference: sha256('gated-ref') }
+      : { commitOutcome: 'NOT_COMMITTED', operationIdentity: gatedIdentity, stagedOutput: null, reconciliationReference: sha256('gated-ref') };
     return this.decide(req, observation);
   }
 
@@ -591,11 +595,12 @@ class Device {
     const welcome = nonzeroBytes(this.rand, 24);
     const req = this.request('CREATE', { peerFramedKeyPackage: nonzeroBytes(this.rand, 16) });
     const next = { epoch: 0, epochKeys: { 0: epochKey(0) }, accepted: [], sent: 0 };
-    const { txnResult, operationIdentity } = await this.mutate('CREATE', req.input, next, welcome, rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('CREATE', req.input, next, welcome, rs, faults);
     return this.decide(req, {
       onboarding: 'SUPPORTED',
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { embeddedTreeWelcome: txnResult.output },
     });
   }
@@ -617,12 +622,13 @@ class Device {
     epochKeys[epoch] = epochKey(epoch);
     const next = { ...cur, epoch, epochKeys };
     const commitBytes = sha256('commit', String(epoch), nonzeroBytes(this.rand, 8));
-    const { txnResult, operationIdentity } = await this.mutate('SELF_UPDATE', {}, next, commitBytes, rs, faults, identity);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('SELF_UPDATE', {}, next, commitBytes, rs, faults, identity);
     return this.decide(req, {
       slotContext: SLOT.slice(),
       updateForm: 'SUPPORTED',
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { protectedCommitBytes: txnResult.output },
     });
   }
@@ -633,10 +639,11 @@ class Device {
     const id = `m-${cur.epoch}-${cur.sent + 1}`;
     const message = sealMessage(cur.epoch, id, text);
     const next = { ...cur, sent: cur.sent + 1 };
-    const { txnResult, operationIdentity } = await this.mutate('PROTECT_APPLICATION', req.input, next, message, rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('PROTECT_APPLICATION', req.input, next, message, rs, faults);
     return this.decide(req, {
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { protectedApplicationBytes: txnResult.output },
     });
   }
@@ -670,11 +677,12 @@ class Device {
       });
     }
     const next = { ...cur, accepted: [...cur.accepted, framed.id] };
-    const { txnResult, operationIdentity } = await this.mutate('OPEN_APPLICATION', req.input, next, utf8(framed.text), rs, faults);
+    const { txnResult, operationIdentity, reconciliationReference } = await this.mutate('OPEN_APPLICATION', req.input, next, utf8(framed.text), rs, faults);
     return this.decide(req, {
       currentEpoch: cur.epoch, framingEpoch: framed.epoch, authentication: 'AUTHENTICATED', replayIdentity: 'UNSEEN',
       commitOutcome: txnResult.commitOutcome,
       operationIdentity,
+      reconciliationReference,
       stagedOutput: txnResult.output === null ? null : { applicationBytes: txnResult.output },
     });
   }
@@ -1137,25 +1145,26 @@ describe('T-COMPOSE I-UPD + I-MSG over the M2 storage stack', () => {
   });
 
   // p06 lesson: an over-bound operationIdentity is refused up front, before any hold or storage write.
-  test('p06 sweep: an over-bound operationIdentity is VALUE_OUT_OF_RANGE before any hold or storage write (OSC-5a23d7268d61c6c1)', async () => {
+  test('p06 sweep: an operationIdentity longer than 43 characters is VALUE_OUT_OF_RANGE before any hold or storage write (OSC-5a23d7268d61c6c1)', async () => {
     let d = await activeDevice();
     d = await d.restart();
-    const max = d.P.adapter.M2_ADAPTER.BOUNDS.MAX_OPERATION_IDENTITY_CHARS;
+    // C-API §5 (C-API-RR): exactly 43 canonical characters; longer is CAPI-E014 at P06.
+    const canonical = Buffer.from(sha256('p06-identity')).toString('base64url');
     const rand = prng(606);
     const before = cloneDisk(d.disk);
     for (let i = 0; i < 24; i += 1) {
       const extra = 1 + Math.floor(rand() * 64);
       for (const rs of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
         // A fault on the first storage call: any write attempt would surface as a crash, not a result.
-        const r = await d.selfUpdate(rs, [{ at: 1, mode: 'BEFORE', remaining: 1 }], SLOT, { operationIdentity: 'i'.repeat(max + extra) });
+        const r = await d.selfUpdate(rs, [{ at: 1, mode: 'BEFORE', remaining: 1 }], SLOT, { operationIdentity: `${canonical}${'A'.repeat(extra)}` });
         expect(code(r.result)).toBe('VALUE_OUT_OF_RANGE');
         expect(r.snapshot).toBeNull();
         expect(d.snapshot().held).toBeNull();
         expect(d.disk).toEqual(before);
       }
     }
-    // The bound itself is admissible and commits.
-    expect(code((await d.selfUpdate('COMMITTED', [], SLOT, { operationIdentity: 'i'.repeat(max) })).result)).toBe('SELF_UPDATED');
+    // The exact canonical identity is admissible and commits.
+    expect(code((await d.selfUpdate('COMMITTED', [], SLOT, { operationIdentity: canonical })).result)).toBe('SELF_UPDATED');
   });
 
   // Seeded property-style sweep over interleavings with interruption and restart.
