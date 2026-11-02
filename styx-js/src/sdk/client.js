@@ -29,7 +29,7 @@ import { bytesToHex, randomBytes } from '../utils.js';
  * ------------------------------------------------------------------------- */
 
 /** The interface version string of C-SDK section 3. */
-export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.3.0-experimental';
+export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.3.1-experimental';
 
 /**
  * A frozen enumeration whose members map to their own names, with prototype
@@ -1133,20 +1133,24 @@ function buildClient(settings) {
 
   /**
    * Record one checked event: schedule its dispatch with `queueMicrotask` to
-   * the registrations present now (after `shutdown()`: to the shutdown
-   * audience) that are still present at dispatch, in registration order.
+   * the currently live ordinary audience, or to the reserved message audience.
+   * Ordinary events skip registrations removed before dispatch; a reserved
+   * message retains its audience through its one in-flight delivery.
    *
    * @param {() => object} makeEvent builds a fresh frozen event per listener
    */
-  function record(makeEvent) {
-    const audience = (shutdownAudience !== null ? shutdownAudience : registrations).slice();
+  function record(makeEvent, reserved = null) {
+    const audience = reserved !== null ? reserved : (shutdownAudience !== null ? shutdownAudience : registrations).slice();
+    let delivered;
+    const completion = new Promise((resolve) => { delivered = resolve; });
     pendingDispatches += 1;
     queueMicrotask(() => {
+      let invoked = 0;
       try {
         for (const registration of audience) {
-          if (!registration.live) continue;
-          // A listener fault changes nothing (C-SDK section 7): a throw, and a
-          // returned thenable that rejects or whose `then` throws.
+          if (reserved === null && !registration.live) continue;
+          invoked += 1;
+          // A throw/rejection still counts as invocation, never as processing.
           const called = crossCall(registration.listener, undefined, [makeEvent()]);
           if (called.settled === 'value' && isTraversable(called.value)) {
             crossBoundaryAsync(called.value, 'then', [undefined, () => undefined]);
@@ -1154,8 +1158,26 @@ function buildClient(settings) {
         }
       } finally {
         pendingDispatches -= 1;
+        delivered(invoked > 0);
       }
     });
+    return completion;
+  }
+
+  // Reserve callbacks before consuming an MLS message key. Unsubscribe stops
+  // later reservations, not this one already in-flight delivery.
+  function reserveMessage() {
+    if (stopping) return null;
+    const audience = registrations.filter((registration) => registration.live);
+    if (audience.length === 0) return null;
+    return (event) => {
+      const accepted = checkEvent(event);
+      if (accepted === null || accepted.kind !== 'MESSAGE_RECEIVED') return false;
+      const payload = new Uint8Array(accepted.payload);
+      return record(() => Object.freeze({
+        kind: 'MESSAGE_RECEIVED', sender: accepted.sender, payload: new Uint8Array(payload),
+      }), audience);
+    };
   }
 
   /** Wait until every dispatch already scheduled has run. */
@@ -1659,6 +1681,7 @@ function buildClient(settings) {
       clock,
       perRelayTimeoutMs: delivery.perRelayTimeoutMs,
       publicKey: key,
+      reserveMessage,
       publishReceipt: publishReceiptSeam(held),
       acceptReceipt,
       onEvent: sink,
@@ -1853,6 +1876,9 @@ function buildClient(settings) {
       if (typeof listener !== 'function') return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
       const registration = { listener, live: true };
       registrations.push(registration);
+      if (!stopping && modules !== null && modules.receipts !== null) {
+        crossBoundary(modules.receipts, 'wake', []);
+      }
       const unsubscribe = () => {
         try {
           if (!registration.live) return undefined;

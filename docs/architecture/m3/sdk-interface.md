@@ -22,17 +22,18 @@ These bounds are part of the interface. No value, state or event defined here cl
 2. **No exactly-once, ordering or cross-restart guarantee.** A message may be received zero, one or more times, and in any order relative to other messages. Nothing persists or resumes across process restarts.
 3. **Relay acceptance is not recipient receipt.** `RELAY_ACCEPTED` and `RELAY_ACCEPTED_AWAITING_RECEIPT` mean only that at least one relay acknowledged the publication. `RECIPIENT_RECEIPT_RECEIVED` means only that a receipt attributed to the recipient identity was received and validated as `C-DLV` specifies. Neither proves that a person read the message.
 4. **Process lifetime only.** Delivery guarantees hold only within one process lifetime. On an explicit, orderly `shutdown()`, every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case.
-5. **No normative wire format.** Any on-wire structure the SDK produces or consumes (message identifier, receipt, acknowledgement, event kind or tag) is SDK-internal, experimental and versioned with `sdkInterfaceVersion`. It is not normative. Using the allowed transport exports with the event formats they already produce selects no new semantic.
+5. **No normative wire format.** Any on-wire structure the SDK produces or consumes (message identifier, receipt, acknowledgement, event kind or tag) is SDK-internal, experimental and versioned with `sdkWireVersion`, independently of `sdkInterfaceVersion`. It is not normative. Using the allowed transport exports with the event formats they already produce selects no new semantic.
 6. **Relay URLs are injected only.** Relay endpoints reach the SDK only through `config.relays`. No module under `styx-js/src/sdk/**` contains a relay URL literal, a relay host name, a default relay list or a fallback relay. Hosts are limited by §4.1 and reach the SDK only through caller configuration.
 
 The SDK makes no confidentiality, integrity, authenticity, identity-hiding, unlinkability, padding, timing or metadata-protection claim of its own. Payload protection is exactly what the injected session port provides, and the SDK does not inspect or attest it. Relays and network observers see public keys, timing, sizes and network metadata.
 
 ## 3. Versioning
 
-- The exact interface version string is `styx-m3-sdk/0.3.0-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
+- The exact interface version string is `styx-m3-sdk/0.3.1-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
+- Independently, `SDK_WIRE_VERSION` is `styx-m3-sdk/0.3.0-experimental`, exported by `wire-version.js` and re-exported by the public module. It alone is written/checked in every `v` tag of kinds 4741, 4742, 4743 and the 4744 Welcome rumor. Kinds 1059 and 13 are unchanged and carry no new `v` tag. This preserves the existing experimental 0.3.0 wire; it is not a protocol interoperability claim.
 - `createStyxClient(config)` requires `config.interfaceVersion` to equal that string exactly (byte-for-byte, case-sensitive). Any other value, including a missing one, returns `E_SDK_UNSUPPORTED_VERSION` and creates no client. There is no negotiation, range, downgrade or fallback.
 - The version is experimental. It carries no stability, compatibility or deprecation promise to third parties before a later owner act. Any change to an entry point, field, code, state, event kind, port method, bound inherited from §2 or allowed import requires a new hash-ratified version of this document with a new version string.
-- SDK-internal on-wire structures carry or are keyed by this version string as `C-DLV` specifies; an inbound delivery structure from any other version is not interpreted: it emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and nothing else. Invitation candidates on their independent subscriptions are instead ignored without an event (§4.2).
+- SDK-internal on-wire structures carry or are keyed by `SDK_WIRE_VERSION`, not `SDK_INTERFACE_VERSION`, as `C-DLV` specifies; an inbound delivery structure from any other wire version is not interpreted: it emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and nothing else. Invitation candidates on their independent subscriptions are instead ignored without an event (§4.2).
 
 ## 4. Entry points
 
@@ -41,6 +42,7 @@ The single public module is `styx-js/src/sdk/index.js` (card `I-SDK`). It export
 | Export | Kind | Purpose |
 | --- | --- | --- |
 | `SDK_INTERFACE_VERSION` | frozen string constant | §3. |
+| `SDK_WIRE_VERSION` | frozen string constant | Independent experimental wire tag value (§3). |
 | `SdkResultCode` | frozen object, code → code | The closed set of §5. |
 | `DeliveryState` | frozen object, state → state | The closed set of §6. |
 | `RelayOutcome` | frozen object, outcome → outcome | The closed set of §6.3. |
@@ -83,7 +85,7 @@ Every method below is asynchronous and **always resolves** to a result envelope 
 | `send({ recipient, payload })` | `RUNNING` | `{ deliveryId, state: 'QUEUED' }` | Validates, seals `payload` through the session port, stores one outbound item through the storage port, and schedules delivery. Returns before any network attempt completes. |
 | `getDelivery({ deliveryId })` | `RUNNING`, `STOPPED` | a delivery snapshot (§6.2) | Read-only. Unknown id returns `E_SDK_UNKNOWN_DELIVERY`. |
 | `cancel({ deliveryId })` | `RUNNING` | `{ deliveryId, state: 'CANCELLED' }` | Moves a non-terminal item to `CANCELLED` and stops further attempts. A publication already handed to a relay is not recalled. A terminal item returns `E_SDK_DELIVERY_TERMINAL` and is unchanged. |
-| `onEvent(listener)` | any | `{ unsubscribe }` | Registers a function listener for §7 events. Like every method here, `onEvent` resolves to a result envelope; on success its `value` is a frozen object with exactly one property, `unsubscribe`, a function that takes no argument, is synchronous and idempotent, returns `undefined` and never throws. Calling it removes the listener; it is the only synchronous function the SDK hands back. |
+| `onEvent(listener)` | any | `{ unsubscribe }` | Registers a function listener for §7 events. Like every method here, `onEvent` resolves to a result envelope; on success its `value` is a frozen object with exactly one property, `unsubscribe`, a function that takes no argument, is synchronous and idempotent, returns `undefined` and never throws. Calling it removes the listener for future reservations; an already-reserved in-flight message retains its audience under §7. It is the only synchronous function the SDK hands back. |
 | `shutdown()` | `CREATED`, `RUNNING` | `{ clientState: 'STOPPED', lost }` | Orderly stop, unconditional once called in an allowed state: stops scheduling, moves every non-terminal item to `LOST_ON_SHUTDOWN` and emits its event to the listeners registered before the call, delivering those events before it removes the listeners, closes subscriptions and relay connections, and clears every timer. `lost` is the number of items so reported. After it resolves, the client is `STOPPED`, and the SDK has called `clearTimer` for every timer handle it holds, closed every subscription and relay connection it opened, removed every listener registered before the call, and released its ports, transports and timers; it keeps an immutable terminal snapshot of each of its items so that `getDelivery` in `STOPPED` returns the item's final state (for example `LOST_ON_SHUTDOWN`); it makes no claim about an injected clock that ignores `clearTimer`. A storage port failure, a listener fault or an internal fault during shutdown never prevents these effects: lost reporting uses the SDK's own in-memory view of its items, and the method still resolves success. This is a departure from the no-change-on-failure rule, listed in §5.2. A second call returns `E_SDK_CLIENT_STOPPED`. |
 
 | `publishKeyPackage()` | `RUNNING` | `{ keyPackageEventId, acceptedRelays }` | Create and sign a kind-4743 KeyPackage, publish on an independent relay set and remember its id for this client's lifetime. |
@@ -223,7 +225,9 @@ A snapshot contains no payload, ciphertext, secret key material or relay URL; th
 Rules:
 
 - Listeners are called asynchronously, after the state change they report is recorded, in registration order. An exception thrown or a promise rejected by a listener is caught and ignored; it never changes delivery, state or other listeners.
-- `DELIVERY_STATE_CHANGED` is emitted once per transition, and the terminal transition of an item is emitted exactly once while the client lives. Events are not replayed to listeners registered later.
+- `DELIVERY_STATE_CHANGED` is emitted once per transition, and the terminal transition of an item is emitted exactly once while the client lives. Already emitted events are not replayed to later listeners.
+- For `MESSAGE_RECEIVED`, before starting `session.open` the SDK reserves the currently live `onEvent` registrations. With none, the validated event waits as ciphertext under C-DLV's shared 1 024-entry volatile bound; no open, processed-id insertion or receipt occurs. A newly registered listener wakes this queue. All callbacks qualify, including callbacks ignoring that event kind. Admitted messages are opened in local arrival order; no sender/global ordering claim follows.
+- Unsubscribing the last listener pauses future opens. A callback reserved for an already-started open remains eligible for that one delivery after unsubscribe or the start of shutdown; no later registration receives that message. Each reserved callback receives its own payload copy asynchronously in registration order. Its invocation, including a throw/rejected promise, authorizes a requested receipt; callback completion/processing/reading is not awaited or attested. Shutdown starts no new open, drops unopened ciphertext, and settles that already-reserved delivery within the existing host-time bounds before disposal. No replay or recovery survives restart.
 - `MESSAGE_RECEIVED` carries no relay URL, transport identifier, timing or raw transport event. It may be emitted more than once for the same message (§2 bound 2 and §4.3).
 
 ## 8. Injected ports
@@ -344,13 +348,23 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
 {
   "schema": "styx-m3-sdk-interface/v1",
   "closed": true,
-  "sdkInterfaceVersion": "styx-m3-sdk/0.3.0-experimental",
+  "sdkInterfaceVersion": "styx-m3-sdk/0.3.1-experimental",
+  "sdkWireVersion": "styx-m3-sdk/0.3.0-experimental",
+  "messageAdmission": {
+    "requiresListenerBeforeOpen": true,
+    "waiting": "bounded volatile ciphertext only",
+    "wake": "onEvent registration",
+    "lastUnsubscribe": "pause future opens; reserved in-flight delivery stays eligible",
+    "receiptAfter": "actual invocation, not callback completion",
+    "shutdown": "drop unopened ciphertext; settle reserved in-flight delivery under existing bounds"
+  },
   "stability": "experimental-no-stability-promise",
   "publicModule": "styx-js/src/sdk/index.js",
   "implementationModule": "styx-js/src/sdk/client.js",
   "packageJsonChanged": false,
   "exports": [
     "SDK_INTERFACE_VERSION",
+    "SDK_WIRE_VERSION",
     "SdkResultCode",
     "DeliveryState",
     "RelayOutcome",

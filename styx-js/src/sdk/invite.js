@@ -5,7 +5,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import { schnorr } from '@noble/curves/secp256k1';
 import { bytesToHex, hexToBytes, utf8Encode, bytesToBase64, base64ToBytes, randomBytes } from '../utils.js';
 
-const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+import { SDK_WIRE_VERSION as VERSION } from './wire-version.js';
 const HEX = /^[0-9a-f]{64}$/;
 const SIGNATURE = /^[0-9a-f]{128}$/;
 const EVENT_KEYS = ['id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig'];

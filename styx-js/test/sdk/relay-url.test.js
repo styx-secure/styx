@@ -72,7 +72,7 @@ describe('M3-PUBLIC-RELAYS exact configuration', () => {
     expect(code(config({ publicRelayHosts: [host], relays: [value] }))).toBe('E_SDK_INVALID_CONFIG');
   });
   test('old version is unsupported before malformed fields', () => {
-    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.3.0-experimental');
+    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.3.1-experimental');
     expect(code(config({ interfaceVersion: 'styx-m3-sdk/0.1.0-experimental', publicRelayHosts: [] })))
       .toBe('E_SDK_UNSUPPORTED_VERSION');
   });

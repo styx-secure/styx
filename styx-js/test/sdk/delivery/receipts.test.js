@@ -18,7 +18,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import { bytesToBase64, bytesToHex, hexToBytes, utf8Encode } from '../../../src/utils.js';
 import { createReceipts } from '../../../src/sdk/delivery/receipts.js';
 
-const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+import { SDK_WIRE_VERSION as VERSION } from '../../../src/sdk/wire-version.js';
 const FRAME_N = 'a'.repeat(32);
 const FRAME_N_2 = 'b'.repeat(32);
 const OWN_CLOCK_MS = 12000;
@@ -172,7 +172,7 @@ describe('module surface', () => {
   test('the returned object is frozen and carries exactly ingest and shutdown', () => {
     const { module } = makeHarness();
     expect(Object.isFrozen(module)).toBe(true);
-    expect(Object.keys(module).sort()).toEqual(['drained', 'ingest', 'settled', 'shutdown']);
+    expect(Object.keys(module).sort()).toEqual(['drained', 'ingest', 'settled', 'shutdown', 'wake']);
     expect(typeof module.ingest).toBe('function');
     expect(typeof module.shutdown).toBe('function');
   });
@@ -2514,7 +2514,7 @@ describe('owed set and drained companion', () => {
 });
 
 describe('seam S1 -- the publicKey option', () => {
-  const MODULE_MEMBERS = ['drained', 'ingest', 'settled', 'shutdown'];
+  const MODULE_MEMBERS = ['drained', 'ingest', 'settled', 'shutdown', 'wake'];
 
   test('the inbound processor carries exactly ingest, shutdown and settled', () => {
     const { module } = makeHarness();

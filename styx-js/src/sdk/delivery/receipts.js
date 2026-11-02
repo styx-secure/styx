@@ -58,7 +58,7 @@ const EVENT_KIND_MESSAGE = 4741;
 const EVENT_KIND_RECEIPT = 4742;
 
 /** C-DLV section 6.1/6.2/6.3: the interface version string of the `v` tag. */
-const INTERFACE_VERSION = 'styx-m3-sdk/0.3.0-experimental';
+import { SDK_WIRE_VERSION as INTERFACE_VERSION } from '../wire-version.js';
 
 /** C-DLV section 6.1: the seven keys of every SDK-internal event, in no order. */
 const EVENT_KEYS = Object.freeze(['id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig']);
@@ -453,6 +453,7 @@ export function createReceipts(options) {
       publishReceipt: source.publishReceipt,
       acceptReceipt: source.acceptReceipt,
       onEvent: source.onEvent,
+      reserveMessage: source.reserveMessage,
       publicKey: source.publicKey,
       // S1: the option is present when the property exists, own or inherited,
       // whatever its value, `undefined` included.
@@ -476,13 +477,30 @@ export function createReceipts(options) {
   })();
 
   const queue = [];
+  // Validated messages waiting for an audience; never plaintext or seen ids.
+  const waiting = [];
+  const waitingIds = new Set();
+  let activeMessage = false;
+  const reservedDelivery = read !== null && typeof read.reserveMessage === 'function';
+  function reserve() {
+    try {
+      if (reservedDelivery) {
+        const delivery = read.reserveMessage();
+        return typeof delivery === 'function' ? delivery : null;
+      }
+      if (read !== null && typeof read.onEvent === 'function') {
+        return (event) => { emit(event); return true; };
+      }
+    } catch { /* A faulty readiness seam cannot authorize an open. */ }
+    return null;
+  }
   const windowIds = new Set();
   const windowOrder = [];
   let processing = false;
+  let validating = false;
   let stopped = false;
-  // Pending receipt jobs are registered before MESSAGE_RECEIVED reaches the
-  // client sink. shutdown() fixes this set synchronously, including a stop
-  // called by that message's listener. Only identity.sign may start afterwards.
+  // A receipt is owed after actual listener invocation. shutdown() also
+  // tracks the one reserved open/delivery that may create its job later.
   const owed = new Set();
   let drainExpired = false;
   let drainTimer = null;
@@ -491,7 +509,7 @@ export function createReceipts(options) {
 
   function finishReceipt(job) {
     owed.delete(job);
-    if (stopped && owed.size === 0 && drainResolve !== null) {
+    if (stopped && !activeMessage && owed.size === 0 && drainResolve !== null) {
       if (drainTimer !== null) clearTimeout(drainTimer);
       drainTimer = null;
       drainResolve();
@@ -909,65 +927,58 @@ export function createReceipts(options) {
    * @param {object} event the validated kind-4741 event
    * @returns {Promise<string|null>} the message's sender, or null
    */
-  async function openMessage(event) {
+  async function openMessage(event, deliver) {
     const ciphertext = decodeContent(event.content);
     if (ciphertext === null) {
       discard(DISCARD_INVALID);
       return null;
     }
-    /* C-DLV section 4.6 step (1): no port call starts after the stop. */
     if (stopped) return null;
+    // Read receipt metadata before open: shutdown may begin while it awaits.
+    const receiptReading = reservedDelivery && event.tags.length === 4 && publicKey !== null
+      ? callSyncPort(read === null ? null : read.clock, 'now') : null;
+    if (stopped) return null;
+    // Admission/drops do not poison the processed-id window.
+    remember(event.id);
     const opened = await trackedCall(read === null ? null : read.session, 'open',
       [{ sender: event.pubkey, ciphertext }]);
-    /* ... and no event follows it either. */
-    if (stopped) return null;
+    if (stopped && (!reservedDelivery || drainExpired)) return null;
     if (!opened.ok) {
-      discard(DISCARD_SESSION_FAILED);
+      if (!stopped) discard(DISCARD_SESSION_FAILED);
       return null;
     }
-    /* C-DLV section 4.5, as C-DLV section 7.2's "(subject to section 4.5)"
-     * requires: the unknown-value rule runs first and takes precedence over
-     * every other code this module could fix for the same frame. */
-    if (closedSlotViolation(opened.value) !== null) {
-      /* C-DLV section 4.6 step (1): the read above is untrusted, so the stop
-       * is re-checked before the event of this structure is emitted. */
-      if (stopped) return null;
-      discard(DISCARD_UNKNOWN_CODE);
+    const openViolation = closedSlotViolation(opened.value);
+    if (stopped && !reservedDelivery) return null;
+    if (openViolation !== null) {
+      if (!stopped) discard(DISCARD_UNKNOWN_CODE);
       return null;
     }
-    /* C-SDK section 8: the exact success shape is the single key `plaintext`. */
     let owned;
     try {
       owned = isPlainObject(opened.value) ? Object.keys(opened.value) : null;
-    } catch {
-      owned = null;
-    }
+    } catch { owned = null; }
     if (owned === null || owned.length !== 1) {
-      if (stopped) return null;
-      discard(DISCARD_SESSION_FAILED);
+      if (!stopped) discard(DISCARD_SESSION_FAILED);
       return null;
     }
     const plaintext = readField(opened.value, 'plaintext');
-    /* C-SDK section 8 gives `open` a `Uint8Array` and no non-empty rule
-     * of the kind it gives `seal`, so the empty one is a success. */
     if (!plaintext.ok || !(plaintext.value instanceof Uint8Array)) {
-      discard(DISCARD_SESSION_FAILED);
+      if (!stopped) discard(DISCARD_SESSION_FAILED);
       return null;
     }
-    /* C-DLV section 4.6 step (1): no event begins after the stop. */
-    if (stopped) return null;
-    // Prepare the clock-dependent structure before recording the message:
-    // its listener may stop the client, after which no clock call may start.
+    if (stopped && (!reservedDelivery || drainExpired)) return null;
     const job = event.tags.length === 4 && publicKey !== null
-      ? { reading: callSyncPort(read === null ? null : read.clock, 'now'), message: { sender: event.pubkey, eventId: event.id } }
-      : null;
-    if (stopped) return null;
-    if (job !== null) owed.add(job);
-    emit({
+      ? { reading: reservedDelivery ? receiptReading : callSyncPort(read === null ? null : read.clock, 'now'),
+        message: { sender: event.pubkey, eventId: event.id } } : null;
+    if (stopped && !reservedDelivery) return null;
+    // Invocation is reported by the SDK's reserved dispatch, never by enqueue.
+    const delivered = await callPort({ deliver }, 'deliver', [Object.freeze({
       kind: EVENT_KIND_MESSAGE_RECEIVED,
       sender: event.pubkey,
       payload: new Uint8Array(plaintext.value),
-    });
+    })], portCallTimeoutMs, () => drainExpired);
+    if (!delivered.ok || delivered.value !== true || drainExpired) return null;
+    if (job !== null) owed.add(job);
     return job;
   }
 
@@ -1090,6 +1101,7 @@ export function createReceipts(options) {
     }
 
     const validated = await validateEvent(event);
+    validating = false;
     /* C-DLV section 4.6 step (1): a stop that landed while `validateEvent`
      * awaited the identity-key reading ends this frame here. */
     if (stopped) return;
@@ -1100,20 +1112,25 @@ export function createReceipts(options) {
       discard(validated.unknown === true ? DISCARD_UNKNOWN_CODE : DISCARD_INVALID);
       return;
     }
-    /* C-DLV section 8: the duplicate check runs after the checks of 7.1, and
-     * an id enters the window when its event passed them, before the session
-     * port call. */
     if (isDuplicate(validated.event.id)) return;
-    remember(validated.event.id);
-
     if (validated.kind === EVENT_KIND_RECEIPT) {
+      remember(validated.event.id);
       await acknowledge(validated.event);
       return;
     }
+    if (waitingIds.has(validated.event.id)) return;
+    validating = false;
+    waiting.push(validated.event);
+    waitingIds.add(validated.event.id);
+  }
 
-    const job = await openMessage(validated.event);
-    if (job === null) return;
+  async function deliverMessage(event, deliver) {
+    const end = begin();
+    activeMessage = true;
+    let job = null;
     try {
+      job = await openMessage(event, deliver);
+      if (job === null) return;
       const built = await signReceipt(job);
       if (drainExpired || !owed.has(job)) return;
       if (built.unknown === true) {
@@ -1122,7 +1139,9 @@ export function createReceipts(options) {
       }
       if (built.ok === true) publishReceipt(built.receipt);
     } finally {
+      activeMessage = false;
       finishReceipt(job);
+      end();
     }
   }
 
@@ -1133,12 +1152,24 @@ export function createReceipts(options) {
     if (processing) return;
     processing = true;
     try {
-      while (queue.length > 0 && !stopped) {
+      while (!stopped) {
+        const deliver = waiting.length > 0 ? reserve() : null;
+        if (stopped) break;
+        if (deliver !== null) {
+          const event = waiting.shift();
+          waitingIds.delete(event.id);
+          try { await deliverMessage(event, deliver); } catch { /* Isolate faults. */ }
+          continue;
+        }
+        if (queue.length === 0) break;
         const frame = queue.shift();
+        validating = true;
         try {
           await processFrame(frame);
         } catch {
-          // A fault of one frame never stalls the queue (C-DLV section 7.1).
+          // Validation and receipts proceed while messages await a listener.
+        } finally {
+          validating = false;
         }
       }
     } finally {
@@ -1178,7 +1209,7 @@ export function createReceipts(options) {
     if (bar !== FRAME_KIND_EVENT) {
       return success({ queued: false });
     }
-    if (queue.length >= INBOUND_PENDING_BOUND) return success({ queued: false });
+    if (queue.length + waiting.length + Number(validating) >= INBOUND_PENDING_BOUND) return success({ queued: false });
     queue.push(frame);
     /* The drain is asynchronous, so `ingest` stays synchronous and the queue
      * keeps the arrival order (C-DLV section 7.1). */
@@ -1197,7 +1228,7 @@ export function createReceipts(options) {
     if (stopped) return failure(CODE_CLIENT_STOPPED);
     stopped = true;
     drainPromise = new Promise((resolve) => { drainResolve = resolve; });
-    if (owed.size === 0) {
+    if (owed.size === 0 && !activeMessage) {
       drainResolve();
     } else {
       drainTimer = setTimeout(() => {
@@ -1207,8 +1238,10 @@ export function createReceipts(options) {
         drainResolve();
       }, portCallTimeoutMs);
     }
-    const dropped = queue.length;
+    const dropped = queue.length + waiting.length;
     queue.length = 0;
+    waiting.length = 0;
+    waitingIds.clear();
     return success({ dropped });
   }
 
@@ -1232,7 +1265,11 @@ export function createReceipts(options) {
     return drainPromise === null ? Promise.resolve() : drainPromise;
   }
 
-  return Object.freeze({ ingest, shutdown, settled, drained });
+  function wake() {
+    if (!stopped) Promise.resolve().then(drain);
+  }
+
+  return Object.freeze({ ingest, shutdown, settled, drained, wake });
 }
 
 /**
