@@ -106,7 +106,10 @@ export class MlsSession {
    * Process an incoming MLS application message and return its plaintext.
    * Any other MLS message (a proposal, a commit, or a message that is not a
    * PrivateMessage) throws before the engine sees it, leaving the group state —
-   * membership and epoch — unchanged.
+   * membership and epoch — unchanged. An application message that yields no
+   * plaintext (our own message echoed back, which OpenMLS reports as
+   * OwnPrivateMessage, or an empty payload no Styx flow sends) also throws: it is
+   * not a message from the peer.
    * @param {Uint8Array} wireBytes
    * @returns {{ kind: 'application', plaintext: Uint8Array }}
    */
@@ -116,6 +119,9 @@ export class MlsSession {
       throw new Error('MlsSession.decrypt: not an MLS application message; rejected without applying it');
     }
     const plaintext = this._group.process_message(this._engine.provider, wireBytes);
+    if (!plaintext || plaintext.length === 0) {
+      throw new Error('MlsSession.decrypt: no application plaintext from the peer');
+    }
     return { kind: 'application', plaintext };
   }
 
