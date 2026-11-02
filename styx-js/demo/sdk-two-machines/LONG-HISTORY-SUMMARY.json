@@ -1,0 +1,4151 @@
+{
+  "burstDiagnostic": [
+    {
+      "name": "n2000-r3-all-oldest",
+      "n": 2000,
+      "relays": 3,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 50.469950999999995,
+        "startResolvedMs": 12054.443322,
+        "key": "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r3-all-oldest",
+        "ms": 22081.908285999998,
+        "cpu": {
+          "user": 3647079,
+          "system": 35583
+        },
+        "wireFrames": 6004,
+        "sessionFailures": 1024
+      },
+      "newId": "8b31860eb3b925615c43f8dbdf81c02091d87e307b8fcca17f9586dd6fb47efe",
+      "frames": 6006,
+      "validated": 3075,
+      "droppedFrames": 2931,
+      "droppedHistorical": 2928,
+      "droppedNew": 3,
+      "sessionFailures": 1024,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 65.34106399999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 66.231807
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 66.58157600000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22059.667809
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22059.905682
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22060.031408
+        }
+      ],
+      "cpu": {
+        "user": 3655218,
+        "system": 36589
+      },
+      "elapsedMs": 24564.608157
+    },
+    {
+      "name": "n2000-r1-all-oldest",
+      "n": 2000,
+      "relays": 1,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 49.91663799999999,
+        "startResolvedMs": 12071.679713,
+        "key": "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r1-all-oldest",
+        "ms": 22090.488273,
+        "cpu": {
+          "user": 1367930,
+          "system": 21371
+        },
+        "wireFrames": 2002,
+        "sessionFailures": 1024
+      },
+      "newId": "69f8b555259350348f36b0626022c385e1803d7cc434f4e236aeaf6e280d4b5a",
+      "frames": 2002,
+      "validated": 1025,
+      "droppedFrames": 977,
+      "droppedHistorical": 976,
+      "droppedNew": 1,
+      "sessionFailures": 1024,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 61.52491099999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22075.188611999998
+        }
+      ],
+      "cpu": {
+        "user": 1373872,
+        "system": 21371
+      },
+      "elapsedMs": 24581.78002
+    },
+    {
+      "name": "n2000-r1-all-newest",
+      "n": 2000,
+      "relays": 1,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 50.992914,
+        "startResolvedMs": 12072.790888,
+        "key": "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r1-all-newest",
+        "ms": 174.870241,
+        "cpu": {
+          "user": 174781,
+          "system": 20917
+        },
+        "wireFrames": 2001,
+        "sessionFailures": 0
+      },
+      "newId": "f35f4b64ddc31778fd6b385b4dbef09e3c10d88d0fcad5e705c274495b40b6df",
+      "frames": 2002,
+      "validated": 1025,
+      "droppedFrames": 977,
+      "droppedHistorical": 977,
+      "droppedNew": 0,
+      "sessionFailures": 1023,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 68.325952
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22076.640248
+        }
+      ],
+      "cpu": {
+        "user": 1399462,
+        "system": 31137
+      },
+      "elapsedMs": 24588.180333
+    },
+    {
+      "name": "n2000-r3-all-newest",
+      "n": 2000,
+      "relays": 3,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 51.37857299999999,
+        "startResolvedMs": 12071.221755999999,
+        "key": "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r3-all-newest",
+        "ms": 172.943551,
+        "cpu": {
+          "user": 194676,
+          "system": 18107
+        },
+        "wireFrames": 2001,
+        "sessionFailures": 0
+      },
+      "newId": "ea2e35b4297b3f41618e99941ee0a4c870f3876aa7ec0596be99e78229ee00c1",
+      "frames": 6006,
+      "validated": 3075,
+      "droppedFrames": 2931,
+      "droppedHistorical": 2931,
+      "droppedNew": 0,
+      "sessionFailures": 1023,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 73.858842
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 74.717776
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ]
+          },
+          "ms": 74.95953899999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22075.550731
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22075.753945
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f4178c5a22ce7683c21deba05e1be98bd5578407c3ecfa210fc0d78998c23be4"
+            ],
+            "since": 1793611027
+          },
+          "ms": 22075.835622
+        }
+      ],
+      "cpu": {
+        "user": 3586076,
+        "system": 45695
+      },
+      "elapsedMs": 24577.822100999998
+    }
+  ],
+  "burstGuard": {
+    "exit": 0,
+    "violation": null,
+    "minimumAvailable": 86794166272,
+    "servicesBefore": "Id=llama-swap.service\nActiveState=active\nMainPID=7744\n\nId=ds4-glm-full.service\nActiveState=inactive\nMainPID=0\n\nId=ComfyUI.service\nActiveState=inactive\nMainPID=0\n",
+    "servicesAfter": "Id=llama-swap.service\nActiveState=active\nMainPID=7744\n\nId=ds4-glm-full.service\nActiveState=inactive\nMainPID=0\n\nId=ComfyUI.service\nActiveState=inactive\nMainPID=0\n",
+    "servicesUnchanged": true
+  },
+  "burstCleanup": {
+    "stateRemoved": true,
+    "childrenRemaining": 0
+  },
+  "machine": {
+    "host": "AI395",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.43",
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "logicalCpus": 32,
+    "loadAverage": [
+      1.3154296875,
+      1.78271484375,
+      1.478515625
+    ],
+    "node": "v24.18.0",
+    "concurrentCases": 4,
+    "nice": 19,
+    "ionice": "idle"
+  },
+  "integrity": {
+    "checked": 80,
+    "mismatches": []
+  },
+  "verified": true,
+  "mainCases": 40,
+  "controlCases": 1,
+  "lateCases": 2,
+  "results": [
+    {
+      "name": "n100-r1-all-oldest",
+      "n": 100,
+      "relays": 1,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 47.186761,
+        "startResolvedMs": 12051.781162,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r1-all-oldest",
+        "ms": 253.602084,
+        "cpu": {
+          "user": 313475,
+          "system": 9322
+        },
+        "wireFrames": 101,
+        "sessionFailures": 100
+      },
+      "newId": "a66258836bb5c3e3bd88236311a4affaf5b40310fc02f198372c97c8c23a2355",
+      "frames": 102,
+      "validated": 102,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 60.199822000000005
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610495
+          },
+          "ms": 22056.060291
+        }
+      ],
+      "cpu": {
+        "user": 329384,
+        "system": 10532
+      },
+      "elapsedMs": 24569.525758000003
+    },
+    {
+      "name": "n100-r1-cap500-oldest",
+      "n": 100,
+      "relays": 1,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 52.974623,
+        "startResolvedMs": 12061.103735,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r1-cap500-oldest",
+        "ms": 250.12629099999998,
+        "cpu": {
+          "user": 307105,
+          "system": 11643
+        },
+        "wireFrames": 101,
+        "sessionFailures": 100
+      },
+      "newId": "82018d02cdcaa9cfb49b1bf1281cd3cd04c6fbaca1ff157ef551c943b8676590",
+      "frames": 102,
+      "validated": 102,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 64.84322900000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610495
+          },
+          "ms": 22066.570558
+        }
+      ],
+      "cpu": {
+        "user": 321999,
+        "system": 11726
+      },
+      "elapsedMs": 24564.949209
+    },
+    {
+      "name": "n100-r1-all-newest",
+      "n": 100,
+      "relays": 1,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.628687000000006,
+        "startResolvedMs": 12070.7422,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r1-all-newest",
+        "ms": 81.69444200000001,
+        "cpu": {
+          "user": 101406,
+          "system": 9737
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "a03a94f21298416cb17c9d427aac819bc42b84dde9169f844b513227e67775b1",
+      "frames": 102,
+      "validated": 102,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 61.553281000000005
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610495
+          },
+          "ms": 22075.409668
+        }
+      ],
+      "cpu": {
+        "user": 313711,
+        "system": 15166
+      },
+      "elapsedMs": 24573.239975
+    },
+    {
+      "name": "n100-r1-cap500-newest",
+      "n": 100,
+      "relays": 1,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 52.192588,
+        "startResolvedMs": 12074.355779,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r1-cap500-newest",
+        "ms": 83.37349099999999,
+        "cpu": {
+          "user": 98398,
+          "system": 10371
+        },
+        "wireFrames": 37,
+        "sessionFailures": 0
+      },
+      "newId": "fb4a08c01a6e564dad0752a47e730bf996a3f28276235598d54b6936fa302bca",
+      "frames": 102,
+      "validated": 102,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 66.166769
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610495
+          },
+          "ms": 22079.163962
+        }
+      ],
+      "cpu": {
+        "user": 304946,
+        "system": 12164
+      },
+      "elapsedMs": 24582.596787
+    },
+    {
+      "name": "n100-r3-all-oldest",
+      "n": 100,
+      "relays": 3,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 55.74987899999999,
+        "startResolvedMs": 12070.34739,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r3-all-oldest",
+        "ms": 266.578076,
+        "cpu": {
+          "user": 318778,
+          "system": 10522
+        },
+        "wireFrames": 101,
+        "sessionFailures": 100
+      },
+      "newId": "3f2c5e239cacb7333d8e6f824bee795e3a1380deedfe42d5a90ed3d21c9620a5",
+      "frames": 306,
+      "validated": 306,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.54261600000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.58584400000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.91250399999998
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22075.172915
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22075.444496
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22075.518814
+        }
+      ],
+      "cpu": {
+        "user": 584184,
+        "system": 15667
+      },
+      "elapsedMs": 24582.443121999997
+    },
+    {
+      "name": "n100-r3-all-newest",
+      "n": 100,
+      "relays": 3,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 55.07987899999999,
+        "startResolvedMs": 12076.903869,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r3-all-newest",
+        "ms": 98.828186,
+        "cpu": {
+          "user": 119268,
+          "system": 5708
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "9d572271b51dece905399822ebddb0a030a235e177c7884cbc1549b759849f96",
+      "frames": 306,
+      "validated": 306,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 70.441098
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 71.33667999999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 71.60738199999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22081.581918
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22081.85232
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22081.929947
+        }
+      ],
+      "cpu": {
+        "user": 563026,
+        "system": 10653
+      },
+      "elapsedMs": 24579.59155
+    },
+    {
+      "name": "n100-r3-cap500-oldest",
+      "n": 100,
+      "relays": 3,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 55.22687400000001,
+        "startResolvedMs": 12063.897518000002,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r3-cap500-oldest",
+        "ms": 259.18973300000005,
+        "cpu": {
+          "user": 296547,
+          "system": 9940
+        },
+        "wireFrames": 101,
+        "sessionFailures": 100
+      },
+      "newId": "41cfec1a2a35dcab03112881871ca170ffbe4877406b0d0725fe06c02cf7ca5a",
+      "frames": 306,
+      "validated": 306,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.87136500000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.94870200000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 70.29203200000002
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22068.832089
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22069.082611
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22069.156859000002
+        }
+      ],
+      "cpu": {
+        "user": 540528,
+        "system": 13155
+      },
+      "elapsedMs": 24575.125696
+    },
+    {
+      "name": "n100-r3-cap500-newest",
+      "n": 100,
+      "relays": 3,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 52.61527400000001,
+        "startResolvedMs": 12074.421483999999,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n100-r3-cap500-newest",
+        "ms": 107.592626,
+        "cpu": {
+          "user": 114949,
+          "system": 6153
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "3b53844a267a14e73a37937ed34f4f3d4e10f6b091cec57eee16b2931ff6883b",
+      "frames": 306,
+      "validated": 306,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 100,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 67.643903
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.634232
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.989622
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22080.106433
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22080.432523
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610532
+          },
+          "ms": 22080.555979
+        }
+      ],
+      "cpu": {
+        "user": 534614,
+        "system": 11458
+      },
+      "elapsedMs": 24585.567535000002
+    },
+    {
+      "name": "n500-r1-cap500-newest",
+      "n": 500,
+      "relays": 1,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 53.393221,
+        "startResolvedMs": 12057.215845,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r1-cap500-newest",
+        "ms": 91.156031,
+        "cpu": {
+          "user": 112828,
+          "system": 6049
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "662cf28e569fc8cf29701543d89e66e2c8c8d6a04af7fe1cf0677db2a2a5da1a",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 70.40077799999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610569
+          },
+          "ms": 22059.402805
+        }
+      ],
+      "cpu": {
+        "user": 805324,
+        "system": 17821
+      },
+      "elapsedMs": 24563.112630000003
+    },
+    {
+      "name": "n500-r1-all-oldest",
+      "n": 500,
+      "relays": 1,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 51.665713999999994,
+        "startResolvedMs": 12059.639861000001,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r1-all-oldest",
+        "ms": 705.631467,
+        "cpu": {
+          "user": 808652,
+          "system": 11722
+        },
+        "wireFrames": 501,
+        "sessionFailures": 500
+      },
+      "newId": "dfd8028ce8dc7b24937bed12cae57b3eb4d74417dfa1afb1b32c41defc7ccda1",
+      "frames": 502,
+      "validated": 502,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 66.16113899999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610569
+          },
+          "ms": 22065.711091999998
+        }
+      ],
+      "cpu": {
+        "user": 823193,
+        "system": 12769
+      },
+      "elapsedMs": 24566.576224
+    },
+    {
+      "name": "n500-r1-cap500-oldest",
+      "n": 500,
+      "relays": 1,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 51.307475000000004,
+        "startResolvedMs": 12072.955382,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r1-cap500-oldest",
+        "ms": 22093.791709999998,
+        "cpu": {
+          "user": 832446,
+          "system": 14133
+        },
+        "wireFrames": 501,
+        "sessionFailures": 500
+      },
+      "newId": "4fd08faa0c89dddc7c005d0c52253b38012b29fc396382a5eeb70cb7e968d07a",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 65.16829999999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610569
+          },
+          "ms": 22078.709033
+        }
+      ],
+      "cpu": {
+        "user": 836091,
+        "system": 15152
+      },
+      "elapsedMs": 24574.740044
+    },
+    {
+      "name": "n500-r1-all-newest",
+      "n": 500,
+      "relays": 1,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 49.953886000000004,
+        "startResolvedMs": 12072.807947,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r1-all-newest",
+        "ms": 84.69724,
+        "cpu": {
+          "user": 94649,
+          "system": 10986
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "f570b35b8c44d3dda4e5c82d25c521a52a1d6bd22d800db3ce48d7afdf7ccaf8",
+      "frames": 502,
+      "validated": 502,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.766093000000005
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610569
+          },
+          "ms": 22077.653945
+        }
+      ],
+      "cpu": {
+        "user": 792634,
+        "system": 17073
+      },
+      "elapsedMs": 24577.883826999998
+    },
+    {
+      "name": "n500-r3-all-oldest",
+      "n": 500,
+      "relays": 3,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 40.551215000000006,
+        "startResolvedMs": 12052.496671,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r3-all-oldest",
+        "ms": 1062.0502150000002,
+        "cpu": {
+          "user": 1154012,
+          "system": 12931
+        },
+        "wireFrames": 863,
+        "sessionFailures": 500
+      },
+      "newId": "e46d800ccf3ab96265142a29de1ad3dcc12690a3dea2517ddcd11eceea4b440c",
+      "frames": 1506,
+      "validated": 1506,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 52.12207
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 52.76958
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 53.000212999999995
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22057.155037
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22057.436448999997
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22057.585133999997
+        }
+      ],
+      "cpu": {
+        "user": 1885239,
+        "system": 24830
+      },
+      "elapsedMs": 24566.613146
+    },
+    {
+      "name": "n500-r3-cap500-newest",
+      "n": 500,
+      "relays": 3,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 36.161039,
+        "startResolvedMs": 12046.505153999999,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r3-cap500-newest",
+        "ms": 75.5559,
+        "cpu": {
+          "user": 80357,
+          "system": 7372
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "861df592583289973c0e597705d61f7214f8938980a6b9cc543e23fc9dacbcd7",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 50.47144999999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 51.39912199999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 51.677943
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22051.068164
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22051.262208
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22051.339095
+        }
+      ],
+      "cpu": {
+        "user": 1887884,
+        "system": 14443
+      },
+      "elapsedMs": 24556.332281
+    },
+    {
+      "name": "n500-r3-all-newest",
+      "n": 500,
+      "relays": 3,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 49.013265,
+        "startResolvedMs": 12064.974316999998,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r3-all-newest",
+        "ms": 89.57570999999999,
+        "cpu": {
+          "user": 104000,
+          "system": 6159
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "4f6fea6e020bcff7edce76b4af759262a64e701f69e68e85aa88a86da2c68399",
+      "frames": 1506,
+      "validated": 1506,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.277274
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.97205199999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.19271499999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22069.662083
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22069.948994
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22070.07351
+        }
+      ],
+      "cpu": {
+        "user": 1958817,
+        "system": 20913
+      },
+      "elapsedMs": 24574.840132999998
+    },
+    {
+      "name": "n500-r3-cap500-oldest",
+      "n": 500,
+      "relays": 3,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 34.826840999999995,
+        "startResolvedMs": 12055.751671,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n500-r3-cap500-oldest",
+        "ms": 22159.087027999998,
+        "cpu": {
+          "user": 1831509,
+          "system": 23943
+        },
+        "wireFrames": 1501,
+        "sessionFailures": 500
+      },
+      "newId": "c6c82df5b65077fc3104de44c7e040de4ceba4944bc41bb06d657f4186c8a2f2",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 48.622178
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 49.261158
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 49.459742
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22060.469006
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22060.65662
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610606
+          },
+          "ms": 22060.755797
+        }
+      ],
+      "cpu": {
+        "user": 1838337,
+        "system": 24959
+      },
+      "elapsedMs": 24566.928666
+    },
+    {
+      "name": "n1000-r1-cap500-newest",
+      "n": 1000,
+      "relays": 1,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 53.201707,
+        "startResolvedMs": 12074.424675999999,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r1-cap500-newest",
+        "ms": 92.343515,
+        "cpu": {
+          "user": 110220,
+          "system": 7973
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "946cca293d14bd47df535e718d5e2ac0eb14692fd73be24786e1740bab3618a4",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 67.398641
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610643
+          },
+          "ms": 22079.348266999998
+        }
+      ],
+      "cpu": {
+        "user": 791824,
+        "system": 14594
+      },
+      "elapsedMs": 24590.444964
+    },
+    {
+      "name": "n1000-r1-all-oldest",
+      "n": 1000,
+      "relays": 1,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 54.402559999999994,
+        "startResolvedMs": 12075.707557000002,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r1-all-oldest",
+        "ms": 1247.461424,
+        "cpu": {
+          "user": 1367070,
+          "system": 17832
+        },
+        "wireFrames": 1001,
+        "sessionFailures": 1000
+      },
+      "newId": "c95b3e0f71eadf593d14874df0c4c9c1c96f6992e4fdbabbd2577b967e78ba60",
+      "frames": 1002,
+      "validated": 1002,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 1000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.13234800000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610643
+          },
+          "ms": 22080.338367
+        }
+      ],
+      "cpu": {
+        "user": 1381751,
+        "system": 17953
+      },
+      "elapsedMs": 24591.727495
+    },
+    {
+      "name": "n1000-r1-all-newest",
+      "n": 1000,
+      "relays": 1,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 50.784521,
+        "startResolvedMs": 12072.98021,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r1-all-newest",
+        "ms": 87.87275199999999,
+        "cpu": {
+          "user": 105916,
+          "system": 7536
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "72a7c6b5ad23585758fe0e659ab87e1244edc426e3fd6025f677be309e0e31f6",
+      "frames": 1002,
+      "validated": 1002,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 1000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 64.55453800000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610643
+          },
+          "ms": 22077.537393000002
+        }
+      ],
+      "cpu": {
+        "user": 1332586,
+        "system": 14202
+      },
+      "elapsedMs": 24588.117995
+    },
+    {
+      "name": "n1000-r1-cap500-oldest",
+      "n": 1000,
+      "relays": 1,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 51.14636,
+        "startResolvedMs": 12072.583993,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r1-cap500-oldest",
+        "ms": 22092.507864,
+        "cpu": {
+          "user": 797603,
+          "system": 13855
+        },
+        "wireFrames": 501,
+        "sessionFailures": 500
+      },
+      "newId": "6c7e775eef738af69e99acadcd2aed18bfd8cabfd6fd5c473843a9bda3bb6927",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.795393000000004
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610643
+          },
+          "ms": 22073.338212000002
+        }
+      ],
+      "cpu": {
+        "user": 802518,
+        "system": 13875
+      },
+      "elapsedMs": 24584.737370000003
+    },
+    {
+      "name": "n1000-r3-cap500-oldest",
+      "n": 1000,
+      "relays": 3,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.499171000000004,
+        "startResolvedMs": 12070.38674,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r3-cap500-oldest",
+        "ms": 22091.835216,
+        "cpu": {
+          "user": 1891169,
+          "system": 21093
+        },
+        "wireFrames": 1501,
+        "sessionFailures": 500
+      },
+      "newId": "693197b85660091d71d51370fcf436de4466b50a68a5cf71d6cbff0504507ead",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.120132999999996
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.87847000000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 63.10442300000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22074.44229
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22074.75145
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22074.885395999998
+        }
+      ],
+      "cpu": {
+        "user": 1901242,
+        "system": 21094
+      },
+      "elapsedMs": 24584.332646
+    },
+    {
+      "name": "n1000-r3-all-newest",
+      "n": 1000,
+      "relays": 3,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 50.076603,
+        "startResolvedMs": 12071.181064999999,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r3-all-newest",
+        "ms": 92.18975999999998,
+        "cpu": {
+          "user": 101562,
+          "system": 12126
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "2950e4c62eea9afc560429c7172117d7dc7e3cdc91a723317fed1105dfbd96e3",
+      "frames": 3006,
+      "validated": 3006,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 1000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 63.82695999999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 64.59956700000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 64.82921999999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22075.159827000003
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22075.428399
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22075.522396
+        }
+      ],
+      "cpu": {
+        "user": 3552661,
+        "system": 28712
+      },
+      "elapsedMs": 24585.009265
+    },
+    {
+      "name": "n1000-r3-cap500-newest",
+      "n": 1000,
+      "relays": 3,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.650367,
+        "startResolvedMs": 12059.053738,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r3-cap500-newest",
+        "ms": 89.90277,
+        "cpu": {
+          "user": 110562,
+          "system": 3844
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "3df59b9c723149aa3af21c622a37bfb25ef7698de80e628f49549754236c4a08",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.52543599999998
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 70.38729000000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 70.643382
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22063.916243
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22064.230613
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22064.362839
+        }
+      ],
+      "cpu": {
+        "user": 1876680,
+        "system": 15702
+      },
+      "elapsedMs": 24562.095759
+    },
+    {
+      "name": "n1000-r3-all-oldest",
+      "n": 1000,
+      "relays": 3,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 50.45667099999999,
+        "startResolvedMs": 12072.793925,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n1000-r3-all-oldest",
+        "ms": 2892.242998,
+        "cpu": {
+          "user": 2953079,
+          "system": 42062
+        },
+        "wireFrames": 2401,
+        "sessionFailures": 1000
+      },
+      "newId": "25180d4dda75aaebd41d26f2e4f859a8e069e4a8b9c489420d3483b54a7e701a",
+      "frames": 3006,
+      "validated": 3006,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 1000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 72.691168
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 73.668398
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 73.97802899999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22078.032879
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22078.31551
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610680
+          },
+          "ms": 22078.468355999998
+        }
+      ],
+      "cpu": {
+        "user": 3644731,
+        "system": 43073
+      },
+      "elapsedMs": 24575.909085
+    },
+    {
+      "name": "n2000-r1-all-oldest",
+      "n": 2000,
+      "relays": 1,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.06435400000001,
+        "startResolvedMs": 12059.533030999999,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r1-all-oldest",
+        "ms": 2334.013726,
+        "cpu": {
+          "user": 2479989,
+          "system": 33059
+        },
+        "wireFrames": 2001,
+        "sessionFailures": 2000
+      },
+      "newId": "8dcd96edf404b38c3681995f7b4c2c296f86e818e34a040923ccfb94565837b4",
+      "frames": 2002,
+      "validated": 2002,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 2000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 65.99376400000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610717
+          },
+          "ms": 22063.553836
+        }
+      ],
+      "cpu": {
+        "user": 2494425,
+        "system": 34120
+      },
+      "elapsedMs": 24573.346136
+    },
+    {
+      "name": "n2000-r1-all-newest",
+      "n": 2000,
+      "relays": 1,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 49.149550999999995,
+        "startResolvedMs": 12067.432628,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r1-all-newest",
+        "ms": 92.07385300000001,
+        "cpu": {
+          "user": 105553,
+          "system": 5648
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "b4c76f0b920f33a61cdf289be2e2b1f4f0c80a1eed9b3193518636a9e7fcca83",
+      "frames": 2002,
+      "validated": 2002,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 2000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 61.55741
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610717
+          },
+          "ms": 22071.89396
+        }
+      ],
+      "cpu": {
+        "user": 2494104,
+        "system": 38400
+      },
+      "elapsedMs": 24581.210384
+    },
+    {
+      "name": "n2000-r1-cap500-newest",
+      "n": 2000,
+      "relays": 1,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 47.757664,
+        "startResolvedMs": 12062.564137,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r1-cap500-newest",
+        "ms": 87.096596,
+        "cpu": {
+          "user": 105668,
+          "system": 4595
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "891908f0d1dbc71acdfb3c3869272fda2207a13fd8b4c579cec5e5dcf9b8c5cd",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 63.797581
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610717
+          },
+          "ms": 22066.230184
+        }
+      ],
+      "cpu": {
+        "user": 840712,
+        "system": 16705
+      },
+      "elapsedMs": 24567.33097
+    },
+    {
+      "name": "n2000-r1-cap500-oldest",
+      "n": 2000,
+      "relays": 1,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 55.789578000000006,
+        "startResolvedMs": 12078.818909000001,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r1-cap500-oldest",
+        "ms": 22098.412905999998,
+        "cpu": {
+          "user": 812690,
+          "system": 11215
+        },
+        "wireFrames": 501,
+        "sessionFailures": 500
+      },
+      "newId": "3793f521c424fbd0e01c32cee1ff080a3ed8646a4b2d15afc37a8c32db094f38",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 69.810537
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610717
+          },
+          "ms": 22082.044018999997
+        }
+      ],
+      "cpu": {
+        "user": 817527,
+        "system": 11215
+      },
+      "elapsedMs": 24586.23984
+    },
+    {
+      "name": "n2000-r3-cap500-oldest",
+      "n": 2000,
+      "relays": 3,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 54.241605,
+        "startResolvedMs": 12069.641248,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r3-cap500-oldest",
+        "ms": 22093.950896,
+        "cpu": {
+          "user": 1907974,
+          "system": 31409
+        },
+        "wireFrames": 1501,
+        "sessionFailures": 500
+      },
+      "newId": "fee95079c02051d071ee4048f3c0a6e2180f1cf94fb3cd0d00e9bf7b1945da7f",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 87.49854299999998
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 88.68359699999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 88.94074899999998
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22075.326718
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22075.743954999998
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22076.020475999998
+        }
+      ],
+      "cpu": {
+        "user": 1916109,
+        "system": 31436
+      },
+      "elapsedMs": 24580.823148
+    },
+    {
+      "name": "n2000-r3-cap500-newest",
+      "n": 2000,
+      "relays": 3,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 50.462891,
+        "startResolvedMs": 12058.549319,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r3-cap500-newest",
+        "ms": 96.7458,
+        "cpu": {
+          "user": 109943,
+          "system": 7935
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "779f062b3ff232f4d3875d7497d5015bbf20415feb5fb1b4f8b1c0bdef12c668",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 72.239522
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 73.108226
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 73.35945799999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22062.654907
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22062.857991
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22062.960598
+        }
+      ],
+      "cpu": {
+        "user": 1930814,
+        "system": 30115
+      },
+      "elapsedMs": 24569.08418
+    },
+    {
+      "name": "n2000-r3-all-oldest",
+      "n": 2000,
+      "relays": 3,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 54.126388999999996,
+        "startResolvedMs": 12077.810448,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r3-all-oldest",
+        "ms": 6144.1411960000005,
+        "cpu": {
+          "user": 6361444,
+          "system": 46027
+        },
+        "wireFrames": 5469,
+        "sessionFailures": 2000
+      },
+      "newId": "7131456ffcde4d2e8f5c78f000b8a6ad1afd21aab77da0952f423e81bc9fbf5d",
+      "frames": 6006,
+      "validated": 6006,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 2000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 65.65016499999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 66.42725099999998
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 66.672474
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22083.263475
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22083.451359
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22083.538596
+        }
+      ],
+      "cpu": {
+        "user": 6947867,
+        "system": 47049
+      },
+      "elapsedMs": 24586.347759999997
+    },
+    {
+      "name": "n2000-r3-all-newest",
+      "n": 2000,
+      "relays": 3,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 52.1392,
+        "startResolvedMs": 12066.172435,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n2000-r3-all-newest",
+        "ms": 101.03642800000002,
+        "cpu": {
+          "user": 109619,
+          "system": 5711
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "33f13aa1612c6276d716cdb1d24523f514bd72abeabc769654b19a77fd84d629",
+      "frames": 6006,
+      "validated": 6006,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 2000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 71.18272499999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 72.00158
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 72.271652
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22070.3913
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22070.723809
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610754
+          },
+          "ms": 22070.854045
+        }
+      ],
+      "cpu": {
+        "user": 6834291,
+        "system": 44631
+      },
+      "elapsedMs": 24581.11501
+    },
+    {
+      "name": "n5000-r1-cap500-newest",
+      "n": 5000,
+      "relays": 1,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 43.073777,
+        "startResolvedMs": 12056.634135,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r1-cap500-newest",
+        "ms": 110.873966,
+        "cpu": {
+          "user": 93205,
+          "system": 6623
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "5fb8c169fa20370a93000f3cbd83e4aa510818d977655098a4b41c1f904e32e2",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 68.688651
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610790
+          },
+          "ms": 22061.327223
+        }
+      ],
+      "cpu": {
+        "user": 744675,
+        "system": 11033
+      },
+      "elapsedMs": 24563.347572000002
+    },
+    {
+      "name": "n5000-r1-all-oldest",
+      "n": 5000,
+      "relays": 1,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.293688,
+        "startResolvedMs": 12064.876733,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r1-all-oldest",
+        "ms": 5584.974862,
+        "cpu": {
+          "user": 5723326,
+          "system": 67373
+        },
+        "wireFrames": 5001,
+        "sessionFailures": 5000
+      },
+      "newId": "e20d608f2209c11885049ef40aa52850c8893ff66d825048a4e41595d61843fb",
+      "frames": 5002,
+      "validated": 5002,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 5000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 60.01262800000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610790
+          },
+          "ms": 22069.014606999997
+        }
+      ],
+      "cpu": {
+        "user": 5738262,
+        "system": 67445
+      },
+      "elapsedMs": 24575.772150999997
+    },
+    {
+      "name": "n5000-r1-all-newest",
+      "n": 5000,
+      "relays": 1,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 52.10035,
+        "startResolvedMs": 12060.451458,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r1-all-newest",
+        "ms": 114.22482300000001,
+        "cpu": {
+          "user": 104666,
+          "system": 4853
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "29c5c20b5e9833574674c412e09434626bbe841f1b6861be172fa32951e8767f",
+      "frames": 5002,
+      "validated": 5002,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 5001,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 76.401004
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610790
+          },
+          "ms": 22065.479105000002
+        }
+      ],
+      "cpu": {
+        "user": 5857217,
+        "system": 61113
+      },
+      "elapsedMs": 24570.540361
+    },
+    {
+      "name": "n5000-r1-cap500-oldest",
+      "n": 5000,
+      "relays": 1,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 43.153726000000006,
+        "startResolvedMs": 12066.220672,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r1-cap500-oldest",
+        "ms": 22090.617384,
+        "cpu": {
+          "user": 746709,
+          "system": 6381
+        },
+        "wireFrames": 501,
+        "sessionFailures": 500
+      },
+      "newId": "c1c391ddba95b7890a7bede0ab0af26c1fc2979b5769578e233ba05ad95d55a5",
+      "frames": 501,
+      "validated": 501,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 55.06303
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610790
+          },
+          "ms": 22070.412315
+        }
+      ],
+      "cpu": {
+        "user": 752119,
+        "system": 6381
+      },
+      "elapsedMs": 24569.573021
+    },
+    {
+      "name": "n5000-r3-cap500-newest",
+      "n": 5000,
+      "relays": 3,
+      "policy": "cap500-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.945927000000005,
+        "startResolvedMs": 12060.437746,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r3-cap500-newest",
+        "ms": 89.93808900000002,
+        "cpu": {
+          "user": 101657,
+          "system": 10748
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "5a3593bf3fab0e1b5fc9349c519e6865df8b2306f3a781a179a05021ab5ecb33",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 499,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.020146000000004
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.80258200000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 63.033955
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610827
+          },
+          "ms": 22064.61363
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610827
+          },
+          "ms": 22065.023607
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610827
+          },
+          "ms": 22065.172272
+        }
+      ],
+      "cpu": {
+        "user": 1988259,
+        "system": 31223
+      },
+      "elapsedMs": 24571.908256
+    },
+    {
+      "name": "n5000-r3-cap500-oldest",
+      "n": 5000,
+      "relays": 3,
+      "policy": "cap500-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 53.042851999999996,
+        "startResolvedMs": 12075.563202,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r3-cap500-oldest",
+        "ms": 22181.918069,
+        "cpu": {
+          "user": 2008563,
+          "system": 19059
+        },
+        "wireFrames": 1501,
+        "sessionFailures": 500
+      },
+      "newId": "30af395acc915239a5b1106a815857480a47d0363656758e5d9c372c2a5a32a8",
+      "frames": 1503,
+      "validated": 1503,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 500,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 66.986754
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 67.56495600000001
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 67.732781
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610827
+          },
+          "ms": 22082.063714
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610827
+          },
+          "ms": 22082.437263
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610827
+          },
+          "ms": 22082.545009999998
+        }
+      ],
+      "cpu": {
+        "user": 2017949,
+        "system": 19075
+      },
+      "elapsedMs": 24580.780714
+    },
+    {
+      "name": "n5000-r3-all-oldest",
+      "n": 5000,
+      "relays": 3,
+      "policy": "all-oldest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 48.711894,
+        "startResolvedMs": 12570.963063000001,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r3-all-oldest",
+        "ms": 15807.059525,
+        "cpu": {
+          "user": 16216883,
+          "system": 83670
+        },
+        "wireFrames": 14675,
+        "sessionFailures": 5000
+      },
+      "newId": "91f3a4bc790e1b6e673cc79ae61020113cb51fca43b2fd53458023ef889b1701",
+      "frames": 15006,
+      "validated": 15006,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 5000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 61.644217999999995
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.39149499999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 62.618948
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610829
+          },
+          "ms": 22574.869295
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610829
+          },
+          "ms": 22575.223534
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610829
+          },
+          "ms": 22575.33744
+        }
+      ],
+      "cpu": {
+        "user": 16567205,
+        "system": 84698
+      },
+      "elapsedMs": 25076.900062999997
+    },
+    {
+      "name": "n5000-r3-all-newest",
+      "n": 5000,
+      "relays": 3,
+      "policy": "all-newest",
+      "started": {
+        "phase": "started",
+        "startCallMs": 41.68318,
+        "startResolvedMs": 12385.923623,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r3-all-newest",
+        "ms": 96.667462,
+        "cpu": {
+          "user": 94457,
+          "system": 9302
+        },
+        "wireFrames": 74,
+        "sessionFailures": 0
+      },
+      "newId": "d3362934176d02fece826452e19d01091128ec69c07aedf0248768fdbe30286b",
+      "frames": 15006,
+      "validated": 15006,
+      "droppedFrames": 0,
+      "droppedHistorical": 0,
+      "droppedNew": 0,
+      "sessionFailures": 5001,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 52.946684
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 53.642402999999995
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 53.858076000000004
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610830
+          },
+          "ms": 22389.863304
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610830
+          },
+          "ms": 22390.185734
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610830
+          },
+          "ms": 22390.281142
+        }
+      ],
+      "cpu": {
+        "user": 16361924,
+        "system": 74205
+      },
+      "elapsedMs": 24896.060813999997
+    },
+    {
+      "name": "n5000-r3-all-oldest-unobserved",
+      "n": 5000,
+      "relays": 3,
+      "policy": "all-oldest-unobserved",
+      "started": {
+        "phase": "started",
+        "startCallMs": 38.52441799999999,
+        "startResolvedMs": 12457.321602,
+        "key": "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+      },
+      "message": {
+        "phase": "message",
+        "id": "new-n5000-r3-all-oldest-unobserved",
+        "ms": 15249.366527,
+        "cpu": {
+          "user": 15502076,
+          "system": 89994
+        },
+        "wireFrames": 14675,
+        "sessionFailures": 5000
+      },
+      "newId": "4e383e742739f48c81b264a29da26c5df90aa94bf18628f85728c5306286b176",
+      "frames": 15006,
+      "validated": null,
+      "droppedFrames": null,
+      "droppedHistorical": null,
+      "droppedNew": null,
+      "sessionFailures": 5000,
+      "delivered": true,
+      "newCopies": 1,
+      "requests": [
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 49.20534
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 49.767913
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ]
+          },
+          "ms": 49.92856799999999
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610868
+          },
+          "ms": 22461.026259000002
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610868
+          },
+          "ms": 22461.375318000002
+        },
+        {
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "a9812e76b8bfee404f69c944a8cb7ff12745739248667ce8dbe7a5dce73a6111"
+            ],
+            "since": 1793610868
+          },
+          "ms": 22461.514874
+        }
+      ],
+      "cpu": {
+        "user": 15849674,
+        "system": 90018
+      },
+      "elapsedMs": 24975.232861
+    }
+  ],
+  "late": [
+    {
+      "delayMs": 1000,
+      "successfulDecryptions": 1,
+      "withoutListener": 1,
+      "deliveredToApplication": 0,
+      "receipts": 1,
+      "decryptions": [
+        {
+          "id": "late-1000",
+          "ms": 12118.17085,
+          "listener": false
+        }
+      ]
+    },
+    {
+      "delayMs": 10000,
+      "successfulDecryptions": 1,
+      "withoutListener": 1,
+      "deliveredToApplication": 0,
+      "receipts": 1,
+      "decryptions": [
+        {
+          "id": "late-10000",
+          "ms": 12111.304643000001,
+          "listener": false
+        }
+      ]
+    }
+  ],
+  "guard": {
+    "exit": 0,
+    "violation": null,
+    "minimumAvailable": 86009524224,
+    "servicesBefore": "Id=llama-swap.service\nActiveState=active\nMainPID=7744\n\nId=ds4-glm-full.service\nActiveState=inactive\nMainPID=0\n\nId=ComfyUI.service\nActiveState=inactive\nMainPID=0\n",
+    "servicesAfter": "Id=llama-swap.service\nActiveState=active\nMainPID=7744\n\nId=ds4-glm-full.service\nActiveState=inactive\nMainPID=0\n\nId=ComfyUI.service\nActiveState=inactive\nMainPID=0\n",
+    "servicesUnchanged": true
+  },
+  "cleanup": {
+    "stateRemoved": true,
+    "childrenRemaining": 0
+  },
+  "nip11": [
+    {
+      "name": "relay.nostr.net-nip11",
+      "url": "https://relay.nostr.net/",
+      "fetchedUtc": "2026-11-02T09:05:44.513356+00:00",
+      "limitations": {
+        "max_limit": 100,
+        "max_message_length": 262144,
+        "max_subscriptions": 100
+      },
+      "retention": null,
+      "policyLinks": {}
+    },
+    {
+      "name": "relay.primal.net-nip11",
+      "url": "https://relay.primal.net/",
+      "fetchedUtc": "2026-11-02T09:05:44.540519+00:00",
+      "limitations": {
+        "max_limit": 500,
+        "max_message_length": 1000000,
+        "max_subscriptions": 20
+      },
+      "retention": null,
+      "policyLinks": {}
+    },
+    {
+      "name": "offchain.pub-nip11",
+      "url": "https://offchain.pub/",
+      "fetchedUtc": "2026-11-02T09:05:44.559074+00:00",
+      "limitations": {
+        "max_limit": 500,
+        "max_message_length": 131072,
+        "max_subscriptions": 20
+      },
+      "retention": null,
+      "policyLinks": {}
+    }
+  ]
+}
