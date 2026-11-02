@@ -329,6 +329,74 @@ async function startMember(relays, { delivery = {}, identity = identityPort(), s
   return { client, manual, identity, storage, events };
 }
 
+/* M3-LISTENER: regression first, exercised unchanged against BASE and HEAD. */
+describe('M3-LISTENER encrypted receive waiting', () => {
+  test.each([1000, 10000])('late listener after %i ms: no open or receipt before invocation', async (delay) => {
+    const relay = await startRelay();
+    const alice = await startMember([relay], { delivery: { receiptMode: 'RECIPIENT_RECEIPT' } });
+    const identity = identityPort();
+    const manual = manualClock();
+    const opens = [];
+    const client = createClient(makeConfig({
+      relays: [relay.url], identity: identity.port, clock: manual.clock,
+      session: { ...sessionPort(), open: ({ ciphertext }) => {
+        opens.push([...ciphertext]);
+        return { plaintext: new Uint8Array(ciphertext) };
+      } },
+    }));
+    expect((await startOnLoopback(client, manual, [relay])).ok).toBe(true);
+    const sent = await alice.client.send({ recipient: identity.publicKey, payload: new Uint8Array([77]) });
+    expect(sent.ok).toBe(true);
+    await waitFor(() => (relay.kindCounts.get(4741) ?? 0) >= 1);
+    await sleep(delay);
+    expect(opens).toEqual([]);
+    expect(relay.kindCounts.get(4742) ?? 0).toBe(0);
+    const events = [];
+    await client.onEvent((event) => events.push(event));
+    await waitFor(() => events.some((event) => event.kind === 'MESSAGE_RECEIVED'));
+    expect(opens).toEqual([[77]]);
+    expect(events.filter((event) => event.kind === 'MESSAGE_RECEIVED').map((event) => [...event.payload])).toEqual([[77]]);
+    await waitFor(() => (relay.kindCounts.get(4742) ?? 0) === 1);
+    expect(events.some((event) => event.kind === 'MESSAGE_RECEIVED')).toBe(true);
+  }, 30000);
+
+  test('self-unsubscribe pauses the next message; duplicate registrations and callback failures still invoke before receipts', async () => {
+    const relay = await startRelay();
+    const alice = await startMember([relay], { delivery: { receiptMode: 'RECIPIENT_RECEIPT' } });
+    const identity = identityPort();
+    const manual = manualClock();
+    let opens = 0;
+    const bob = createClient(makeConfig({ relays: [relay.url], identity: identity.port,
+      clock: manual.clock, session: { ...sessionPort(), open: ({ ciphertext }) => {
+        opens += 1; return { plaintext: new Uint8Array(ciphertext) };
+      } } }));
+    expect((await startOnLoopback(bob, manual, [relay])).ok).toBe(true);
+    const received = [];
+    let registration;
+    registration = await bob.onEvent((event) => {
+      if (event.kind !== 'MESSAGE_RECEIVED') return;
+      received.push([...event.payload]); registration.value.unsubscribe();
+    });
+    for (const byte of [1, 2]) {
+      expect((await alice.client.send({ recipient: identity.publicKey, payload: new Uint8Array([byte]) })).ok).toBe(true);
+    }
+    await waitFor(() => received.length === 1);
+    await sleep(40);
+    expect(opens).toBe(1);
+    const duplicate = (event) => {
+      if (event.kind !== 'MESSAGE_RECEIVED') return;
+      received.push([...event.payload]);
+      throw new Error('fault after invocation');
+    };
+    await bob.onEvent(duplicate); await bob.onEvent(duplicate);
+    await waitFor(() => received.length >= 2);
+    await waitFor(() => (relay.kindCounts.get(4742) ?? 0) === 2);
+    expect(opens).toBe(2);
+    expect(received[0]).toEqual([1]);
+    expect(received.slice(1).every((payload) => payload[0] === 2)).toBe(true);
+  }, 30000);
+});
+
 const deliveryEvents = (events, id) => events.filter(
   (event) => event.kind === 'DELIVERY_STATE_CHANGED' && event.deliveryId === id,
 );
@@ -339,13 +407,14 @@ const deliveryEvents = (events, id) => events.filter(
 
 describe('surface', () => {
   test('index.js re-exports exactly the eight names, identical to client.js', () => {
-    expect(Object.keys(sdk).sort()).toEqual([...EIGHT_NAMES].sort());
+    expect(Object.keys(sdk).sort()).toEqual([...EIGHT_NAMES, 'SDK_WIRE_VERSION'].sort());
     expect(Object.keys(clientModule).sort()).toEqual([...EIGHT_NAMES].sort());
     for (const name of EIGHT_NAMES) expect(sdk[name]).toBe(clientModule[name]);
   });
 
   test('the interface version string', () => {
-    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.3.0-experimental');
+    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.3.1-experimental');
+    expect(sdk.SDK_WIRE_VERSION).toBe('styx-m3-sdk/0.3.0-experimental');
   });
 
   test('the five enumerations are frozen, closed and self-mapped', () => {
@@ -707,12 +776,12 @@ describe('createStyxClient', () => {
 /* --- review probes r1 to r4, real lane modules (cycle 4) --- */
 describe('review probe r1: probe-relay-results (regression)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+  const VERSION = sdk.SDK_WIRE_VERSION;
 
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: VERSION,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       ports: {
         storage: {
@@ -1103,7 +1172,7 @@ describe('review probe r2: probe-r2-attempt-validation (regression)', () => {
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       ports: {
         storage: {
@@ -1286,7 +1355,7 @@ describe('review probe r3: probe-r3-inbound-drain (regression)', () => {
     let stopResolved = false;
 
     const created = createStyxClient({
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -1320,6 +1389,8 @@ describe('review probe r3: probe-r3-inbound-drain (regression)', () => {
 
     try {
       expect((await client.start()).ok).toBe(true);
+      // M3-LISTENER: explicitly admit this open; keep the drain regression.
+      await client.onEvent(() => {});
 
       const secret = new Uint8Array(32);
       secret[31] = 1;
@@ -1328,7 +1399,7 @@ describe('review probe r3: probe-r3-inbound-drain (regression)', () => {
       const kind = 4741;
       const tags = [
         ['p', owner],
-        ['v', 'styx-m3-sdk/0.3.0-experimental'],
+        ['v', sdk.SDK_WIRE_VERSION],
         ['n', '0'.repeat(32)],
       ];
       const content = 'AQ==';
@@ -1378,7 +1449,7 @@ describe('review probe r3: probe-r3-unknown-precedence, real lanes (regression)'
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: [
         'ws://127.0.0.1:7000',
         'ws://127.0.0.1:7001',
@@ -1552,7 +1623,7 @@ describe('review probe r4: probe-r4-callable-outcomes (regression)', () => {
     const records = new Map();
 
     return {
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -1713,7 +1784,7 @@ describe('review probe r4: probe-r4-identity-precedence (regression)', () => {
     });
 
     const created = createStyxClient({
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -1751,7 +1822,7 @@ describe('review probe r4: probe-r4-identity-precedence (regression)', () => {
 });
 
 describe('round-3 counterexamples', () => {
-  const V = 'styx-m3-sdk/0.3.0-experimental';
+  const V = sdk.SDK_WIRE_VERSION;
   const R0 = 'ws' + SEP + '127.0.0.1:7000';
   const R1 = 'ws' + SEP + '127.0.0.1:7001';
   const frozenValue = (value) => Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -1811,7 +1882,7 @@ describe('round-3 counterexamples', () => {
     let stopping = null;
     let stopResolved = false;
     const created = create({
-      interfaceVersion: V,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: [R0],
       delivery: { perRelayTimeoutMs: PER_RELAY_MS },
       ports: lanePorts({
@@ -1837,6 +1908,7 @@ describe('round-3 counterexamples', () => {
       const kind = 4741;
       const tags = [['p', owner], ['v', V], ['n', '0'.repeat(32)]];
       const content = 'AQ==';
+      await client.onEvent(() => {}); // M3-LISTENER: admit the drain probe.
       const id = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([0, pubkey, createdAt, kind, tags, content]))));
       const event = {
         id, pubkey, created_at: createdAt, kind, tags, content,
@@ -1929,7 +2001,7 @@ describe('round-3 counterexamples', () => {
     mockRelaySet(mode);
     const { createStyxClient: create } = await import('../../src/sdk/client.js');
     const created = create({
-      interfaceVersion: V, relays: [R0, R1], delivery: { perRelayTimeoutMs: PER_RELAY_MS }, ports: lanePorts(),
+      interfaceVersion: SDK_INTERFACE_VERSION, relays: [R0, R1], delivery: { perRelayTimeoutMs: PER_RELAY_MS }, ports: lanePorts(),
     });
     expect(created.ok).toBe(true);
     const client = created.value;
@@ -1972,7 +2044,7 @@ describe('round-3 counterexamples', () => {
     }));
     const { createStyxClient: create } = await import('../../src/sdk/client.js');
     const created = create({
-      interfaceVersion: V, relays: [R0, R1], delivery: { perRelayTimeoutMs: PER_RELAY_MS }, ports: lanePorts(),
+      interfaceVersion: SDK_INTERFACE_VERSION, relays: [R0, R1], delivery: { perRelayTimeoutMs: PER_RELAY_MS }, ports: lanePorts(),
     });
     expect(created.ok).toBe(true);
     const client = created.value;
@@ -3666,7 +3738,7 @@ describe('test harness', () => {
 /* --- review probes r1 to r4, lane doubles (cycle 4) --- */
 describe('review probe r1: probe-result-check (regression)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+  const VERSION = sdk.SDK_WIRE_VERSION;
   const ok = (value) => Object.freeze({
     ok: true,
     value: Object.freeze(value),
@@ -3720,7 +3792,7 @@ describe('review probe r1: probe-result-check (regression)', () => {
 
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: VERSION,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       ports: {
         storage: {
@@ -3899,7 +3971,7 @@ describe('review probe r2: probe-r2-slot-scan (regression)', () => {
 
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       ports: {
         storage: {
@@ -3982,7 +4054,7 @@ describe('review probe r3: probe-r3-unknown-precedence, lane doubles (regression
   function config() {
     const records = new Map();
     return {
-      interfaceVersion: 'styx-m3-sdk/0.3.0-experimental',
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: [
         'ws://127.0.0.1:7000',
         'ws://127.0.0.1:7001',
@@ -4627,7 +4699,7 @@ describe('port boundary: delivery seams (table)', () => {
 
 /* --- review probes r5 within threat model B, lane doubles (cycle 5) --- */
 describe('review probe r5: probe-r5-client-boundary, bounded shutdown waits (regression)', () => {
-  const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+  const VERSION = sdk.SDK_WIRE_VERSION;
   const KEY = 'a'.repeat(64);
   const ok = (value) =>
     Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -4700,7 +4772,7 @@ describe('review probe r5: probe-r5-client-boundary, bounded shutdown waits (reg
 
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: VERSION,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -4812,7 +4884,7 @@ describe('review probe r5: probe-r5-client-boundary, bounded shutdown waits (reg
 /* --- review probes r6 within threat model B, lane doubles and the real outbox (cycle 6) --- */
 describe('review probe r6 (Sol): probe-r6-model-b (regression, bounded-wait advance adapted)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+  const VERSION = sdk.SDK_WIRE_VERSION;
   const KEY = 'a'.repeat(64);
   const P = 5500;
 
@@ -4884,7 +4956,7 @@ describe('review probe r6 (Sol): probe-r6-model-b (regression, bounded-wait adva
 
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: VERSION,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -5049,7 +5121,7 @@ describe('review probe r6 (Sol): probe-r6-model-b (regression, bounded-wait adva
 
 describe('review probe r6 (Muse): probe-r6-unbounded-seam (regression)', () => {
 
-  const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+  const VERSION = sdk.SDK_WIRE_VERSION;
   const KEY = 'a'.repeat(64);
   const ok = (v) => Object.freeze({ ok: true, value: Object.freeze(v) });
 
@@ -5092,7 +5164,7 @@ describe('review probe r6 (Muse): probe-r6-unbounded-seam (regression)', () => {
     }));
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: VERSION,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {
@@ -5165,7 +5237,7 @@ describe('review probe r6 (author): shutdown during a stuck start (regression)',
 
   // Author probe (cycle 5 verification of Muse r6-H3): shutdown() called while start() is stuck in a lane call that
   // never settles. Model B: shutdown() must resolve within a bound anyway.
-  const VERSION = 'styx-m3-sdk/0.3.0-experimental';
+  const VERSION = sdk.SDK_WIRE_VERSION;
   const KEY = 'a'.repeat(64);
   const ok = (v) => Object.freeze({ ok: true, value: Object.freeze(v) });
 
@@ -5202,7 +5274,7 @@ describe('review probe r6 (author): shutdown during a stuck start (regression)',
     jest.unstable_mockModule('../../src/sdk/delivery/relay-pool.js', () => ({ createRelaySet: () => h.relaySet }));
     const { createStyxClient } = await import('../../src/sdk/client.js');
     const created = createStyxClient({
-      interfaceVersion: VERSION,
+      interfaceVersion: SDK_INTERFACE_VERSION,
       relays: ['ws://127.0.0.1:7000'],
       delivery: { perRelayTimeoutMs: 11000 },
       ports: {

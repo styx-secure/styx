@@ -4,10 +4,10 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { schnorr } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex, hexToBytes, utf8Encode, utf8Decode, bytesToBase64 } from '../../src/utils.js';
-import { createStyxClient, SDK_INTERFACE_VERSION, SdkResultCode } from '../../src/sdk/index.js';
+import { createStyxClient, SDK_INTERFACE_VERSION, SDK_WIRE_VERSION, SdkResultCode } from '../../src/sdk/index.js';
 import { createRelaySet as originalRelaySet } from '../../src/sdk/delivery/relay-pool.js';
 
-const V = SDK_INTERFACE_VERSION;
+const V = SDK_WIRE_VERSION;
 const cleanup = [];
 let originalWebSocket;
 beforeAll(() => { originalWebSocket = globalThis.WebSocket; globalThis.WebSocket = WebSocket; });
@@ -94,7 +94,7 @@ function make(relays, { id = identity(), session = null, configured = true, time
   const records = new Map();
   const s = session || testSession(id.pk);
   if (!configured) { delete s.createKeyPackage; delete s.startSession; delete s.joinSession; delete id.giftWrap; delete id.unwrapGift; }
-  const config = { interfaceVersion: V, relays: relays.map((r) => r.url), clock: time,
+  const config = { interfaceVersion: SDK_INTERFACE_VERSION, relays: relays.map((r) => r.url), clock: time,
     delivery: { perRelayTimeoutMs: 11000, deadlineMs: 30000 },
     ports: { identity: id, session: s, storage: {
       list: () => [...records.values()], get: (key) => records.get(key),
