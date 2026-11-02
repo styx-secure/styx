@@ -100,6 +100,8 @@ export class MlsEngine {
 
   get provider() { return this._provider; }
   get identity() { return this._identity; }
+  /** Our own MLS credential string (the pubkey hex). @returns {string} */
+  get name() { return this._name; }
 
   /**
    * Our KeyPackage bytes, to be published so a peer can add us to a group.
@@ -169,14 +171,16 @@ export class MlsEngine {
    * This is the anchor for binding an MLS group to a transport identity: a group is
    * only trustworthy if the peer inside it is the same peer who sent it to us. Null
    * when the session is unknown, or when the membership is not exactly {us, one
-   * peer} — an unexpected membership must never be silently accepted.
+   * peer}: exactly two leaves, one with our own credential and one with a
+   * different credential. A third leaf — even one that repeats our own
+   * credential — must never be silently accepted.
    *
    * @param {string} contactId
    * @returns {string|null}
    */
   peerIdentity(contactId) {
     const session = this._sessions.get(contactId);
-    if (!session) return null;
+    if (!session || !session.isOneToOne()) return null;
     const others = session.memberIdentities().filter((id) => id !== this._name);
     return others.length === 1 ? others[0] : null;
   }
