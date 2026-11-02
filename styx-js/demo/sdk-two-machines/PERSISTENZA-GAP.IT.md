@@ -81,3 +81,25 @@ Proposta: contratto del key provider, rotazione/errore/indisponibilità, cancell
 8. Ripetere loopback e due reti reali; verificare rimozione dello stato sintetico e invarianti dei servizi host.
 
 Questa è una bozza per la successiva issue di contratto e relativa review ordinaria. Non apre un gate, non ratifica formati o interfacce e non autorizza modifiche SDK. Le prove attuali e i loro limiti sono in `RISULTATI-PERSISTENZA.IT.md` nel workspace della card; nessuna review LLM e nessun merge.
+
+## C. Supplemento misurato: destinatario spento
+
+Card `t_83b2206a`, base prototipo `971e23bfd260a144e9409aaf9f01cc7fd9294c8d`. Dettaglio, comandi, tentativi e limiti in `DESTINATARIO-SPENTO.IT.md`; numeri ricalcolabili da `offline-verify.py` e `OFFLINE-EVIDENCE-SUMMARY.json`. Le sezioni precedenti rimangono valide: questi risultati non colmano i gap di contratto.
+
+Alice AI395 resta accesa; Bob invitato MVLINNA termina pulitamente dopo invito e m1/m2 con ricevuta. Alice invia m3/m4 offline, entrambi accettati da tutti e tre i relay. Scadenza del nuovo harness: 90 s reali. Nessun nuovo invito, identità/gruppo/impronta stabili al ripristino del file cifrato. Sempre due macchine, inclusa la variante con tre relay locali AI395 raggiunti da Bob via tunnel SSH.
+
+| Variante | Ripetizioni | Bob fermo | Esito m3/m4 dopo restart | Frame tornati per m1/m2/m3/m4 | Scarti Bob per prova |
+| --- | ---: | --- | --- | --- | --- |
+| pubblica, prima della deadline | 3 | 65,042–65,045 s | una callback ciascuno, ricevute prima della deadline | 12 / 12 / 12 / 12 | 2 E_SDK_SESSION_FAILED |
+| pubblica, oltre deadline | 3 | 105,034–105,042 s | una callback ciascuno, prime ricevute tardive ma FAILED_NO_RECEIPT invariato | 6 / 6 / 6 / 6 | 2 E_SDK_SESSION_FAILED |
+| locale AI395, prima della deadline | 1 | 65,055 s | una callback ciascuno, ricevute prima della deadline | 12 / 12 / 12 / 12 | 2 E_SDK_SESSION_FAILED |
+
+Totali finali: 14 messaggi offline ricevuti, 28 callback totali senza duplicati, 264 frame di quattro eventi distinti per prova (28 fra le sette prove), 14 E_SDK_SESSION_FAILED. m1/m2 ritornano realmente dai relay senza nuove callback. I codici SDK di scarto non espongono eventId: si conservano separatamente conteggi per evento e codici per generazione, senza attribuzioni arbitrarie. Le sei prime ricevute tardive reali arrivano ai socket di Alice, ma non riaprono gli stati terminali; lastCode resta null, nessun INBOUND_DISCARDED Alice. È coerente con `styx-js/src/sdk/delivery/outbox.js:2030-2067`, che salta i terminali e rifiuta ricevute oltre deadline. Le repliche di una ricevuta già vista non sono altre prime ricevute tardive.
+
+Conseguenze concrete per i gap:
+- Cursori (§B.2): i primi REQ reali dopo restart sono senza since. Il recupero dei due eventi nuovi funziona nelle prove, ma ripresenta anche i consumati; nessun cursore persistito/simulato e nessun REQ riscritto o sostituito. I frame sono osservati passivamente e inoltrati invariati.
+- Ricezione (§B.3): nessuna callback duplicata osservata; resta la mancanza di transazione fra ratchet, inbox e ricevuta. Queste prove non dimostrano exactly-once né coprono altre finestre di crash.
+- Outbox (§B.1): Alice non riparte; la ricevuta tardiva non cambia FAILED_NO_RECEIPT nello stesso processo. Questo non dimostra recovery dell'outbox. Il prototipo osserva soltanto il binding pubblico deliveryId/eventId durante put/update: gli event/ciphertext dei terminali vengono azzerati dall'SDK (`outbox.js:1016-1018`), quindi non si possono ricavare dopo dalla sola fotografia terminale.
+- Commit MLS offline: non applicabile. `persistent-ports.mjs:45-65`, `mls-engine.js:120-133`, `mls-session.js:22-37` e il vendor `patch/lib.rs:1428-1472`, tutti letti senza modifiche, mostrano solo il commit iniziale di aggiunta; dopo pairing il prototipo genera messaggi applicativi, non rekey/commit. Nessun commit artificiale introdotto.
+
+Tre preliminari completi e un nuovo fallimento DNS prima dei membri sono conservati fuori dai totali finali; l'originale interrotto persistence-offline-01 è immutato via hash. Cleanup finale dei percorsi sintetici verificato su entrambi gli host, compreso il vecchio residuo cifrato, senza toccare le evidenze. Minimo MemAvailable AI395 84.657.725.440 byte, servizi invariati, lock/nice 19/ionice idle per ogni prova; zero differenze nei 92 file protetti e confronto SHA-256 di 97 file fra gli host. Nessuna modifica SDK, crypto, vendor, manifesti, lockfile o workflow; nessuna PR/merge/review LLM.

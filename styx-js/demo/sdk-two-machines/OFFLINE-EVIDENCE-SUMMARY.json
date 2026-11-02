@@ -1,0 +1,1934 @@
+{
+  "ok": true,
+  "runs": [
+    {
+      "run": "offline-public-before-04",
+      "variant": "before-deadline",
+      "relayMode": "public",
+      "offlineSeconds": 65.043288835,
+      "messages": {
+        "m1": {
+          "eventId": "d47a5fbabef00334aca627ecb9f5d5594ee3a57b8878c123f740aba721ba31ad",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598156971,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598246760,
+          "terminalAt": 1793598157070
+        },
+        "m2": {
+          "eventId": "5abf4efff8de5d8725a813d44b41946013ca961ce18baf4651ce38edbc0dcd20",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598157453,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598247138,
+          "terminalAt": 1793598157550
+        },
+        "m3": {
+          "eventId": "d952e518b47e7752a4e491ff30ac3976dba18b56c3f0ad25a0b9366965c2ebcf",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598223097,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 4,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598247605,
+          "terminalAt": 1793598223179
+        },
+        "m4": {
+          "eventId": "1f70b2ee3c081af582dc97202dba707e06eac160178ff32ac75b0b4d9609d1b4",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598223179,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 4,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598247607,
+          "terminalAt": 1793598223281
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ]
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598102
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598102
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598102
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598124
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598124
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598124
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598134
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598134
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "eb15ee8018694b1761318722ccdc3f73a3574915d3085182bbea74e7fee7bf4c"
+            ],
+            "since": 1793598134
+          }
+        }
+      ],
+      "minimumAvailableAi395": 84657725440,
+      "cleanup": true
+    },
+    {
+      "run": "offline-public-before-05",
+      "variant": "before-deadline",
+      "relayMode": "public",
+      "offlineSeconds": 65.041568497,
+      "messages": {
+        "m1": {
+          "eventId": "3bc4b66f4141aebed5ed4887cacffcaa416fe1cec42b4b23fda5d5cca53c20e7",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 4,
+            "wss://relay.nostr.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598523527,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598613288,
+          "terminalAt": 1793598523596
+        },
+        "m2": {
+          "eventId": "404ff90afc4cd6ff0c8db9c5588773ab58ab4ee32cfde6c7c1805304deaffc54",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 4,
+            "wss://relay.nostr.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598523952,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598613697,
+          "terminalAt": 1793598524005
+        },
+        "m3": {
+          "eventId": "d02a8eb9ddc015276615b99a3e0b1f9e78b001793d402752e8795bad8f7e8143",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 4,
+            "wss://relay.nostr.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 11,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598591766,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 4,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598614069,
+          "terminalAt": 1793598591783
+        },
+        "m4": {
+          "eventId": "64a4eb8de59ea089e9d224e3a551ef9039ff8213b726cf038230a1e49b74c0c1",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 4,
+            "wss://relay.nostr.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 11,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598591587,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 4,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598614071,
+          "terminalAt": 1793598591684
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ]
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598469
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598469
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598469
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598491
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598491
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598491
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598501
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598501
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "78252b59be5ec479864e061011dfe02fc9c78d9e299c0bd3acf273fe3185cbdc"
+            ],
+            "since": 1793598501
+          }
+        }
+      ],
+      "minimumAvailableAi395": 85368909824,
+      "cleanup": true
+    },
+    {
+      "run": "offline-public-before-06",
+      "variant": "before-deadline",
+      "relayMode": "public",
+      "offlineSeconds": 65.045018358,
+      "messages": {
+        "m1": {
+          "eventId": "b575d35343798edc4f8fa0f0d70e7b03630296a7951086f1540c9f8024d7989f",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598887571,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598977245,
+          "terminalAt": 1793598887658
+        },
+        "m2": {
+          "eventId": "d8f6022fe05a75051d103edb9c209cf7a53c057056893e54726f4be94a4822bc",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598887983,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598977705,
+          "terminalAt": 1793598888014
+        },
+        "m3": {
+          "eventId": "8a46d4dc6592dc732d657a8f2d2c1d526dbc515120ee395fcbf1ebab1515461f",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598953606,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 4,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598978068,
+          "terminalAt": 1793598953631
+        },
+        "m4": {
+          "eventId": "f149acf2680105465a89105caea1a0abdfb06823252c3b4b13ef674e5b8925a5",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.nostr.net": 4,
+            "wss://relay.primal.net": 4,
+            "wss://offchain.pub": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598953566,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 4,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598978077,
+          "terminalAt": 1793598953631
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ]
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598833
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598833
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598833
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598855
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598855
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598855
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598865
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598865
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "c0f0712c2d31f4e7c0c4d43788d4733d9e2f5c92c12d0bd284f1581fa227aef2"
+            ],
+            "since": 1793598865
+          }
+        }
+      ],
+      "minimumAvailableAi395": 85410988032,
+      "cleanup": true
+    },
+    {
+      "run": "offline-public-after-02",
+      "variant": "after-deadline",
+      "relayMode": "public",
+      "offlineSeconds": 105.042322576,
+      "messages": {
+        "m1": {
+          "eventId": "c0886cad1660b238ed804db3b5ce6ee6b0f8662edf3b4d585d95ee187af0bbca",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 42,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793597955744,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 12,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598045508,
+          "terminalAt": 1793597955819
+        },
+        "m2": {
+          "eventId": "e065c53d6bf167493b843a738af9f0451eb077dab0822baa45c542c466f9fb66",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 42,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793597956071,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 12,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598045864,
+          "terminalAt": 1793597956080
+        },
+        "m3": {
+          "eventId": "d6607c4201ba03e091352b23378aded94cd04ae6d3a2c8993927753745b405ea",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598061709,
+          "firstReceiptAfterDeadline": true,
+          "receiptAfterDeadlineFrames": 10,
+          "terminal": "FAILED_NO_RECEIPT",
+          "lastCode": null,
+          "deadlineAt": 1793598046146,
+          "terminalAt": 1793598046240
+        },
+        "m4": {
+          "eventId": "ce7892d0dfc2d277cb3a6f2ad36a870a5d3a2f576c995585ce88fe49aa913020",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598061706,
+          "firstReceiptAfterDeadline": true,
+          "receiptAfterDeadlineFrames": 10,
+          "terminal": "FAILED_NO_RECEIPT",
+          "lastCode": null,
+          "deadlineAt": 1793598046148,
+          "terminalAt": 1793598046240
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ]
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597941
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597941
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597941
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597963
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597963
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597963
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597973
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597973
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "8d7339da92f8c9b663e148955ab85361379bf58517c12303dd8d6d4c9c9f79fe"
+            ],
+            "since": 1793597973
+          }
+        }
+      ],
+      "minimumAvailableAi395": 85171159040,
+      "cleanup": true
+    },
+    {
+      "run": "offline-public-after-03",
+      "variant": "after-deadline",
+      "relayMode": "public",
+      "offlineSeconds": 105.034215678,
+      "messages": {
+        "m1": {
+          "eventId": "3b5bafa1c350bee3e05a4a57a52d00f4b47eab7e6bf6d185523fba402a2f94fb",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 42,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598318301,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 12,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598408097,
+          "terminalAt": 1793598318308
+        },
+        "m2": {
+          "eventId": "5addf1d70e476f2c588772a731c292310964be78da67201f086a82edd2d3c45e",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 42,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598318603,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 12,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598408368,
+          "terminalAt": 1793598318676
+        },
+        "m3": {
+          "eventId": "492d7b3694280931413fdbca5246e5b86f672943f1345aa397a8ddd042ad7477",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598424277,
+          "firstReceiptAfterDeadline": true,
+          "receiptAfterDeadlineFrames": 10,
+          "terminal": "FAILED_NO_RECEIPT",
+          "lastCode": null,
+          "deadlineAt": 1793598408745,
+          "terminalAt": 1793598408764
+        },
+        "m4": {
+          "eventId": "e269190ffe99081b7075c457a15d96c1eff47e69061535933bdd3e0330b685e0",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598424274,
+          "firstReceiptAfterDeadline": true,
+          "receiptAfterDeadlineFrames": 10,
+          "terminal": "FAILED_NO_RECEIPT",
+          "lastCode": null,
+          "deadlineAt": 1793598408748,
+          "terminalAt": 1793598408764
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ]
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598303
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598303
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598303
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598325
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598325
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598325
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598335
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598335
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "f178f772e5edb2d3c5a3e793170701d35cc4ef5e14d9c0046bed71cd0a3a36a9"
+            ],
+            "since": 1793598335
+          }
+        }
+      ],
+      "minimumAvailableAi395": 85198106624,
+      "cleanup": true
+    },
+    {
+      "run": "offline-public-after-04",
+      "variant": "after-deadline",
+      "relayMode": "public",
+      "offlineSeconds": 105.04014397,
+      "messages": {
+        "m1": {
+          "eventId": "5957a72989b93267eb9e12d5599e8a997631be72d15095b193f1134a40d587db",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 42,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598684862,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 12,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598774622,
+          "terminalAt": 1793598684932
+        },
+        "m2": {
+          "eventId": "6331704b41e89ca5d0b6b48ea2fe5f5e242dae90e05402fbad467b05a753aedd",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 42,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598685223,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 12,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793598774970,
+          "terminalAt": 1793598685280
+        },
+        "m3": {
+          "eventId": "e61981fd5d9109dd1c452ed8c54a53d2aa397b6bf14ef30ab3846ab6e1662c1f",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598790920,
+          "firstReceiptAfterDeadline": true,
+          "receiptAfterDeadlineFrames": 10,
+          "terminal": "FAILED_NO_RECEIPT",
+          "lastCode": null,
+          "deadlineAt": 1793598775342,
+          "terminalAt": 1793598775391
+        },
+        "m4": {
+          "eventId": "4a8ec93d6810b803ff38a9a19859bc41ef5d69f8b6f008643bcc66dae4d086ed",
+          "acceptedBeforeRestart": [
+            "wss://offchain.pub",
+            "wss://relay.nostr.net",
+            "wss://relay.primal.net"
+          ],
+          "returnedFrames": 6,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "wss://relay.primal.net": 2,
+            "wss://relay.nostr.net": 2,
+            "wss://offchain.pub": 2
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 10,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793598790917,
+          "firstReceiptAfterDeadline": true,
+          "receiptAfterDeadlineFrames": 10,
+          "terminal": "FAILED_NO_RECEIPT",
+          "lastCode": null,
+          "deadlineAt": 1793598775354,
+          "terminalAt": 1793598775397
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ]
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ]
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598670
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598670
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598670
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598692
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598692
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598692
+          }
+        },
+        {
+          "relay": "wss://relay.nostr.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598702
+          }
+        },
+        {
+          "relay": "wss://relay.primal.net",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598702
+          }
+        },
+        {
+          "relay": "wss://offchain.pub",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85f09c0d58131fa9de0bbbfdf6aee8d1b34e0eb81dc28177f501f782f7e69096"
+            ],
+            "since": 1793598702
+          }
+        }
+      ],
+      "minimumAvailableAi395": 85302530048,
+      "cleanup": true
+    },
+    {
+      "run": "offline-local-before-01",
+      "variant": "before-deadline",
+      "relayMode": "local",
+      "offlineSeconds": 65.055394062,
+      "messages": {
+        "m1": {
+          "eventId": "67a7eb7f2a8dab19cd06e5ce046e92c17428396e51070692695201160387bb30",
+          "acceptedBeforeRestart": [
+            "ws://127.0.0.1:38115",
+            "ws://127.0.0.1:40679",
+            "ws://127.0.0.1:44443"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "ws://127.0.0.1:49833": 4,
+            "ws://127.0.0.1:37233": 4,
+            "ws://127.0.0.1:42243": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793599049283,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793599139205,
+          "terminalAt": 1793599049318
+        },
+        "m2": {
+          "eventId": "0b085720ecd3465db87c4d199acff37a9ae7c27f877d98b902b98b572bbece73",
+          "acceptedBeforeRestart": [
+            "ws://127.0.0.1:38115",
+            "ws://127.0.0.1:40679",
+            "ws://127.0.0.1:44443"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "ws://127.0.0.1:49833": 4,
+            "ws://127.0.0.1:37233": 4,
+            "ws://127.0.0.1:42243": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 0,
+          "receiptFrames": 36,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793599049691,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793599139362,
+          "terminalAt": 1793599049773
+        },
+        "m3": {
+          "eventId": "59f305d23b4ecc6df880f8430b6c5634f05d0ae493b326222fabf8ba47e997dd",
+          "acceptedBeforeRestart": [
+            "ws://127.0.0.1:38115",
+            "ws://127.0.0.1:40679",
+            "ws://127.0.0.1:44443"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "ws://127.0.0.1:49833": 4,
+            "ws://127.0.0.1:37233": 4,
+            "ws://127.0.0.1:42243": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 15,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793599115161,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793599139833,
+          "terminalAt": 1793599115208
+        },
+        "m4": {
+          "eventId": "f011d45c2f3c204438afdc67e7f5569e9481a4d85e6ce665001bc2a3eb6f1bcf",
+          "acceptedBeforeRestart": [
+            "ws://127.0.0.1:38115",
+            "ws://127.0.0.1:40679",
+            "ws://127.0.0.1:44443"
+          ],
+          "returnedFrames": 12,
+          "returnedUniqueIds": 1,
+          "returnedByRelay": {
+            "ws://127.0.0.1:49833": 4,
+            "ws://127.0.0.1:37233": 4,
+            "ws://127.0.0.1:42243": 4
+          },
+          "callbacksTotal": 1,
+          "callbacksAfterRestart": 1,
+          "receiptFrames": 15,
+          "receiptUniqueIds": 1,
+          "firstReceiptAt": 1793599115186,
+          "firstReceiptAfterDeadline": false,
+          "receiptAfterDeadlineFrames": 6,
+          "terminal": "RECIPIENT_RECEIPT_RECEIVED",
+          "lastCode": null,
+          "deadlineAt": 1793599139836,
+          "terminalAt": 1793599115208
+        }
+      },
+      "discardCodesOnRestart": {
+        "E_SDK_SESSION_FAILED": 2
+      },
+      "aliceDiscardCodes": {},
+      "restoredReqs": [
+        {
+          "relay": "ws://127.0.0.1:49833",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ]
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:37233",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ]
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:42243",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ]
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:49833",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793598995
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:37233",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793598995
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:42243",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793598995
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:49833",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793599017
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:37233",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793599017
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:42243",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793599017
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:49833",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793599027
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:37233",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793599027
+          }
+        },
+        {
+          "relay": "ws://127.0.0.1:42243",
+          "filter": {
+            "kinds": [
+              4741,
+              4742
+            ],
+            "#p": [
+              "85117852307681c558c1ef735ae321228a6b92bb4de1540fe92e5ccf98720e53"
+            ],
+            "since": 1793599027
+          }
+        }
+      ],
+      "minimumAvailableAi395": 85405265920,
+      "cleanup": true
+    }
+  ],
+  "countFinalRuns": 7,
+  "pilotCompleted": 3,
+  "pilotDirectories": [
+    "offline-public-before-02",
+    "offline-public-before-03",
+    "offline-public-after-01"
+  ],
+  "failedAttempts": [
+    {
+      "directory": "offline-public-before-01",
+      "error": "Command '['ssh', 'AI395', 'python3 -c \"import urllib.request; print(urllib.request.urlopen(\\'https://api.ipify.org\\',timeout=20).read().decode())\"']' returned non-zero exit status 1."
+    }
+  ],
+  "previousInterruptedUnchanged": true,
+  "totalCallbacks": 28,
+  "offlineMessages": 14,
+  "lateReceiptMessages": 6,
+  "minimumAvailableAi395": 84657725440
+}
