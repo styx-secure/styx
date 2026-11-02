@@ -53,8 +53,10 @@ const OPERATIONS = ['CREATE', 'RESTORE', 'JOIN_WELCOME', 'PROTECT_APPLICATION', 
   'SELF_UPDATE', 'APPLY_PEER_UPDATE', 'RECONCILE_INDETERMINATE'];
 const OUTPUT_KINDS = ['NONE', 'EMBEDDED_TREE_WELCOME', 'PROTECTED_APPLICATION_BYTES', 'APPLICATION_BYTES',
   'PROTECTED_COMMIT_BYTES', 'SELECTED_CANDIDATE_REF'];
+// The C-REST `successCode` registry (values 1 to 11), the kind-13 `expectedSuccessCode` encoding.
 const SUCCESS_CODES = ['CREATED', 'RESTORED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED',
-  'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED', 'DUPLICATE_IGNORED'];
+  'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED', 'DUPLICATE_IGNORED',
+  'RESTORED_EMPTY_SESSION'];
 const BINDING = Uint8Array.from({ length: 389 }, (_, i) => (0x31 + i * 7) & 0xff);
 const TE = new TextEncoder();
 
@@ -225,16 +227,25 @@ function makeStore() {
   return store;
 }
 
-/** Everything durable in the port, byte for byte, plus the SS memory hold. */
+/**
+ * Every durable member the port stores, byte for byte (selector and its envelope; per generation the
+ * manifest, keys, roots, binding digest, every record's key, plaintext, ciphertext and tag, the hold, the
+ * escrow and the result evidence), plus whether the SS memory hold is present and every applied step.
+ */
 function fingerprint(store) {
   const value = (v) => (v instanceof Uint8Array ? hex(v) : (typeof v === 'bigint' ? v.toString() : v));
+  const json = (v) => (v === null || v === undefined ? null : JSON.stringify(v, (_, x) => value(x)));
   return JSON.stringify({
     selector: store.selector === null ? null : hex(store.selector),
+    selectorEnvelope: store.selectorEnvelope === null ? null : hex(store.selectorEnvelope),
     generations: [...store.generations.entries()].map(([g, v]) => [
-      g.toString(), hex(v.manifestBytes), hex(v.keyedRoot), v.records.map((r) => hex(r.plaintext)).join(''),
-      JSON.stringify(v.mutationHold, (_, x) => value(x)), v.escrow === null ? null : JSON.stringify(v.escrow, (_, x) => value(x)),
+      g.toString(), hex(v.manifestKey), hex(v.manifestBytes), hex(v.manifestCipherDigest), hex(v.keyedRoot),
+      v.sessionBindingDigest === null ? null : hex(v.sessionBindingDigest),
+      v.records.map((r) => [hex(r.recordKey), r.recordKind, hex(r.plaintext), hex(r.ciphertext), hex(r.tag)]),
+      json(v.mutationHold), json(v.escrow), json(v.resultEvidence),
     ]),
     memoryHold: store.memoryHold === null ? null : 'present',
+    applied: store.applied.length,
   });
 }
 
@@ -959,6 +970,21 @@ describe('T7: loader failure — CAPI-S004 for a contradiction, FAIL_CLOSED_INTE
       const g = store.generations.get(NEW_GENERATION);
       g.escrow = { ...g.escrow, output: flip(g.escrow.output) };
     }],
+    ['the selector names another candidate keyed root', (store) => {
+      const selector = { ...decodePlaintext(K17, store.selector) };
+      store.selector = encodePlaintext(K17, { ...selector, candidateKeyedRoot: flip(selector.candidateKeyedRoot) });
+      store.readSelector();
+    }],
+    ['the selector names another candidate manifest cipher digest', (store) => {
+      const selector = { ...decodePlaintext(K17, store.selector) };
+      store.selector = encodePlaintext(K17, { ...selector, candidateManifestCipherDigest: flip(selector.candidateManifestCipherDigest) });
+      store.readSelector();
+    }],
+    ['the kind-13 hold names another parent keyed root', (store, envelope) => {
+      const hold = { ...holdRecordOf(envelope), parentKeyedRoot: flip(OLD.keyedRoot) };
+      reencode(store, K13, encodePlaintext(K13, hold));
+      store.generations.get(NEW_GENERATION).mutationHold = { ...hold };
+    }],
     ['a port verification refusal of the readback', (store) => {
       store.readFault = Object.assign(new Error('authentication failed'), { code: 'AUTHENTICATION_FAILED' });
     }],
@@ -1019,6 +1045,34 @@ describe('T7: loader failure — CAPI-S004 for a contradiction, FAIL_CLOSED_INTE
       expect(`${label}:${code(answer.result)}`).toBe(`${label}:FAIL_CLOSED_INTERNAL`);
       expect(answer.snapshot).toBeNull();
     }
+    // Values the I-RESTART loader cannot produce, with `facts` unchanged (review r1, Sol R2).
+    const structural = [
+      ['heldOutputDigest null for an output row', { heldOutputDigest: null }],
+      ['heldOutputReference of 31 bytes', { heldOutputReference: bytesOf(31, 1) }],
+      ['parentGeneration a number', { parentGeneration: 1 }],
+      ['parentGeneration negative', { parentGeneration: -1n }],
+      ['parentGeneration past u64', { parentGeneration: 1n << 64n }],
+      ['originalAuthorityDigest of 33 bytes', { originalAuthorityDigest: bytesOf(33, 1) }],
+      ['bindingRef a string', { bindingRef: 'x' }],
+      ['profileDigest an array', { profileDigest: Array.from(bytesOf(32, 1)) }],
+      ['candidateDigest a Uint16Array', { candidateDigest: new Uint16Array(16) }],
+      ['componentSetReference null', { componentSetReference: null }],
+      ['parentKeyedRoot missing bytes', { parentKeyedRoot: new Uint8Array(0) }],
+      ['presence 0', { presence: 0 }],
+      ['resultStatus COMMITTED', { resultStatus: M2_OUTCOME.COMMITTED }],
+    ];
+    for (const [label, change] of structural) {
+      const answer = restoreWith(hold, { hold: { ...loaded.hold, ...change }, facts: loaded.facts });
+      expect(`${label}:${code(answer.result)}`).toBe(`${label}:FAIL_CLOSED_INTERNAL`);
+      expect(answer.snapshot).toBeNull();
+    }
+    // R3: a hold of a NONE-output row (CAPI-S016) is not a loader output either.
+    const noneRow = {
+      hold: { ...loaded.hold, scenario: M2_TXN.SCENARIOS.indexOf('CAPI-S016') + 1, operation: OPERATIONS.indexOf('APPLY_PEER_UPDATE') + 1,
+        expectedSuccessCode: SUCCESS_CODES.indexOf('PEER_UPDATE_APPLIED') + 1, heldOutputKind: 1, heldOutputDigest: null, heldOutputReference: null },
+      facts: { ...loaded.facts, scenario: 'CAPI-S016', operation: 'APPLY_PEER_UPDATE', expectedSuccessCode: 'PEER_UPDATE_APPLIED', outputKind: 'NONE' },
+    };
+    expect(code(restoreWith(hold, noneRow).result)).toBe('FAIL_CLOSED_INTERNAL');
     for (const [label, value] of [
       ['another string', 'BOUND_HOLD_INVALID'], ['undefined', undefined], ['a number', 0], ['an array', []],
       ['an extra member', { ...loaded, extra: 1 }], ['a missing member', { hold: loaded.hold }],
@@ -1120,6 +1174,7 @@ describe('Identity bound: exactly 43 canonical characters for the seven RS_TRI_S
   const nonCanonical = `${canonical.slice(0, 42)}${'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[lastIndex + 1]}`;
   const IDENTITIES = [
     ['44 characters', `${canonical}A`, 'VALUE_OUT_OF_RANGE'],
+    ['0 characters', '', 'FAIL_CLOSED_INTERNAL'],
     ['42 characters', canonical.slice(0, 42), 'FAIL_CLOSED_INTERNAL'],
     ['a non-alphabet character', `+${canonical.slice(1)}`, 'FAIL_CLOSED_INTERNAL'],
     ['a non-canonical last character', nonCanonical, 'FAIL_CLOSED_INTERNAL'],
@@ -1155,6 +1210,7 @@ describe('Identity bound: exactly 43 canonical characters for the seven RS_TRI_S
 describe('D-A1: a defective reconciliationReference is a producer contradiction (FAIL_CLOSED_INTERNAL at P06)', () => {
   const DEFECTS = [
     ['missing', undefined],
+    ['an own undefined member', 'OWN_UNDEFINED'],
     ['null beside an outcome', null],
     ['short (31 bytes)', bytesOf(31, 0x0c)],
     ['long (33 bytes)', bytesOf(33, 0x0c)],
@@ -1166,7 +1222,7 @@ describe('D-A1: a defective reconciliationReference is a producer contradiction 
   const withReference = (observation, reference) => {
     const out = { ...observation };
     if (reference === undefined) delete out.reconciliationReference;
-    else out.reconciliationReference = reference;
+    else out.reconciliationReference = reference === 'OWN_UNDEFINED' ? undefined : reference;
     return out;
   };
   const CASES = TRI_STATE_ROWS.flatMap((scenario) => ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']
@@ -1193,9 +1249,14 @@ describe('D-A1: a defective reconciliationReference is a producer contradiction 
     });
     expect(code(opened(duplicate).result)).toBe('DUPLICATE_IGNORED');
     expect(code(opened({ ...duplicate, reconciliationReference: null }).result)).toBe('DUPLICATE_IGNORED');
-    const refused = opened({ ...duplicate, reconciliationReference: REFERENCE_BYTES });
-    expect(code(refused.result)).toBe('FAIL_CLOSED_INTERNAL');
-    expect(refused.snapshot).toBeNull();
+    // Any other own member is a non-null reference beside a null outcome (review r1, Sol R3).
+    for (const [label, reference] of [
+      ['valid bytes', REFERENCE_BYTES], ['undefined', undefined], ['zero bytes', new Uint8Array(32)], ['a string', 'x'],
+    ]) {
+      const refused = opened({ ...duplicate, reconciliationReference: reference });
+      expect(`${label}:${code(refused.result)}`).toBe(`${label}:FAIL_CLOSED_INTERNAL`);
+      expect(refused.snapshot).toBeNull();
+    }
     // An ACTIVE PROTECT_APPLICATION that reports no request at all, with a reference beside it.
     const protect = invokeAdapterTransition({
       request: request('PROTECT_APPLICATION', LIVE['CAPI-S009'].input), snapshot: createAdapterSnapshot('ACTIVE'),

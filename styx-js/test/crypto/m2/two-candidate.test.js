@@ -171,7 +171,8 @@ describe('CAPI-S016 current-parent peer update (OSC-43bc2f410abce99b)', () => {
 
   test('a supported shape without an operation identity is malformed (no commit request can exist without it)', () => {
     expect(code(apply(active(), observation({ operationIdentity: null })))).toBe('INVALID_REQUEST');
-    expect(code(apply(active(), observation({ operationIdentity: '' })))).toBe('INVALID_REQUEST');
+    // C-API §5: an empty identity is one of at most 43 characters that is shorter (CAPI-E025 at P06).
+    expect(code(apply(active(), observation({ operationIdentity: '' })))).toBe('FAIL_CLOSED_INTERNAL');
   });
 });
 

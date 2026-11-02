@@ -998,8 +998,8 @@ function readCommitTrio(value) {
     if (typeof value.commitOutcome !== 'string') candidates.push('INVALID_REQUEST');
     else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) candidates.push('UNKNOWN_VALUE');
   }
-  if (value.operationIdentity !== null
-    && (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0)) {
+  // C-API §5: any string, the empty one included, is judged by the P06 identity rule; a non-string is P01.
+  if (value.operationIdentity !== null && typeof value.operationIdentity !== 'string') {
     candidates.push('INVALID_REQUEST');
   }
   if (candidates.length > 0) return { error: worst(candidates), absent };
@@ -1130,8 +1130,8 @@ function readOpenObservation(value) {
     if (typeof value.commitOutcome !== 'string') candidates.push('INVALID_REQUEST');
     else if (!COMMIT_OUTCOMES.includes(value.commitOutcome)) candidates.push('UNKNOWN_VALUE');
   }
-  if (value.operationIdentity !== null
-    && (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0)) {
+  // C-API §5: any string, the empty one included, is judged by the P06 identity rule; a non-string is P01.
+  if (value.operationIdentity !== null && typeof value.operationIdentity !== 'string') {
     candidates.push('INVALID_REQUEST');
   }
   if (value.internalFailure !== null && !INTERNAL_FAILURE_VALUES.includes(value.internalFailure)) {
@@ -1422,7 +1422,8 @@ function readApplyObservation(value, slotContext, slotDefects) {
   }
   if (typeof value.authentication !== 'string') defects.push('INVALID_REQUEST');
   else if (!AUTHENTICATION_VALUES.includes(value.authentication)) defects.push('UNKNOWN_VALUE');
-  const identityIssued = typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0;
+  // C-API §5: any string, the empty one included, is judged by the P06 identity rule; a non-string is P01.
+  const identityIssued = typeof value.operationIdentity === 'string';
   if (value.operationIdentity !== null && !identityIssued) defects.push('INVALID_REQUEST');
   const outcomeNull = value.commitOutcome === null;
 
@@ -1525,15 +1526,16 @@ function readObservation(operation, observation, decoded = null) {
 
 /**
  * The SS/RS `reconciliationReference` member of a tri-state observation (decision D-A1): `present` when
- * the member is neither absent nor `null`, and `reference` the copied 32 nonzero bytes, or `null` when
- * absent, `null` or defective. The bytes are copied once; the caller's array is never read again.
+ * the member is neither missing nor `null` (an own member whose value is `undefined` is present and
+ * defective), and `reference` the copied 32 nonzero bytes, or `null` when missing, `null` or defective.
+ * The bytes are copied once; the caller's array is never read again.
  */
 function readReferenceMember(value) {
   if (value === null || typeof value !== 'object' || !Object.hasOwn(value, 'reconciliationReference')) {
     return { present: false, reference: null };
   }
   const member = value.reconciliationReference;
-  if (member === null || member === undefined || member === ABSENT_MEMBER) return { present: false, reference: null };
+  if (member === null || member === ABSENT_MEMBER) return { present: false, reference: null };
   return { present: true, reference: readReference32(member) };
 }
 
@@ -1591,6 +1593,23 @@ function registryName(registry, code) {
 }
 
 /** Whether two copied 32-byte references are byte-equal. */
+/** True only for a Uint8Array of exactly 32 bytes (any value): a kind-13 digest or reference member. */
+function isBytes32(value) {
+  return isUint8Array(value) && byteLengthOf(value) === 32;
+}
+
+/** True only for a bigint in the unsigned 64-bit range: the kind-13 `parentGeneration`. */
+function isU64(value) {
+  return typeof value === 'bigint' && value >= 0n && value <= 0xffffffffffffffffn;
+}
+
+/** The kind-13 members that are always exactly 32 bytes in a present hold (C-FMT kind 13). */
+const RESTORE_HOLD_BYTES32_KEYS = Object.freeze([
+  'operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference', 'bindingRef', 'profileDigest',
+  'candidateDigest', 'candidateReference', 'componentSetDigest', 'componentSetReference', 'reconciliationReference',
+  'parentKeyedRoot',
+]);
+
 function sameBytes(left, right) {
   if (left === null || right === null || left.length !== right.length) return false;
   let difference = 0;
@@ -1623,6 +1642,15 @@ function readRestoreHold(value) {
   const expectedStateAfter = registryName(registries.apiState, hold.expectedStateAfter);
   const expectedSuccessCode = registryName(registries.successCode, hold.expectedSuccessCode);
   const outputKind = registryName(registries.outputKind, hold.heldOutputKind);
+  // The complete structure the I-RESTART loader returns for a present hold (`holdRecordFacts`): every
+  // digest and reference exactly 32 bytes, the held output digest and reference `null` exactly for a `NONE`
+  // output, the parent generation an unsigned 64-bit bigint. R3: the loader refuses a `NONE`-output row, so
+  // a hold for one is not its output either.
+  const outputBytes = [hold.heldOutputDigest, hold.heldOutputReference];
+  if (!RESTORE_HOLD_BYTES32_KEYS.every((key) => isBytes32(hold[key])) || !isU64(hold.parentGeneration)
+    || outputKind === null || outputKind === 'NONE' || !outputBytes.every(isBytes32)) {
+    return invalid;
+  }
   if (hold.presence !== 1 || hold.resultStatus !== registries.commitOutcome.INDETERMINATE
     || operation === null || facts.operation !== operation || operation !== plan.operation
     || facts.originalStateBefore !== originalStateBefore || originalStateBefore !== plan.stateBefore
@@ -1775,14 +1803,13 @@ function readObservationValue(operation, value) {
     // outcome is therefore the ambiguous outcome and is held (probe p14); so is one carrying an unknown
     // outcome (cycle 5e review). With no identity, no request was ever made and the missing or unknown
     // proof stays the P01 defect below. `CREATE` and `JOIN_WELCOME` keep the merged I-JOIN closure unchanged.
-    const requestIssued = selfUpdate && typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0;
+    const requestIssued = selfUpdate && typeof value.operationIdentity === 'string';
     const commitOutcome = requestIssued && !COMMIT_OUTCOMES.includes(value.commitOutcome)
       ? 'INDETERMINATE' : value.commitOutcome;
     if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
     else if (!COMMIT_OUTCOMES.includes(commitOutcome)) defects.push('UNKNOWN_VALUE');
-    if (typeof value.operationIdentity !== 'string' || value.operationIdentity.length === 0) {
-      defects.push('INVALID_REQUEST');
-    }
+    // C-API §5: any string, the empty one included, is judged by the P06 identity rule; a non-string is P01.
+    if (typeof value.operationIdentity !== 'string') defects.push('INVALID_REQUEST');
     let staged = null;
     if (selfUpdate && requestIssued && value.stagedOutput === ABSENT_MEMBER && commitOutcome !== 'COMMITTED') {
       // A failed escrow member of an issued update that RS has not proved committed is the absent escrow:
@@ -2320,7 +2347,9 @@ function run(input) {
   const event = { operation, applicableErrors: [...(observed.applicableErrors ?? [])], facts: observed.facts };
   if (observed.commitOutcome !== null) {
     event.commitOutcome = observed.commitOutcome;
-    event.operationIdentity = observed.operationIdentity;
+    // C-API §5: an empty identity is refused above by the P06 identity rule (`upFront`), not forwarded to the
+    // merged core, whose closed event reads an empty string as a P01 value defect.
+    if (observed.operationIdentity !== '') event.operationIdentity = observed.operationIdentity;
     if (observed.reconciliationReference && observed.reconciliationReference.reference !== null) {
       event.reconciliationReference = observed.reconciliationReference.reference;
     }

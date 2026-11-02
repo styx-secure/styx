@@ -810,7 +810,8 @@ describe('I-UPD fail-closed request validation', () => {
     ['staged output of the wrong type without a commit proof', request('SELF_UPDATE', {}), active(), updateObservation({ commitOutcome: null, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
     ['out-of-set commit outcome with no request issued', request('SELF_UPDATE', {}), active(), { ...okUpdate, commitOutcome: 'MAYBE', operationIdentity: null }, 'INVALID_REQUEST'],
     ['missing operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: null }, 'INVALID_REQUEST'],
-    ['empty operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: '' }, 'INVALID_REQUEST'],
+    // C-API §5: an empty identity is one of at most 43 characters that is shorter (CAPI-E025 at P06).
+    ['empty operation identity after a commit proof', request('SELF_UPDATE', {}), active(), { ...okUpdate, operationIdentity: '' }, 'FAIL_CLOSED_INTERNAL'],
     ['out-of-set response emission', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-other') }), heldUpdate(), reconcileObservation({ responseEmission: 'DELIVERED' }), 'UNKNOWN_VALUE'],
     ['response emission for an outcome that cannot have one', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-1') }), heldUpdate(), reconcileObservation({ commitOutcome: 'INDETERMINATE', responseEmission: 'SUCCEEDED', heldOutput: null }), 'INVALID_REQUEST'],
     ['missing response emission for a committed outcome', request('RECONCILE_INDETERMINATE', { reconciliationRef: heldRef('held-upd-other') }), heldUpdate(), reconcileObservation({ responseEmission: null }), 'INVALID_REQUEST'],

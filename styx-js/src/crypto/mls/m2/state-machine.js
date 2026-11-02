@@ -27,7 +27,6 @@ freezeData(TABLES);
 export const STATES = TABLES.states;
 export const OPERATIONS = TABLES.operations;
 export const MUTATION_PLANS = TABLES.mutationPlans;
-export const SUCCESS_CODES = TABLES.successCodes;
 
 const ERROR_RANK = new Map(TABLES.errorOrder.map((code, index) => [code, index]));
 const KNOWN_ERRORS = new Set(Object.keys(TABLES.errorRows));

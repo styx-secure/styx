@@ -661,7 +661,8 @@ describe('I-MSG structural epoch bound and fail-closed validation (CAPI-E014, CA
       ['unknown observation member', okProtect, { ...protectObservation(), extra: 1 }, 'UNKNOWN_FIELD'],
       ['unknown staged member', okProtect, { ...protectObservation(), stagedOutput: { other: bytes(6) } }, 'UNKNOWN_FIELD'],
       ['non-byte staged output', okProtect, { ...protectObservation(), stagedOutput: { protectedApplicationBytes: 'bytes' } }, 'INVALID_REQUEST'],
-      ['empty operation identity', okProtect, protectObservation('COMMITTED', bytes(6), ''), 'INVALID_REQUEST'],
+      // C-API §5: an empty identity is one of at most 43 characters that is shorter (CAPI-E025 at P06).
+      ['empty operation identity', okProtect, protectObservation('COMMITTED', bytes(6), ''), 'FAIL_CLOSED_INTERNAL'],
       ['reachable open without the commit trio', okOpen,
         { currentEpoch: 9, framingEpoch: 9, authentication: 'AUTHENTICATED', replayIdentity: 'UNSEEN', commitOutcome: null, operationIdentity: null, stagedOutput: null }, 'INVALID_REQUEST'],
       ['unknown request input member', request('PROTECT_APPLICATION', { protectedApplicationMessage: bytes(6) }), protectObservation(), 'UNKNOWN_FIELD'],
@@ -998,7 +999,7 @@ describe('I-MSG within-level rank and the epoch bound (CAPI-E001 to CAPI-E003, C
 
   test('a wrong type outranks an out-of-set verdict', () => {
     const protect = invoke(request('PROTECT_APPLICATION', { applicationBytes: bytes(4) }), active(),
-      { commitOutcome: 'MAYBE', operationIdentity: '', stagedOutput: null });
+      { commitOutcome: 'MAYBE', operationIdentity: 7, stagedOutput: null });
     expect(protect.error.code).toBe('INVALID_REQUEST');
     const open = invoke(request('OPEN_APPLICATION', { protectedApplicationMessage: bytes(4) }), active(),
       openObservation(1, { authentication: 'MAYBE', replayIdentity: 5 }));
