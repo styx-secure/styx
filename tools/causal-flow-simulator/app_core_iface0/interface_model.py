@@ -33,9 +33,12 @@ from authority_projection import (
 from canonical_json import CanonicalJsonError, loads as canonical_loads
 from inventory import (
     BASE_SHA,
+    GOVERNANCE_STATE_PATHS,
+    GOVERNANCE_STATE_POLICY,
     InventoryError,
     run_ratified_package_validator,
     verify_contract_package,
+    verify_governance_state_relation,
 )
 
 
@@ -314,7 +317,11 @@ def verify_native_authority(repo_root: Path, contract: Path) -> None:
         ),
     }
     observed_repins: set[str] = set()
-    for dependency in _dependency_rows(contract):
+    # Plain tuple accumulation keeps the ACV-049 instrumentation surface of
+    # this evaluator unchanged; the shared check lives in inventory.py.
+    governance_bytes: tuple[tuple[str, bytes], ...] = ()
+    dependencies = _dependency_rows(contract)
+    for dependency in dependencies:
         path = root / dependency.path
         if not path.is_file() or path.is_symlink():
             raise InterfaceModelError(f"invalid native dependency: {dependency.path}")
@@ -358,6 +365,16 @@ def verify_native_authority(repo_root: Path, contract: Path) -> None:
                 raise InterfaceModelError(
                     f"read-only native dependency drift: {dependency.path}"
                 )
+        elif dependency.mutation_policy == GOVERNANCE_STATE_POLICY:
+            if dependency.repin is not None:
+                raise InterfaceModelError(
+                    f"unexpected governance-state repin: {dependency.path}"
+                )
+            if dependency.path not in GOVERNANCE_STATE_PATHS:
+                raise InterfaceModelError(
+                    f"unauthorized governance-state path: {dependency.path}"
+                )
+            governance_bytes += ((dependency.path, path.read_bytes()),)
         elif dependency.mutation_policy == "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS":
             if dependency.repin is not None:
                 raise InterfaceModelError(
@@ -413,6 +430,14 @@ def verify_native_authority(repo_root: Path, contract: Path) -> None:
             )
     if observed_repins != set(ratified_exact_repins):
         raise InterfaceModelError("ratified exact native dependency repin set drift")
+    try:
+        verify_governance_state_relation(
+            _read_json(contract / "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"),
+            dependencies,
+            governance_bytes,
+        )
+    except InventoryError as error:
+        raise InterfaceModelError(str(error)) from error
 
 
 @dataclass(frozen=True)

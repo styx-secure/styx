@@ -1832,9 +1832,10 @@ def validate_manifest() -> None:
         "terminalPredicateRelationRows": 33,
         "signatureVerificationPathRows": 17,
         "nativeDependencies": 65,
-        "readOnlyNativeDependencies": 60,
+        "readOnlyNativeDependencies": 58,
         "seededExtensionNativeDependencies": 4,
         "ratifiedExactRepinNativeDependencies": 1,
+        "ownerMergedGovernanceStateNativeDependencies": 2,
         "historicalProviderIncrements": 5,
         "seedRegistryRowsPendingPostBase": 87,
         "structuralWitnessRowsPendingPostBase": 1553,
@@ -2002,9 +2003,11 @@ def validate_native_dependencies(repository: Path, base_ref: str) -> None:
         inventory["derivedCounts"]
         == {
             "dependencies": 65,
-            "readOnlyDependencies": 60,
+            "readOnlyDependencies": 58,
             "seededExtensionDependencies": 4,
             "ratifiedExactRepinDependencies": 1,
+            "ownerMergedGovernanceStateDependencies": 2,
+            "ownerMergedGovernanceStates": 3,
             "c03CanonicalFiles": 6,
             "c03ImplementationAndTestFiles": 26,
             "protocolReviewToolFiles": 16,
@@ -2038,6 +2041,77 @@ def validate_native_dependencies(repository: Path, base_ref: str) -> None:
         and row["repin"]["newSha256"] != row["sha256"]
         and "Issue #295 comment 5550502736" in row["repin"]["reason"],
         "ratified exact repin relation drift",
+    )
+    governance_paths = ("AGENTS.md", "docs/protocol/protocol-hardening-plan.md")
+    governance_rows = {
+        row["path"]: row
+        for row in rows
+        if row["mutationPolicy"] == "OWNER_MERGED_GOVERNANCE_EXACT_STATE"
+    }
+    require(
+        tuple(sorted(governance_rows))
+        == tuple(inventory["ownerMergedGovernanceStatePaths"])
+        == governance_paths
+        and all("repin" not in row for row in governance_rows.values())
+        and all(
+            row["category"] == "GOVERNANCE_AND_SEQUENCE"
+            for row in governance_rows.values()
+        ),
+        "owner-merged governance state path drift",
+    )
+    read_only = [
+        row for row in rows if row["mutationPolicy"] == "READ_ONLY_BYTE_IDENTICAL"
+    ]
+    require(
+        len(read_only) + len(governance_rows) + len(seeded) + len(repinned) == 65
+        and len(read_only) == 58
+        and all("repin" not in row for row in read_only),
+        "native dependency policy partition drift",
+    )
+    states = inventory["ownerMergedGovernanceStates"]
+    require(
+        isinstance(states, list)
+        and [state.get("stateId") for state in states]
+        == ["BASE_E0AF4E1", "M3_PROC_497", "MAIN_PHASE_480_490"]
+        and all(
+            set(state) == {"stateId", "provenance", "files"}
+            and isinstance(state["provenance"], str)
+            and state["provenance"]
+            and isinstance(state["files"], dict)
+            and tuple(state["files"]) == governance_paths
+            and all(
+                set(entry) == {"gitBlobOid", "sha256", "byteSize"}
+                and re.fullmatch(r"[0-9a-f]{40}", entry["gitBlobOid"])
+                and re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])
+                and type(entry["byteSize"]) is int
+                and entry["byteSize"] > 0
+                for entry in state["files"].values()
+            )
+            for state in states
+        ),
+        "owner-merged governance state relation drift",
+    )
+    require(
+        len(
+            {
+                tuple(state["files"][path]["gitBlobOid"] for path in governance_paths)
+                for state in states
+            }
+        )
+        == 3,
+        "duplicate owner-merged governance state",
+    )
+    require(
+        all(
+            states[0]["files"][path]
+            == {
+                "gitBlobOid": governance_rows[path]["gitBlobOid"],
+                "sha256": governance_rows[path]["sha256"],
+                "byteSize": governance_rows[path]["byteSize"],
+            }
+            for path in governance_paths
+        ),
+        "Base governance state drift",
     )
 
 
