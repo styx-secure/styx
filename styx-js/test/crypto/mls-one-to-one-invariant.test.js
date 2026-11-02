@@ -109,6 +109,14 @@ describe('MLS 1:1 sessions process application messages only', () => {
     const out = b.session('a').decrypt(earlier);
     expect(out.kind).toBe('application');
     expect(dec(out.plaintext)).toBe('sent before the commit');
+
+    // The exact bytes rejected above are valid: fed directly to the engine group,
+    // bypassing the session wrapper, they change the membership and the epoch.
+    const raw = b.session('a')._group;
+    raw.process_message(b.provider, proposal);
+    raw.process_message(b.provider, commit);
+    expect(raw.member_identities().length).toBe(3);
+    expect(Array.from(raw.export_key(b.provider, LABEL, CTX, 32))).not.toEqual(before.exporter);
   });
 
   test('a commit alone from the legitimate peer is rejected and changes no state', async () => {
@@ -132,17 +140,37 @@ describe('MLS 1:1 sessions process application messages only', () => {
     // The session still works in both directions at the same epoch.
     expect(dec(a.session('b').decrypt(b.session('a').encrypt(enc('still two of us'))).plaintext))
       .toBe('still two of us');
+
+    // The exact proposal rejected above is valid: the raw engine group stores it.
+    const storageBefore = Array.from(b.serializeState());
+    b.session('a')._group.process_message(b.provider, proposal);
+    expect(Array.from(b.serializeState())).not.toEqual(storageBefore);
   });
 
   test('control: the raw engine group applies the same proposal and commit', async () => {
-    // Shows the messages used above are valid: fed directly to the engine group,
-    // bypassing the session wrapper, they grow the group to three members.
+    // The same rejected bytes, applied straight to the engine group, grow it to
+    // three members; the rejection tests above re-apply their own exact bytes too.
     const { a, b } = await paired();
     const { proposal, commit } = await peerBuildsAdd(a);
+    const before = stateOf(b, 'a');
+    expect(() => b.session('a').decrypt(proposal)).toThrow();
+    expect(() => b.session('a').decrypt(commit)).toThrow();
+    expect(stateOf(b, 'a')).toEqual(before);
     const raw = b.session('a')._group;
     raw.process_message(b.provider, proposal);
     raw.process_message(b.provider, commit);
     expect(raw.member_identities().length).toBe(3);
+  });
+
+  test('our own application message echoed back yields no application plaintext', async () => {
+    // OpenMLS reports our own private message as OwnPrivateMessage and the binding
+    // returns no bytes: that is not a message from the peer.
+    const { a, b } = await paired();
+    const wire = a.session('b').encrypt(enc('mine'));
+    const before = stateOf(a, 'b');
+    expect(() => a.session('b').decrypt(wire)).toThrow();
+    expect(stateOf(a, 'b')).toEqual(before);
+    expect(dec(b.session('a').decrypt(wire).plaintext)).toBe('mine');
   });
 
   test('the header check accepts application messages and refuses control and malformed input', async () => {
@@ -231,10 +259,19 @@ describe('MLS 1:1 sessions have exactly two members', () => {
     const { a, b, group, welcome, ratchetTree } = await threeLeafWelcomeForB();
     b.joinSession('a', welcome, ratchetTree);
     const session = b.session('a');
+    const fromA = group.create_message(a.provider, a.identity, enc('hello'));
+    const before = Array.from(b.serializeState());
+    // Count every call into the engine group operations the guards must prevent.
+    const calls = { create_message: 0, process_message: 0, export_key: 0 };
+    for (const name of Object.keys(calls)) {
+      const original = session._group[name].bind(session._group);
+      session._group[name] = (...args) => { calls[name] += 1; return original(...args); };
+    }
     expect(() => session.encrypt(enc('must not be readable by the third leaf'))).toThrow();
     expect(() => session.exportSecret(LABEL, CTX, 32)).toThrow();
-    const fromA = group.create_message(a.provider, a.identity, enc('hello'));
     expect(() => session.decrypt(fromA)).toThrow();
+    expect(calls).toEqual({ create_message: 0, process_message: 0, export_key: 0 });
+    expect(Array.from(b.serializeState())).toEqual(before);
   });
 
   test('control: a genuine pairing binds each side to the other', async () => {
