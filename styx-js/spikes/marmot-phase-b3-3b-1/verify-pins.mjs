@@ -22,10 +22,10 @@ export const B33B1_OPENMLS_REVISION =
 export const B33B1_MARMOT_REVISION =
   '4ad4ae21479c3f3fa9950c6fc4556a76941a62e1';
 export const B33B1_MDK_REVISION =
-  '9396adb6aa6b95b521a7979facd5ea7040c07288';
-export const B33B1_MDK_TREE = 'a1145de604e616634dae9a1ef6bf5033c9c9e879';
+  '3fb4b4759ac676b0c21c4c3527074866c9fa4c89';
+export const B33B1_MDK_TREE = '4019e3f9844331b4e365a85653418586c385a0d2';
 export const B33B1_MDK_LOCK_SHA256 =
-  'edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09';
+  '8286bc2731edeec804cd1fae2e40eefad3bb87a068d3aff15d94a4e5e14bc9cc';
 export const B33B1_VENDOR_LOCK_SHA256 =
   '33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b';
 export const B33B1_APPROVED_SOURCE_SHA =
@@ -33,7 +33,7 @@ export const B33B1_APPROVED_SOURCE_SHA =
 export const B33B1_APPROVED_SOURCE_TREE =
   'd59f8192b8b97d94215266b93e9bc4f72c3a4380';
 export const B33B1_APPROVED_PATCH_SHA256 =
-  '612e225d0bcf369d8f409a71b9c943b2d566777466f1682779fae23b0b2fccde';
+  '604be6d8464fafeb98b075371e938b71c50d5ca8a94d8b0f09ef2e88d7814f27';
 export const B33B1_APPROVED_PROVENANCE_SHA256 =
   '248fb368c8308cce05d156178a8cdffa72656b84989b8ac6f0dabac08e449990';
 export const B33B1_APPROVED_ARTIFACT_TUPLE = Object.freeze({
@@ -49,7 +49,7 @@ const repoRoot = resolve(directory, '..', '..', '..');
 export const B33B1_INSTALLED_ARTIFACT_DIRECTORY =
   resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
 export const B33B1_DEFAULT_MDK_ROOT =
-  '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
+  '/home/mverde/.local/share/styx-reviews/upstreams/mdk-3fb4b475';
 const MAX_GIT_DIAGNOSTIC_CHARS = 2048;
 
 function clipped(value) {

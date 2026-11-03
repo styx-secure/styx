@@ -23,7 +23,7 @@ import { B33A_ERROR, B33A_MDK_BUILD_ROOT, failB33a }
 import { readExactRegularFile } from './b3-3a-artifact-reader.mjs';
 
 export const B33A_MDK_PEER_LOCK_SHA256 =
-  'c42ccd8bc136421b265ee8544af260cbcdf9aa865fa7a1ace03c7c8cae257b4f';
+  '3b42f7fd1c53877ba939e740e8108029e6ba5c248261b168e6ca2abd0cbf3f59';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const peerDirectory = resolve(directory, '..', 'marmot-phase-b3', 'mdk-peer');

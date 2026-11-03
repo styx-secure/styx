@@ -15,7 +15,7 @@ use cgka_engine::{Engine, EngineBuilder};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
 use cgka_traits::engine::{
-    CgkaEngine, CommitOrderingKey, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent,
+    CgkaEngine, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent,
     SendResult,
 };
 use cgka_traits::engine_state::PendingStateRef;
@@ -24,6 +24,7 @@ use cgka_traits::group::ProtocolProfile;
 use cgka_traits::group_context::GroupContextSnapshot;
 use cgka_traits::ingest::{IngestOutcome, InputRejectionCategory, PeeledContent, PeeledMessage};
 use cgka_traits::peeler::TransportPeeler;
+use cgka_traits::storage::MessageStorage;
 use cgka_traits::transport::{
     EncryptedPayload, Timestamp, TransportEnvelope, TransportMessage, TransportSource,
 };
@@ -74,6 +75,7 @@ impl TransportPeeler for DirectMlsPeeler {
             group_id: None,
             sender: None,
             content: PeeledContent::Welcome {
+                created_at: None,
                 bytes: message.payload.clone(),
             },
             origin: message.clone(),
@@ -155,6 +157,7 @@ impl AccountIdentityProofSigner for NodeProofSigner {
 
 struct PeerState {
     engine: Option<Engine<SqliteAccountStorage>>,
+    storage: Option<SqliteAccountStorage>,
     group_id: Option<GroupId>,
     pending_evolution: Option<(MessageId, PendingStateRef)>,
 }
@@ -163,6 +166,7 @@ impl PeerState {
     fn new() -> Self {
         Self {
             engine: None,
+            storage: None,
             group_id: None,
             pending_evolution: None,
         }
@@ -178,6 +182,34 @@ impl PeerState {
         self.engine
             .as_mut()
             .ok_or_else(|| RpcError::state("peer is not initialized"))
+    }
+
+    /// Drain engine events and acknowledge the app-visible outputs among them.
+    /// The MDK engine keeps `MessageReceived` and `GroupJoined` in a durable
+    /// outbox until the application acknowledges them after its projection
+    /// committed, and re-emits unacknowledged ones on hydration. This driver's
+    /// projection is the response it returns for the drained events, so it
+    /// acknowledges them at the drain.
+    fn drain_events(&mut self) -> Result<Vec<GroupEvent>, RpcError> {
+        let events = self.engine_mut()?.drain_events();
+        let outputs = events
+            .iter()
+            .filter_map(|event| match event {
+                GroupEvent::MessageReceived { message_id, .. } => Some(message_id.clone()),
+                GroupEvent::GroupJoined { via_welcome, .. } => Some(via_welcome.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !outputs.is_empty() {
+            self.storage
+                .as_ref()
+                .ok_or_else(|| RpcError::state("peer is not initialized"))?
+                .delete_pending_application_events(&outputs)
+                .map_err(|error| {
+                    RpcError::fatal_peer(format!("acknowledge app-visible outputs: {error}"))
+                })?;
+        }
+        Ok(events)
     }
 
     fn register_pending_evolution(
@@ -389,34 +421,10 @@ fn require_application_witnesses(
     })
 }
 
-fn ordering_key_projection(key: &CommitOrderingKey) -> Value {
-    json!({
-        "commit_digest": hex::encode(key.commit_digest),
-        "committer": hex::encode(key.committer.as_slice()),
-        "priority": format!("{:?}", key.priority).to_ascii_lowercase(),
-        "source_epoch": key.source_epoch.0,
-    })
-}
-
 fn fork_event_projection(event: &GroupEvent) -> Value {
     match event {
         GroupEvent::EpochChanged { from, to, .. } => json!({
             "kind": "epoch_changed", "from_epoch": from.0, "to_epoch": to.0,
-        }),
-        GroupEvent::ForkRecovered {
-            source_epoch,
-            recovered_epoch,
-            winner,
-            invalidated,
-            invalidated_commit_id,
-            ..
-        } => json!({
-            "kind": "fork_recovered",
-            "source_epoch": source_epoch.0,
-            "recovered_epoch": recovered_epoch.0,
-            "winner": ordering_key_projection(winner),
-            "invalidated": ordering_key_projection(invalidated),
-            "invalidated_commit_id": hex::encode(invalidated_commit_id.as_slice()),
         }),
         GroupEvent::CommitRolledBack {
             invalidated_commit_id,
@@ -481,6 +489,12 @@ fn fork_event_projection(event: &GroupEvent) -> Value {
             "kind": "transport_object_resource_refused",
             "message_id": hex::encode(message_id.as_slice()),
         }),
+        other => json!({
+            "kind": "unmapped_mdk_event",
+            "event_variant": serde_json::to_value(other).ok().and_then(|value| {
+                value.as_object().and_then(|object| object.keys().next().cloned())
+            }),
+        }),
     }
 }
 
@@ -522,7 +536,7 @@ async fn ingest_fork_evolution(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     let projected_events: Vec<Value> = events.iter().map(fork_event_projection).collect();
     let base = json!({
         "content_sha256": content_sha256,
@@ -675,7 +689,7 @@ fn converge_fork_evolution(
             "monotonic_ms is outside the bounded envelope",
         ));
     }
-    let pre_events = state.engine_mut()?.drain_events();
+    let pre_events = state.drain_events()?;
     if !pre_events.is_empty() {
         state.engine = None;
         state.group_id = None;
@@ -687,7 +701,7 @@ fn converge_fork_evolution(
         .engine_mut()?
         .converge_stored_openmls_messages_at(&group_id, monotonic_ms)
         .map_err(|error| RpcError::fatal_peer(format!("fork convergence failed: {error}")))?;
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     Ok(fork_convergence_projection(&result, &events))
 }
 
@@ -756,6 +770,7 @@ fn initialize(state: &mut PeerState, request: &Map<String, Value>) -> Result<Val
     let storage =
         SqliteAccountStorage::open_encrypted(path_field(request, "database_path")?, &database_key)
             .map_err(|error| RpcError::peer(format!("open durable storage: {error}")))?;
+    let output_storage = storage.clone();
     let signer = NodeProofSigner {
         account_identity: account_identity.clone(),
         node_binary: path_field(request, "node_binary")?,
@@ -778,6 +793,7 @@ fn initialize(state: &mut PeerState, request: &Map<String, Value>) -> Result<Val
         ));
     }
     state.engine = Some(engine);
+    state.storage = Some(output_storage);
     Ok(json!({"protocol_profile": "current"}))
 }
 
@@ -832,7 +848,7 @@ async fn create_group(
         .engine()?
         .conformance_group_snapshot(&group_id)
         .map_err(|error| RpcError::peer(format!("capture conformance projection: {error}")))?;
-    let creation_events = state.engine_mut()?.drain_events();
+    let creation_events = state.drain_events()?;
     if creation_events.iter().any(|event| {
         !matches!(event, GroupEvent::GroupCreated { group_id: event_group_id }
             if event_group_id == &group_id)
@@ -896,7 +912,7 @@ fn restore_group(state: &mut PeerState, request: &Map<String, Value>) -> Result<
         .engine()?
         .conformance_group_snapshot(&group_id)
         .map_err(|error| RpcError::peer(format!("restore durable group projection: {error}")))?;
-    let hydration_events = state.engine_mut()?.drain_events();
+    let hydration_events = state.drain_events()?;
     if !hydration_events.is_empty() {
         state.engine = None;
         return Err(RpcError::fatal_peer(
@@ -925,6 +941,7 @@ async fn send_application(
     let result = match state
         .engine_mut()?
         .send(SendIntent::AppMessage {
+            expected_epoch: None,
             group_id: group_id.clone(),
             payload,
         })
@@ -939,7 +956,7 @@ async fn send_application(
             )));
         }
     };
-    let unexpected_events = state.engine_mut()?.drain_events();
+    let unexpected_events = state.drain_events()?;
     if !unexpected_events.is_empty() {
         state.engine = None;
         state.group_id = None;
@@ -954,6 +971,7 @@ async fn send_application(
             app_event_id,
             source_epoch,
             retention,
+            ..
         } if result_group_id == group_id => Ok(json!({
             "app_event_id_hex": app_event_id,
             "disposition": "application_message_durably_prepared",
@@ -1014,7 +1032,7 @@ async fn self_update(
             )));
         }
     };
-    let unexpected_events = state.engine_mut()?.drain_events();
+    let unexpected_events = state.drain_events()?;
     if !unexpected_events.is_empty() {
         state.engine = None;
         state.group_id = None;
@@ -1111,7 +1129,7 @@ async fn confirm_group_published(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     if events.as_slice() != [event.clone()] {
         state.engine = None;
         state.group_id = None;
@@ -1156,7 +1174,7 @@ async fn fail_group_publication(
             "rollback group evolution failed after entering the MDK mutation boundary: {error}"
         )));
     }
-    if !state.engine_mut()?.drain_events().is_empty() {
+    if !state.drain_events()?.is_empty() {
         state.engine = None;
         state.group_id = None;
         return Err(RpcError::fatal_peer(
@@ -1202,7 +1220,7 @@ async fn ingest_group_evolution(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     match outcome {
         IngestOutcome::Processed => match events.as_slice() {
             [
@@ -1348,7 +1366,7 @@ fn converge_group_evolution(
             "pre-convergence group epoch differs from the journalled parent",
         ));
     }
-    if !state.engine_mut()?.drain_events().is_empty() {
+    if !state.drain_events()?.is_empty() {
         state.engine = None;
         state.group_id = None;
         return Err(RpcError::fatal_peer(
@@ -1364,7 +1382,7 @@ fn converge_group_evolution(
                 "stored group-evolution convergence failed after mutation boundary: {error}"
             ))
         })?;
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     let status = match result.convergence_status {
         ConvergenceStatus::Syncing => "syncing",
         ConvergenceStatus::Resolving => "resolving",
@@ -1507,7 +1525,7 @@ async fn ingest_group_message(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     match outcome {
         IngestOutcome::Processed => match events.as_slice() {
             [
@@ -1517,6 +1535,7 @@ async fn ingest_group_message(
                     epoch,
                     payload,
                     retention,
+                    ..
                 },
             ] if event_group_id == &group_id => {
                 let sender_identity_hex = hex::encode(sender.as_slice());
@@ -1599,7 +1618,7 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
             exact_fields(request, &["id", "op"])?;
             json!({
                 "protocol": PROTOCOL,
-                "mdk_revision": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+                "mdk_revision": "3fb4b4759ac676b0c21c4c3527074866c9fa4c89",
                 "transport": "direct_mls_identity_wrapper",
             })
         }

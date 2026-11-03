@@ -9679,6 +9679,89 @@ mod tests {
         exact_mdk_founder: bool,
         preexisting_group: bool,
     ) -> PhaseB32aNativeFixture {
+        phase_b32a_native_fixture_with_founder(
+            group_id,
+            founder_byte,
+            joiner_byte,
+            embed_ratchet_tree,
+            if exact_mdk_founder {
+                PhaseB32aTestFounder::MdkPin9396adb
+            } else {
+                PhaseB32aTestFounder::StyxShaped
+            },
+            preexisting_group,
+        )
+    }
+
+    /// Founder leaf shapes used by the native B3.2a fixtures.
+    #[cfg(feature = "extensions-draft")]
+    #[derive(Clone, Copy)]
+    enum PhaseB32aTestFounder {
+        /// The exact MDK 9396adb leaf: lists the default RequiredCapabilities type.
+        MdkPin9396adb,
+        /// The RFC 9420 section 7.2 MDK leaf (MDK v0.14.0): no default type listed.
+        MdkRfc9420,
+        /// As MdkRfc9420, plus random GREASE values in every GREASE-able list.
+        MdkRfc9420Grease,
+        /// MDK dictionary, but a non-default extension outside the profile listed.
+        MdkExtraExtension,
+        /// A Styx-shaped leaf (no safe-AAD entry): never a valid Welcome author.
+        StyxShaped,
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_test_founder_leaf(
+        provider: &Provider,
+        founder: PhaseB32aTestFounder,
+        proof: &[u8],
+    ) -> (Capabilities, Extensions<LeafNode>) {
+        let rfc9420 = || {
+            Capabilities::new(
+                None,
+                Some(&[PROBE_CIPHERSUITE]),
+                Some(&[ExtensionType::AppDataDictionary]),
+                Some(&[ProposalType::AppDataUpdate]),
+                None,
+            )
+        };
+        match founder {
+            PhaseB32aTestFounder::MdkPin9396adb => (
+                phase_b32a_mdk_capabilities(),
+                phase_b32a_mdk_leaf_extensions(proof),
+            ),
+            PhaseB32aTestFounder::MdkRfc9420 => (rfc9420(), phase_b32a_mdk_leaf_extensions(proof)),
+            PhaseB32aTestFounder::MdkRfc9420Grease => (
+                rfc9420().with_grease(provider.inner.rand()),
+                phase_b32a_mdk_leaf_extensions(proof),
+            ),
+            PhaseB32aTestFounder::MdkExtraExtension => (
+                Capabilities::new(
+                    None,
+                    Some(&[PROBE_CIPHERSUITE]),
+                    Some(&[ExtensionType::AppDataDictionary, ExtensionType::LastResort]),
+                    Some(&[ProposalType::AppDataUpdate]),
+                    None,
+                ),
+                phase_b32a_mdk_leaf_extensions(proof),
+            ),
+            PhaseB32aTestFounder::StyxShaped => (
+                phase_b2_capabilities(),
+                phase_b31_leaf_extensions(proof)
+                    .map_err(js_error_to_string)
+                    .unwrap(),
+            ),
+        }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_native_fixture_with_founder(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+        embed_ratchet_tree: bool,
+        founder_shape: PhaseB32aTestFounder,
+        preexisting_group: bool,
+    ) -> PhaseB32aNativeFixture {
         let mut founder_provider = Provider::new();
         let joiner_provider = Provider::new();
         let (founder, founder_proof, _) = phase_b2_identity(&founder_provider, founder_byte);
@@ -9721,18 +9804,8 @@ mod tests {
             assert_eq!(conflicting_group.group_id().as_slice(), group_id);
         }
 
-        let founder_capabilities = if exact_mdk_founder {
-            phase_b32a_mdk_capabilities()
-        } else {
-            phase_b2_capabilities()
-        };
-        let founder_extensions = if exact_mdk_founder {
-            phase_b32a_mdk_leaf_extensions(&founder_proof)
-        } else {
-            phase_b31_leaf_extensions(&founder_proof)
-                .map_err(js_error_to_string)
-                .unwrap()
-        };
+        let (founder_capabilities, founder_extensions) =
+            phase_b32a_test_founder_leaf(&founder_provider, founder_shape, &founder_proof);
 
         let mut founder_group = MlsGroup::builder()
             .ciphersuite(PROBE_CIPHERSUITE)
@@ -11161,12 +11234,41 @@ mod tests {
             0xb8,
         );
 
+        // RFC 9420 section 7.2: an MDK leaf that lists no default type has the
+        // same capabilities as the Styx leaf. With the MDK dictionary it is the
+        // MDK_RFC9420 profile (MDK v0.14.0), not a hybrid, and it loads.
+        let (rfc9420_state, rfc9420_identity, rfc9420_signature_key) =
+            phase_b33a_hostile_founder_state(
+                b"phase-b33a-rfc9420-profile",
+                0xb5,
+                0xb6,
+                phase_b32a_styx_capabilities(),
+                false,
+                false,
+            );
+        PhaseB33aGroup::load_canonical_state(
+            &rfc9420_state,
+            b"phase-b33a-rfc9420-profile",
+            &rfc9420_identity,
+            &rfc9420_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+
+        // A hybrid still fails closed: MDK dictionary, but a non-default
+        // extension outside both profiles is listed.
         let (hybrid_state, hybrid_identity, hybrid_signature_key) =
             phase_b33a_hostile_founder_state(
                 b"phase-b33a-hybrid-profile",
                 0xb9,
                 0xba,
-                phase_b32a_styx_capabilities(),
+                Capabilities::new(
+                    None,
+                    Some(&[PROBE_CIPHERSUITE]),
+                    Some(&[ExtensionType::AppDataDictionary, ExtensionType::LastResort]),
+                    Some(&[ProposalType::AppDataUpdate]),
+                    None,
+                ),
                 false,
                 false,
             );
@@ -11513,6 +11615,60 @@ mod tests {
             &collision.welcome_bytes,
             &collision.expected_author,
         );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_rfc9420_mdk_founder_joins_and_projects_its_own_profile() {
+        for (shape, label) in [
+            (PhaseB32aTestFounder::MdkRfc9420, b"phase-b32a-rfc9420-join".as_slice()),
+            (PhaseB32aTestFounder::MdkRfc9420Grease, b"phase-b32a-rfc9420-grease".as_slice()),
+        ] {
+            let fixture =
+                phase_b32a_native_fixture_with_founder(label, 0xa5, 0xa6, true, shape, false);
+            let (_, projection) = phase_b32a_prepare_once(
+                &fixture.predecessor_state,
+                &fixture.predecessor_sha256,
+                &fixture.account_identity,
+                &fixture.leaf_signature_key,
+                &fixture.welcome_bytes,
+                &fixture.key_package_bytes,
+                &fixture.expected_author,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+            assert_eq!(projection.member_count(), 2);
+            assert_eq!(projection.member_profile(0).unwrap(), "MDK_RFC9420");
+            assert_eq!(projection.member_profile(1).unwrap(), "STYX_B32A");
+            assert!(!projection.member_lists_default_required_capabilities(0).unwrap());
+            assert!(projection.member_emits_empty_safe_aad(0).unwrap());
+            assert!(!projection.member_lists_default_required_capabilities(1).unwrap());
+            assert!(!projection.member_emits_empty_safe_aad(1).unwrap());
+            assert_eq!(projection.welcome_sender_identity(), fixture.expected_author);
+        }
+
+        let extra = phase_b32a_native_fixture_with_founder(
+            b"phase-b32a-rfc9420-extra",
+            0xa7,
+            0xa8,
+            true,
+            PhaseB32aTestFounder::MdkExtraExtension,
+            false,
+        );
+        let predecessor = extra.predecessor_state.clone();
+        phase_b32_assert_rejected(|| {
+            PhaseB32aPendingWelcome::prepare_from_durable_state(
+                &extra.predecessor_state,
+                &extra.predecessor_sha256,
+                &extra.account_identity,
+                &extra.leaf_signature_key,
+                &extra.welcome_bytes,
+                &extra.key_package_bytes,
+                &extra.expected_author,
+            )
+            .map(|_| ())
+        });
+        assert_eq!(extra.predecessor_state, predecessor);
     }
 
     #[cfg(feature = "extensions-draft")]
