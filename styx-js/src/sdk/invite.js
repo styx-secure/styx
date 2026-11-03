@@ -284,6 +284,9 @@ export function createInvitations(options) {
       candidates.sort((a, b) => b.event.created_at - a.event.created_at || (a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0));
       if (!candidates.length) error('E_SDK_KEYPACKAGE_NOT_FOUND');
       const chosen = candidates[0];
+      // Examined candidates are not retained (C-DLV section 7.1).
+      op.events.length = 0;
+      candidates.length = 0;
       const started = await boundary(session, 'startSession', [{ peer: invitee, keyPackage: chosen.value }], 'E_SDK_SESSION_FAILED');
       if (!exact(started, ['welcome', 'ratchetTree']) || !bytes(started.welcome, 262144)
           || !bytes(started.ratchetTree, 262144)) error('E_SDK_SESSION_FAILED');
