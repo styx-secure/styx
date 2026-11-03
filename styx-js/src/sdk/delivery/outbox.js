@@ -1337,6 +1337,9 @@ export function createOutbox(options) {
       // stores before sealing and any residual item of a failed admission; the
       // deadline is armed only at the admission reading of step 5.
       const preWrite = callSyncPort(read.clock, 'now');
+      // A `shutdown()` re-entered from the clock port lands before `put` is
+      // issued: nothing has been written and no item exists (C-DLV 4.2).
+      if (stopped) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
       if (!preWrite.ok || !isValidClockValue(preWrite.value)) {
         return failure(SdkResultCode.E_SDK_INTERNAL);
       }
@@ -1388,6 +1391,9 @@ export function createOutbox(options) {
       // Step 5: the admission clock reading, and in the same synchronous step
       // the deadline timer of section 4.4 and its host backstop.
       const reading = callSyncPort(read.clock, 'now');
+      // A `shutdown()` re-entered from the clock port: the stored item is
+      // LOST_ON_SHUTDOWN and nothing is sealed.
+      if (stopped) return admitLostOnShutdown(item);
       if (!reading.ok || !isValidClockValue(reading.value)) {
         return await undoAdmission(item, SdkResultCode.E_SDK_INTERNAL, portCall.value, undefined);
       }
@@ -1401,6 +1407,9 @@ export function createOutbox(options) {
         item.deadlineAt = preWriteDeadlineAt;
         return await undoAdmission(item, SdkResultCode.E_SDK_INTERNAL, portCall.value, undefined);
       }
+      // A `shutdown()` re-entered while the timers were armed: the armed
+      // handles are cleared in shutdown step (4), and nothing is sealed.
+      if (stopped) return admitLostOnShutdown(item);
 
       // Step 6: session.seal, bounded by the port-call timeout.
       const sealed = await boundedCall(read.session, 'seal', [{ recipient, plaintext }], portCall.value);
