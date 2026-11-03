@@ -123,8 +123,11 @@ because OpenMLS does not re-validate leaves of a restored group state. Only
 `.d.ts` files and `package.json` are byte-identical, so the generated public
 surface below is unchanged. Two complete disposable locked builds of the same
 patch were byte-identical across the five-file tuple, and the native suite
-passed 44 tests. The exact source commit, tree and patch SHA-256 are recorded
-below and bound by the owner's exact-head ratification of this change.
+passed 44 tests. The artifact was built from source commit
+`79bee5359a7b5b76100649f08a91fc4dc182be61`, tree
+`bf6c1351de0d76a6535280da9653064d902818e0`, patch SHA-256
+`e2b4b83d602004f931fcf2ece7c2fc0940c40b4a911aebb072f70684c39d264f`;
+the owner's exact-head ratification of this change binds those values.
 
 The immediately preceding B3.3b-1 artifact digest
 `fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e`
