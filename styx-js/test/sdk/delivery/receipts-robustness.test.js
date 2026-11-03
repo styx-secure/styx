@@ -52,7 +52,7 @@ function harness({ sign } = {}) {
     identity: { getPublicKey: () => owner.pub, sign: sign ?? (({ digest }) => schnorr.sign(digest, owner.priv)) },
     session: { open: ({ sender, ciphertext }) => { opens.push({ sender, ciphertext }); return { plaintext: new Uint8Array([7]) }; } },
     clock: { now: () => OWN_CLOCK_MS },
-    perRelayTimeoutMs: 20000,
+    perRelayTimeoutMs: 30000,
     publishReceipt: (event) => { published.push(event); },
     acceptReceipt: ({ eventId, recipient }) => {
       acks.push({ eventId, recipient });
@@ -89,6 +89,18 @@ describe('C-DLV section 7.1 step 1 -- inbound content and tag bounds', () => {
     expect(h.events[0].kind).toBe('MESSAGE_RECEIVED');
     expect(h.opens).toHaveLength(1);
     expect(h.opens[0].ciphertext.length).toBe(262146);
+  });
+
+  test('the bound is on characters: 262 146 bytes are still opened, 262 147 bytes are refused before open', async () => {
+    const h = harness(); const sender = makeKey();
+    const fits = bytesToBase64(new Uint8Array(262146));
+    const over = bytesToBase64(new Uint8Array(262147));
+    expect([fits.length, over.length]).toEqual([CONTENT_MAX, CONTENT_MAX + 4]);
+    h.module.ingest(eventFrame(message(sender, h.owner, { content: over, n: 1 })));
+    h.module.ingest(eventFrame(message(sender, h.owner, { content: fits, n: 2 })));
+    expect(await waitFor(() => h.events.length === 2)).toBe(true);
+    expect(h.events.map((e) => e.kind)).toEqual(['INBOUND_DISCARDED', 'MESSAGE_RECEIVED']);
+    expect(h.opens.map((o) => o.ciphertext.length)).toEqual([262146]);
   });
 
   test('a tag list longer than four is refused without reading its later elements', async () => {
@@ -141,7 +153,9 @@ describe('C-DLV section 7.2 -- receipt signing does not hold back the inbound qu
     const ack = receiptFor(sender, h.owner, 'e'.repeat(64));
     h.module.ingest(eventFrame(ack));
     h.module.ingest(eventFrame(message(sender, h.owner, { n: 2 })));
-    expect(await waitFor(() => h.acks.length === 1)).toBe(true);
+    // Well inside the 15 s port-call timeout: the held signature is still pending.
+    expect(await waitFor(() => h.acks.length === 1, 2000)).toBe(true);
+    expect(slow.calls()).toBe(1);
     expect(h.acks).toEqual([{ eventId: 'e'.repeat(64), recipient: sender.pub }]);
     // The next admitted open still follows the held receipt: one unit at a time.
     await flush();
