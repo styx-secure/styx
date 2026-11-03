@@ -68,10 +68,12 @@ describe('Phase B3.2a RFC 9420 section 7.2 MDK founder profile', () => {
   }
 
   test('accepts the RFC 9420 MDK founder beside the exact Styx joiner', () => {
-    const normalized = normalizeB32aProjection(rfc9420Founder());
+    // One fixture for both sides: every fixture call draws fresh random values.
+    const value = rfc9420Founder();
+    const normalized = normalizeB32aProjection(value);
     expect(normalized.members.map((member) => member.profileTag))
       .toEqual(['MDK_RFC9420', B32A_PROFILE.STYX]);
-    expect(projectB32aNative(fakeNativeProjection(rfc9420Founder()))).toEqual(normalized);
+    expect(projectB32aNative(fakeNativeProjection(value))).toEqual(normalized);
   });
 
   test.each([
