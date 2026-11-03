@@ -368,7 +368,7 @@ describe('a put that settles after its timeout leaves no record (C-DLV 4.2)', ()
     await outbox.shutdown();
   }, 30000);
 
-  test('a late put that settles while the cleanup remove is in progress is removed again only after that remove settled', async () => {
+  test('a late put that settles while the cleanup remove is in progress is removed again only after that remove settled, even past its timeout', async () => {
     const storage = makeStorage();
     const put = storage.put;
     const remove = storage.remove;
@@ -394,8 +394,12 @@ describe('a put that settles after its timeout leaves no record (C-DLV 4.2)', ()
     await flush();
     expect(storage.records.size).toBe(1);
     expect(storage.calls.remove).toEqual(['d1']);
-    releaseRemove();
+    // The cleanup removal outlives its own port-call timeout: `send` resolves
+    // within its bound, and the second removal still waits for it to settle.
     expect((await pending).code).toBe('E_SDK_STORAGE_FAILED');
+    await flush();
+    expect(storage.calls.remove).toEqual(['d1']);
+    releaseRemove();
     await flush();
     expect(storage.calls.remove).toEqual(['d1', 'd1']);
     expect(storage.records.size).toBe(0);
