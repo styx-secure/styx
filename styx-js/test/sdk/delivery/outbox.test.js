@@ -1589,6 +1589,10 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     });
     expect((await lateStop).value).toEqual({ clientState: 'STOPPED', lost: 0 });
     expect(late.storage.calls.put.length).toBe(0);
+    expect(await late.outbox.getDelivery({ deliveryId: 'd1' })).toEqual({
+      ok: false,
+      code: 'E_SDK_UNKNOWN_DELIVERY',
+    });
     expect(late.events.length).toBe(0);
 
     // The seal is held open, so the send is past its put when shutdown lands:
