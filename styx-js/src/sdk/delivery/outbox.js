@@ -1479,7 +1479,8 @@ export function createOutbox(options) {
    * written. The SDK calls `remove` once; if that removal also fails, the
    * residual-item rule of C-SDK section 5.2 applies. A `put` that outlived its
    * port-call timeout is followed, once it has settled and this removal has
-   * settled, by one more `remove`, unless `shutdown()` has been called.
+   * settled (also after its own timeout), by one more `remove`, unless
+   * `shutdown()` has been called.
    *
    * @param {object} item
    * @param {string} code the code of the failed step
@@ -1490,7 +1491,13 @@ export function createOutbox(options) {
   async function undoAdmission(item, code, portCallTimeoutMs, latePut) {
     const removal = boundedCall(read.storage, 'remove', [item.deliveryId], portCallTimeoutMs);
     if (latePut !== undefined) {
-      scheduleLatePutCleanup(item.deliveryId, latePut, removal, portCallTimeoutMs);
+      // The background wait follows the removal until it has really settled,
+      // also past its own timeout; `send` itself waits only within the bound.
+      const removalSettled = removal.then(
+        (result) => (isPlainObject(result) && result.late !== undefined ? result.late : undefined),
+        () => undefined,
+      );
+      scheduleLatePutCleanup(item.deliveryId, latePut, removalSettled, portCallTimeoutMs);
     }
     const removed = await removal;
     // C-DLV section 4.5 and C-SDK section 5.3: an unknown closed slot in a
@@ -1530,11 +1537,11 @@ export function createOutbox(options) {
    *
    * @param {string} deliveryId
    * @param {Promise<void>} latePut
-   * @param {Promise<object>} removal
+   * @param {Promise<void>} removalSettled settles once the removal has settled
    * @param {number} portCallTimeoutMs
    */
-  function scheduleLatePutCleanup(deliveryId, latePut, removal, portCallTimeoutMs) {
-    Promise.all([latePut, removal.catch(() => undefined)])
+  function scheduleLatePutCleanup(deliveryId, latePut, removalSettled, portCallTimeoutMs) {
+    Promise.all([latePut, removalSettled.catch(() => undefined)])
       .then(() => {
         if (stopped) return undefined;
         return boundedCall(read.storage, 'remove', [deliveryId], portCallTimeoutMs);
