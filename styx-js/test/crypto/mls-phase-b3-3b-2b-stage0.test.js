@@ -13,63 +13,42 @@ describe('Phase B3.3b-2b Stage 0 exact-pin concurrent fork', () => {
       .toThrow(/distinct canonical/);
   });
 
-  test('freezes stored convergence and pairwise recovery for both winners', async () => {
+  test('settles every same-epoch rival through stored convergence for both winners', async () => {
     const result = await runStage0ForkProbe(process.env.B33B2B_CANDIDATE_DIR);
     expect(result.mdkRevision)
-      .toBe('9396adb6aa6b95b521a7979facd5ea7040c07288');
+      .toBe('3fb4b4759ac676b0c21c4c3527074866c9fa4c89');
     expect(result.scenarios).toHaveLength(4);
     const byKey = new Map(result.scenarios.map((scenario) => [
       `${scenario.desiredWinner}:${scenario.deliveryMode}`, scenario,
     ]));
 
+    // MDK removed the committer's pairwise fast path (marmot-protocol/mdk#1293):
+    // a rival delivered before or after a restart is buffered at its source
+    // epoch and settled by the same distributed-convergence pass.
     for (const winner of ['styx', 'mdk']) {
-      const stored = byKey.get(`${winner}:after_restart`);
-      expect(stored).toEqual(expect.objectContaining({
-        deliveryMode: 'after_restart',
-        desiredWinner: winner,
-        expectedWinner: winner,
-        initialDisposition: 'buffered',
-        sourceEpoch: '1',
-        targetEpoch: '2',
-      }));
-      expect(stored.selection).toEqual(expect.objectContaining({
-        candidateCount: 2,
-        decisiveRule: 'tip_committer',
-        deferredReason: 'nonselectedeligiblebranch',
-        eligibleCount: 2,
-        status: 'settled',
-      }));
-      for (const field of [
-        'groupIdDigest', 'parentGroupContextSha256Hex', 'rosterDigest',
-        'selectedGroupContextSha256Hex',
-      ]) {
-        expect(stored[field]).toMatch(/^[0-9a-f]{64}$/);
-      }
-
-      const pairwise = byKey.get(`${winner}:before_restart`);
-      expect(pairwise).toEqual(expect.objectContaining({
-        deliveryMode: 'before_restart',
-        desiredWinner: winner,
-        expectedWinner: winner,
-        sourceEpoch: '1',
-        targetEpoch: '2',
-      }));
-      if (winner === 'styx') {
-        expect(pairwise.initialDisposition).toBe('processed');
-        expect(pairwise.selection).toEqual({
-          disposition: 'processed',
-          eventKinds: [
-            'fork_recovered', 'group_state_invalidated', 'epoch_changed',
-          ],
-          winnerSideClassification: null,
-        });
-      } else {
-        expect(pairwise.initialDisposition).toBe('stale');
-        expect(pairwise.selection).toEqual({
-          disposition: 'stale',
-          eventKinds: [],
-          winnerSideClassification: 'already_at_epoch',
-        });
+      for (const deliveryMode of ['after_restart', 'before_restart']) {
+        const scenario = byKey.get(`${winner}:${deliveryMode}`);
+        expect(scenario).toEqual(expect.objectContaining({
+          deliveryMode,
+          desiredWinner: winner,
+          expectedWinner: winner,
+          initialDisposition: 'buffered',
+          sourceEpoch: '1',
+          targetEpoch: '2',
+        }));
+        expect(scenario.selection).toEqual(expect.objectContaining({
+          candidateCount: 2,
+          decisiveRule: 'tip_committer',
+          deferredReason: 'nonselectedeligiblebranch',
+          eligibleCount: 2,
+          status: 'settled',
+        }));
+        for (const field of [
+          'groupIdDigest', 'parentGroupContextSha256Hex', 'rosterDigest',
+          'selectedGroupContextSha256Hex',
+        ]) {
+          expect(scenario[field]).toMatch(/^[0-9a-f]{64}$/);
+        }
       }
     }
   }, 600_000);

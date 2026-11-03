@@ -43,7 +43,7 @@ import {
 } from '../../spikes/marmot-phase-b3-3a/b3-3a-canonical.mjs';
 import { readExactRegularFile }
   from '../../spikes/marmot-phase-b3-3a/b3-3a-artifact-reader.mjs';
-import { B33A_MDK_PEER_LOCK_SHA256, executableSha256 }
+import { B33A_STAGE2_HISTORICAL_MDK_PEER_LOCK_SHA256, executableSha256 }
   from '../../spikes/marmot-phase-b3-3a/b3-3a-mdk-builder.mjs';
 import {
   B33aJournal,
@@ -218,7 +218,7 @@ describe('Phase B3.3a evidence and format separation', () => {
       expect(build.evidence).toEqual(expect.objectContaining({
         cargoCommand: 'cargo build --locked --target-dir <fresh-build-child>',
         mdkLockSha256: B33A_MDK_LOCK_SHA256,
-        mdkPeerCargoLockSha256Hex: B33A_MDK_PEER_LOCK_SHA256,
+        mdkPeerCargoLockSha256Hex: B33A_STAGE2_HISTORICAL_MDK_PEER_LOCK_SHA256,
         mdkRevision: B33A_MDK_REVISION,
         mdkTree: B33A_MDK_TREE,
       }));
