@@ -15,7 +15,7 @@ use cgka_engine::{Engine, EngineBuilder};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
 use cgka_traits::engine::{
-    CgkaEngine, CommitOrderingKey, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent,
+    CgkaEngine, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent,
     SendResult,
 };
 use cgka_traits::engine_state::PendingStateRef;
@@ -24,6 +24,7 @@ use cgka_traits::group::ProtocolProfile;
 use cgka_traits::group_context::GroupContextSnapshot;
 use cgka_traits::ingest::{IngestOutcome, InputRejectionCategory, PeeledContent, PeeledMessage};
 use cgka_traits::peeler::TransportPeeler;
+use cgka_traits::storage::MessageStorage;
 use cgka_traits::transport::{
     EncryptedPayload, Timestamp, TransportEnvelope, TransportMessage, TransportSource,
 };
@@ -74,6 +75,7 @@ impl TransportPeeler for DirectMlsPeeler {
             group_id: None,
             sender: None,
             content: PeeledContent::Welcome {
+                created_at: None,
                 bytes: message.payload.clone(),
             },
             origin: message.clone(),
@@ -155,6 +157,8 @@ impl AccountIdentityProofSigner for NodeProofSigner {
 
 struct PeerState {
     engine: Option<Engine<SqliteAccountStorage>>,
+    storage: Option<SqliteAccountStorage>,
+    unacknowledged_outputs: Vec<MessageId>,
     group_id: Option<GroupId>,
     pending_evolution: Option<(MessageId, PendingStateRef)>,
 }
@@ -163,6 +167,8 @@ impl PeerState {
     fn new() -> Self {
         Self {
             engine: None,
+            storage: None,
+            unacknowledged_outputs: Vec::new(),
             group_id: None,
             pending_evolution: None,
         }
@@ -178,6 +184,50 @@ impl PeerState {
         self.engine
             .as_mut()
             .ok_or_else(|| RpcError::state("peer is not initialized"))
+    }
+
+    /// Drain engine events and record the app-visible outputs among them.
+    /// The MDK engine keeps `MessageReceived` and `GroupJoined` in a durable
+    /// outbox until the application acknowledges them after its projection
+    /// committed, and re-emits unacknowledged ones on hydration. This driver's
+    /// projection is its successful response, so the recorded outputs are
+    /// acknowledged only after that response was written and flushed; a
+    /// request that fails acknowledges nothing.
+    fn drain_events(&mut self) -> Result<Vec<GroupEvent>, RpcError> {
+        let events = self.engine_mut()?.drain_events();
+        self.unacknowledged_outputs
+            .extend(events.iter().filter_map(|event| match event {
+                GroupEvent::MessageReceived { message_id, .. } => Some(message_id.clone()),
+                GroupEvent::GroupJoined { via_welcome, .. } => Some(via_welcome.clone()),
+                _ => None,
+            }));
+        Ok(events)
+    }
+
+    /// Acknowledge the outputs drained by the request whose successful
+    /// response was just delivered; forget those of a failed request, which
+    /// stay pending in the engine and are re-emitted by the next hydration.
+    fn settle_outputs(&mut self, response_delivered: bool) -> Result<(), String> {
+        let storage = self.storage.clone();
+        self.settle_outputs_with(response_delivered, |outputs| {
+            storage
+                .as_ref()
+                .ok_or_else(|| "peer storage is not initialized".to_owned())?
+                .delete_pending_application_events(outputs)
+                .map_err(|error| format!("acknowledge app-visible outputs: {error}"))
+        })
+    }
+
+    fn settle_outputs_with(
+        &mut self,
+        response_delivered: bool,
+        acknowledge: impl FnOnce(&[MessageId]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let outputs = std::mem::take(&mut self.unacknowledged_outputs);
+        if !response_delivered || outputs.is_empty() {
+            return Ok(());
+        }
+        acknowledge(&outputs)
     }
 
     fn register_pending_evolution(
@@ -389,34 +439,10 @@ fn require_application_witnesses(
     })
 }
 
-fn ordering_key_projection(key: &CommitOrderingKey) -> Value {
-    json!({
-        "commit_digest": hex::encode(key.commit_digest),
-        "committer": hex::encode(key.committer.as_slice()),
-        "priority": format!("{:?}", key.priority).to_ascii_lowercase(),
-        "source_epoch": key.source_epoch.0,
-    })
-}
-
 fn fork_event_projection(event: &GroupEvent) -> Value {
     match event {
         GroupEvent::EpochChanged { from, to, .. } => json!({
             "kind": "epoch_changed", "from_epoch": from.0, "to_epoch": to.0,
-        }),
-        GroupEvent::ForkRecovered {
-            source_epoch,
-            recovered_epoch,
-            winner,
-            invalidated,
-            invalidated_commit_id,
-            ..
-        } => json!({
-            "kind": "fork_recovered",
-            "source_epoch": source_epoch.0,
-            "recovered_epoch": recovered_epoch.0,
-            "winner": ordering_key_projection(winner),
-            "invalidated": ordering_key_projection(invalidated),
-            "invalidated_commit_id": hex::encode(invalidated_commit_id.as_slice()),
         }),
         GroupEvent::CommitRolledBack {
             invalidated_commit_id,
@@ -481,6 +507,12 @@ fn fork_event_projection(event: &GroupEvent) -> Value {
             "kind": "transport_object_resource_refused",
             "message_id": hex::encode(message_id.as_slice()),
         }),
+        other => json!({
+            "kind": "unmapped_mdk_event",
+            "event_variant": serde_json::to_value(other).ok().and_then(|value| {
+                value.as_object().and_then(|object| object.keys().next().cloned())
+            }),
+        }),
     }
 }
 
@@ -522,7 +554,7 @@ async fn ingest_fork_evolution(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     let projected_events: Vec<Value> = events.iter().map(fork_event_projection).collect();
     let base = json!({
         "content_sha256": content_sha256,
@@ -675,7 +707,7 @@ fn converge_fork_evolution(
             "monotonic_ms is outside the bounded envelope",
         ));
     }
-    let pre_events = state.engine_mut()?.drain_events();
+    let pre_events = state.drain_events()?;
     if !pre_events.is_empty() {
         state.engine = None;
         state.group_id = None;
@@ -687,7 +719,7 @@ fn converge_fork_evolution(
         .engine_mut()?
         .converge_stored_openmls_messages_at(&group_id, monotonic_ms)
         .map_err(|error| RpcError::fatal_peer(format!("fork convergence failed: {error}")))?;
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     Ok(fork_convergence_projection(&result, &events))
 }
 
@@ -756,6 +788,7 @@ fn initialize(state: &mut PeerState, request: &Map<String, Value>) -> Result<Val
     let storage =
         SqliteAccountStorage::open_encrypted(path_field(request, "database_path")?, &database_key)
             .map_err(|error| RpcError::peer(format!("open durable storage: {error}")))?;
+    let output_storage = storage.clone();
     let signer = NodeProofSigner {
         account_identity: account_identity.clone(),
         node_binary: path_field(request, "node_binary")?,
@@ -778,6 +811,7 @@ fn initialize(state: &mut PeerState, request: &Map<String, Value>) -> Result<Val
         ));
     }
     state.engine = Some(engine);
+    state.storage = Some(output_storage);
     Ok(json!({"protocol_profile": "current"}))
 }
 
@@ -832,7 +866,7 @@ async fn create_group(
         .engine()?
         .conformance_group_snapshot(&group_id)
         .map_err(|error| RpcError::peer(format!("capture conformance projection: {error}")))?;
-    let creation_events = state.engine_mut()?.drain_events();
+    let creation_events = state.drain_events()?;
     if creation_events.iter().any(|event| {
         !matches!(event, GroupEvent::GroupCreated { group_id: event_group_id }
             if event_group_id == &group_id)
@@ -896,7 +930,7 @@ fn restore_group(state: &mut PeerState, request: &Map<String, Value>) -> Result<
         .engine()?
         .conformance_group_snapshot(&group_id)
         .map_err(|error| RpcError::peer(format!("restore durable group projection: {error}")))?;
-    let hydration_events = state.engine_mut()?.drain_events();
+    let hydration_events = state.drain_events()?;
     if !hydration_events.is_empty() {
         state.engine = None;
         return Err(RpcError::fatal_peer(
@@ -925,6 +959,7 @@ async fn send_application(
     let result = match state
         .engine_mut()?
         .send(SendIntent::AppMessage {
+            expected_epoch: None,
             group_id: group_id.clone(),
             payload,
         })
@@ -939,7 +974,7 @@ async fn send_application(
             )));
         }
     };
-    let unexpected_events = state.engine_mut()?.drain_events();
+    let unexpected_events = state.drain_events()?;
     if !unexpected_events.is_empty() {
         state.engine = None;
         state.group_id = None;
@@ -954,6 +989,7 @@ async fn send_application(
             app_event_id,
             source_epoch,
             retention,
+            ..
         } if result_group_id == group_id => Ok(json!({
             "app_event_id_hex": app_event_id,
             "disposition": "application_message_durably_prepared",
@@ -1014,7 +1050,7 @@ async fn self_update(
             )));
         }
     };
-    let unexpected_events = state.engine_mut()?.drain_events();
+    let unexpected_events = state.drain_events()?;
     if !unexpected_events.is_empty() {
         state.engine = None;
         state.group_id = None;
@@ -1111,7 +1147,7 @@ async fn confirm_group_published(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     if events.as_slice() != [event.clone()] {
         state.engine = None;
         state.group_id = None;
@@ -1156,7 +1192,7 @@ async fn fail_group_publication(
             "rollback group evolution failed after entering the MDK mutation boundary: {error}"
         )));
     }
-    if !state.engine_mut()?.drain_events().is_empty() {
+    if !state.drain_events()?.is_empty() {
         state.engine = None;
         state.group_id = None;
         return Err(RpcError::fatal_peer(
@@ -1202,7 +1238,7 @@ async fn ingest_group_evolution(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     match outcome {
         IngestOutcome::Processed => match events.as_slice() {
             [
@@ -1348,7 +1384,7 @@ fn converge_group_evolution(
             "pre-convergence group epoch differs from the journalled parent",
         ));
     }
-    if !state.engine_mut()?.drain_events().is_empty() {
+    if !state.drain_events()?.is_empty() {
         state.engine = None;
         state.group_id = None;
         return Err(RpcError::fatal_peer(
@@ -1364,7 +1400,7 @@ fn converge_group_evolution(
                 "stored group-evolution convergence failed after mutation boundary: {error}"
             ))
         })?;
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     let status = match result.convergence_status {
         ConvergenceStatus::Syncing => "syncing",
         ConvergenceStatus::Resolving => "resolving",
@@ -1507,7 +1543,7 @@ async fn ingest_group_message(
             )));
         }
     };
-    let events = state.engine_mut()?.drain_events();
+    let events = state.drain_events()?;
     match outcome {
         IngestOutcome::Processed => match events.as_slice() {
             [
@@ -1517,6 +1553,7 @@ async fn ingest_group_message(
                     epoch,
                     payload,
                     retention,
+                    ..
                 },
             ] if event_group_id == &group_id => {
                 let sender_identity_hex = hex::encode(sender.as_slice());
@@ -1599,7 +1636,7 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
             exact_fields(request, &["id", "op"])?;
             json!({
                 "protocol": PROTOCOL,
-                "mdk_revision": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+                "mdk_revision": "3fb4b4759ac676b0c21c4c3527074866c9fa4c89",
                 "transport": "direct_mls_identity_wrapper",
             })
         }
@@ -1661,25 +1698,41 @@ async fn main() {
             .and_then(|object| object.get("id"))
             .cloned()
             .unwrap_or(Value::Null);
-        let (response, should_exit) = match parsed {
+        let (response, should_exit, succeeded) = match parsed {
             Ok(value) => match dispatch(&mut state, &value).await {
-                Ok((result, should_exit)) => {
-                    (json!({"id": id, "ok": true, "result": result}), should_exit)
-                }
+                Ok((result, should_exit)) => (
+                    json!({"id": id, "ok": true, "result": result}),
+                    should_exit,
+                    true,
+                ),
                 Err(error) => {
                     let terminate = error.terminate;
                     (
                         json!({"id": id, "ok": false, "error": {"code": error.code, "details": error.details, "message": error.message}}),
                         terminate,
+                        false,
                     )
                 }
             },
             Err(_) => (
                 json!({"id": id, "ok": false, "error": {"code": "invalid_json", "message": "request is not valid JSON"}}),
                 false,
+                false,
             ),
         };
+        if !succeeded {
+            let _ = state.settle_outputs(false);
+        }
         if writeln!(stdout, "{response}").is_err() || stdout.flush().is_err() {
+            break;
+        }
+        if succeeded && let Err(message) = state.settle_outputs(true) {
+            let _ = writeln!(
+                stdout,
+                "{}",
+                json!({"ok": false, "error": {"code": "output_acknowledgement_failed", "message": message}})
+            );
+            let _ = stdout.flush();
             break;
         }
         if should_exit {
@@ -1695,6 +1748,55 @@ mod tests {
     #[test]
     fn message_ids_are_domain_separated() {
         assert_ne!(message_id(b"same", b"group"), message_id(b"same", b"peer"));
+    }
+
+    fn pending_output_state() -> (PeerState, Vec<MessageId>) {
+        let outputs = vec![MessageId::new(vec![0x5a; 32]), MessageId::new(vec![0x5b; 32])];
+        let mut state = PeerState::new();
+        state.unacknowledged_outputs.extend(outputs.iter().cloned());
+        (state, outputs)
+    }
+
+    #[test]
+    fn failed_requests_leave_drained_outputs_pending() {
+        let (mut state, _) = pending_output_state();
+        let mut acknowledged = Vec::new();
+        state
+            .settle_outputs_with(false, |outputs| {
+                acknowledged.extend_from_slice(outputs);
+                Ok(())
+            })
+            .unwrap();
+        assert!(acknowledged.is_empty());
+        assert!(state.unacknowledged_outputs.is_empty());
+        // A later successful request does not acknowledge the earlier outputs.
+        state
+            .settle_outputs_with(true, |outputs| {
+                acknowledged.extend_from_slice(outputs);
+                Ok(())
+            })
+            .unwrap();
+        assert!(acknowledged.is_empty());
+    }
+
+    #[test]
+    fn delivered_responses_acknowledge_exactly_their_outputs() {
+        let (mut state, outputs) = pending_output_state();
+        let mut acknowledged = Vec::new();
+        state
+            .settle_outputs_with(true, |drained| {
+                acknowledged.extend_from_slice(drained);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(acknowledged, outputs);
+        assert!(state.unacknowledged_outputs.is_empty());
+        let (mut state, _) = pending_output_state();
+        assert_eq!(
+            state.settle_outputs_with(true, |_| Err("refused".to_owned())),
+            Err("refused".to_owned())
+        );
+        assert!(state.unacknowledged_outputs.is_empty());
     }
 
     #[test]

@@ -47,7 +47,20 @@ export const B32A_STATE = Object.freeze({
 export const B32A_PROFILE = Object.freeze({
   STYX: 'STYX_B32A',
   MDK: 'MDK_PIN_9396ADB',
+  MDK_RFC9420: 'MDK_RFC9420',
 });
+
+// The two MDK leaf profiles share the dictionary and the empty safe-AAD list;
+// only the pinned 9396adb shape lists the default RequiredCapabilities type,
+// which RFC 9420 section 7.2 forbids and MDK v0.14.0 no longer lists.
+const MDK_PROFILE_FLAGS = Object.freeze({
+  [B32A_PROFILE.MDK]: Object.freeze([true, true]),
+  [B32A_PROFILE.MDK_RFC9420]: Object.freeze([false, true]),
+});
+
+export function isB32aMdkProfile(tag) {
+  return Object.hasOwn(MDK_PROFILE_FLAGS, tag);
+}
 
 export const B32A_PREPARATION = Object.freeze({
   BYTE_IDENTICAL: 'BYTE_IDENTICAL',
@@ -128,9 +141,9 @@ function normalizeMember(value, index) {
   }
   const expectedDictionary = member.profileTag === B32A_PROFILE.STYX
     ? STYX_DICTIONARY_IDS
-    : member.profileTag === B32A_PROFILE.MDK ? MDK_DICTIONARY_IDS : null;
+    : isB32aMdkProfile(member.profileTag) ? MDK_DICTIONARY_IDS : null;
   if (expectedDictionary === null) {
-    failB32a(B32A_ERROR.POLICY_REJECTED, 'member profile tag is not one of the exact two profiles');
+    failB32a(B32A_ERROR.POLICY_REJECTED, 'member profile tag is not one of the exact profiles');
   }
   const componentIds = exactU16Array('member dictionary ids', member.componentIds, expectedDictionary);
   const supportedComponentIds = exactU16Array(
@@ -138,7 +151,7 @@ function normalizeMember(value, index) {
   );
   const expectedFlags = member.profileTag === B32A_PROFILE.STYX
     ? [false, false]
-    : [true, true];
+    : MDK_PROFILE_FLAGS[member.profileTag];
   if (member.listsDefaultRequiredCapabilities !== expectedFlags[0]
     || member.emitsEmptySafeAad !== expectedFlags[1]) {
     failB32a(B32A_ERROR.POLICY_REJECTED, 'member profile evidence flags disagree with its exact tag');
@@ -222,7 +235,7 @@ export function normalizeB32aProjection(value) {
     failB32a(B32A_ERROR.INVALID, 'Welcome author encoding is invalid', {}, error);
   }
   const founder = members.find((member) => member.leafIndex === author.leafIndex);
-  if (!founder || founder.profileTag !== B32A_PROFILE.MDK
+  if (!founder || !isB32aMdkProfile(founder.profileTag)
     || founder.identityHex !== author.identityHex
     || founder.signatureKeyHex !== author.signatureKeyHex) {
     failB32a(B32A_ERROR.POLICY_REJECTED, 'authenticated founder is not the exact MDK profile');

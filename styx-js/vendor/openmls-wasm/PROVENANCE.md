@@ -96,17 +96,52 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (rebuilt 2026-08-16 for the isolated B3.3b-1 sequential self-update
-and retained-traffic capability, from the
-unchanged source pin and pins above):**
+**Artifact (rebuilt 2026-11-03 for the RFC 9420 section 7.2 MDK leaf profile,
+from the unchanged source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e` |
+| `openmls_wasm_bg.wasm` | `e7e8fb55a100d2c3f23a0ac410696d21a54125a3c595cd70c1f0910dd6befd0d` |
 | `openmls_wasm.js` | `3de8fd46e4897aae117ee7b10ac41dffd02b507952c4024b0fe69d89fbb0c973` |
 | `openmls_wasm.d.ts` | `057974ec53e3588da3dbf159f183b3e3ddb4a3b0a57d5391194f124a483ede86` |
 | `openmls_wasm_bg.wasm.d.ts` | `c21ace2360b264437541025e4703bcb38b53010793829d1904cb85b3d2aa238a` |
 | `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
+
+**RFC 9420 section 7.2 MDK leaf profile: verified 2026-11-03.** `patch/lib.rs`
+keeps the exact `MDK_PIN_9396ADB` leaf (which lists the default
+RequiredCapabilities type) unchanged and adds the `MDK_RFC9420` leaf profile:
+default extension types `0x0001`-`0x0005` and proposal types `0x0001`-`0x0007`
+must not be listed, GREASE values are ignored, and version, ciphersuite,
+credential, non-default extensions and proposals, dictionary ids, supported
+components, the empty safe-AAD list and the account-identity proof stay exact.
+Because such a leaf has the same capabilities as the Styx leaf, the safe-AAD
+dictionary entry `0x0002` separates the MDK profile from the Styx profile. A
+refused Welcome author now names its precise sub-cause. An MDK leaf must also
+carry a Basic credential and exactly one leaf extension, AppDataDictionary,
+because OpenMLS does not re-validate leaves of a restored group state. Only
+`openmls_wasm_bg.wasm` changed (2,359,424 bytes); the JavaScript glue, both
+`.d.ts` files and `package.json` are byte-identical, so the generated public
+surface below is unchanged. Two complete disposable locked builds of the same
+patch were byte-identical across the five-file tuple, and the native suite
+passed 44 tests. The artifact was built from source commit
+`79bee5359a7b5b76100649f08a91fc4dc182be61`, tree
+`bf6c1351de0d76a6535280da9653064d902818e0`, patch SHA-256
+`e2b4b83d602004f931fcf2ece7c2fc0940c40b4a911aebb072f70684c39d264f`;
+the owner's exact-head ratification of this change binds those values.
+
+The immediately preceding B3.3b-1 artifact digest
+`fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e`
+remains an exact state-writer compatibility tuple: the rebuild changes leaf
+profile validation only, not the Provider serializer or parser. Provider state
+written by that artifact was restored by the rebuilt one with identical
+re-serialized state entries, the same exported epoch secret and continued
+messaging.
+
+**Previous artifact (rebuilt 2026-08-16 for the isolated B3.3b-1 sequential
+self-update and retained-traffic capability, from the unchanged source pin and
+pins above):** `openmls_wasm_bg.wasm`
+`fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e`; the other
+four files are those listed above.
 
 **Reproducibility: verified 2026-08-16 for the reviewed B3.3b-1 candidate.** Two
 complete disposable locked builds associated with exact reviewed source commit

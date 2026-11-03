@@ -23,6 +23,10 @@ import { B33A_ERROR, B33A_MDK_BUILD_ROOT, failB33a }
 import { readExactRegularFile } from './b3-3a-artifact-reader.mjs';
 
 export const B33A_MDK_PEER_LOCK_SHA256 =
+  '3b42f7fd1c53877ba939e740e8108029e6ba5c248261b168e6ca2abd0cbf3f59';
+// Peer lock of the historical B3.3a Stage 2 runs at MDK 9396adb6; their
+// recorded evidence keeps naming it.
+export const B33A_STAGE2_HISTORICAL_MDK_PEER_LOCK_SHA256 =
   'c42ccd8bc136421b265ee8544af260cbcdf9aa865fa7a1ace03c7c8cae257b4f';
 
 const directory = dirname(fileURLToPath(import.meta.url));

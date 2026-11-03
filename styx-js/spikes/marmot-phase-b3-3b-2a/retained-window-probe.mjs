@@ -269,7 +269,10 @@ async function applyStyxUpdate(context, sourceEpoch) {
   await restartMdk(context);
   const convergence = {
     expected_accepted_app_message_ids: Object.freeze([...context.mdkAcceptedIds].sort()),
-    expected_already_seen_message_ids: Object.freeze([...context.mdkSeenStyxIds].sort()),
+    // Messages accepted by an earlier pass are neither re-accepted nor
+    // re-reported as already-seen witnesses; the pass emits only the epoch
+    // transition, so no message is delivered twice.
+    expected_already_seen_message_ids: Object.freeze([]),
     expected_content_sha256: retry.commitSha256Hex,
     expected_from_epoch: sourceEpoch,
     expected_to_epoch: sourceEpoch + 1,

@@ -91,8 +91,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: marmot-protocol/mdk
-          ref: 9396adb6aa6b95b521a7979facd5ea7040c07288
-          path: .styx-pins/mdk-9396adb6
+          ref: 3fb4b4759ac676b0c21c4c3527074866c9fa4c89
+          path: .styx-pins/mdk-3fb4b475
           persist-credentials: false
           fetch-depth: 1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -111,9 +111,9 @@ jobs:
       - name: Unit + app tests
         working-directory: styx-js
         env:
-          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
-          B33B2A_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
-          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
+          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          B33B2A_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
           RUSTUP_TOOLCHAIN: 1.97.1
         run: |
           npm ci
@@ -121,8 +121,8 @@ jobs:
       - name: Run the exact paired B3.3b-2b fork proof
         working-directory: styx-js
         env:
-          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
-          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
+          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
           RUSTUP_TOOLCHAIN: 1.97.1
         run: |
           node spikes/marmot-phase-b3-3b-2b/concurrent-fork-probe.mjs --verify-paired-runs

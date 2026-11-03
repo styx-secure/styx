@@ -507,67 +507,6 @@ function requireEmptyReplayPass(pass) {
     'idempotent convergence pass repeated a selection trace');
 }
 
-function requirePairwiseDisposition(ingest, candidates, expectedWinner) {
-  const losing = candidates.find((candidate) => candidate.role !== expectedWinner.role);
-  if (expectedWinner.role === 'mdk') {
-    requireEqual(ingest.disposition, 'stale',
-      'winning MDK branch did not classify the rival as stale');
-    requireArray(ingest.events, 0,
-      'winner-side stale classification released an event');
-    requireEqual(ingest.reason?.AlreadyAtEpoch?.current?.toString(),
-      expectedWinner.evidence.targetEpoch,
-      'winner-side stale classification changed the current epoch');
-    requireEqual(ingest.reason?.AlreadyAtEpoch?.msg_epoch?.toString(),
-      expectedWinner.evidence.sourceEpoch,
-      'winner-side stale classification changed the rival source epoch');
-    return Object.freeze({
-      disposition: 'stale',
-      eventKinds: Object.freeze([]),
-      winnerSideClassification: 'already_at_epoch',
-    });
-  }
-
-  requireEqual(ingest.disposition, 'processed',
-    'displacing rival did not enter the pairwise recovery path');
-  const events = requireArray(ingest.events, 3,
-    'pairwise recovery changed its exact event count');
-  const recovered = events[0];
-  requireEqual(recovered?.kind, 'fork_recovered',
-    'pairwise recovery did not first emit fork recovery');
-  requireEqual(recovered?.source_epoch?.toString(), expectedWinner.evidence.sourceEpoch,
-    'pairwise recovery changed the source epoch');
-  requireEqual(recovered?.recovered_epoch?.toString(), expectedWinner.evidence.targetEpoch,
-    'pairwise recovery changed the recovered epoch');
-  for (const [label, observed, candidate] of [
-    ['winner', recovered?.winner, expectedWinner],
-    ['invalidated', recovered?.invalidated, losing],
-  ]) {
-    requireEqual(observed?.commit_digest, candidate.evidence.commitSha256Hex,
-      `pairwise ${label} changed the exact Commit digest`);
-    requireEqual(observed?.committer, candidate.evidence.committerAccountHex,
-      `pairwise ${label} changed the authenticated committer`);
-    requireEqual(observed?.priority, 'ordinary',
-      `pairwise ${label} changed the Commit priority`);
-    requireEqual(observed?.source_epoch?.toString(), candidate.evidence.sourceEpoch,
-      `pairwise ${label} changed the source epoch`);
-  }
-  requireEqual(events[1]?.kind, 'group_state_invalidated',
-    'pairwise recovery did not expose upstream superseded-state evidence');
-  requireEqual(events[1]?.reason, 'supersededbybranchselection',
-    'pairwise recovery changed the upstream supersession reason');
-  requireEqual(events[2]?.kind, 'epoch_changed',
-    'pairwise recovery did not finish with the epoch transition');
-  requireEqual(events[2]?.from_epoch?.toString(), expectedWinner.evidence.sourceEpoch,
-    'pairwise epoch event changed its source epoch');
-  requireEqual(events[2]?.to_epoch?.toString(), expectedWinner.evidence.targetEpoch,
-    'pairwise epoch event changed its target epoch');
-  return Object.freeze({
-    disposition: 'processed',
-    eventKinds: Object.freeze(events.map((event) => event.kind)),
-    winnerSideClassification: null,
-  });
-}
-
 function releasePrepared(prepared) {
   clearBytes(prepared?.authorityDigest);
   clearBytes(prepared?.commit);
@@ -762,14 +701,13 @@ async function runScenario(
     const ingest = await mdk.request('ingest_fork_evolution', {
       group_message_hex: bytesToHex(local.commit),
     });
-    const expectedIngest = deliveryMode === 'after_restart'
-      ? 'buffered' : (desiredWinner === 'styx' ? 'processed' : 'stale');
-    requireEqual(ingest.disposition, expectedIngest,
+    // Every same-epoch rival is admitted into stored distributed convergence
+    // and reported at its own MLS (source) epoch; MDK removed the committer's
+    // pairwise fast path and its ForkRecovered event (marmot-protocol/mdk#1293).
+    requireEqual(ingest.disposition, 'buffered',
       'rival Commit changed its exact pinned ingest disposition', { ingest });
-    if (deliveryMode === 'after_restart') {
-      requireEqual(ingest.epoch?.toString(), local.evidence.targetEpoch,
-        'buffered rival Commit was assigned to a different epoch');
-    }
+    requireEqual(ingest.epoch?.toString(), local.evidence.sourceEpoch,
+      'buffered rival Commit was assigned to a different epoch');
     requireEqual(ingest.content_sha256, local.evidence.commitSha256Hex,
       'MDK ingest changed the exact rival Commit digest');
     const candidates = [
@@ -784,25 +722,18 @@ async function runScenario(
     ));
     requireEqual(expectedWinnerCandidate.role, desiredWinner,
       'synthetic identity assignment did not produce the requested winner');
-    let selection;
-    if (deliveryMode === 'after_restart') {
-      requireArray(ingest.events, 0,
-        'stored rival admission released an event before settlement');
-      const firstPass = await mdk.request(
-        'converge_fork_evolution', { monotonic_ms: 1_000_000 },
-      );
-      const secondPass = await mdk.request(
-        'converge_fork_evolution', { monotonic_ms: 1_000_000_000 },
-      );
-      selection = requireBoundedSelection(
-        firstPass, candidates, expectedWinnerCandidate,
-      );
-      requireEmptyReplayPass(secondPass);
-    } else {
-      selection = requirePairwiseDisposition(
-        ingest, candidates, expectedWinnerCandidate,
-      );
-    }
+    requireArray(ingest.events, 0,
+      'stored rival admission released an event before settlement');
+    const firstPass = await mdk.request(
+      'converge_fork_evolution', { monotonic_ms: 1_000_000 },
+    );
+    const secondPass = await mdk.request(
+      'converge_fork_evolution', { monotonic_ms: 1_000_000_000 },
+    );
+    const selection = requireBoundedSelection(
+      firstPass, candidates, expectedWinnerCandidate,
+    );
+    requireEmptyReplayPass(secondPass);
     selected = await mdk.request('public_projection');
     requireEqual(
       selected.group_context_sha256,

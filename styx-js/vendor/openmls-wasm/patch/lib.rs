@@ -1884,6 +1884,92 @@ fn phase_b32a_mdk_capabilities() -> Capabilities {
     )
 }
 
+/// RFC 9420 section 7.2: extension types 0x0001-0x0005 and proposal types
+/// 0x0001-0x0007 are "default", implicitly supported, and MUST NOT be listed
+/// in a leaf's capabilities.
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_RFC9420_DEFAULT_EXTENSION_TYPES: std::ops::RangeInclusive<u16> = 0x0001..=0x0005;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_RFC9420_DEFAULT_PROPOSAL_TYPES: std::ops::RangeInclusive<u16> = 0x0001..=0x0007;
+
+/// Capability check of the MDK leaf profile that follows RFC 9420 section 7.2
+/// (MDK v0.14.0 and later). Default types are implicit and must not be listed;
+/// GREASE values (RFC 9420 section 13.5) are ignored. Every other value is exact:
+/// version MLS 1.0, the single probe ciphersuite, the Basic credential, the
+/// non-default extension AppDataDictionary and the non-default proposal
+/// AppDataUpdate. Each refusal names its own sub-cause.
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_check_mdk_rfc9420_capabilities(
+    capabilities: &Capabilities,
+) -> Result<(), &'static str> {
+    if capabilities.versions() != [openmls::versions::ProtocolVersion::Mls10] {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID");
+    }
+    let ciphersuites = capabilities
+        .ciphersuites()
+        .iter()
+        .filter(|ciphersuite| !ciphersuite.is_grease())
+        .copied()
+        .collect::<Vec<_>>();
+    if ciphersuites != [VerifiableCiphersuite::from(PROBE_CIPHERSUITE)] {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID");
+    }
+    let credentials = capabilities
+        .credentials()
+        .iter()
+        .filter(|credential| !credential.is_grease())
+        .copied()
+        .collect::<Vec<_>>();
+    if credentials != [openmls::credentials::CredentialType::Basic] {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID");
+    }
+    if capabilities
+        .extensions()
+        .iter()
+        .any(|extension| PHASE_B32A_RFC9420_DEFAULT_EXTENSION_TYPES.contains(&u16::from(*extension)))
+    {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED");
+    }
+    let extensions = capabilities
+        .extensions()
+        .iter()
+        .filter(|extension| !extension.is_grease())
+        .copied()
+        .collect::<Vec<_>>();
+    if extensions != [ExtensionType::AppDataDictionary] {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID");
+    }
+    if capabilities
+        .proposals()
+        .iter()
+        .any(|proposal| PHASE_B32A_RFC9420_DEFAULT_PROPOSAL_TYPES.contains(&u16::from(*proposal)))
+    {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_DEFAULT_PROPOSAL_LISTED");
+    }
+    let proposals = capabilities
+        .proposals()
+        .iter()
+        .filter(|proposal| !proposal.is_grease())
+        .copied()
+        .collect::<Vec<_>>();
+    if proposals != [ProposalType::AppDataUpdate] {
+        return Err("PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID");
+    }
+    Ok(())
+}
+
+/// Classify an MDK leaf by its capabilities. The pinned 9396adb shape stays an
+/// exact byte-for-byte match; any other shape must pass the RFC 9420 section 7.2
+/// check above.
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_mdk_leaf_profile(leaf: &LeafNode) -> Result<PhaseB32aLeafProfile, &'static str> {
+    if leaf.capabilities() == &phase_b32a_mdk_capabilities() {
+        return Ok(PhaseB32aLeafProfile::MdkPin9396adb);
+    }
+    phase_b32a_check_mdk_rfc9420_capabilities(leaf.capabilities())?;
+    Ok(PhaseB32aLeafProfile::MdkRfc9420)
+}
+
 #[cfg(feature = "extensions-draft")]
 fn phase_b32a_leaf_extensions(proof: &[u8]) -> Result<Extensions<LeafNode>, JsError> {
     if proof.len() != ACCOUNT_IDENTITY_PROOF_V2_LENGTH {
@@ -2694,49 +2780,67 @@ fn phase_b32a_validate_styx_key_package(
     Ok(())
 }
 
+/// Full MDK leaf check: identity sizes, the capability profile (exact pinned
+/// shape or RFC 9420 section 7.2), the dictionary ids, the supported component
+/// list, the empty safe-AAD list and the account identity proof. The error is
+/// the precise sub-cause.
 #[cfg(feature = "extensions-draft")]
-fn phase_b32a_validate_mdk_leaf(leaf: &LeafNode) -> Result<Vec<ComponentId>, JsError> {
+fn phase_b32a_check_mdk_leaf(
+    leaf: &LeafNode,
+) -> Result<(PhaseB32aLeafProfile, Vec<ComponentId>), &'static str> {
     if leaf.credential().serialized_content().len() != 32
         || leaf.signature_key().as_slice().len() != 32
     {
-        return Err(JsError::new("PHASE_B32A_MDK_IDENTITY_INVALID"));
+        return Err("PHASE_B32A_MDK_IDENTITY_INVALID");
     }
-    if leaf.capabilities() != &phase_b32a_mdk_capabilities() {
-        return Err(JsError::new("PHASE_B32A_MDK_CAPABILITIES_INVALID"));
+    // A restored group state is not re-validated by OpenMLS, so the leaf's
+    // own credential type and extension set are checked here as well.
+    if leaf.credential().credential_type() != openmls::credentials::CredentialType::Basic {
+        return Err("PHASE_B32A_MDK_CREDENTIAL_INVALID");
     }
+    if leaf
+        .extensions()
+        .iter()
+        .map(|extension| extension.extension_type())
+        .collect::<Vec<_>>()
+        != [ExtensionType::AppDataDictionary]
+    {
+        return Err("PHASE_B32A_MDK_LEAF_EXTENSIONS_INVALID");
+    }
+    let profile = phase_b32a_mdk_leaf_profile(leaf)?;
     let dictionary = leaf
         .extensions()
         .app_data_dictionary()
-        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_DICTIONARY_MISSING"))?
+        .ok_or("PHASE_B32A_MDK_DICTIONARY_MISSING")?
         .dictionary();
     let ids = dictionary.entries().map(|entry| entry.id()).collect::<Vec<_>>();
     if ids != [0x0001, 0x0002, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
-        return Err(JsError::new("PHASE_B32A_MDK_DICTIONARY_INVALID"));
+        return Err("PHASE_B32A_MDK_DICTIONARY_INVALID");
     }
     let supported_bytes = dictionary
         .get(&0x0001)
-        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_APP_COMPONENTS_MISSING"))?;
+        .ok_or("PHASE_B32A_MDK_APP_COMPONENTS_MISSING")?;
     let supported = phase_b31_decode_component_ids(supported_bytes)
-        .map_err(|_| JsError::new("PHASE_B32A_MDK_APP_COMPONENTS_INVALID"))?;
+        .map_err(|_| "PHASE_B32A_MDK_APP_COMPONENTS_INVALID")?;
     if supported != PHASE_B32A_SUPPORTED_COMPONENTS {
-        return Err(JsError::new("PHASE_B32A_MDK_APP_COMPONENTS_INVALID"));
+        return Err("PHASE_B32A_MDK_APP_COMPONENTS_INVALID");
     }
     let empty_components = Vec::<ComponentId>::new()
         .tls_serialize_detached()
-        .map_err(|_| JsError::new("PHASE_B32A_MDK_SAFE_AAD_INVALID"))?;
+        .map_err(|_| "PHASE_B32A_MDK_SAFE_AAD_INVALID")?;
     if dictionary
         .get(&0x0002)
-        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_SAFE_AAD_MISSING"))?
+        .ok_or("PHASE_B32A_MDK_SAFE_AAD_MISSING")?
         != empty_components
     {
-        return Err(JsError::new("PHASE_B32A_MDK_SAFE_AAD_INVALID"));
+        return Err("PHASE_B32A_MDK_SAFE_AAD_INVALID");
     }
     let proof = dictionary
         .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
-        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_PROOF_MISSING"))?;
+        .ok_or("PHASE_B32A_MDK_PROOF_MISSING")?;
     phase_b2_check_identity_proof(leaf.credential().serialized_content(), proof)
-        .map_err(|_| JsError::new("PHASE_B32A_MDK_PROOF_INVALID"))?;
-    Ok(supported)
+        .map_err(|_| "PHASE_B32A_MDK_PROOF_INVALID")?;
+    Ok((profile, supported))
 }
 
 /// Exact Styx B3.2a KeyPackage. It is additive and does not relabel B3.1 bytes.
@@ -2964,6 +3068,7 @@ pub struct PhaseB32Group {
 enum PhaseB32aLeafProfile {
     StyxB32a,
     MdkPin9396adb,
+    MdkRfc9420,
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -2972,7 +3077,12 @@ impl PhaseB32aLeafProfile {
         match self {
             Self::StyxB32a => "STYX_B32A",
             Self::MdkPin9396adb => "MDK_PIN_9396ADB",
+            Self::MdkRfc9420 => "MDK_RFC9420",
         }
+    }
+
+    fn is_mdk(self) -> bool {
+        matches!(self, Self::MdkPin9396adb | Self::MdkRfc9420)
     }
 }
 
@@ -3725,23 +3835,37 @@ fn phase_b32a_project_leaf(
     leaf: &LeafNode,
     leaf_index: u32,
 ) -> Result<PhaseB32aMember, JsError> {
+    // With RFC 9420 section 7.2 the MDK leaf capabilities equal the Styx ones,
+    // so capabilities alone no longer separate the two profiles. The MDK
+    // profile is the one that carries the safe-AAD dictionary entry 0x0002.
+    let lists_safe_aad = leaf
+        .extensions()
+        .app_data_dictionary()
+        .is_some_and(|dictionary| dictionary.dictionary().get(&0x0002).is_some());
     let (profile, supported_component_ids, lists_default, emits_empty_safe_aad) =
-        if leaf.capabilities() == &phase_b32a_styx_capabilities() {
+        if leaf.capabilities() == &phase_b32a_styx_capabilities() && !lists_safe_aad {
             (
                 PhaseB32aLeafProfile::StyxB32a,
                 phase_b32a_validate_styx_leaf(leaf)?,
                 false,
                 false,
             )
-        } else if leaf.capabilities() == &phase_b32a_mdk_capabilities() {
+        } else {
+            let (profile, supported) = phase_b32a_check_mdk_leaf(leaf).map_err(|cause| {
+                if leaf.capabilities() == &phase_b32a_mdk_capabilities()
+                    || phase_b32a_check_mdk_rfc9420_capabilities(leaf.capabilities()).is_ok()
+                {
+                    JsError::new(cause)
+                } else {
+                    JsError::new("PHASE_B32A_LEAF_PROFILE_UNKNOWN_OR_HYBRID")
+                }
+            })?;
             (
-                PhaseB32aLeafProfile::MdkPin9396adb,
-                phase_b32a_validate_mdk_leaf(leaf)?,
-                true,
+                profile,
+                supported,
+                profile == PhaseB32aLeafProfile::MdkPin9396adb,
                 true,
             )
-        } else {
-            return Err(JsError::new("PHASE_B32A_LEAF_PROFILE_UNKNOWN_OR_HYBRID"));
         };
 
     let dictionary = leaf
@@ -3965,7 +4089,7 @@ fn phase_b32a_projection_from_group(
         .iter()
         .find(|member| member.member.leaf_index == welcome_sender_leaf_index)
         .ok_or_else(|| JsError::new("PHASE_B32A_WELCOME_AUTHOR_NOT_MEMBER"))?;
-    if sender.profile != PhaseB32aLeafProfile::MdkPin9396adb
+    if !sender.profile.is_mdk()
         || sender.member.credential_identity != expected_author
     {
         return Err(JsError::new("PHASE_B32A_WELCOME_AUTHOR_PROFILE_MISMATCH"));
@@ -5978,8 +6102,9 @@ fn phase_b32a_prepare_once(
     let staged_sender = staged
         .welcome_sender()
         .map_err(|_| JsError::new("PHASE_B32A_WELCOME_AUTHOR_INVALID"))?;
-    phase_b32a_validate_mdk_leaf(staged_sender)
-        .map_err(|_| JsError::new("PHASE_B32A_WELCOME_AUTHOR_PROFILE_INVALID"))?;
+    phase_b32a_check_mdk_leaf(staged_sender).map_err(|cause| {
+        JsError::new(&format!("PHASE_B32A_WELCOME_AUTHOR_PROFILE_INVALID: {cause}"))
+    })?;
     if staged_sender.credential().serialized_content() != expected_author {
         return Err(JsError::new("PHASE_B32A_WELCOME_AUTHOR_MISMATCH"));
     }
@@ -9679,6 +9804,89 @@ mod tests {
         exact_mdk_founder: bool,
         preexisting_group: bool,
     ) -> PhaseB32aNativeFixture {
+        phase_b32a_native_fixture_with_founder(
+            group_id,
+            founder_byte,
+            joiner_byte,
+            embed_ratchet_tree,
+            if exact_mdk_founder {
+                PhaseB32aTestFounder::MdkPin9396adb
+            } else {
+                PhaseB32aTestFounder::StyxShaped
+            },
+            preexisting_group,
+        )
+    }
+
+    /// Founder leaf shapes used by the native B3.2a fixtures.
+    #[cfg(feature = "extensions-draft")]
+    #[derive(Clone, Copy)]
+    enum PhaseB32aTestFounder {
+        /// The exact MDK 9396adb leaf: lists the default RequiredCapabilities type.
+        MdkPin9396adb,
+        /// The RFC 9420 section 7.2 MDK leaf (MDK v0.14.0): no default type listed.
+        MdkRfc9420,
+        /// As MdkRfc9420, plus random GREASE values in every GREASE-able list.
+        MdkRfc9420Grease,
+        /// MDK dictionary, but a non-default extension outside the profile listed.
+        MdkExtraExtension,
+        /// A Styx-shaped leaf (no safe-AAD entry): never a valid Welcome author.
+        StyxShaped,
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_test_founder_leaf(
+        provider: &Provider,
+        founder: PhaseB32aTestFounder,
+        proof: &[u8],
+    ) -> (Capabilities, Extensions<LeafNode>) {
+        let rfc9420 = || {
+            Capabilities::new(
+                None,
+                Some(&[PROBE_CIPHERSUITE]),
+                Some(&[ExtensionType::AppDataDictionary]),
+                Some(&[ProposalType::AppDataUpdate]),
+                None,
+            )
+        };
+        match founder {
+            PhaseB32aTestFounder::MdkPin9396adb => (
+                phase_b32a_mdk_capabilities(),
+                phase_b32a_mdk_leaf_extensions(proof),
+            ),
+            PhaseB32aTestFounder::MdkRfc9420 => (rfc9420(), phase_b32a_mdk_leaf_extensions(proof)),
+            PhaseB32aTestFounder::MdkRfc9420Grease => (
+                rfc9420().with_grease(provider.inner.rand()),
+                phase_b32a_mdk_leaf_extensions(proof),
+            ),
+            PhaseB32aTestFounder::MdkExtraExtension => (
+                Capabilities::new(
+                    None,
+                    Some(&[PROBE_CIPHERSUITE]),
+                    Some(&[ExtensionType::AppDataDictionary, ExtensionType::LastResort]),
+                    Some(&[ProposalType::AppDataUpdate]),
+                    None,
+                ),
+                phase_b32a_mdk_leaf_extensions(proof),
+            ),
+            PhaseB32aTestFounder::StyxShaped => (
+                phase_b2_capabilities(),
+                phase_b31_leaf_extensions(proof)
+                    .map_err(js_error_to_string)
+                    .unwrap(),
+            ),
+        }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_native_fixture_with_founder(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+        embed_ratchet_tree: bool,
+        founder_shape: PhaseB32aTestFounder,
+        preexisting_group: bool,
+    ) -> PhaseB32aNativeFixture {
         let mut founder_provider = Provider::new();
         let joiner_provider = Provider::new();
         let (founder, founder_proof, _) = phase_b2_identity(&founder_provider, founder_byte);
@@ -9721,18 +9929,8 @@ mod tests {
             assert_eq!(conflicting_group.group_id().as_slice(), group_id);
         }
 
-        let founder_capabilities = if exact_mdk_founder {
-            phase_b32a_mdk_capabilities()
-        } else {
-            phase_b2_capabilities()
-        };
-        let founder_extensions = if exact_mdk_founder {
-            phase_b32a_mdk_leaf_extensions(&founder_proof)
-        } else {
-            phase_b31_leaf_extensions(&founder_proof)
-                .map_err(js_error_to_string)
-                .unwrap()
-        };
+        let (founder_capabilities, founder_extensions) =
+            phase_b32a_test_founder_leaf(&founder_provider, founder_shape, &founder_proof);
 
         let mut founder_group = MlsGroup::builder()
             .ciphersuite(PROBE_CIPHERSUITE)
@@ -11161,12 +11359,41 @@ mod tests {
             0xb8,
         );
 
+        // RFC 9420 section 7.2: an MDK leaf that lists no default type has the
+        // same capabilities as the Styx leaf. With the MDK dictionary it is the
+        // MDK_RFC9420 profile (MDK v0.14.0), not a hybrid, and it loads.
+        let (rfc9420_state, rfc9420_identity, rfc9420_signature_key) =
+            phase_b33a_hostile_founder_state(
+                b"phase-b33a-rfc9420-profile",
+                0xb5,
+                0xb6,
+                phase_b32a_styx_capabilities(),
+                false,
+                false,
+            );
+        PhaseB33aGroup::load_canonical_state(
+            &rfc9420_state,
+            b"phase-b33a-rfc9420-profile",
+            &rfc9420_identity,
+            &rfc9420_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+
+        // A hybrid still fails closed: MDK dictionary, but a non-default
+        // extension outside both profiles is listed.
         let (hybrid_state, hybrid_identity, hybrid_signature_key) =
             phase_b33a_hostile_founder_state(
                 b"phase-b33a-hybrid-profile",
                 0xb9,
                 0xba,
-                phase_b32a_styx_capabilities(),
+                Capabilities::new(
+                    None,
+                    Some(&[PROBE_CIPHERSUITE]),
+                    Some(&[ExtensionType::AppDataDictionary, ExtensionType::LastResort]),
+                    Some(&[ProposalType::AppDataUpdate]),
+                    None,
+                ),
                 false,
                 false,
             );
@@ -11513,6 +11740,361 @@ mod tests {
             &collision.welcome_bytes,
             &collision.expected_author,
         );
+    }
+
+    /// Build a one-member group whose own leaf has the given founder shape.
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_founder_leaf_node(founder_shape: PhaseB32aTestFounder, byte: u8) -> LeafNode {
+        let provider = Provider::new();
+        let (founder, proof, _) = phase_b2_identity(&provider, byte);
+        let (capabilities, extensions) =
+            phase_b32a_test_founder_leaf(&provider, founder_shape, &proof);
+        let group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .with_capabilities(capabilities)
+            .with_leaf_node_extensions(extensions)
+            .unwrap()
+            .build(&provider.inner, &founder.keypair, founder.credential_with_key.clone())
+            .unwrap();
+        group.own_leaf_node().unwrap().clone()
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_mdk_capabilities_follow_rfc9420_section_7_2() {
+        let rfc9420 = |extensions: &[ExtensionType], proposals: &[ProposalType]| {
+            Capabilities::new(None, Some(&[PROBE_CIPHERSUITE]), Some(extensions), Some(proposals), None)
+        };
+        let check = |capabilities: &Capabilities| phase_b32a_check_mdk_rfc9420_capabilities(capabilities);
+
+        // Default types are implicit: the exact non-default profile passes.
+        assert_eq!(
+            check(&rfc9420(&[ExtensionType::AppDataDictionary], &[ProposalType::AppDataUpdate])),
+            Ok(())
+        );
+        // GREASE values (RFC 9420 section 13.5) are ignored in every list.
+        let provider = Provider::new();
+        for _ in 0..16 {
+            let greased = rfc9420(&[ExtensionType::AppDataDictionary], &[ProposalType::AppDataUpdate])
+                .with_grease(provider.inner.rand());
+            assert!(greased.extensions().iter().any(|extension| extension.is_grease()));
+            assert_eq!(check(&greased), Ok(()));
+        }
+        // A listed default type is refused, with its own sub-cause.
+        assert_eq!(
+            check(&phase_b32a_mdk_capabilities()),
+            Err("PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED")
+        );
+        for default in [
+            ExtensionType::ApplicationId,
+            ExtensionType::RatchetTree,
+            ExtensionType::RequiredCapabilities,
+            ExtensionType::ExternalPub,
+            ExtensionType::ExternalSenders,
+        ] {
+            assert_eq!(
+                check(&rfc9420(&[default, ExtensionType::AppDataDictionary], &[ProposalType::AppDataUpdate])),
+                Err("PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED")
+            );
+        }
+        for default in 0x0001u16..=0x0007 {
+            assert_eq!(
+                check(&rfc9420(
+                    &[ExtensionType::AppDataDictionary],
+                    &[ProposalType::from(default), ProposalType::AppDataUpdate],
+                )),
+                Err("PHASE_B32A_MDK_CAPABILITIES_DEFAULT_PROPOSAL_LISTED")
+            );
+        }
+        // Every non-default value stays exact.
+        for (extensions, proposals, cause) in [
+            (
+                vec![ExtensionType::AppDataDictionary, ExtensionType::LastResort],
+                vec![ProposalType::AppDataUpdate],
+                "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID",
+            ),
+            (
+                vec![ExtensionType::AppDataDictionary, ExtensionType::Unknown(0xf123)],
+                vec![ProposalType::AppDataUpdate],
+                "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID",
+            ),
+            (
+                vec![],
+                vec![ProposalType::AppDataUpdate],
+                "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID",
+            ),
+            (
+                vec![ExtensionType::AppDataDictionary, ExtensionType::AppDataDictionary],
+                vec![ProposalType::AppDataUpdate],
+                "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID",
+            ),
+            (
+                vec![ExtensionType::AppDataDictionary],
+                vec![],
+                "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID",
+            ),
+            (
+                vec![ExtensionType::AppDataDictionary],
+                vec![ProposalType::AppDataUpdate, ProposalType::SelfRemove],
+                "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID",
+            ),
+        ] {
+            assert_eq!(check(&rfc9420(&extensions, &proposals)), Err(cause));
+        }
+        assert_eq!(
+            check(&Capabilities::new(
+                None,
+                Some(&[PROBE_CIPHERSUITE, CIPHERSUITE]),
+                Some(&[ExtensionType::AppDataDictionary]),
+                Some(&[ProposalType::AppDataUpdate]),
+                None,
+            )),
+            Err("PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID")
+        );
+        assert_eq!(
+            check(&Capabilities::new(
+                None,
+                Some(&[PROBE_CIPHERSUITE]),
+                Some(&[ExtensionType::AppDataDictionary]),
+                Some(&[ProposalType::AppDataUpdate]),
+                Some(&[
+                    openmls::credentials::CredentialType::Basic,
+                    openmls::credentials::CredentialType::X509,
+                ]),
+            )),
+            Err("PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID")
+        );
+        assert_eq!(
+            check(&Capabilities::new(
+                Some(&[
+                    openmls::versions::ProtocolVersion::Mls10,
+                    openmls::versions::ProtocolVersion::Other(2),
+                ]),
+                Some(&[PROBE_CIPHERSUITE]),
+                Some(&[ExtensionType::AppDataDictionary]),
+                Some(&[ProposalType::AppDataUpdate]),
+                None,
+            )),
+            Err("PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID")
+        );
+    }
+
+    /// Capabilities from raw TLS lists, so unknown, GREASE, duplicate and
+    /// default values can be placed anywhere in any list.
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_raw_capabilities(lists: [&[u16]; 5]) -> Capabilities {
+        let mut bytes = Vec::new();
+        for list in lists {
+            bytes.extend(list.to_vec().tls_serialize_detached().unwrap());
+        }
+        Capabilities::tls_deserialize_exact(&bytes).unwrap()
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_rfc9420_capability_matrix_is_exact_outside_grease() {
+        let check = |lists: [&[u16]; 5]| {
+            phase_b32a_check_mdk_rfc9420_capabilities(&phase_b32a_raw_capabilities(lists))
+        };
+        // versions, ciphersuites, extensions, proposals, credentials
+        assert_eq!(check([&[1], &[1], &[6], &[8], &[1]]), Ok(()));
+        assert_eq!(
+            check([&[1], &[0x0a0a, 1, 0x1a1a], &[0x2a2a, 6, 0x3a3a], &[0x4a4a, 8], &[1, 0x5a5a]]),
+            Ok(())
+        );
+        let cases: [([&[u16]; 5], &str); 22] = [
+            ([&[1], &[1], &[0x0a0a, 3, 0x1a1a, 6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED"),
+            ([&[1], &[1], &[6, 0x0a0a, 1], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED"),
+            ([&[1], &[1], &[6], &[0x0a0a, 7, 0x1a1a, 8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_PROPOSAL_LISTED"),
+            ([&[1], &[1], &[6], &[8, 0x2a2a, 1], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_PROPOSAL_LISTED"),
+            ([&[1, 1], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[1, 2], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[2], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[1], &[1, 1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[3, 1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[1, 0xf001], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[0x0a0a], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[1], &[6, 6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID"),
+            ([&[1], &[1], &[0xf004, 6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID"),
+            ([&[1], &[1], &[0x0a0a], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID"),
+            ([&[1], &[1], &[6], &[8, 8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID"),
+            ([&[1], &[1], &[6], &[0xf002, 8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID"),
+            ([&[1], &[1], &[6], &[0x0a0a], &[1]], "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[1, 1]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[2, 1]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[1, 0xf003]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+        ];
+        for (lists, cause) in cases {
+            assert_eq!(check(lists), Err(cause), "{lists:?}");
+        }
+    }
+
+    /// One-member group whose own leaf has the RFC 9420 MDK capabilities and
+    /// MDK dictionary, but a foreign credential type or an extra extension.
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_foreign_mdk_leaf(x509_credential: bool, extra_extension: bool) -> Option<LeafNode> {
+        let provider = Provider::new();
+        let (founder, proof, _) = phase_b2_identity(&provider, 0xa9);
+        let mut extensions = phase_b32a_mdk_leaf_extensions(&proof).iter().cloned().collect::<Vec<_>>();
+        let mut capabilities_extensions = vec![ExtensionType::AppDataDictionary];
+        if extra_extension {
+            extensions.push(Extension::Unknown(
+                0xf123,
+                openmls::extensions::UnknownExtension(vec![1]),
+            ));
+            capabilities_extensions.push(ExtensionType::Unknown(0xf123));
+        }
+        let credential_with_key = if x509_credential {
+            CredentialWithKey {
+                credential: openmls::credentials::Credential::new(
+                    openmls::credentials::CredentialType::X509,
+                    founder.account_public_key.clone(),
+                ),
+                signature_key: founder.keypair.public().into(),
+            }
+        } else {
+            founder.credential_with_key.clone()
+        };
+        let capabilities = Capabilities::new(
+            None,
+            Some(&[PROBE_CIPHERSUITE]),
+            Some(&capabilities_extensions),
+            Some(&[ProposalType::AppDataUpdate]),
+            Some(&[if x509_credential {
+                openmls::credentials::CredentialType::X509
+            } else {
+                openmls::credentials::CredentialType::Basic
+            }]),
+        );
+        let group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .with_capabilities(capabilities)
+            .with_leaf_node_extensions(Extensions::from_vec(extensions).ok()?)
+            .ok()?
+            .build(&provider.inner, &founder.keypair, credential_with_key)
+            .ok()?;
+        group.own_leaf_node().cloned()
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_mdk_leaf_checks_its_own_credential_and_extension_set() {
+        let x509 = phase_b32a_foreign_mdk_leaf(true, false).expect("X.509 leaf");
+        assert_eq!(
+            phase_b32a_check_mdk_leaf(&x509).err(),
+            Some("PHASE_B32A_MDK_CREDENTIAL_INVALID")
+        );
+        let extra = phase_b32a_foreign_mdk_leaf(false, true).expect("extra-extension leaf");
+        assert_eq!(
+            phase_b32a_check_mdk_leaf(&extra).err(),
+            Some("PHASE_B32A_MDK_LEAF_EXTENSIONS_INVALID")
+        );
+        let plain = phase_b32a_foreign_mdk_leaf(false, false).expect("RFC 9420 leaf");
+        assert!(matches!(
+            phase_b32a_check_mdk_leaf(&plain),
+            Ok((PhaseB32aLeafProfile::MdkRfc9420, _))
+        ));
+        // The member projection used by restored canonical states routes a
+        // leaf with the Styx capabilities and the safe-AAD entry to the check
+        // above. Its refusal is a JsError, which only exists on wasm targets,
+        // so natively only the accepted leaf is projected here.
+        let provider = Provider::new();
+        assert!(
+            phase_b32a_project_leaf(provider.inner.crypto(), &plain, 0)
+                .map_err(js_error_to_string)
+                .map(|member| member.profile)
+                .ok()
+                == Some(PhaseB32aLeafProfile::MdkRfc9420)
+        );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_mdk_leaf_classification_keeps_the_pin_and_names_sub_causes() {
+        let pin = phase_b32a_founder_leaf_node(PhaseB32aTestFounder::MdkPin9396adb, 0xa1);
+        assert!(matches!(
+            phase_b32a_check_mdk_leaf(&pin),
+            Ok((PhaseB32aLeafProfile::MdkPin9396adb, ref supported))
+                if supported == &PHASE_B32A_SUPPORTED_COMPONENTS
+        ));
+        for shape in [PhaseB32aTestFounder::MdkRfc9420, PhaseB32aTestFounder::MdkRfc9420Grease] {
+            let leaf = phase_b32a_founder_leaf_node(shape, 0xa2);
+            assert!(matches!(
+                phase_b32a_check_mdk_leaf(&leaf),
+                Ok((PhaseB32aLeafProfile::MdkRfc9420, ref supported))
+                    if supported == &PHASE_B32A_SUPPORTED_COMPONENTS
+            ));
+        }
+        let extra = phase_b32a_founder_leaf_node(PhaseB32aTestFounder::MdkExtraExtension, 0xa3);
+        assert!(matches!(
+            phase_b32a_check_mdk_leaf(&extra),
+            Err("PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID")
+        ));
+        // RFC 9420 MDK capabilities equal the Styx ones; the dictionary decides.
+        let styx = phase_b32a_founder_leaf_node(PhaseB32aTestFounder::StyxShaped, 0xa4);
+        assert_eq!(styx.capabilities(), &phase_b32a_styx_capabilities());
+        assert!(matches!(
+            phase_b32a_check_mdk_leaf(&styx),
+            Err("PHASE_B32A_MDK_DICTIONARY_INVALID")
+        ));
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_rfc9420_mdk_founder_joins_and_projects_its_own_profile() {
+        for (shape, label) in [
+            (PhaseB32aTestFounder::MdkRfc9420, b"phase-b32a-rfc9420-join".as_slice()),
+            (PhaseB32aTestFounder::MdkRfc9420Grease, b"phase-b32a-rfc9420-grease".as_slice()),
+        ] {
+            let fixture =
+                phase_b32a_native_fixture_with_founder(label, 0xa5, 0xa6, true, shape, false);
+            let (_, projection) = phase_b32a_prepare_once(
+                &fixture.predecessor_state,
+                &fixture.predecessor_sha256,
+                &fixture.account_identity,
+                &fixture.leaf_signature_key,
+                &fixture.welcome_bytes,
+                &fixture.key_package_bytes,
+                &fixture.expected_author,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+            assert_eq!(projection.member_count(), 2);
+            assert_eq!(projection.member_profile(0).unwrap(), "MDK_RFC9420");
+            assert_eq!(projection.member_profile(1).unwrap(), "STYX_B32A");
+            assert!(!projection.member_lists_default_required_capabilities(0).unwrap());
+            assert!(projection.member_emits_empty_safe_aad(0).unwrap());
+            assert!(!projection.member_lists_default_required_capabilities(1).unwrap());
+            assert!(!projection.member_emits_empty_safe_aad(1).unwrap());
+            assert_eq!(projection.welcome_sender_identity(), fixture.expected_author);
+        }
+
+        let extra = phase_b32a_native_fixture_with_founder(
+            b"phase-b32a-rfc9420-extra",
+            0xa7,
+            0xa8,
+            true,
+            PhaseB32aTestFounder::MdkExtraExtension,
+            false,
+        );
+        let predecessor = extra.predecessor_state.clone();
+        phase_b32_assert_rejected(|| {
+            PhaseB32aPendingWelcome::prepare_from_durable_state(
+                &extra.predecessor_state,
+                &extra.predecessor_sha256,
+                &extra.account_identity,
+                &extra.leaf_signature_key,
+                &extra.welcome_bytes,
+                &extra.key_package_bytes,
+                &extra.expected_author,
+            )
+            .map(|_| ())
+        });
+        assert_eq!(extra.predecessor_state, predecessor);
     }
 
     #[cfg(feature = "extensions-draft")]

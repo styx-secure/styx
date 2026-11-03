@@ -410,7 +410,6 @@ export async function runStage1Probe(candidatePath) {
     if (liveMdkReceive?.disposition !== 'application_message_processed') {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED, 'epoch-two Styx traffic was not processed');
     }
-    const liveStyxContentSha256Hex = sha256Hex(liveStyx.ciphertextBytes);
     clearBytes(liveStyx.ciphertextBytes);
     operations.advance('epoch2-live-traffic');
 
@@ -469,7 +468,10 @@ export async function runStage1Probe(candidatePath) {
       withheldMdk.message_id_hex,
       liveMdk.message_id_hex,
     ].sort());
-    const expectedAlreadySeenMessageIds = Object.freeze([liveStyxContentSha256Hex]);
+    // The live epoch-two Styx message was delivered once on the direct path;
+    // the later convergence pass neither re-accepts nor re-reports it as an
+    // already-seen witness, and its only event is the epoch transition.
+    const expectedAlreadySeenMessageIds = Object.freeze([]);
     const settled = await mdk.request('converge_group_evolution', {
       expected_accepted_app_message_ids: expectedAcceptedAppMessageIds,
       expected_already_seen_message_ids: expectedAlreadySeenMessageIds,

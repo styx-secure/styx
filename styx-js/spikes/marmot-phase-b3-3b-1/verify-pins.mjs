@@ -22,24 +22,24 @@ export const B33B1_OPENMLS_REVISION =
 export const B33B1_MARMOT_REVISION =
   '4ad4ae21479c3f3fa9950c6fc4556a76941a62e1';
 export const B33B1_MDK_REVISION =
-  '9396adb6aa6b95b521a7979facd5ea7040c07288';
-export const B33B1_MDK_TREE = 'a1145de604e616634dae9a1ef6bf5033c9c9e879';
+  '3fb4b4759ac676b0c21c4c3527074866c9fa4c89';
+export const B33B1_MDK_TREE = '4019e3f9844331b4e365a85653418586c385a0d2';
 export const B33B1_MDK_LOCK_SHA256 =
-  'edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09';
+  '8286bc2731edeec804cd1fae2e40eefad3bb87a068d3aff15d94a4e5e14bc9cc';
 export const B33B1_VENDOR_LOCK_SHA256 =
   '33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b';
 export const B33B1_APPROVED_SOURCE_SHA =
-  'f7a7cb7b08e1f9a86652e2d5a2230c8aadc46f30';
+  '79bee5359a7b5b76100649f08a91fc4dc182be61';
 export const B33B1_APPROVED_SOURCE_TREE =
-  'd59f8192b8b97d94215266b93e9bc4f72c3a4380';
+  'bf6c1351de0d76a6535280da9653064d902818e0';
 export const B33B1_APPROVED_PATCH_SHA256 =
-  '612e225d0bcf369d8f409a71b9c943b2d566777466f1682779fae23b0b2fccde';
+  'e2b4b83d602004f931fcf2ece7c2fc0940c40b4a911aebb072f70684c39d264f';
 export const B33B1_APPROVED_PROVENANCE_SHA256 =
-  '248fb368c8308cce05d156178a8cdffa72656b84989b8ac6f0dabac08e449990';
+  'bf6d48af32a67c5ccd444b50a5031d5d773b8811e62970184670ae32883b125b';
 export const B33B1_APPROVED_ARTIFACT_TUPLE = Object.freeze({
   'openmls_wasm.js': '3de8fd46e4897aae117ee7b10ac41dffd02b507952c4024b0fe69d89fbb0c973',
   'openmls_wasm.d.ts': '057974ec53e3588da3dbf159f183b3e3ddb4a3b0a57d5391194f124a483ede86',
-  'openmls_wasm_bg.wasm': 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
+  'openmls_wasm_bg.wasm': 'e7e8fb55a100d2c3f23a0ac410696d21a54125a3c595cd70c1f0910dd6befd0d',
   'openmls_wasm_bg.wasm.d.ts': 'c21ace2360b264437541025e4703bcb38b53010793829d1904cb85b3d2aa238a',
   'package.json': '88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85',
 });
@@ -49,7 +49,7 @@ const repoRoot = resolve(directory, '..', '..', '..');
 export const B33B1_INSTALLED_ARTIFACT_DIRECTORY =
   resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
 export const B33B1_DEFAULT_MDK_ROOT =
-  '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
+  '/home/mverde/.local/share/styx-reviews/upstreams/mdk-3fb4b475';
 const MAX_GIT_DIAGNOSTIC_CHARS = 2048;
 
 function clipped(value) {
