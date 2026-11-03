@@ -368,6 +368,40 @@ describe('a put that settles after its timeout leaves no record (C-DLV 4.2)', ()
     await outbox.shutdown();
   }, 30000);
 
+  test('a late put that settles while the cleanup remove is in progress is removed again only after that remove settled', async () => {
+    const storage = makeStorage();
+    const put = storage.put;
+    const remove = storage.remove;
+    let releasePut = null;
+    let releaseRemove = null;
+    storage.put = (record) => new Promise((resolve) => {
+      releasePut = () => resolve(put(record));
+    });
+    storage.remove = (deliveryId) => {
+      const removed = remove(deliveryId);
+      if (storage.calls.remove.length > 1) return removed;
+      // The first cleanup removal runs at its call and answers late.
+      return new Promise((resolve) => {
+        releaseRemove = () => resolve(removed);
+      });
+    };
+    const { outbox } = makeHarness({ storage });
+    const pending = outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+    await sleep(PORT_CALL_TIMEOUT_MS + 200);
+    expect(storage.calls.remove).toEqual(['d1']);
+    // The late put writes while the cleanup removal is still in progress.
+    releasePut();
+    await flush();
+    expect(storage.records.size).toBe(1);
+    expect(storage.calls.remove).toEqual(['d1']);
+    releaseRemove();
+    expect((await pending).code).toBe('E_SDK_STORAGE_FAILED');
+    await flush();
+    expect(storage.calls.remove).toEqual(['d1', 'd1']);
+    expect(storage.records.size).toBe(0);
+    await outbox.shutdown();
+  }, 30000);
+
   test('a late put that rejects after writing is removed again too, and changes no result or event', async () => {
     const storage = makeStorage();
     const put = storage.put;
@@ -403,6 +437,35 @@ describe('a put that settles after its timeout leaves no record (C-DLV 4.2)', ()
     await sleep(50);
     expect(storage.calls.remove).toEqual(['d1']);
     await outbox.shutdown();
+  });
+
+  test('a shutdown() re-entered from a clock reading of the admission never seals: from the pre-write reading nothing is stored, from the admission reading the stored item is LOST_ON_SHUTDOWN', async () => {
+    for (const reentrantReading of [1, 2]) {
+      const holder = {};
+      const harness = makeHarness();
+      const { outbox, clock, storage, session, events } = harness;
+      const now = clock.port.now;
+      let readings = 0;
+      clock.port.now = () => {
+        readings += 1;
+        if (readings === reentrantReading) holder.stopping = outbox.shutdown();
+        return now();
+      };
+      const result = await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
+      const stop = await holder.stopping;
+      expect(session.sealCalls).toBe(0);
+      if (reentrantReading === 1) {
+        expect(result).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+        expect(storage.calls.put).toHaveLength(0);
+        expect(stop).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
+        expect(events).toEqual([]);
+      } else {
+        expect(result).toEqual({ ok: true, value: { deliveryId: 'd1', state: 'QUEUED' } });
+        expect(storage.calls.put).toHaveLength(1);
+        expect(stop).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 1 } });
+        expect(events.map((event) => event.state)).toEqual(['LOST_ON_SHUTDOWN']);
+      }
+    }
   });
 
   test('a late put that settles only after shutdown() was called takes no further port call', async () => {

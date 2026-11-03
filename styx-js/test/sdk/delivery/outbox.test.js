@@ -1943,7 +1943,7 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
         releaseSeal = () => resolve({ ciphertext: new Uint8Array([1, 2, 3]) });
       }),
     });
-    const { outbox, clock, events } = makeHarness({ session });
+    const { outbox, clock, events, storage } = makeHarness({ session });
     const pending = outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
     await flush();
     // The deadline callback runs while the item has not been admitted: its
@@ -1960,6 +1960,8 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       lastCode: null,
       terminal: true,
     });
+    // Its first transition is terminal, so its first write holds no bytes.
+    expect(storage.calls.update[0]).toMatchObject({ state: 'FAILED_NOT_ACCEPTED', ciphertext: null });
     await outbox.shutdown();
   });
 
