@@ -8,6 +8,12 @@ import { bytesToHex, hexToBytes, utf8Encode, bytesToBase64, base64ToBytes, rando
 import { SDK_WIRE_VERSION as VERSION } from './wire-version.js';
 const HEX = /^[0-9a-f]{64}$/;
 const SIGNATURE = /^[0-9a-f]{128}$/;
+// C-DLV section 3: unexamined candidate events one invitation operation keeps.
+const CANDIDATE_PENDING_BOUND = 1024;
+// C-DLV section 7.1: wrap key/content pairs remembered per accept, FIFO.
+const EXAMINED_WINDOW = 4096;
+// C-DLV section 6.5: a KeyPackage created_at may lead the local clock by at most this.
+const KEY_PACKAGE_MAX_FUTURE_SECONDS = 600;
 const EVENT_KEYS = ['id', 'pubkey', 'created_at', 'kind', 'tags', 'content', 'sig'];
 const RUMOR_KEYS = ['pubkey', 'created_at', 'kind', 'tags', 'content'];
 const ok = (value) => Object.freeze({ ok: true, value: Object.freeze(value) });
@@ -147,7 +153,9 @@ export function createInvitations(options) {
         const data = frame.data;
         if (!Array.isArray(data)) return;
         if (data[0] === 'EOSE' && data[1] === subscriptionId) op.eose.add(frame.relayIndex);
-        if (data[0] === 'EVENT' && data[1] === subscriptionId) op.events.push(data[2]);
+        if (data[0] === 'EVENT' && data[1] === subscriptionId && op.events.length < CANDIDATE_PENDING_BOUND) {
+          op.events.push(data[2]);
+        }
       } catch (e) { remember(op, e); }
       op.wake?.();
     }], 'E_SDK_INTERNAL');
@@ -242,7 +250,10 @@ export function createInvitations(options) {
       if (!Number.isSafeInteger(expiration)
           || !tagsEqual(event.tags, [['v', VERSION], ['expiration', String(expiration)]])) return null;
       const value = decode(event.content, 65536);
-      if (!value || expiration * 1000 <= now() || !signed(event)) return null;
+      if (!value) return null;
+      const current = now();
+      if (expiration * 1000 <= current
+          || event.created_at > Math.floor(current / 1000) + KEY_PACKAGE_MAX_FUTURE_SECONDS || !signed(event)) return null;
       return value;
     } catch (e) {
       // A local clock fault is not an invalid network candidate.
@@ -292,16 +303,23 @@ export function createInvitations(options) {
       const deadline = admitted + delivery.deadlineMs;
       const hostDeadline = Date.now() + delivery.deadlineMs + 1000;
       await connect(op, { kinds: [1059], '#p': [publicKey] });
-      let cursor = 0;
+      // Candidates whose unwrap was already attempted in this operation.
+      const examined = new Set();
       while (Date.now() < hostDeadline && now() < deadline) {
-          if (cursor >= op.events.length) {
-            await wait(op, Math.max(0, deadline - now()), () => cursor < op.events.length,
+          if (op.events.length === 0) {
+            await wait(op, Math.max(0, deadline - now()), () => op.events.length > 0,
               Math.max(0, hostDeadline - Date.now()));
             running();
             continue;
           }
-          const event = op.events[cursor++];
-          if (!shape(event, 1059, 1048576) || !tagsEqual(event.tags, [['p', publicKey]]) || !signed(event)) continue;
+          // Examined candidates are not retained (C-DLV section 7.1).
+          const event = op.events.shift();
+          if (!shape(event, 1059, 1048576) || !tagsEqual(event.tags, [['p', publicKey]])) continue;
+          // The unwrap depends only on the wrap key and content: one attempt each.
+          const candidate = bytesToHex(sha256(utf8Encode(JSON.stringify([event.pubkey, event.content]))));
+          if (examined.has(candidate) || !signed(event)) continue;
+          if (examined.size >= EXAMINED_WINDOW) examined.delete(examined.values().next().value);
+          examined.add(candidate);
           let unwrapped;
           try { unwrapped = await boundary(identity, 'unwrapGift', [{ event }], 'E_SDK_IDENTITY_FAILED'); }
           catch { running(); continue; }

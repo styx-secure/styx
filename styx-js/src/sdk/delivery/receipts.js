@@ -48,6 +48,21 @@ import { base64ToBytes, bytesToHex, hexToBytes, randomBytes, utf8Encode } from '
 /** C-DLV section 3: the inbound pending bound, 1 024 frames per client. */
 const INBOUND_PENDING_BOUND = 1024;
 
+/**
+ * C-DLV section 3 and section 7.1 step 1: an inbound `content` string has at
+ * most 349 528 characters, the standard base64 length of 262 144 bytes. Only
+ * the string length is read; ciphertext bytes are never inspected.
+ */
+const INBOUND_CONTENT_MAX_CHARACTERS = 349528;
+
+/**
+ * C-DLV section 7.1 step 1: at most four tags of at most two strings each, the
+ * largest closed tag lists of sections 6.2 and 6.3, so an oversized list is
+ * refused before its elements are read.
+ */
+const TAG_LIST_MAX = 4;
+const TAG_PARTS_MAX = 2;
+
 /** C-DLV section 3: the inbound duplicate window, 4 096 event ids per client. */
 const INBOUND_DUPLICATE_WINDOW = 4096;
 
@@ -406,10 +421,11 @@ function readField(source, name) {
  * @returns {boolean}
  */
 function isTagList(tags) {
-  if (!Array.isArray(tags)) return false;
-  for (const tag of tags) {
-    if (!Array.isArray(tag)) return false;
-    for (const part of tag) if (typeof part !== 'string') return false;
+  if (!Array.isArray(tags) || tags.length > TAG_LIST_MAX) return false;
+  for (let index = 0; index < tags.length; index += 1) {
+    const tag = tags[index];
+    if (!Array.isArray(tag) || tag.length > TAG_PARTS_MAX) return false;
+    for (let part = 0; part < tag.length; part += 1) if (typeof tag[part] !== 'string') return false;
   }
   return true;
 }
@@ -481,6 +497,8 @@ export function createReceipts(options) {
   const waiting = [];
   const waitingIds = new Set();
   let activeMessage = false;
+  // Owed receipts whose signing/publication task is still running.
+  let settlingReceipts = 0;
   const reservedDelivery = read !== null && typeof read.reserveMessage === 'function';
   function reserve() {
     try {
@@ -680,8 +698,10 @@ export function createReceipts(options) {
     if (typeof pubkey.value !== 'string' || !HEX64.test(pubkey.value)) return { ok: false };
     if (!Number.isSafeInteger(createdAt.value) || createdAt.value < 0) return { ok: false };
     if (!Number.isSafeInteger(kind.value)) return { ok: false };
+    if (typeof content.value !== 'string' || content.value.length > INBOUND_CONTENT_MAX_CHARACTERS) {
+      return { ok: false };
+    }
     if (!isTagList(tagsField.value)) return { ok: false };
-    if (typeof content.value !== 'string') return { ok: false };
 
     /* Step 2: `kind` is 4741 or 4742 (C-DLV section 7.1 step 2). */
     if (kind.value !== EVENT_KIND_MESSAGE && kind.value !== EVENT_KIND_RECEIPT) return { ok: false };
@@ -1130,7 +1150,23 @@ export function createReceipts(options) {
     let job = null;
     try {
       job = await openMessage(event, deliver);
-      if (job === null) return;
+    } finally {
+      activeMessage = false;
+      /* C-DLV section 7.2: an owed receipt is signed and published beside the
+       * inbound queue, so a slow signature never holds back the validation
+       * or acknowledgement of a later frame. The next admitted open still
+       * waits for it, so the single open/delivery unit and the message order
+       * are unchanged. */
+      if (job !== null) settleReceipt(job); else finishReceipt(null);
+      end();
+    }
+  }
+
+  /** C-DLV section 7.2: sign and publish one owed receipt, off the queue. */
+  async function settleReceipt(job) {
+    const end = begin();
+    settlingReceipts += 1;
+    try {
       const built = await signReceipt(job);
       if (drainExpired || !owed.has(job)) return;
       if (built.unknown === true) {
@@ -1138,10 +1174,13 @@ export function createReceipts(options) {
         return;
       }
       if (built.ok === true) publishReceipt(built.receipt);
+    } catch {
+      // Receipt publication is best effort (C-DLV section 7.2).
     } finally {
-      activeMessage = false;
+      settlingReceipts -= 1;
       finishReceipt(job);
       end();
+      wake();
     }
   }
 
@@ -1153,7 +1192,8 @@ export function createReceipts(options) {
     processing = true;
     try {
       while (!stopped) {
-        const deliver = waiting.length > 0 ? reserve() : null;
+        // The next open waits for an owed receipt still being signed (C-DLV 7.2).
+        const deliver = waiting.length > 0 && settlingReceipts === 0 ? reserve() : null;
         if (stopped) break;
         if (deliver !== null) {
           const event = waiting.shift();

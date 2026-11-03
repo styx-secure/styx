@@ -50,14 +50,15 @@ Fixed values (not configurable in this version):
 | Backoff cap | 30 000 ms | §4.3. |
 | Inbound duplicate window | 4 096 event ids per client | §8. |
 | Inbound pending bound | 1 024 frames per client | §7.1. |
+| Inbound content maximum | 349 528 characters | §7.1 step 1; the standard base64 length of 262 144 bytes. Only the length of the `content` string is read. |
 | Relay supervision interval | 1 000 ms | §5.2. |
 | Catch-up interval | 10 000 ms | §5.4; clock port only, best effort, no host backstop. |
 | Catch-up margin | 120 s | §5.4; overlap before a relay's local-clock cursor. |
 | Reconnect interval | the backoff schedule of §4.3, by consecutive failures of that relay, capped at 30 000 ms | §5.2. |
 
-The SDK does not inspect the size of a ciphertext or a plaintext that the session port returns (interface §8.2). Relays may refuse large events; such a refusal is an ordinary relay outcome (§5.3).
+The SDK does not inspect the size of a ciphertext or a plaintext that the session port returns (interface §8.2). Relays may refuse large events; such a refusal is an ordinary relay outcome (§5.3). Inbound, the SDK reads only the length of an event's `content` string (§7.1 step 1), never ciphertext bytes; a sender whose session port returns more than 262 144 bytes publishes an event that conforming recipients discard, and the sender is not told.
 
-Invitation fixed bounds: KeyPackage lifetime 3 600 seconds; KeyPackage bytes 1–65 536; Welcome and ratchet-tree bytes each 1–262 144; gift-wrap content at most 1 048 576 characters. Port returns obey the same bounds; a violation is that port's failure, except a failing unwrap candidate is ignored. These bounds do not limit existing delivery ciphertext.
+Invitation fixed bounds: KeyPackage lifetime 3 600 seconds; KeyPackage `created_at` at most 600 seconds after the local clock (§6.5); KeyPackage bytes 1–65 536; Welcome and ratchet-tree bytes each 1–262 144; gift-wrap content at most 1 048 576 characters; at most 1 024 unexamined candidate events per invitation operation and at most 4 096 remembered wrap digests per acceptance (§7.1). Port returns obey the same bounds; a violation is that port's failure, except a failing unwrap candidate is ignored. These bounds do not limit existing delivery ciphertext.
 
 ## 4. Outbound queue
 
@@ -231,7 +232,7 @@ The record that the SDK hands to the storage port (`put`, `update`; `remove` rec
 
 ### 6.5 KeyPackage event (kind 4743)
 
-Seven event keys of §6.1; inviter fetch requires the named invitee's `pubkey`. Tags are exactly, in order, `["v", "styx-m3-sdk/0.3.0-experimental"]`, `["expiration", <created_at + 3600 as decimal>]`. Content is canonical standard base64 of 1–65 536 KeyPackage bytes. Expiration is checked with `clock.now()`. The publisher calls `createKeyPackage`, computes the event id, obtains `identity.sign`, publishes and remembers the id only after acceptance; no secret key crosses the SDK boundary.
+Seven event keys of §6.1; inviter fetch requires the named invitee's `pubkey`. Tags are exactly, in order, `["v", "styx-m3-sdk/0.3.0-experimental"]`, `["expiration", <created_at + 3600 as decimal>]`. Content is canonical standard base64 of 1–65 536 KeyPackage bytes. Expiration is checked with `clock.now()`, and with the same reading a KeyPackage whose `created_at` is more than 600 seconds after `floor(clock.now() / 1000)` is not a valid candidate, so a package dated ahead of the local clock never outranks a current one. The publisher calls `createKeyPackage`, computes the event id, obtains `identity.sign`, publishes and remembers the id only after acceptance; no secret key crosses the SDK boundary.
 
 ### 6.6 Welcome rumor (kind 4744)
 
@@ -248,7 +249,7 @@ Seven event keys of §6.1, kind 1059, exact tags `[["p", <invitee>]]`, content a
 
 Inbound `EVENT` frames for the client's subscription are validated one at a time in local arrival order across relays. Raw queued frames, validation in progress and validated ciphertext messages waiting for an audience share one 1 024-entry bound, plus the single active open/delivery unit. With no listener, validation and receipt acknowledgement continue while messages wait separately as ciphertext; a new registration wakes that waiting queue. When the bound is full the new frame is dropped before validation, opening or processed-id insertion; a subsequent relay replay may be admitted after space frees. Waiting duplicate ids consume one validated entry. No bound is placed on the transport's earlier JSON decoding. Floods may still drop receipts or other relays' messages; there is no completeness or relay-retention claim. Each queued frame's event is validated in this order, and the first failure emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` (interface §4.3, §5.2):
 
-1. a plain object with exactly the seven keys of §6.1, where `id` is 64 and `sig` is 128 lowercase hexadecimal digits, `pubkey` is 64 lowercase hexadecimal digits, `created_at` is a non-negative safe integer, `kind` is a safe integer, `tags` is an array of arrays of strings, and `content` is a string;
+1. a plain object with exactly the seven keys of §6.1, where `id` is 64 and `sig` is 128 lowercase hexadecimal digits, `pubkey` is 64 lowercase hexadecimal digits, `created_at` is a non-negative safe integer, `kind` is a safe integer, `tags` is an array of at most four arrays of at most two strings each, and `content` is a string of at most 349 528 characters (§3); a longer tag list or tag fails at step 3 in any case, and the bound only refuses it before its further elements are read;
 2. `kind` is `4741` or `4742`;
 3. the tags are exactly the closed tag list of §6.2 or §6.3 for that kind, with every value in the form given there: a kind-4741 event is valid with exactly its three fixed tags, or with exactly those three followed by `["r", "1"]` as the fourth tag, and any other `r` value, position or count is `E_SDK_INBOUND_INVALID`; the `p` tag equals the client's own public key; the `v` tag equals `SDK_WIRE_VERSION` (any other wire version is not interpreted, interface §3); for kind `4742` the `e` tag is 64 lowercase hexadecimal digits and `content` is the empty string;
 4. `id` equals the recomputed id of §6.1;
@@ -256,13 +257,13 @@ Inbound `EVENT` frames for the client's subscription are validated one at a time
 
 Then the duplicate check of §8 runs; a duplicate is dropped without an event. A frame dropped because the pending bound is full, a duplicate, and a valid receipt that matches no item (§7.3) are not structures that failed parsing, version, signature or `open`, so they emit nothing (interface §4.3 requires `INBOUND_DISCARDED` only for those failures). Inbound delivery carries no guarantee; a relay may deliver a dropped event again.
 
-These delivery-discard rules apply only to the delivery subscription. Invitation candidates are checked independently, fail closed and emit no `INBOUND_DISCARDED`, including other interface versions. KeyPackage checks run shape → kind → exact tags/version → size → expiration → recomputed id → signature, requiring the named invitee. Wrap checks run shape/kind/exact p/size → id → signature before unwrapping. Unwrap throw/reject/timeout/malformed/out-of-set data is ignored; the rumor must have §6.6 exact keys, kind, e/version/tags and sizes, with both `sealSigner` and rumor `pubkey` equal to the explicit inviter. Wrong/third-party candidates are ignored and waiting continues until the deadline. The first passing candidate calls bounded `joinSession`; false/failed/malformed join is `E_SDK_SESSION_FAILED` and ends the operation. No rollback: caller state may be consumed, and restarting needs fresh state on both sides.
+These delivery-discard rules apply only to the delivery subscription. Invitation candidates are checked independently, fail closed and emit no `INBOUND_DISCARDED`, including other interface versions. KeyPackage checks run shape → kind → exact tags/version → size → expiration and future bound (§6.5) → recomputed id → signature, requiring the named invitee. Wrap checks run shape/kind/exact p/size → id → signature before unwrapping. Each invitation operation keeps at most 1 024 candidate events not yet examined; an `EVENT` frame that arrives while that bound is full is dropped and is not recovered by the operation, and examined candidates are not retained. An acceptance unwraps each pair of wrap `pubkey` and `content` at most once: after the shape/kind/exact p/size checks, a candidate whose pair was already unwrapped in this acceptance (the same wrap again, or a copy re-signed under the same wrap key) is ignored without an unwrap; a pair is remembered, as the SHA-256 digest of `JSON.stringify([pubkey, content])`, only after its candidate passed the id and signature checks, at most 4 096 per acceptance, first in, first out. A different wrap key never suppresses a candidate. Unwrap throw/reject/timeout/malformed/out-of-set data is ignored; the rumor must have §6.6 exact keys, kind, e/version/tags and sizes, with both `sealSigner` and rumor `pubkey` equal to the explicit inviter. Wrong/third-party candidates are ignored and waiting continues until the deadline. The first passing candidate calls bounded `joinSession`; false/failed/malformed join is `E_SDK_SESSION_FAILED` and ends the operation. No rollback: caller state may be consumed, and restarting needs fresh state on both sides.
 
 ### 7.2 Message events
 
 A valid kind-4741 event waits as validated ciphertext when no listener can be reserved (interface §7). Its `content` is decoded only when the SDK can reserve an audience, immediately before `session.open({ sender: pubkey, ciphertext })`; a decoding failure or empty result is `E_SDK_INBOUND_INVALID`. Open is bounded by the port-call timeout; failure/malformed plaintext produces the existing discard code, subject to §4.5. A successful plaintext is dispatched to the reserved audience with a fresh per-listener copy; no plaintext backlog is introduced. All such admitted messages preserve local arrival order, independent of passing receipts.
 
-If the event carries the `r` tag, the SDK then publishes one receipt (§6.3) for it: it signs the receipt through `identity.sign` (bounded by the port-call timeout; a return other than a 64-byte `Uint8Array` means no receipt) and calls `publish` once on every connected current pool. A receipt is sent at most once per message event id while that id is in the duplicate window. Receipt publication is best effort: no retry, no outcome tracking, no event to the recipient's caller. A signing failure or an unconnected relay means no receipt; the sender then reports `FAILED_NO_RECEIPT` at its deadline, which interface §6.1 defines as not meaning that the recipient did not receive the message.
+If the event carries the `r` tag, the SDK then publishes one receipt (§6.3) for it: it signs the receipt through `identity.sign` (bounded by the port-call timeout; a return other than a 64-byte `Uint8Array` means no receipt) and calls `publish` once on every connected current pool. Signing and publishing a receipt run beside the inbound queue: once the listener was invoked, the validation and acknowledgement of later frames do not wait for that signature, so a slow signing port never delays the processing of a receipt that has already arrived. The next admitted open still starts only after that receipt was published or abandoned, so there is still one open/delivery unit at a time and the message order is unchanged. Each signing call stays bounded by the port-call timeout. A receipt is sent at most once per message event id while that id is in the duplicate window. Receipt publication is best effort: no retry, no outcome tracking, no event to the recipient's caller. A signing failure or an unconnected relay means no receipt; the sender then reports `FAILED_NO_RECEIPT` at its deadline, which interface §6.1 defines as not meaning that the recipient did not receive the message.
 
 A receipt becomes owed only after the SDK has actually called at least one reserved application listener with the valid message. Neither validation, ciphertext admission nor a successful open alone is sufficient. At synchronous shutdown, unopened ciphertext is dropped and no new open begins. The single reserved open/delivery already in flight may finish and create its receipt obligation after invocation, within the unchanged receipt drain bound measured from shutdown; no new receipt metadata clock read starts after stop. The clock reading for that receipt is captured before open. Existing owed receipts may start/continue signing and publish once through S6 within that same bound. A failed/timed-out/malformed signature abandons the receipt; an out-of-set result emits the existing unknown-code discard before STOPPED. A late result beyond the bound produces no publication. A shutdown called inside the callback is ordinary use; the in-flight unit is tracked through callback dispatch and receipt settlement before relay disposal.
 
@@ -401,7 +402,13 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "keyPackageMaxBytes": 65536,
     "welcomeMaxBytes": 262144,
     "ratchetTreeMaxBytes": 262144,
-    "giftWrapMaxContentCharacters": 1048576
+    "giftWrapMaxContentCharacters": 1048576,
+    "inboundContentMaxCharacters": 349528,
+    "inboundTagListMax": 4,
+    "inboundTagElementsMax": 2,
+    "keyPackageMaxFutureSeconds": 600,
+    "invitationCandidatePendingBound": 1024,
+    "invitationExaminedWrapWindow": 4096
   },
   "backoff": {
     "baseMs": 1000,
@@ -637,7 +644,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       },
       "limit": false
     },
-    "sizeInspected": false,
+    "sizeInspected": "inbound content string length only, at most 349528 characters, before decoding; no ciphertext bytes; no outbound check",
     "invitation": {
       "keyPackage": {
         "kind": 4743,
@@ -676,6 +683,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "cryptography": "caller identity port; kind 13 seal and fresh wrapping key; NIP-44 v2"
       },
       "invalidCandidate": "ignore without event",
+      "keyPackageFuture": "created_at more than 600 s after floor(clock.now()/1000) is not a valid candidate",
+      "pendingCandidates": "at most 1024 unexamined per operation; frames beyond are dropped; examined candidates not retained",
+      "repeatedWrap": "same wrap pubkey and content unwrapped at most once per acceptance; sha256 digest window 4096, FIFO, recorded after id and signature checks",
       "inviter": "both rumor.pubkey and sealSigner equal explicit inviter"
     }
   },
@@ -707,6 +717,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "requestedBy": "r tag in RECIPIENT_RECEIPT mode",
     "sentAfter": "successful open and actual invocation of at least one reserved MESSAGE_RECEIVED listener",
     "sentAtMostOncePerEventIdInWindow": true,
+    "signingBlocksInboundQueue": "no for validation and acknowledgement of later frames; the next admitted open waits until the owed receipt is published or abandoned",
     "retry": false,
     "acceptedWhen": [
       "every inbound check of section 7.1, including p tag equal to own public key",
@@ -882,6 +893,8 @@ Conformance of catch-up demonstrates the three default-timing open-socket stalls
 A conforming validator of the record in §12 rejects: an unknown or missing field; a duplicate key; a bound that is not finite or a default outside its bounds; a `maxAttempts` maximum above 10 or a `deadlineMs` maximum above 600 000; a `deadlineMs` minimum below the `perRelayTimeoutMs` maximum; a transition not allowed by the interface; a code or last code outside the interface's closed set; a relay outcome outside the interface's list; retransmission after acceptance; a receipt that implies relay acceptance, opening or reading; outbound self-verification; a normative wire format; an import outside interface §9; and any `outerBounds` value different from the one above.
 
 M3-INVITE conformance additionally exercises the full #525 loopback flow and refusals, optional port groups and four closed codes, faulty-port Model B cases, selection and accepted indices, unchanged delivery behavior, host-time deadline, ordered shutdown of independent sets, and the unchanged real engine/WASM with exported-secret equality, round trips, refused credential/Welcome and fresh-state retry. #525 and #400/6544668029 authorize only the enumerated amendments; these 0.3.0 bytes need later exact-head output ratification. O-SCEN3/C-PREV historical pins and the complete prospective CATCHUP view remain unchanged.
+
+Conformance of M3-INBOUND-ROBUSTNESS demonstrates: an inbound `content` of more than 349 528 characters discarded with `E_SDK_INBOUND_INVALID` before decoding and without `session.open`, and one of exactly 349 528 characters still opened; a tag list longer than four and a tag longer than two refused without reading their further elements; a valid receipt frame that arrives while an earlier owed receipt's signature is held acknowledged before that signature settles, with the next admitted open waiting for it, the held receipt published once afterwards and the owed-receipt drain unchanged; repeated copies of one wrap, and copies re-signed under the same wrap key, unwrapped once while the genuine Welcome is still reached; the same content under a different wrap key never suppressing the genuine wrap; at most 1 024 unexamined candidates kept while an unwrap is in progress; and a KeyPackage dated more than 600 seconds ahead never selected, while one within that bound remains the newest valid choice. These amendments change no entry point, method, code, state, transition, event, port method, outer bound, import or `SDK_WIRE_VERSION`; their bytes need a separate exact-head owner output ratification.
 
 ## 14. Authority and ratification
 
