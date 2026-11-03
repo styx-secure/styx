@@ -420,36 +420,47 @@ function armMicrotask(callback) {
  * Await a value with a host-time bound. A value that has not settled when the
  * bound elapses is a timeout; a rejection is a fault.
  *
+ * A value that has not settled within the bound is reported with `late`, a
+ * promise that never rejects and resolves once that value has settled, so a
+ * caller can act after a call that outlived its bound (C-DLV section 4.2).
+ *
  * @param {unknown} value
  * @param {number} timeoutMs
- * @returns {Promise<{ settled: boolean, rejected?: boolean, value?: unknown, error?: unknown }>}
+ * @returns {Promise<{ settled: boolean, rejected?: boolean, value?: unknown, error?: unknown, late?: Promise<void> }>}
  */
 function settleWithin(value, timeoutMs) {
   return new Promise((resolve) => {
     let done = false;
     let handle = null;
+    let promise = null;
     const finish = (result) => {
       if (done) return;
       done = true;
       clearHostTimer(handle);
       resolve(result);
     };
-    const armed = armHostTimer(() => finish({ settled: false }), timeoutMs);
-    if (!armed.ok) {
-      // The call cannot be bounded at all, so it is a host fault: refusing it
-      // is the safe side, and the caller maps it to the code C-DLV section 4.5
-      // fixes for that port.
-      finish({ settled: false });
-      return;
-    }
-    handle = armed.handle;
-    let promise;
+    const lateSettlement = () => {
+      if (promise === null) return Promise.resolve();
+      return promise.then(
+        () => undefined,
+        () => undefined,
+      );
+    };
     try {
       promise = Promise.resolve(value);
     } catch (error) {
       finish({ settled: true, rejected: true, error });
       return;
     }
+    const armed = armHostTimer(() => finish({ settled: false, late: lateSettlement() }), timeoutMs);
+    if (!armed.ok) {
+      // The call cannot be bounded at all, so it is a host fault: refusing it
+      // is the safe side, and the caller maps it to the code C-DLV section 4.5
+      // fixes for that port.
+      finish({ settled: false, late: lateSettlement() });
+      return;
+    }
+    handle = armed.handle;
     promise.then(
       (settled) => finish({ settled: true, value: settled }),
       (error) => finish({ settled: true, rejected: true, error }),
@@ -485,7 +496,7 @@ async function callPort(port, name, args, timeoutMs) {
     return { ok: false, reason: 'thrown' };
   }
   const settled = await settleWithin(returned, timeoutMs);
-  if (!settled.settled) return { ok: false, reason: 'timeout' };
+  if (!settled.settled) return { ok: false, reason: 'timeout', late: settled.late };
   if (settled.rejected) return { ok: false, reason: 'thrown' };
   return { ok: true, value: settled.value };
 }
@@ -1280,7 +1291,7 @@ export function createOutbox(options) {
   }
 
   /**
-   * The body of `send`: the five steps of C-DLV section 4.2.
+   * The body of `send`: the six steps of C-DLV section 4.2.
    *
    * @param {unknown} argument
    * @returns {Promise<object>}
@@ -1322,29 +1333,14 @@ export function createOutbox(options) {
       const portCall = readPortCallTimeout();
       if (!portCall.ok) return failure(SdkResultCode.E_SDK_INTERNAL);
 
-      // Step 3: session.seal, bounded by the port-call timeout.
-      const sealed = await boundedCall(read.session, 'seal', [{ recipient, plaintext }], portCall.value);
+      // Step 3: the pre-write clock reading. It dates the record that `put`
+      // stores before sealing and any residual item of a failed admission; the
+      // deadline is armed only at the admission reading of step 5.
+      const preWrite = callSyncPort(read.clock, 'now');
+      // A `shutdown()` re-entered from the clock port lands before `put` is
+      // issued: nothing has been written and no item exists (C-DLV 4.2).
       if (stopped) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
-      if (!sealed.ok) return failure(SdkResultCode.E_SDK_SESSION_FAILED);
-      let violation = closedSlotViolation(sealed.value);
-      if (violation !== null) return failure(SdkResultCode.E_SDK_UNKNOWN_CODE);
-      if (!isPlainObject(sealed.value) || Object.keys(sealed.value).length !== 1) {
-        return failure(SdkResultCode.E_SDK_SESSION_FAILED);
-      }
-      let ciphertext = null;
-      try {
-        ciphertext = sealed.value.ciphertext;
-      } catch {
-        return failure(SdkResultCode.E_SDK_SESSION_FAILED);
-      }
-      if (!(ciphertext instanceof Uint8Array) || ciphertext.length === 0) {
-        return failure(SdkResultCode.E_SDK_SESSION_FAILED);
-      }
-
-      // Step 4: the clock reading, and in the same synchronous step the
-      // deadline timer of section 4.4 and its host backstop.
-      const reading = callSyncPort(read.clock, 'now');
-      if (!reading.ok || !isValidClockValue(reading.value)) {
+      if (!preWrite.ok || !isValidClockValue(preWrite.value)) {
         return failure(SdkResultCode.E_SDK_INTERNAL);
       }
       const item = {
@@ -1353,11 +1349,11 @@ export function createOutbox(options) {
         receiptMode: mode.value,
         state: STATE_QUEUED,
         attempts: 0,
-        createdAt: reading.value,
-        deadlineAt: reading.value + deadlineMs.value,
+        createdAt: preWrite.value,
+        deadlineAt: preWrite.value + deadlineMs.value,
         lastCode: null,
         outcomes: new Array(relayCount.value).fill(OUTCOME_PENDING),
-        ciphertext: copyBytes(ciphertext),
+        ciphertext: null,
         event: null,
         attempt: null,
         lastAttempt: null,
@@ -1370,77 +1366,192 @@ export function createOutbox(options) {
         writes: Promise.resolve(),
         timers: { deadline: null, retry: null },
       };
-      if (!armDeadline(item, deadlineMs.value)) {
-        clearItemTimers(item);
-        return failure(SdkResultCode.E_SDK_INTERNAL);
-      }
 
-      // Step 5: storage.put with the record of section 6.4.
+      // Step 4: storage.put with the record of section 6.4, before any seal,
+      // so a storage failure never consumes a session seal.
       deliveryCounter += 1;
       item.deliveryId = `d${deliveryCounter}`;
       const put = await boundedCall(read.storage, 'put', [buildRecord(item)], portCall.value);
-      // C-DLV section 4.2 step 5: a `put` that returned `true` admits the item;
-      // every other return is a failure at step 5 and takes the one `remove`
-      // and the residual-item rule, whatever `shutdown()` did meanwhile ("the
-      // residual-item rule takes precedence over `shutdown()`"). The timers of
-      // step 4 are cleared on every failure at step 5.
+      // A `put` that returned `true` stores the item; every other return is a
+      // failure at step 4 and takes the one `remove` and the residual-item
+      // rule, whatever `shutdown()` did meanwhile.
       const unknownCode = put.ok && closedSlotViolation(put.value) !== null;
-      if (put.ok && !unknownCode && put.value === true) {
-        items.set(item.deliveryId, item);
-        item.admitted = true;
-        if (stopped) {
-          // A `send` past `put` completes it; an item it admits takes
-          // QUEUED -> LOST_ON_SHUTDOWN at once (C-DLV section 4.6).
-          takeLostOnShutdown(item);
-          return Object.freeze({
-            ok: true,
-            value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
-          });
-        }
-        finishAdmission(item);
-        return Object.freeze({
-          ok: true,
-          value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
-        });
+      if (!(put.ok && !unknownCode && put.value === true)) {
+        const putCode = unknownCode
+          ? SdkResultCode.E_SDK_UNKNOWN_CODE
+          : SdkResultCode.E_SDK_STORAGE_FAILED;
+        return await undoAdmission(item, putCode, portCall.value, put.late);
       }
-      const putCode = unknownCode
-        ? SdkResultCode.E_SDK_UNKNOWN_CODE
-        : SdkResultCode.E_SDK_STORAGE_FAILED;
+      if (stopped) {
+        // A `send` past `put` completes it without sealing; the stored item
+        // takes QUEUED -> LOST_ON_SHUTDOWN at once (C-DLV section 4.6).
+        return admitLostOnShutdown(item);
+      }
 
-      // A failed `put`: the SDK calls `remove` once. A `remove` that undoes the
-      // failed admission succeeds when it returns `true` or `false`.
-      const removed = await boundedCall(read.storage, 'remove', [item.deliveryId], portCall.value);
-      // C-DLV section 4.5 and C-SDK section 5.3: an unknown closed slot in a
-      // port return is E_SDK_UNKNOWN_CODE and takes precedence, also here and
-      // also over the code of the failed `put` that preceded it.
-      const removeUnknown = removed.ok && closedSlotViolation(removed.value) !== null;
-      const cleaned = removed.ok && (removed.value === true || removed.value === false);
-      if (removeUnknown || !cleaned) {
-        // The residual-item rule of C-DLV section 4.2 and C-SDK section 5.2:
-        // the item is recorded in the in-memory view directly as
-        // FAILED_NOT_ACCEPTED, one terminal event, never published, and it
-        // takes precedence over `shutdown()`.
-        const residualCode = removeUnknown ? SdkResultCode.E_SDK_UNKNOWN_CODE : putCode;
-        clearItemTimers(item);
-        item.state = STATE_FAILED_NOT_ACCEPTED;
-        item.lastCode = residualCode;
-        item.ciphertext = null;
-        item.event = null;
-        items.set(item.deliveryId, item);
-        item.admitted = true;
-        emitTransition(item);
-        return failure(residualCode);
+      // Step 5: the admission clock reading, and in the same synchronous step
+      // the deadline timer of section 4.4 and its host backstop.
+      const reading = callSyncPort(read.clock, 'now');
+      // A `shutdown()` re-entered from the clock port: the stored item is
+      // LOST_ON_SHUTDOWN and nothing is sealed.
+      if (stopped) return admitLostOnShutdown(item);
+      if (!reading.ok || !isValidClockValue(reading.value)) {
+        return await undoAdmission(item, SdkResultCode.E_SDK_INTERNAL, portCall.value, undefined);
       }
-      clearItemTimers(item);
-      return failure(putCode);
+      const preWriteCreatedAt = item.createdAt;
+      const preWriteDeadlineAt = item.deadlineAt;
+      item.createdAt = reading.value;
+      item.deadlineAt = reading.value + deadlineMs.value;
+      if (!armDeadline(item, deadlineMs.value)) {
+        clearItemTimers(item);
+        item.createdAt = preWriteCreatedAt;
+        item.deadlineAt = preWriteDeadlineAt;
+        return await undoAdmission(item, SdkResultCode.E_SDK_INTERNAL, portCall.value, undefined);
+      }
+      // A `shutdown()` re-entered while the timers were armed: the armed
+      // handles are cleared in shutdown step (4), and nothing is sealed.
+      if (stopped) return admitLostOnShutdown(item);
+
+      // Step 6: session.seal, bounded by the port-call timeout.
+      const sealed = await boundedCall(read.session, 'seal', [{ recipient, plaintext }], portCall.value);
+      if (stopped) {
+        // `shutdown()` takes precedence over the seal's result: the stored
+        // item takes QUEUED -> LOST_ON_SHUTDOWN and the sealed bytes, if any,
+        // are discarded.
+        return admitLostOnShutdown(item);
+      }
+      let sealCode = null;
+      let ciphertext = null;
+      if (!sealed.ok) {
+        sealCode = SdkResultCode.E_SDK_SESSION_FAILED;
+      } else if (closedSlotViolation(sealed.value) !== null) {
+        sealCode = SdkResultCode.E_SDK_UNKNOWN_CODE;
+      } else if (!isPlainObject(sealed.value) || Object.keys(sealed.value).length !== 1) {
+        sealCode = SdkResultCode.E_SDK_SESSION_FAILED;
+      } else {
+        try {
+          ciphertext = sealed.value.ciphertext;
+        } catch {
+          sealCode = SdkResultCode.E_SDK_SESSION_FAILED;
+        }
+        if (sealCode === null && (!(ciphertext instanceof Uint8Array) || ciphertext.length === 0)) {
+          sealCode = SdkResultCode.E_SDK_SESSION_FAILED;
+        }
+      }
+      if (sealCode !== null) {
+        clearItemTimers(item);
+        return await undoAdmission(item, sealCode, portCall.value, undefined);
+      }
+
+      item.ciphertext = copyBytes(ciphertext);
+      items.set(item.deliveryId, item);
+      item.admitted = true;
+      finishAdmission(item);
+      return Object.freeze({
+        ok: true,
+        value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
+      });
     } finally {
       releaseAdmission();
     }
   }
 
   /**
-   * C-DLV section 4.2, after a successful `put`: the shutdown and deadline
-   * precedence, and otherwise the first attempt scheduled with
+   * C-DLV section 4.2: a stored item whose admission `shutdown()` interrupted
+   * after a successful `put` takes QUEUED -> LOST_ON_SHUTDOWN at once, without
+   * sealing, and `send` completes with its delivery id.
+   *
+   * @param {object} item
+   * @returns {object}
+   */
+  function admitLostOnShutdown(item) {
+    item.ciphertext = null;
+    items.set(item.deliveryId, item);
+    item.admitted = true;
+    takeLostOnShutdown(item);
+    return Object.freeze({
+      ok: true,
+      value: Object.freeze({ deliveryId: item.deliveryId, state: STATE_QUEUED }),
+    });
+  }
+
+  /**
+   * C-DLV section 4.2: undo an admission that failed after `put` may have
+   * written. The SDK calls `remove` once; if that removal also fails, the
+   * residual-item rule of C-SDK section 5.2 applies. A `put` that outlived its
+   * port-call timeout is followed, once it has settled and this removal has
+   * settled (also after its own timeout), by one more `remove`, unless
+   * `shutdown()` has been called.
+   *
+   * @param {object} item
+   * @param {string} code the code of the failed step
+   * @param {number} portCallTimeoutMs
+   * @param {Promise<void> | undefined} latePut
+   * @returns {Promise<object>}
+   */
+  async function undoAdmission(item, code, portCallTimeoutMs, latePut) {
+    const removal = boundedCall(read.storage, 'remove', [item.deliveryId], portCallTimeoutMs);
+    if (latePut !== undefined) {
+      // The background wait follows the removal until it has really settled,
+      // also past its own timeout; `send` itself waits only within the bound.
+      const removalSettled = removal.then(
+        (result) => (isPlainObject(result) && result.late !== undefined ? result.late : undefined),
+        () => undefined,
+      );
+      scheduleLatePutCleanup(item.deliveryId, latePut, removalSettled, portCallTimeoutMs);
+    }
+    const removed = await removal;
+    // C-DLV section 4.5 and C-SDK section 5.3: an unknown closed slot in a
+    // port return is E_SDK_UNKNOWN_CODE and takes precedence, also here and
+    // also over the code of the failed step that preceded it.
+    const removeUnknown = removed.ok && closedSlotViolation(removed.value) !== null;
+    const cleaned = removed.ok && (removed.value === true || removed.value === false);
+    clearItemTimers(item);
+    if (removeUnknown || !cleaned) {
+      // The residual-item rule of C-DLV section 4.2 and C-SDK section 5.2:
+      // the item is recorded in the in-memory view directly as
+      // FAILED_NOT_ACCEPTED, one terminal event, never published, and it
+      // takes precedence over `shutdown()`.
+      const residualCode =
+        removeUnknown || code === SdkResultCode.E_SDK_UNKNOWN_CODE
+          ? SdkResultCode.E_SDK_UNKNOWN_CODE
+          : SdkResultCode.E_SDK_STORAGE_FAILED;
+      item.state = STATE_FAILED_NOT_ACCEPTED;
+      item.lastCode = residualCode;
+      item.ciphertext = null;
+      item.event = null;
+      items.set(item.deliveryId, item);
+      item.admitted = true;
+      emitTransition(item);
+      return failure(residualCode);
+    }
+    return failure(code);
+  }
+
+  /**
+   * C-DLV section 4.2: after a `put` that did not settle within its port-call
+   * timeout, wait in the background until it has settled and the admission's
+   * own `remove` has settled, then call `remove` once more, so a late write
+   * does not leave the record of a refused admission in the store. Nothing is
+   * called once `shutdown()` has been called; the result is ignored and no
+   * transition, event or method result depends on it.
+   *
+   * @param {string} deliveryId
+   * @param {Promise<void>} latePut
+   * @param {Promise<void>} removalSettled settles once the removal has settled
+   * @param {number} portCallTimeoutMs
+   */
+  function scheduleLatePutCleanup(deliveryId, latePut, removalSettled, portCallTimeoutMs) {
+    Promise.all([latePut, removalSettled.catch(() => undefined)])
+      .then(() => {
+        if (stopped) return undefined;
+        return boundedCall(read.storage, 'remove', [deliveryId], portCallTimeoutMs);
+      })
+      .catch(() => undefined);
+  }
+
+  /**
+   * C-DLV section 4.2, after a successful `put` and seal: the shutdown and
+   * deadline precedence, and otherwise the first attempt scheduled with
    * `queueMicrotask`.
    *
    * @param {object} item
