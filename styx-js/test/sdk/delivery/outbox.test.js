@@ -640,6 +640,7 @@ describe('admission (C-DLV section 4.2)', () => {
     });
     // C-DLV section 4.2: the deadline is armed only at the admission reading
     // after a successful put, so a failed put never armed or cleared a timer.
+    expect(clock.state.setCalls.length).toBe(0);
     expect(clock.state.clearCalls.length).toBe(0);
     await outbox.shutdown();
   });
