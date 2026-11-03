@@ -585,7 +585,7 @@ describe('admission (C-DLV section 4.2)', () => {
     await outbox.shutdown();
   });
 
-  test('step 3: every seal fault is E_SDK_SESSION_FAILED, and the item is never admitted', async () => {
+  test('step 6: every seal fault is E_SDK_SESSION_FAILED after the put, the record is removed and the item is never admitted', async () => {
     const faults = [
       makeSession({ seal: () => { throw new Error('seal'); } }),
       makeSession({ seal: () => Promise.reject(new Error('seal')) }),
@@ -600,7 +600,14 @@ describe('admission (C-DLV section 4.2)', () => {
       clock.state.now = 0;
       const result = await outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
       expect(result).toEqual({ ok: false, code: 'E_SDK_SESSION_FAILED' });
-      expect(storage.calls.put.length).toBe(0);
+      // C-DLV section 4.2: the put precedes the seal, so a seal fault takes
+      // the one remove of the stored record and leaves no item.
+      expect(storage.calls.put.length).toBe(1);
+      expect(storage.calls.remove).toEqual(['d1']);
+      expect(await outbox.getDelivery({ deliveryId: 'd1' })).toEqual({
+        ok: false,
+        code: 'E_SDK_UNKNOWN_DELIVERY',
+      });
       await outbox.shutdown();
     }
     const throwingGetter = {};
@@ -618,7 +625,7 @@ describe('admission (C-DLV section 4.2)', () => {
     await outbox.shutdown();
   });
 
-  test('step 5: a failed put whose remove succeeds leaves no item and emits no event', async () => {
+  test('step 4: a failed put whose remove succeeds leaves no item and emits no event', async () => {
     const storage = makeStorage();
     storage.putResult = false;
     const { outbox, clock, events } = makeHarness({ storage });
@@ -631,7 +638,10 @@ describe('admission (C-DLV section 4.2)', () => {
       ok: false,
       code: 'E_SDK_UNKNOWN_DELIVERY',
     });
-    expect(clock.state.clearCalls.length).toBe(1);
+    // C-DLV section 4.2: the deadline is armed only at the admission reading
+    // after a successful put, so a failed put never armed or cleared a timer.
+    expect(clock.state.setCalls.length).toBe(0);
+    expect(clock.state.clearCalls.length).toBe(0);
     await outbox.shutdown();
   });
 
@@ -1312,8 +1322,8 @@ describe('port faults and unknown values (C-DLV section 4.5)', () => {
     await randomFault.outbox.shutdown();
 
     // A clock that throws at the attempt start is E_SDK_INTERNAL. The
-    // admission reads the clock once at step 4; the attempt start is the next
-    // reading, and it faults. No relay is published to and no attempt timeout
+    // admission reads the clock twice, at steps 3 and 5; the attempt start is
+    // the next reading, and it faults. No relay is published to and no attempt timeout
     // is armed, so no relay outcome of that attempt is set.
     const clockFault = makeHarness();
     clockFault.clock.state.now = 0;
@@ -1321,7 +1331,7 @@ describe('port faults and unknown values (C-DLV section 4.5)', () => {
     let readings = 0;
     clockFault.clock.port.now = () => {
       readings += 1;
-      if (readings > 1) throw new Error('now');
+      if (readings > 2) throw new Error('now');
       return realNow();
     };
     const faulted = await clockFault.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
@@ -1568,8 +1578,26 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     await outbox.shutdown();
   });
 
-  test('a send before its put resolves E_SDK_CLIENT_STOPPED with no item, and a send past its put keeps its item as LOST_ON_SHUTDOWN', async () => {
-    // The seal is held open, so the send is before its put when shutdown lands.
+  test('a send called after shutdown resolves E_SDK_CLIENT_STOPPED with no item, and a send past its put keeps its item as LOST_ON_SHUTDOWN', async () => {
+    // C-DLV section 4.2: no step boundary precedes the put, so a send whose
+    // put has not been issued is one called after the stop.
+    const late = makeHarness({ storage: makeStorage() });
+    late.clock.state.now = 0;
+    const lateStop = late.outbox.shutdown();
+    expect(await late.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD })).toEqual({
+      ok: false,
+      code: 'E_SDK_CLIENT_STOPPED',
+    });
+    expect((await lateStop).value).toEqual({ clientState: 'STOPPED', lost: 0 });
+    expect(late.storage.calls.put.length).toBe(0);
+    expect(await late.outbox.getDelivery({ deliveryId: 'd1' })).toEqual({
+      ok: false,
+      code: 'E_SDK_UNKNOWN_DELIVERY',
+    });
+    expect(late.events.length).toBe(0);
+
+    // The seal is held open, so the send is past its put when shutdown lands:
+    // the stored item is LOST_ON_SHUTDOWN and the sealed bytes are discarded.
     let releaseSeal = null;
     const session = makeSession({
       seal: () =>
@@ -1584,24 +1612,26 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     const stoppingBefore = before.outbox.shutdown();
     await flush();
     releaseSeal();
-    expect(await pending).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
+    expect(await pending).toEqual({ ok: true, value: { deliveryId: 'd1', state: 'QUEUED' } });
     const stop = await stoppingBefore;
-    expect(stop.value).toEqual({ clientState: 'STOPPED', lost: 0 });
-    expect(before.storage.calls.put.length).toBe(0);
-    expect(await before.outbox.getDelivery({ deliveryId: 'd1' })).toEqual({
-      ok: false,
-      code: 'E_SDK_UNKNOWN_DELIVERY',
+    expect(stop.value).toEqual({ clientState: 'STOPPED', lost: 1 });
+    expect(before.storage.calls.put.length).toBe(1);
+    expect(await before.outbox.getDelivery({ deliveryId: 'd1' })).toMatchObject({
+      value: { state: 'LOST_ON_SHUTDOWN', terminal: true },
     });
-    expect(before.events.length).toBe(0);
+    expect(before.events.map((event) => event.state)).toEqual(['LOST_ON_SHUTDOWN']);
+    expect(before.relaySet.attempts.length).toBe(0);
 
-    // The put is held open, so the send is past it when shutdown lands.
+    // The put is held open, so the send is past it when shutdown lands: the
+    // seal is never called.
     const heldPut = makeStorage();
     let releasePut = null;
     heldPut.putResult = () =>
       new Promise((resolve) => {
         releasePut = () => resolve(true);
       });
-    const after = makeHarness({ storage: heldPut });
+    const afterSession = makeSession();
+    const after = makeHarness({ storage: heldPut, session: afterSession });
     after.clock.state.now = 0;
     const admitted = after.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
     await flush();
@@ -1615,7 +1645,8 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       value: { state: 'LOST_ON_SHUTDOWN', terminal: true },
     });
     expect(after.events.map((event) => event.state)).toEqual(['LOST_ON_SHUTDOWN']);
-    // The item was never published.
+    // The item was never sealed or published.
+    expect(afterSession.sealCalls.length).toBe(0);
     expect(after.relaySet.attempts.length).toBe(0);
   });
 
@@ -1811,9 +1842,11 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     await flush();
     expect(resolved).toBe(false);
     gates[1]();
-    expect(await first).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
-    expect(await second).toEqual({ ok: false, code: 'E_SDK_CLIENT_STOPPED' });
-    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 0 } });
+    // C-DLV section 4.2: both sends are past their put, so both stored items
+    // are LOST_ON_SHUTDOWN.
+    expect(await first).toEqual({ ok: true, value: { deliveryId: 'd1', state: 'QUEUED' } });
+    expect(await second).toEqual({ ok: true, value: { deliveryId: 'd2', state: 'QUEUED' } });
+    expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 2 } });
     expect(relaySet.attempts.length).toBe(0);
     void clock;
   });
@@ -1908,19 +1941,21 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
     expect(residual.relaySet.attempts.length).toBe(0);
   });
 
-  test('a deadline that fires while put is pending only latches, and no event precedes admission (C-DLV 4.2)', async () => {
-    const storage = makeStorage();
-    let releasePut = null;
-    storage.putResult = () => new Promise((resolve) => {
-      releasePut = () => resolve(true);
+  test('a deadline that fires while seal is pending only latches, and no event precedes admission (C-DLV 4.2)', async () => {
+    let releaseSeal = null;
+    const session = makeSession({
+      seal: () => new Promise((resolve) => {
+        releaseSeal = () => resolve({ ciphertext: new Uint8Array([1, 2, 3]) });
+      }),
     });
-    const { outbox, clock, events } = makeHarness({ storage });
+    const { outbox, clock, events, storage } = makeHarness({ session });
     const pending = outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
     await flush();
-    // The deadline callback runs while the item has not been admitted by `put`.
+    // The deadline callback runs while the item has not been admitted: its
+    // put succeeded and its seal is in progress.
     await clock.advance(120000);
     expect(events).toEqual([]);
-    releasePut();
+    releaseSeal();
     expect(await pending).toEqual({ ok: true, value: { deliveryId: 'd1', state: 'QUEUED' } });
     await flush();
     expect(events.map((event) => event.state)).toEqual(['FAILED_NOT_ACCEPTED']);
@@ -1930,6 +1965,8 @@ describe('cancel, retry, retention and shutdown continuations (C-DLV section 4.6
       lastCode: null,
       terminal: true,
     });
+    // Its first transition is terminal, so its first write holds no bytes.
+    expect(storage.calls.update[0]).toMatchObject({ state: 'FAILED_NOT_ACCEPTED', ciphertext: null });
     await outbox.shutdown();
   });
 
@@ -2642,7 +2679,7 @@ describe('seam S5 -- item-timer quiescence at the stop', () => {
         delivery,
         relayCount: 2,
         storage,
-        session: makeSession(),
+        session: config.session ?? makeSession(),
         identity: makeIdentity(),
         clock: clock.port,
         random: { nextUint32: () => 0 },
@@ -2713,24 +2750,22 @@ describe('seam S5 -- item-timer quiescence at the stop', () => {
     expect(Reflect.ownKeys(outbox).map(String).sort()).toEqual(OUTBOX_MEMBERS);
   });
 
-  test('an item awaiting a receipt whose host deadline backstop falls due after the stop call, before a held put settles', async () => {
+  test('an item awaiting a receipt whose host deadline backstop falls due after the stop call, before a held seal settles', async () => {
     const storage = makeStorage();
-    let releasePut = null;
-    let puts = 0;
-    storage.putResult = (record) => {
-      puts += 1;
-      if (puts === 1) {
-        storage.records.set(record.deliveryId, record);
-        return true;
-      }
-      return new Promise((resolve) => {
-        releasePut = () => {
-          storage.records.set(record.deliveryId, record);
-          resolve(true);
-        };
-      });
-    };
-    await withQuiescenceHarness({ delivery: RECEIPT_DELIVERY, storage }, async (h) => {
+    // C-DLV section 4.2: the deadline of the later send is armed after its
+    // put, so it is its seal that is held while both items have handles.
+    let releaseSeal = null;
+    let seals = 0;
+    const session = makeSession({
+      seal: ({ plaintext }) => {
+        seals += 1;
+        if (seals === 1) return { ciphertext: new Uint8Array(plaintext) };
+        return new Promise((resolve) => {
+          releaseSeal = () => resolve({ ciphertext: new Uint8Array(plaintext) });
+        });
+      },
+    });
+    await withQuiescenceHarness({ delivery: RECEIPT_DELIVERY, storage, session }, async (h) => {
       await h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
       await flush();
       h.relaySet.attempts[0].answer(0, 'ACCEPTED');
@@ -2738,7 +2773,7 @@ describe('seam S5 -- item-timer quiescence at the stop', () => {
       expect((await h.outbox.getDelivery({ deliveryId: 'd1' })).value.state).toBe('RELAY_ACCEPTED_AWAITING_RECEIPT');
       const later = h.outbox.send({ recipient: RECIPIENT, plaintext: PAYLOAD });
       await flush();
-      expect(releasePut).not.toBe(null);
+      expect(releaseSeal).not.toBe(null);
       const stopping = stop(h);
       const handles = h.deadlineHandles();
       expect(handles.clock).toHaveLength(2);
@@ -2751,7 +2786,7 @@ describe('seam S5 -- item-timer quiescence at the stop', () => {
       expect(sinceStop.filter((entry) => entry.type === 'clockClear')).toEqual([]);
       expect(sinceStop.some((entry) => entry.type === 'hostClear'
         && handles.host.some((host) => host.handle === entry.handle))).toBe(false);
-      releasePut();
+      releaseSeal();
       expect(await later).toEqual({ ok: true, value: { deliveryId: 'd2', state: 'QUEUED' } });
       expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 2 } });
       expectQuiescence(h.log, handles, 2);
@@ -2788,14 +2823,16 @@ describe('seam S5 -- item-timer quiescence at the stop', () => {
         expect(releasePut).not.toBe(null);
         const stopping = stop(h);
         const handles = h.deadlineHandles();
-        expect(handles.clock).toHaveLength(2);
-        expect(handles.host).toHaveLength(2);
+        // C-DLV section 4.2: a send held in its put has armed no deadline yet,
+        // so only the IN_FLIGHT item holds handles.
+        expect(handles.clock).toHaveLength(1);
+        expect(handles.host).toHaveLength(1);
         releasePut();
         expect(await later).toEqual({ ok: false, code: 'E_SDK_STORAGE_FAILED' });
         expect(storage.calls.remove).toEqual(['d2']);
         expect(await stopping).toEqual({ ok: true, value: { clientState: 'STOPPED', lost: 1 } });
-        // The failed admission's handles are among those cleared, after the
-        // events and before the stop resolved.
+        // The item handles are cleared after the events and before the stop
+        // resolved.
         expectQuiescence(h.log, handles, 1);
         const d2 = await h.outbox.getDelivery({ deliveryId: 'd2' });
         if (removeSucceeds) {
