@@ -4,6 +4,12 @@
 // MlsEngine holds the local device's crypto+storage Provider and MLS Identity;
 // each 1:1 contact is a 2-member MLS group exposed as an MlsSession.
 //
+// Every session is registered only after the engine has checked its group: exactly
+// two members, us and one peer, and — when the caller names one — exactly the
+// expected peer. The session then stays bound to that peer for every later use.
+// start/join/load never register a group that fails this check, never replace an
+// existing session, and never register the same group under two contacts.
+//
 // State is in-memory for now (the OpenMLS Provider keeps group state in RAM);
 // persistence across reloads is a follow-up (serialize/restore the provider
 // storage — needs a small Rust extension to the vendored crate).
@@ -16,7 +22,30 @@ import initWasm, {
   RatchetTree,
 } from '../../../vendor/openmls-wasm/openmls_wasm.js';
 import { uuidv4 } from '../../utils.js';
-import { MlsSession } from './mls-session.js';
+import { MlsBindingError, MlsSession, soleOtherMember } from './mls-session.js';
+
+export { MlsBindingError };
+
+// Exporter label used only to compare two group handles in memory: two handles
+// derive the same value only if they are the same group at the same epoch.
+const SAME_GROUP_LABEL = 'styx/engine/same-group-check';
+const SAME_GROUP_CONTEXT = new Uint8Array(0);
+const SAME_GROUP_LENGTH = 32;
+
+function sameGroupValue(group, provider) {
+  return group.export_key(provider, SAME_GROUP_LABEL, SAME_GROUP_CONTEXT, SAME_GROUP_LENGTH);
+}
+
+function equalBytes(x, y) {
+  if (!(x instanceof Uint8Array) || !(y instanceof Uint8Array) || x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i += 1) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
+function freeHandle(group) {
+  if (group && typeof group.free === 'function') group.free();
+}
 
 let _wasmReady = null;
 
@@ -78,16 +107,26 @@ export class MlsEngine {
 
   /**
    * Reload a previously-established session's group from restored state.
+   *
+   * The reloaded group is checked exactly like a new one before it is registered:
+   * it must be exactly {us, one peer} — the expected peer when one is given — and
+   * must not already be registered under another contact. An existing session for
+   * the contact is never replaced.
    * @param {string} contactId
    * @param {string} groupId the group id used when the session was created
-   * @returns {MlsSession|null}
+   * @param {object} [options]
+   * @param {string} [options.expectedPeer] the peer credential the group must hold
+   * @returns {MlsSession|null} null when no group with that id is stored
+   * @throws {MlsBindingError} when the group cannot be bound to this contact
    */
-  loadSession(contactId, groupId) {
+  loadSession(contactId, groupId, { expectedPeer } = {}) {
     const group = Group.load(this._provider, groupId);
     if (!group) return null;
-    const session = new MlsSession(this, group);
-    this._sessions.set(contactId, session);
-    return session;
+    if (this._sessions.has(contactId)) {
+      freeHandle(group);
+      throw new Error(`MlsEngine: session already exists for ${contactId}`);
+    }
+    return this._register(contactId, group, expectedPeer, 'loadSession');
   }
 
   /** @private */
@@ -96,6 +135,43 @@ export class MlsEngine {
     this._identity = identity;
     this._name = name; // our MLS credential string (the pubkey hex)
     this._sessions = new Map(); // contactId -> MlsSession
+  }
+
+  /** @private */
+  _requireNoSession(contactId) {
+    if (this._sessions.has(contactId)) {
+      throw new Error(`MlsEngine: session already exists for ${contactId}`);
+    }
+  }
+
+  /**
+   * @private Check a group and register it as the session for `contactId`, or
+   * throw MlsBindingError and register nothing. The handle is freed exactly once
+   * on refusal; a failure of the check itself is also a refusal.
+   */
+  _register(contactId, group, expectedPeer, operation) {
+    try {
+      const peer = soleOtherMember(group.member_identities(), this._name);
+      if (peer === null) {
+        throw new MlsBindingError(`MlsEngine.${operation}: the group is not exactly two members (us and one peer)`);
+      }
+      if (expectedPeer !== undefined && peer !== expectedPeer) {
+        throw new MlsBindingError(`MlsEngine.${operation}: the group's peer is not the expected peer`);
+      }
+      const value = sameGroupValue(group, this._provider);
+      for (const [otherId, other] of this._sessions) {
+        if (equalBytes(sameGroupValue(other._group, this._provider), value)) {
+          throw new MlsBindingError(`MlsEngine.${operation}: the group is already the session of ${otherId}`);
+        }
+      }
+      const session = new MlsSession(this, group, peer);
+      this._sessions.set(contactId, session);
+      return session;
+    } catch (e) {
+      freeHandle(group);
+      if (e instanceof MlsBindingError) throw e;
+      throw new MlsBindingError(`MlsEngine.${operation}: the group could not be checked`, { cause: e });
+    }
   }
 
   get provider() { return this._provider; }
@@ -115,14 +191,16 @@ export class MlsEngine {
    * Start a 1:1 session by creating a group and adding the peer.
    * @param {string} contactId a stable local id for the contact
    * @param {Uint8Array} peerKeyPackageBytes the peer's published KeyPackage
+   * @param {object} [options]
+   * @param {string} [options.expectedPeer] the credential the KeyPackage must carry
    * @returns {{ session: MlsSession, welcome: Uint8Array, ratchetTree: Uint8Array, groupId: string }}
    *   `welcome` + `ratchetTree` + `groupId` must be delivered to the peer so it
    *   can join and later reload the session.
+   * @throws {MlsBindingError} when the resulting group is not exactly {us, the
+   *   expected peer}; nothing is registered and nothing should be sent
    */
-  startSession(contactId, peerKeyPackageBytes) {
-    if (this._sessions.has(contactId)) {
-      throw new Error(`MlsEngine: session already exists for ${contactId}`);
-    }
+  startSession(contactId, peerKeyPackageBytes, { expectedPeer } = {}) {
+    this._requireNoSession(contactId);
     const groupId = `styx:${uuidv4()}`;
     const group = Group.create_new(this._provider, this._identity, groupId);
     const peerKp = KeyPackage.from_bytes(peerKeyPackageBytes);
@@ -130,8 +208,7 @@ export class MlsEngine {
     group.merge_pending_commit(this._provider);
     const welcome = add.welcome;
     const ratchetTree = group.export_ratchet_tree().to_bytes();
-    const session = new MlsSession(this, group);
-    this._sessions.set(contactId, session);
+    const session = this._register(contactId, group, expectedPeer, 'startSession');
     return { session, welcome, ratchetTree, groupId };
   }
 
@@ -140,23 +217,56 @@ export class MlsEngine {
    * Refuses to replace an existing session: swapping out an established group is
    * how a silent MITM takes over a live conversation. Re-pairing must be an
    * explicit local action (drop the contact, then accept a new invite).
+   *
+   * The joined group is registered only if it is exactly {us, one peer} — the
+   * expected peer when one is given — and, when the caller declares the group id
+   * it will later reload the session with, only if that id names this very group.
    * @param {string} contactId
    * @param {Uint8Array} welcomeBytes
    * @param {Uint8Array} ratchetTreeBytes
+   * @param {object} [options]
+   * @param {string} [options.expectedPeer] the peer credential the group must hold
+   * @param {string} [options.groupId] the declared group id to verify
    * @returns {MlsSession}
+   * @throws {MlsBindingError} when the joined group cannot be bound; nothing is
+   *   registered (the Welcome has still been processed)
    */
-  joinSession(contactId, welcomeBytes, ratchetTreeBytes) {
-    if (this._sessions.has(contactId)) {
-      throw new Error(`MlsEngine: session already exists for ${contactId}`);
-    }
+  joinSession(contactId, welcomeBytes, ratchetTreeBytes, { expectedPeer, groupId } = {}) {
+    this._requireNoSession(contactId);
     const group = Group.join(
       this._provider,
       welcomeBytes,
       RatchetTree.from_bytes(ratchetTreeBytes),
     );
-    const session = new MlsSession(this, group);
-    this._sessions.set(contactId, session);
-    return session;
+    if (groupId !== undefined) {
+      let storedAs;
+      try {
+        storedAs = this._isStoredAs(group, groupId);
+      } catch (e) {
+        freeHandle(group);
+        throw new MlsBindingError('MlsEngine.joinSession: the declared group id could not be checked', { cause: e });
+      }
+      if (!storedAs) {
+        freeHandle(group);
+        throw new MlsBindingError('MlsEngine.joinSession: the declared group id does not name the joined group');
+      }
+    }
+    return this._register(contactId, group, expectedPeer, 'joinSession');
+  }
+
+  /**
+   * @private Whether `groupId` names the stored state of `group` itself: a
+   * separate handle loaded under that id must derive the same epoch-bound value.
+   */
+  _isStoredAs(group, groupId) {
+    if (typeof groupId !== 'string' || groupId.length === 0) return false;
+    const stored = Group.load(this._provider, groupId);
+    if (!stored) return false;
+    try {
+      return equalBytes(sameGroupValue(stored, this._provider), sameGroupValue(group, this._provider));
+    } finally {
+      freeHandle(stored);
+    }
   }
 
   /** @param {string} contactId @returns {MlsSession|undefined} */
@@ -170,10 +280,10 @@ export class MlsEngine {
    *
    * This is the anchor for binding an MLS group to a transport identity: a group is
    * only trustworthy if the peer inside it is the same peer who sent it to us. Null
-   * when the session is unknown, or when the membership is not exactly {us, one
-   * peer}: exactly two leaves, one with our own credential and one with a
-   * different credential. A third leaf — even one that repeats our own
-   * credential — must never be silently accepted.
+   * when the session is unknown, or when the membership is no longer exactly {us,
+   * the peer the session was bound to}: exactly two leaves, one with our own
+   * credential and one with that peer's credential. A third leaf — even one that
+   * repeats our own credential — must never be silently accepted.
    *
    * @param {string} contactId
    * @returns {string|null}
@@ -181,8 +291,7 @@ export class MlsEngine {
   peerIdentity(contactId) {
     const session = this._sessions.get(contactId);
     if (!session || !session.isOneToOne()) return null;
-    const others = session.memberIdentities().filter((id) => id !== this._name);
-    return others.length === 1 ? others[0] : null;
+    return session.peer;
   }
 
   /**

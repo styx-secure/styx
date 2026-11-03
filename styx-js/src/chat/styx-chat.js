@@ -20,7 +20,7 @@ import {
 import { schnorr } from '@noble/curves/secp256k1';
 import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
-import { MlsEngine } from '../crypto/mls/mls-engine.js';
+import { MlsEngine, MlsBindingError } from '../crypto/mls/mls-engine.js';
 import {
   MlsStateError,
   MlsStateErrorCodes,
@@ -241,10 +241,17 @@ export class StyxChat {
       const savedNonce = await be.get(INVITE_NONCE_KEY);
       if (savedNonce) this._inviteNonce = base64ToBytes(savedNonce);
 
-      // Reload previously-established sessions from the restored state.
+      // Reload previously-established sessions from the restored state. Each group
+      // is re-bound to its contact: a stored group whose peer is not that contact,
+      // or that is already another contact's session, is not loaded (the contact
+      // then has no session, as when its group is missing).
       this._groups = (await be.get('mls:groups')) || {};
       for (const [contactPubkey, groupId] of Object.entries(this._groups)) {
-        this._engine.loadSession(contactPubkey, groupId);
+        try {
+          this._engine.loadSession(contactPubkey, groupId, { expectedPeer: contactPubkey });
+        } catch (e) {
+          if (!(e instanceof MlsBindingError)) throw e;
+        }
       }
 
       if (relays && relays.length) {
@@ -383,7 +390,15 @@ export class StyxChat {
     if (this._groups[inv.pubkey] || this._engine.session(inv.pubkey)) {
       throw new Error('A session with this contact already exists — remove it before re-pairing');
     }
-    const { welcome, ratchetTree, groupId } = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp));
+    const invalidInvite = 'Invite rejected: the KeyPackage credential does not match the invite pubkey';
+    let started;
+    try {
+      started = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp), { expectedPeer: inv.pubkey });
+    } catch (e) {
+      if (e instanceof MlsBindingError) throw new Error(invalidInvite);
+      throw e;
+    }
+    const { welcome, ratchetTree, groupId } = started;
     // N2, scanner side: bind the KeyPackage credential to the pubkey the QR claims.
     // This is a consistency check, not the trust anchor — both values come from the
     // (possibly forged) QR, so an attacker who forges *both* to agree passes it. What
@@ -394,7 +409,7 @@ export class StyxChat {
     // rejection instead of a silently mislabelled contact.
     if (this._engine.peerIdentity(inv.pubkey) !== inv.pubkey) {
       this._engine.removeSession(inv.pubkey);
-      throw new Error('Invite rejected: the KeyPackage credential does not match the invite pubkey');
+      throw new Error(invalidInvite);
     }
     this._groups[inv.pubkey] = groupId;
     await this._persistMls();
@@ -807,6 +822,7 @@ export class StyxChat {
         || typeof welcomeHmac !== 'string') return;
       let welcomeBytes;
       let treeBytes;
+      let bindingRefused = false;
       try {
         welcomeBytes = base64ToBytes(welcome);
         treeBytes = base64ToBytes(tree);
@@ -814,15 +830,20 @@ export class StyxChat {
         if (!constantTimeEqual(expected, base64ToBytes(welcomeHmac))) return;
         // Join first: if the welcome bytes are malformed and joinSession throws, the
         // nonce must survive so the legitimate joiner (who saw the QR) can retry.
-        this._engine.joinSession(from, welcomeBytes, treeBytes);
-      } catch { return; }
+        // The engine also binds the group to the sender and to the group id we will
+        // reload it with; a refused binding is handled as an identity mismatch below.
+        this._engine.joinSession(from, welcomeBytes, treeBytes, { expectedPeer: from, groupId });
+      } catch (e) {
+        if (!(e instanceof MlsBindingError)) return;
+        bindingRefused = true;
+      }
       // N2: the MLS credential in the group we just joined must be the peer who sent
       // it. A valid MAC only proves the sender saw our QR — it does not prove the
       // group is theirs. Somebody who photographed the QR can relay a group built by
       // (or for) a third party, and we would file that conversation under the wrong
       // name: the safety number, the verified badge and "who am I talking to" would
       // all describe someone who is not in the room.
-      if (this._engine.peerIdentity(from) !== from) {
+      if (bindingRefused || this._engine.peerIdentity(from) !== from) {
         this._engine.removeSession(from);
         // The invite is spent even though we rejected the group: processing the
         // Welcome made MLS consume the KeyPackage's private init key, so no later

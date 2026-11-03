@@ -7,8 +7,11 @@
 //      it reaches the engine, so membership, epoch and pending proposals are left
 //      unchanged.
 //   2. A group is only accepted as 1:1 when it has exactly two leaves: one with our
-//      own credential and one with a different (the peer's) credential. This holds
-//      for the binding check made after a join and before every later use.
+//      own credential and one with the expected peer's credential. The engine
+//      refuses any other group before registering it, and the session re-checks the
+//      invariant before every later use.
+// Every rejection test also counts calls into the engine group: a rejected input
+// must never reach the state-mutating binding call.
 import { describe, test, expect, beforeAll } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -50,6 +53,14 @@ function stateOf(engine, contactId) {
     exporter: Array.from(group.export_key(engine.provider, LABEL, CTX, 32)),
     storage: Array.from(engine.serializeState()),
   };
+}
+
+/** Count calls into one method of an engine group handle. */
+function spy(group, name) {
+  const counter = { calls: 0 };
+  const original = group[name].bind(group);
+  group[name] = (...args) => { counter.calls += 1; return original(...args); };
+  return counter;
 }
 
 /** Peer A, legitimately in the group, builds a proposal + commit adding a third member. */
@@ -98,10 +109,12 @@ describe('MLS 1:1 sessions process application messages only', () => {
     const earlier = a.session('b').encrypt(enc('sent before the commit'));
     const before = stateOf(b, 'a');
     const { proposal, commit } = await peerBuildsAdd(a);
+    const calls = spy(b.session('a')._group, 'process_message');
 
     expect(() => b.session('a').decrypt(proposal)).toThrow();
     expect(() => b.session('a').decrypt(commit)).toThrow();
 
+    expect(calls.calls).toBe(0);
     expect(stateOf(b, 'a')).toEqual(before);
     expect(before.members).toEqual([A, B].sort());
     expect(b.peerIdentity('a')).toBe(A);
@@ -119,22 +132,33 @@ describe('MLS 1:1 sessions process application messages only', () => {
     expect(Array.from(raw.export_key(b.provider, LABEL, CTX, 32))).not.toEqual(before.exporter);
   });
 
-  test('a commit alone from the legitimate peer is rejected and changes no state', async () => {
+  test('a valid commit from the legitimate peer is rejected and changes no state', async () => {
+    // The commit's proposal is already stored (applied straight to the engine
+    // group), so the commit itself is valid: only the session can stop it.
     const { a, b } = await paired();
+    const { proposal, commit } = await peerBuildsAdd(a);
+    b.session('a')._group.process_message(b.provider, proposal);
     const before = stateOf(b, 'a');
-    const { commit } = await peerBuildsAdd(a);
+    const calls = spy(b.session('a')._group, 'process_message');
 
     expect(() => b.session('a').decrypt(commit)).toThrow();
+    expect(calls.calls).toBe(0);
     expect(stateOf(b, 'a')).toEqual(before);
     expect(b.peerIdentity('a')).toBe(A);
+
+    // Control: the same commit applied straight to the engine group adds a member.
+    b.session('a')._group.process_message(b.provider, commit);
+    expect(b.session('a')._group.member_identities().length).toBe(3);
   });
 
   test('a proposal from the legitimate peer is rejected and stores no pending proposal', async () => {
     const { a, b } = await paired();
     const before = stateOf(b, 'a');
     const { proposal } = await peerBuildsAdd(a);
+    const calls = spy(b.session('a')._group, 'process_message');
 
     expect(() => b.session('a').decrypt(proposal)).toThrow();
+    expect(calls.calls).toBe(0);
     // The provider storage is byte-identical: no pending proposal was stored.
     expect(stateOf(b, 'a')).toEqual(before);
     // The session still works in both directions at the same epoch.
@@ -145,21 +169,6 @@ describe('MLS 1:1 sessions process application messages only', () => {
     const storageBefore = Array.from(b.serializeState());
     b.session('a')._group.process_message(b.provider, proposal);
     expect(Array.from(b.serializeState())).not.toEqual(storageBefore);
-  });
-
-  test('control: the raw engine group applies the same proposal and commit', async () => {
-    // The same rejected bytes, applied straight to the engine group, grow it to
-    // three members; the rejection tests above re-apply their own exact bytes too.
-    const { a, b } = await paired();
-    const { proposal, commit } = await peerBuildsAdd(a);
-    const before = stateOf(b, 'a');
-    expect(() => b.session('a').decrypt(proposal)).toThrow();
-    expect(() => b.session('a').decrypt(commit)).toThrow();
-    expect(stateOf(b, 'a')).toEqual(before);
-    const raw = b.session('a')._group;
-    raw.process_message(b.provider, proposal);
-    raw.process_message(b.provider, commit);
-    expect(raw.member_identities().length).toBe(3);
   });
 
   test('our own application message echoed back yields no application plaintext', async () => {
@@ -198,6 +207,47 @@ describe('MLS 1:1 sessions process application messages only', () => {
     expect(isMlsApplicationMessage(badVarint)).toBe(false);
   });
 
+  test('the header check reads 2- and 4-byte group id lengths and refuses non-minimal ones', async () => {
+    const { isMlsApplicationMessage } = sessionModule;
+    const header = (lengthBytes, groupIdLength, contentType) => {
+      const bytes = new Uint8Array(4 + lengthBytes.length + groupIdLength + 8 + 2);
+      bytes.set([0, 1, 0, 2, ...lengthBytes]);
+      bytes[4 + lengthBytes.length + groupIdLength + 8] = contentType;
+      return bytes;
+    };
+    // Minimal encodings: 2 bytes for 64..16383, 4 bytes from 16384.
+    expect(isMlsApplicationMessage(header([0x40, 0x40], 64, 1))).toBe(true);
+    expect(isMlsApplicationMessage(header([0x40, 0x40], 64, 3))).toBe(false);
+    expect(isMlsApplicationMessage(header([0x80, 0x00, 0x40, 0x00], 16384, 1))).toBe(true);
+    expect(isMlsApplicationMessage(header([0x80, 0x00, 0x40, 0x00], 16384, 2))).toBe(false);
+    // Non-minimal encodings of small lengths are refused.
+    expect(isMlsApplicationMessage(header([0x40, 0x05], 5, 1))).toBe(false);
+    expect(isMlsApplicationMessage(header([0x80, 0x00, 0x00, 0x05], 5, 1))).toBe(false);
+    expect(isMlsApplicationMessage(header([0x80, 0x00, 0x3f, 0xff], 16383, 1))).toBe(false);
+    // Truncated multi-byte lengths and a header cut before the content type.
+    expect(isMlsApplicationMessage(new Uint8Array([0, 1, 0, 2, 0x40]))).toBe(false);
+    expect(isMlsApplicationMessage(new Uint8Array([0, 1, 0, 2, 0x80, 0x00, 0x40]))).toBe(false);
+    expect(isMlsApplicationMessage(header([0x40, 0x40], 64, 1).subarray(0, 4 + 2 + 64 + 8))).toBe(false);
+  });
+
+  test('real messages with 2- and 4-byte group ids round-trip through the session', async () => {
+    for (const length of [100, 20000]) {
+      const a = await MlsEngine.create({ name: A });
+      const b = await MlsEngine.create({ name: B });
+      const { group, welcome, ratchetTree } = await (async () => {
+        const g = Group.create_new(a.provider, a.identity, `styx:${'x'.repeat(length)}`);
+        const add = g.propose_and_commit_add(a.provider, a.identity, KeyPackage.from_bytes(b.keyPackageBytes()));
+        g.merge_pending_commit(a.provider);
+        return { group: g, welcome: add.welcome, ratchetTree: g.export_ratchet_tree().to_bytes() };
+      })();
+      b.joinSession('a', welcome, ratchetTree, { expectedPeer: A });
+      const wire = group.create_message(a.provider, a.identity, enc(`group id of ${length + 5} bytes`));
+      expect(wire[4] >> 6).toBe(length < 16000 ? 1 : 2);
+      expect(sessionModule.isMlsApplicationMessage(wire)).toBe(true);
+      expect(dec(b.session('a').decrypt(wire).plaintext)).toBe(`group id of ${length + 5} bytes`);
+    }
+  });
+
   test('malformed and non-application input changes no state and the session survives', async () => {
     const { a, b } = await paired();
     const keyPackage = b.keyPackageBytes(); // creating it writes to b's storage: do it first
@@ -208,30 +258,55 @@ describe('MLS 1:1 sessions process application messages only', () => {
     // header check without reaching the engine.
     const groupIdLen = relabelled[4] & 0x3f; // short group ids use a 1-byte varint
     relabelled[5 + groupIdLen + 8] = 2;
+    const calls = spy(b.session('a')._group, 'process_message');
     for (const input of [new Uint8Array(0), new Uint8Array([0, 1, 0, 2]), relabelled, keyPackage]) {
       expect(() => b.session('a').decrypt(input)).toThrow();
     }
+    expect(calls.calls).toBe(0);
     expect(stateOf(b, 'a')).toEqual(before);
     expect(dec(b.session('a').decrypt(app).plaintext)).toBe('relabel me');
   });
 
-  test('random bodies behind a valid application header still fail closed without trapping', async () => {
+  test('random bodies fail closed; only application-typed headers reach the engine', async () => {
     const { a, b } = await paired();
     const app = a.session('b').encrypt(enc('header donor'));
     const groupIdLen = app[4] & 0x3f;
-    const headerLength = 5 + groupIdLen + 8 + 1;
+    const contentTypeOffset = 5 + groupIdLen + 8;
+    const headerLength = contentTypeOffset + 1;
+    const calls = spy(b.session('a')._group, 'process_message');
     const rnd = mulberry32(7);
-    for (let i = 0; i < 100; i += 1) {
+    let applicationTyped = 0;
+    for (let i = 0; i < 150; i += 1) {
       const tail = Math.floor(rnd() * 257);
       const buf = new Uint8Array(headerLength + tail);
       buf.set(app.subarray(0, headerLength));
+      buf[contentTypeOffset] = 1 + (i % 3); // application, proposal, commit
+      if (buf[contentTypeOffset] === 1) applicationTyped += 1;
       for (let j = headerLength; j < buf.length; j += 1) buf[j] = Math.floor(rnd() * 256);
       let caught;
       try { b.session('a').decrypt(buf); } catch (e) { caught = e; }
       expect(caught).toBeDefined();
       expect(caught).not.toBeInstanceOf(WebAssembly.RuntimeError);
     }
+    expect(applicationTyped).toBe(50);
+    expect(calls.calls).toBe(applicationTyped);
     expect(dec(b.session('a').decrypt(app).plaintext)).toBe('header donor');
+  });
+
+  test('non-PrivateMessage MLS messages never reach the engine', async () => {
+    const { a, b } = await paired();
+    const app = a.session('b').encrypt(enc('x'));
+    const { welcome } = await peerBuildsAdd(a);
+    const publicWire = Uint8Array.from(app);
+    publicWire[3] = 1; // the public-message wire format, otherwise identical bytes
+    const before = stateOf(b, 'a');
+    const calls = spy(b.session('a')._group, 'process_message');
+    for (const input of [publicWire, welcome, b.keyPackageBytes()]) {
+      expect(() => b.session('a').decrypt(input)).toThrow();
+    }
+    expect(calls.calls).toBe(0);
+    expect(stateOf(b, 'a').members).toEqual(before.members);
+    expect(stateOf(b, 'a').exporter).toEqual(before.exporter);
   });
 
   test('control: application messages still round-trip in both directions', async () => {
@@ -248,18 +323,24 @@ describe('MLS 1:1 sessions have exactly two members', () => {
     await MlsEngine.initWasm({ wasmBytes });
   });
 
-  test('the binding check after a join refuses a third leaf duplicating our own credential', async () => {
+  test('a join of a group with a third leaf duplicating our own credential is refused', async () => {
     const { b, welcome, ratchetTree } = await threeLeafWelcomeForB();
-    b.joinSession('a', welcome, ratchetTree);
-    expect(b.session('a').memberIdentities().length).toBe(3);
+    expect(() => b.joinSession('a', welcome, ratchetTree)).toThrow();
+    expect(b.session('a')).toBeUndefined();
     expect(b.peerIdentity('a')).toBeNull();
   });
 
-  test('a session that is not exactly two members cannot encrypt, decrypt or export', async () => {
-    const { a, b, group, welcome, ratchetTree } = await threeLeafWelcomeForB();
-    b.joinSession('a', welcome, ratchetTree);
+  test('a session that is no longer exactly two members cannot encrypt, decrypt or export', async () => {
+    // A genuine session whose group grows to three members behind the session's
+    // back (the peer's add applied straight to the engine group).
+    const { a, b } = await paired();
+    const fromA = a.session('b').encrypt(enc('hello'));
+    const { proposal, commit } = await peerBuildsAdd(a);
+    b.session('a')._group.process_message(b.provider, proposal);
+    b.session('a')._group.process_message(b.provider, commit);
     const session = b.session('a');
-    const fromA = group.create_message(a.provider, a.identity, enc('hello'));
+    expect(session.memberIdentities().length).toBe(3);
+    expect(b.peerIdentity('a')).toBeNull();
     const before = Array.from(b.serializeState());
     // Count every call into the engine group operations the guards must prevent.
     const calls = { create_message: 0, process_message: 0, export_key: 0 };
@@ -282,11 +363,11 @@ describe('MLS 1:1 sessions have exactly two members', () => {
     expect(b.session('a').memberIdentities().length).toBe(2);
   });
 
-  test('a group whose other member carries our own credential is not bound and cannot be used', async () => {
+  test('a group whose other member carries our own credential is never registered', async () => {
     const a = await MlsEngine.create({ name: A });
     const twin = await MlsEngine.create({ name: A });
-    a.startSession('twin', twin.keyPackageBytes());
+    expect(() => a.startSession('twin', twin.keyPackageBytes())).toThrow();
+    expect(a.session('twin')).toBeUndefined();
     expect(a.peerIdentity('twin')).toBeNull();
-    expect(() => a.session('twin').encrypt(enc('no'))).toThrow();
   });
 });
