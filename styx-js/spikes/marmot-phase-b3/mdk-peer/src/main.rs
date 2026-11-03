@@ -158,6 +158,7 @@ impl AccountIdentityProofSigner for NodeProofSigner {
 struct PeerState {
     engine: Option<Engine<SqliteAccountStorage>>,
     storage: Option<SqliteAccountStorage>,
+    unacknowledged_outputs: Vec<MessageId>,
     group_id: Option<GroupId>,
     pending_evolution: Option<(MessageId, PendingStateRef)>,
 }
@@ -167,6 +168,7 @@ impl PeerState {
         Self {
             engine: None,
             storage: None,
+            unacknowledged_outputs: Vec::new(),
             group_id: None,
             pending_evolution: None,
         }
@@ -184,32 +186,48 @@ impl PeerState {
             .ok_or_else(|| RpcError::state("peer is not initialized"))
     }
 
-    /// Drain engine events and acknowledge the app-visible outputs among them.
+    /// Drain engine events and record the app-visible outputs among them.
     /// The MDK engine keeps `MessageReceived` and `GroupJoined` in a durable
     /// outbox until the application acknowledges them after its projection
     /// committed, and re-emits unacknowledged ones on hydration. This driver's
-    /// projection is the response it returns for the drained events, so it
-    /// acknowledges them at the drain.
+    /// projection is its successful response, so the recorded outputs are
+    /// acknowledged only after that response was written and flushed; a
+    /// request that fails acknowledges nothing.
     fn drain_events(&mut self) -> Result<Vec<GroupEvent>, RpcError> {
         let events = self.engine_mut()?.drain_events();
-        let outputs = events
-            .iter()
-            .filter_map(|event| match event {
+        self.unacknowledged_outputs
+            .extend(events.iter().filter_map(|event| match event {
                 GroupEvent::MessageReceived { message_id, .. } => Some(message_id.clone()),
                 GroupEvent::GroupJoined { via_welcome, .. } => Some(via_welcome.clone()),
                 _ => None,
-            })
-            .collect::<Vec<_>>();
-        if !outputs.is_empty() {
-            self.storage
-                .as_ref()
-                .ok_or_else(|| RpcError::state("peer is not initialized"))?
-                .delete_pending_application_events(&outputs)
-                .map_err(|error| {
-                    RpcError::fatal_peer(format!("acknowledge app-visible outputs: {error}"))
-                })?;
-        }
+            }));
         Ok(events)
+    }
+
+    /// Acknowledge the outputs drained by the request whose successful
+    /// response was just delivered; forget those of a failed request, which
+    /// stay pending in the engine and are re-emitted by the next hydration.
+    fn settle_outputs(&mut self, response_delivered: bool) -> Result<(), String> {
+        let storage = self.storage.clone();
+        self.settle_outputs_with(response_delivered, |outputs| {
+            storage
+                .as_ref()
+                .ok_or_else(|| "peer storage is not initialized".to_owned())?
+                .delete_pending_application_events(outputs)
+                .map_err(|error| format!("acknowledge app-visible outputs: {error}"))
+        })
+    }
+
+    fn settle_outputs_with(
+        &mut self,
+        response_delivered: bool,
+        acknowledge: impl FnOnce(&[MessageId]) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let outputs = std::mem::take(&mut self.unacknowledged_outputs);
+        if !response_delivered || outputs.is_empty() {
+            return Ok(());
+        }
+        acknowledge(&outputs)
     }
 
     fn register_pending_evolution(
@@ -1680,25 +1698,41 @@ async fn main() {
             .and_then(|object| object.get("id"))
             .cloned()
             .unwrap_or(Value::Null);
-        let (response, should_exit) = match parsed {
+        let (response, should_exit, succeeded) = match parsed {
             Ok(value) => match dispatch(&mut state, &value).await {
-                Ok((result, should_exit)) => {
-                    (json!({"id": id, "ok": true, "result": result}), should_exit)
-                }
+                Ok((result, should_exit)) => (
+                    json!({"id": id, "ok": true, "result": result}),
+                    should_exit,
+                    true,
+                ),
                 Err(error) => {
                     let terminate = error.terminate;
                     (
                         json!({"id": id, "ok": false, "error": {"code": error.code, "details": error.details, "message": error.message}}),
                         terminate,
+                        false,
                     )
                 }
             },
             Err(_) => (
                 json!({"id": id, "ok": false, "error": {"code": "invalid_json", "message": "request is not valid JSON"}}),
                 false,
+                false,
             ),
         };
+        if !succeeded {
+            let _ = state.settle_outputs(false);
+        }
         if writeln!(stdout, "{response}").is_err() || stdout.flush().is_err() {
+            break;
+        }
+        if succeeded && let Err(message) = state.settle_outputs(true) {
+            let _ = writeln!(
+                stdout,
+                "{}",
+                json!({"ok": false, "error": {"code": "output_acknowledgement_failed", "message": message}})
+            );
+            let _ = stdout.flush();
             break;
         }
         if should_exit {
@@ -1714,6 +1748,55 @@ mod tests {
     #[test]
     fn message_ids_are_domain_separated() {
         assert_ne!(message_id(b"same", b"group"), message_id(b"same", b"peer"));
+    }
+
+    fn pending_output_state() -> (PeerState, Vec<MessageId>) {
+        let outputs = vec![MessageId::new(vec![0x5a; 32]), MessageId::new(vec![0x5b; 32])];
+        let mut state = PeerState::new();
+        state.unacknowledged_outputs.extend(outputs.iter().cloned());
+        (state, outputs)
+    }
+
+    #[test]
+    fn failed_requests_leave_drained_outputs_pending() {
+        let (mut state, _) = pending_output_state();
+        let mut acknowledged = Vec::new();
+        state
+            .settle_outputs_with(false, |outputs| {
+                acknowledged.extend_from_slice(outputs);
+                Ok(())
+            })
+            .unwrap();
+        assert!(acknowledged.is_empty());
+        assert!(state.unacknowledged_outputs.is_empty());
+        // A later successful request does not acknowledge the earlier outputs.
+        state
+            .settle_outputs_with(true, |outputs| {
+                acknowledged.extend_from_slice(outputs);
+                Ok(())
+            })
+            .unwrap();
+        assert!(acknowledged.is_empty());
+    }
+
+    #[test]
+    fn delivered_responses_acknowledge_exactly_their_outputs() {
+        let (mut state, outputs) = pending_output_state();
+        let mut acknowledged = Vec::new();
+        state
+            .settle_outputs_with(true, |drained| {
+                acknowledged.extend_from_slice(drained);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(acknowledged, outputs);
+        assert!(state.unacknowledged_outputs.is_empty());
+        let (mut state, _) = pending_output_state();
+        assert_eq!(
+            state.settle_outputs_with(true, |_| Err("refused".to_owned())),
+            Err("refused".to_owned())
+        );
+        assert!(state.unacknowledged_outputs.is_empty());
     }
 
     #[test]

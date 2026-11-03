@@ -54,8 +54,10 @@ describe('Phase B3.2a exact two-profile projection', () => {
 describe('Phase B3.2a RFC 9420 section 7.2 MDK founder profile', () => {
   // An MDK leaf that lists no default capability type (MDK v0.14.0) keeps the
   // MDK dictionary and empty safe-AAD list but does not list RequiredCapabilities.
+  // The fixture is fresh per call; structuredClone would create objects of
+  // another realm, which the closed-object check rejects for the wrong reason.
   function rfc9420Founder() {
-    const value = structuredClone(b32aFixture().projection);
+    const value = b32aFixture().projection;
     value.members[0] = {
       ...value.members[0],
       profileTag: 'MDK_RFC9420',
@@ -88,7 +90,9 @@ describe('Phase B3.2a RFC 9420 section 7.2 MDK founder profile', () => {
   ])('rejects an RFC 9420 MDK member %s', (_label, mutate) => {
     const value = rfc9420Founder();
     mutate(value);
-    expect(() => normalizeB32aProjection(value)).toThrow();
+    expect(() => normalizeB32aProjection(value)).toThrow(
+      expect.objectContaining({ code: B32A_ERROR.POLICY_REJECTED }),
+    );
   });
 });
 

@@ -11,13 +11,16 @@
 
 export const MLS_BUILD_INFO = Object.freeze({
   openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
-  wasmArtifactSha256: 'bbc995739a49bc104c6a63e86723a6898a477e47e27e33d9e48fae39f942d3f4',
+  wasmArtifactSha256: 'e7e8fb55a100d2c3f23a0ac410696d21a54125a3c595cd70c1f0910dd6befd0d',
   ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
 });
 
 // The B3.3b-1 artifact, installed before the RFC 9420 section 7.2 MDK profile
 // rebuild. That rebuild changed only leaf-profile validation, not the
-// serialize_state format, so state written by this exact tuple stays loadable.
+// serialize_state format. Provider state written by this exact tuple was
+// restored by the rebuilt artifact in a recorded dynamic restore (identical
+// re-serialized entries, same exported epoch secret, continued messaging); no
+// repository fixture of it exists.
 export const B3_3B1_MLS_BUILD_INFO = Object.freeze({
   openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
   wasmArtifactSha256: 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
@@ -78,7 +81,8 @@ export const PRE_B1_MLS_BUILD_INFO = Object.freeze({
   ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
 });
 
-// Exact, fixture-proven state-writer identities. These are tuples rather than
+// Exact, restore-proven state-writer identities (a repository fixture, or for
+// B3.3b-1 the recorded dynamic restore above). These are tuples rather than
 // independent allowlists so hashes, revisions and suites cannot be mixed.
 export const COMPATIBLE_MLS_STATE_TUPLES = Object.freeze([
   PRE_B1_MLS_BUILD_INFO,

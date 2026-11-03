@@ -2793,6 +2793,20 @@ fn phase_b32a_check_mdk_leaf(
     {
         return Err("PHASE_B32A_MDK_IDENTITY_INVALID");
     }
+    // A restored group state is not re-validated by OpenMLS, so the leaf's
+    // own credential type and extension set are checked here as well.
+    if leaf.credential().credential_type() != openmls::credentials::CredentialType::Basic {
+        return Err("PHASE_B32A_MDK_CREDENTIAL_INVALID");
+    }
+    if leaf
+        .extensions()
+        .iter()
+        .map(|extension| extension.extension_type())
+        .collect::<Vec<_>>()
+        != [ExtensionType::AppDataDictionary]
+    {
+        return Err("PHASE_B32A_MDK_LEAF_EXTENSIONS_INVALID");
+    }
     let profile = phase_b32a_mdk_leaf_profile(leaf)?;
     let dictionary = leaf
         .extensions()
@@ -11863,6 +11877,138 @@ mod tests {
                 None,
             )),
             Err("PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID")
+        );
+    }
+
+    /// Capabilities from raw TLS lists, so unknown, GREASE, duplicate and
+    /// default values can be placed anywhere in any list.
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_raw_capabilities(lists: [&[u16]; 5]) -> Capabilities {
+        let mut bytes = Vec::new();
+        for list in lists {
+            bytes.extend(list.to_vec().tls_serialize_detached().unwrap());
+        }
+        Capabilities::tls_deserialize_exact(&bytes).unwrap()
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_rfc9420_capability_matrix_is_exact_outside_grease() {
+        let check = |lists: [&[u16]; 5]| {
+            phase_b32a_check_mdk_rfc9420_capabilities(&phase_b32a_raw_capabilities(lists))
+        };
+        // versions, ciphersuites, extensions, proposals, credentials
+        assert_eq!(check([&[1], &[1], &[6], &[8], &[1]]), Ok(()));
+        assert_eq!(
+            check([&[1], &[0x0a0a, 1, 0x1a1a], &[0x2a2a, 6, 0x3a3a], &[0x4a4a, 8], &[1, 0x5a5a]]),
+            Ok(())
+        );
+        let cases: [([&[u16]; 5], &str); 22] = [
+            ([&[1], &[1], &[0x0a0a, 3, 0x1a1a, 6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED"),
+            ([&[1], &[1], &[6, 0x0a0a, 1], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_EXTENSION_LISTED"),
+            ([&[1], &[1], &[6], &[0x0a0a, 7, 0x1a1a, 8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_PROPOSAL_LISTED"),
+            ([&[1], &[1], &[6], &[8, 0x2a2a, 1], &[1]], "PHASE_B32A_MDK_CAPABILITIES_DEFAULT_PROPOSAL_LISTED"),
+            ([&[1, 1], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[1, 2], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[2], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[], &[1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_VERSIONS_INVALID"),
+            ([&[1], &[1, 1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[3, 1], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[1, 0xf001], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[0x0a0a], &[6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_CIPHERSUITES_INVALID"),
+            ([&[1], &[1], &[6, 6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID"),
+            ([&[1], &[1], &[0xf004, 6], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID"),
+            ([&[1], &[1], &[0x0a0a], &[8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_EXTENSIONS_INVALID"),
+            ([&[1], &[1], &[6], &[8, 8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID"),
+            ([&[1], &[1], &[6], &[0xf002, 8], &[1]], "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID"),
+            ([&[1], &[1], &[6], &[0x0a0a], &[1]], "PHASE_B32A_MDK_CAPABILITIES_PROPOSALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[1, 1]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[2, 1]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[1, 0xf003]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+            ([&[1], &[1], &[6], &[8], &[]], "PHASE_B32A_MDK_CAPABILITIES_CREDENTIALS_INVALID"),
+        ];
+        for (lists, cause) in cases {
+            assert_eq!(check(lists), Err(cause), "{lists:?}");
+        }
+    }
+
+    /// One-member group whose own leaf has the RFC 9420 MDK capabilities and
+    /// MDK dictionary, but a foreign credential type or an extra extension.
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_foreign_mdk_leaf(x509_credential: bool, extra_extension: bool) -> Option<LeafNode> {
+        let provider = Provider::new();
+        let (founder, proof, _) = phase_b2_identity(&provider, 0xa9);
+        let mut extensions = phase_b32a_mdk_leaf_extensions(&proof).iter().cloned().collect::<Vec<_>>();
+        let mut capabilities_extensions = vec![ExtensionType::AppDataDictionary];
+        if extra_extension {
+            extensions.push(Extension::Unknown(
+                0xf123,
+                openmls::extensions::UnknownExtension(vec![1]),
+            ));
+            capabilities_extensions.push(ExtensionType::Unknown(0xf123));
+        }
+        let credential_with_key = if x509_credential {
+            CredentialWithKey {
+                credential: openmls::credentials::Credential::new(
+                    openmls::credentials::CredentialType::X509,
+                    founder.account_public_key.clone(),
+                ),
+                signature_key: founder.keypair.public().into(),
+            }
+        } else {
+            founder.credential_with_key.clone()
+        };
+        let capabilities = Capabilities::new(
+            None,
+            Some(&[PROBE_CIPHERSUITE]),
+            Some(&capabilities_extensions),
+            Some(&[ProposalType::AppDataUpdate]),
+            Some(&[if x509_credential {
+                openmls::credentials::CredentialType::X509
+            } else {
+                openmls::credentials::CredentialType::Basic
+            }]),
+        );
+        let group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .with_capabilities(capabilities)
+            .with_leaf_node_extensions(Extensions::from_vec(extensions).ok()?)
+            .ok()?
+            .build(&provider.inner, &founder.keypair, credential_with_key)
+            .ok()?;
+        group.own_leaf_node().cloned()
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_mdk_leaf_checks_its_own_credential_and_extension_set() {
+        let x509 = phase_b32a_foreign_mdk_leaf(true, false).expect("X.509 leaf");
+        assert_eq!(
+            phase_b32a_check_mdk_leaf(&x509).err(),
+            Some("PHASE_B32A_MDK_CREDENTIAL_INVALID")
+        );
+        let extra = phase_b32a_foreign_mdk_leaf(false, true).expect("extra-extension leaf");
+        assert_eq!(
+            phase_b32a_check_mdk_leaf(&extra).err(),
+            Some("PHASE_B32A_MDK_LEAF_EXTENSIONS_INVALID")
+        );
+        let plain = phase_b32a_foreign_mdk_leaf(false, false).expect("RFC 9420 leaf");
+        assert!(matches!(
+            phase_b32a_check_mdk_leaf(&plain),
+            Ok((PhaseB32aLeafProfile::MdkRfc9420, _))
+        ));
+        // The member projection used by restored canonical states routes a
+        // leaf with the Styx capabilities and the safe-AAD entry to the check
+        // above. Its refusal is a JsError, which only exists on wasm targets,
+        // so natively only the accepted leaf is projected here.
+        let provider = Provider::new();
+        assert!(
+            phase_b32a_project_leaf(provider.inner.crypto(), &plain, 0)
+                .map_err(js_error_to_string)
+                .map(|member| member.profile)
+                .ok()
+                == Some(PhaseB32aLeafProfile::MdkRfc9420)
         );
     }
 

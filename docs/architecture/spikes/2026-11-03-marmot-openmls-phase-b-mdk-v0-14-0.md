@@ -20,7 +20,7 @@ results; nothing in them is relabelled.
 | MDK (previous pin, regression only) | `9396adb6aa6b95b521a7979facd5ea7040c07288` / tree `a1145de604e616634dae9a1ef6bf5033c9c9e879` |
 | OpenMLS | `09e92777dba0528d3d29e2e5e681b7e91637c7be` (unchanged) |
 | Ciphersuite | `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`, unchanged) |
-| OpenMLS WASM | `openmls_wasm_bg.wasm` `bbc995739a49bc104c6a63e86723a6898a477e47e27e33d9e48fae39f942d3f4`; other four generated files unchanged |
+| OpenMLS WASM | `openmls_wasm_bg.wasm` `e7e8fb55a100d2c3f23a0ac410696d21a54125a3c595cd70c1f0910dd6befd0d`; other four generated files unchanged |
 | Member profiles | `STYX_B32A`, `MDK_PIN_9396ADB`, `MDK_RFC9420` |
 
 ## Join boundary and correction
@@ -41,7 +41,10 @@ states that the default proposal types `0x0001`-`0x0007` and extension types
   AppDataUpdate exact; any other value refused.
 
 The dictionary ids, supported components, empty safe-AAD list and
-account-identity proof checks are unchanged for both MDK profiles. An RFC 9420
+account-identity proof checks are unchanged for both MDK profiles, and an MDK
+leaf must carry a Basic credential and exactly one leaf extension,
+AppDataDictionary: OpenMLS does not re-validate leaves of a restored group
+state, so these leaf facts are checked by the profile itself. An RFC 9420
 MDK leaf has exactly the capabilities of the Styx leaf, so the safe-AAD
 dictionary entry `0x0002` now separates the MDK profile from the Styx profile;
 a leaf with the Styx capabilities and that entry must pass every MDK check. A
@@ -51,7 +54,9 @@ The JavaScript projection check accepts `MDK_RFC9420` with the flags
 `listsDefaultRequiredCapabilities = false` and `emitsEmptySafeAad = true`.
 
 The rebuilt artifact changes leaf-profile validation only. The previous
-`fef05368…` artifact remains an exact MLS state-writer compatibility tuple.
+`fef05368…` artifact remains an exact MLS state-writer compatibility tuple:
+Provider state it wrote is restored by the new artifact with identical
+re-serialized state entries, the same exported epoch secret and continued messaging.
 
 ## Behaviour after the join
 
@@ -62,9 +67,11 @@ changes a Styx validation rule.
 1. Application-visible outputs are durable until acknowledged. MDK keeps
    `MessageReceived` and `GroupJoined` in a pending-output store until the
    application calls `MessageStorage::delete_pending_application_events`, and
-   re-emits unacknowledged outputs when it hydrates a group. The driver returns
-   every drained event to the probe in the same response, so it acknowledges
-   those outputs at the drain. Restoration still fails closed on any pending
+   re-emits unacknowledged outputs when it hydrates a group. The driver's
+   projection is its response to the probe, so it acknowledges the outputs
+   drained by a request only after the successful response was written; a
+   failed request, including a refused restoration, acknowledges nothing and
+   its outputs stay pending. Restoration still fails closed on any pending
    event.
 2. Same-epoch rivals always go through stored distributed convergence. MDK
    removed the committer's pairwise fork fast path and the `ForkRecovered`
