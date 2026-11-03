@@ -33,13 +33,13 @@ export const B33B1_APPROVED_SOURCE_SHA =
 export const B33B1_APPROVED_SOURCE_TREE =
   'd59f8192b8b97d94215266b93e9bc4f72c3a4380';
 export const B33B1_APPROVED_PATCH_SHA256 =
-  '604be6d8464fafeb98b075371e938b71c50d5ca8a94d8b0f09ef2e88d7814f27';
+  '212acd4792eb816081c2fdc6df0920a547ae8749722c6cd6175f9d0f7a59d0bc';
 export const B33B1_APPROVED_PROVENANCE_SHA256 =
-  '248fb368c8308cce05d156178a8cdffa72656b84989b8ac6f0dabac08e449990';
+  '8bcb3644bf1d40950bd1e68e3b8d3a1f6988ebc286abce86f5487cb2c4a7a4bc';
 export const B33B1_APPROVED_ARTIFACT_TUPLE = Object.freeze({
   'openmls_wasm.js': '3de8fd46e4897aae117ee7b10ac41dffd02b507952c4024b0fe69d89fbb0c973',
   'openmls_wasm.d.ts': '057974ec53e3588da3dbf159f183b3e3ddb4a3b0a57d5391194f124a483ede86',
-  'openmls_wasm_bg.wasm': 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
+  'openmls_wasm_bg.wasm': 'bbc995739a49bc104c6a63e86723a6898a477e47e27e33d9e48fae39f942d3f4',
   'openmls_wasm_bg.wasm.d.ts': 'c21ace2360b264437541025e4703bcb38b53010793829d1904cb85b3d2aa238a',
   'package.json': '88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85',
 });

@@ -260,6 +260,6 @@ describe('styx-kdf-wasm: artifact anti-drift', () => {
       .update(readFileSync(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)))
       .digest('hex');
     expect(kdf).not.toBe(mls);
-    expect(mls).toBe('fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e');
+    expect(mls).toBe('bbc995739a49bc104c6a63e86723a6898a477e47e27e33d9e48fae39f942d3f4');
   });
 });

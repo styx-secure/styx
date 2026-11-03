@@ -11,6 +11,15 @@
 
 export const MLS_BUILD_INFO = Object.freeze({
   openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
+  wasmArtifactSha256: 'bbc995739a49bc104c6a63e86723a6898a477e47e27e33d9e48fae39f942d3f4',
+  ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
+});
+
+// The B3.3b-1 artifact, installed before the RFC 9420 section 7.2 MDK profile
+// rebuild. That rebuild changed only leaf-profile validation, not the
+// serialize_state format, so state written by this exact tuple stays loadable.
+export const B3_3B1_MLS_BUILD_INFO = Object.freeze({
+  openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
   wasmArtifactSha256: 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
   ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
 });
@@ -81,6 +90,7 @@ export const COMPATIBLE_MLS_STATE_TUPLES = Object.freeze([
   B3_2_MLS_BUILD_INFO,
   B3_2A_MLS_BUILD_INFO,
   B3_3A_MLS_BUILD_INFO,
+  B3_3B1_MLS_BUILD_INFO,
   MLS_BUILD_INFO,
 ]);
 

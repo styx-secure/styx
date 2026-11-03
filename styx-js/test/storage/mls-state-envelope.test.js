@@ -17,6 +17,7 @@ import {
 } from '../../src/storage/mls-state-envelope.js';
 import {
   MLS_BUILD_INFO,
+  B3_3B1_MLS_BUILD_INFO,
   B3_3A_MLS_BUILD_INFO,
   B3_2A_MLS_BUILD_INFO,
   B3_2_MLS_BUILD_INFO,
@@ -230,6 +231,11 @@ describe('assertMlsStateCompatibility — cases A/C of the policy', () => {
     expect(() => assertMlsStateCompatibility(freshEnvelope(B3_3A_MLS_BUILD_INFO))).not.toThrow();
   });
 
+  test('the exact B3.3b-1 artifact tuple remains accepted after the RFC 9420 MDK profile rebuild', () => {
+    expect(B3_3B1_MLS_BUILD_INFO.wasmArtifactSha256).not.toBe(MLS_BUILD_INFO.wasmArtifactSha256);
+    expect(() => assertMlsStateCompatibility(freshEnvelope(B3_3B1_MLS_BUILD_INFO))).not.toThrow();
+  });
+
   test('tuple fields cannot be accepted as independent or cross-product allowlists', () => {
     expectCode(
       () => assertMlsStateCompatibility(freshEnvelope({
@@ -345,6 +351,7 @@ describe('build-info anti-drift — constants match the vendored artifact', () =
       B3_2_MLS_BUILD_INFO,
       B3_2A_MLS_BUILD_INFO,
       B3_3A_MLS_BUILD_INFO,
+      B3_3B1_MLS_BUILD_INFO,
       MLS_BUILD_INFO,
     ]);
   });
