@@ -435,7 +435,7 @@ describe('surface', () => {
   });
 
   test('the interface version string', () => {
-    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.3.1-experimental');
+    expect(SDK_INTERFACE_VERSION).toBe('styx-m3-sdk/0.4.0-experimental');
     expect(sdk.SDK_WIRE_VERSION).toBe('styx-m3-sdk/0.3.0-experimental');
   });
 
@@ -448,6 +448,8 @@ describe('surface', () => {
         'E_SDK_STORAGE_FAILED', 'E_SDK_SESSION_FAILED', 'E_SDK_IDENTITY_FAILED', 'E_SDK_INBOUND_INVALID',
         'E_SDK_INTERNAL', 'E_SDK_UNKNOWN_CODE',
         'E_SDK_NOT_CONFIGURED', 'E_SDK_PUBLISH_NOT_ACCEPTED', 'E_SDK_KEYPACKAGE_NOT_FOUND', 'E_SDK_INVITE_TIMEOUT',
+        'E_SDK_RECEIVE_STATE_FAILED', 'E_SDK_RECEIVE_STATE_INCOMPATIBLE', 'E_SDK_RECEIVE_STATE_CONFLICT',
+        'E_SDK_RECEIVE_STATE_CAPACITY', 'E_SDK_UNKNOWN_MESSAGE',
       ]],
       [DeliveryState, [
         'QUEUED', 'IN_FLIGHT', 'RELAY_ACCEPTED_AWAITING_RECEIPT', 'RELAY_ACCEPTED', 'RECIPIENT_RECEIPT_RECEIVED',
@@ -455,7 +457,8 @@ describe('surface', () => {
       ]],
       [RelayOutcome, ['PENDING', 'ACCEPTED', 'REJECTED', 'TIMED_OUT', 'UNREACHABLE']],
       [ClientState, ['CREATED', 'RUNNING', 'STOPPED']],
-      [SdkEventKind, ['CLIENT_STATE_CHANGED', 'DELIVERY_STATE_CHANGED', 'MESSAGE_RECEIVED', 'INBOUND_DISCARDED']],
+      [SdkEventKind, ['CLIENT_STATE_CHANGED', 'DELIVERY_STATE_CHANGED', 'MESSAGE_RECEIVED', 'INBOUND_DISCARDED',
+        'RECEIVE_STATE_CAPACITY', 'RECEIVE_STATE_FAILED', 'RECEIVE_STATE_CLOCK_SKEW']],
     ];
     for (const [enumeration, members] of expected) {
       expect(Object.isFrozen(enumeration)).toBe(true);
@@ -500,7 +503,8 @@ describe('createStyxClient', () => {
     expect(created.ok).toBe(true);
     expect(Object.isFrozen(created.value)).toBe(true);
     expect(Reflect.ownKeys(created.value).sort()).toEqual(
-      ['acceptInvite', 'cancel', 'getDelivery', 'invite', 'onEvent', 'publishKeyPackage', 'send', 'shutdown', 'start'],
+      ['acceptInvite', 'acknowledgeMessage', 'cancel', 'getDelivery', 'invite', 'onEvent', 'publishKeyPackage', 'send',
+        'shutdown', 'start'],
     );
   });
 
@@ -2862,7 +2866,7 @@ describe('events', () => {
       if (event.kind === 'MESSAGE_RECEIVED') payloads.push(event.payload);
     });
     const source = new Uint8Array([1, 2, 3]);
-    doubles.receiptsSink({ kind: 'MESSAGE_RECEIVED', sender: HEX_A, payload: source });
+    doubles.receiptsSink({ kind: 'MESSAGE_RECEIVED', sender: HEX_A, payload: source, eventId: 'f'.repeat(64) });
     source[1] = 42;
     await flushMicrotasks();
     expect(payloads).toHaveLength(2);
