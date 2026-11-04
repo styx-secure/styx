@@ -21,6 +21,9 @@ import { createReceipts } from './delivery/receipts.js';
 import { createRelaySet } from './delivery/relay-pool.js';
 import { retryDelayMs } from './delivery/retry.js';
 import { createCatchUp } from './delivery/catch-up.js';
+import {
+  createReceiveState, readReceiveLimits, RECEIVE_PORT_METHODS, RECEIVE_SESSION_METHODS,
+} from './delivery/receive-state.js';
 import { isAllowedRelayUrl, isPublicRelayHost } from './relay-url.js';
 import { bytesToHex, randomBytes } from '../utils.js';
 
@@ -29,7 +32,7 @@ import { bytesToHex, randomBytes } from '../utils.js';
  * ------------------------------------------------------------------------- */
 
 /** The interface version string of C-SDK section 3. */
-export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.3.1-experimental';
+export const SDK_INTERFACE_VERSION = 'styx-m3-sdk/0.4.0-experimental';
 
 /**
  * A frozen enumeration whose members map to their own names, with prototype
@@ -44,7 +47,7 @@ function enumeration(names) {
   return Object.freeze(members);
 }
 
-/** The closed code set of C-SDK section 5.2 (18 codes). */
+/** The closed code set of C-SDK section 5.2 (27 codes). */
 export const SdkResultCode = enumeration([
   'E_SDK_UNSUPPORTED_VERSION',
   'E_SDK_INVALID_CONFIG',
@@ -68,6 +71,11 @@ export const SdkResultCode = enumeration([
   'E_SDK_PUBLISH_NOT_ACCEPTED',
   'E_SDK_KEYPACKAGE_NOT_FOUND',
   'E_SDK_INVITE_TIMEOUT',
+  'E_SDK_RECEIVE_STATE_FAILED',
+  'E_SDK_RECEIVE_STATE_INCOMPATIBLE',
+  'E_SDK_RECEIVE_STATE_CONFLICT',
+  'E_SDK_RECEIVE_STATE_CAPACITY',
+  'E_SDK_UNKNOWN_MESSAGE',
 ]);
 
 /** The closed delivery-state set of C-SDK section 6.1 (9 states). */
@@ -89,12 +97,15 @@ export const RelayOutcome = enumeration(['PENDING', 'ACCEPTED', 'REJECTED', 'TIM
 /** The client states of C-SDK section 4. */
 export const ClientState = enumeration(['CREATED', 'RUNNING', 'STOPPED']);
 
-/** The closed event-kind set of C-SDK section 7 (4 kinds). */
+/** The closed event-kind set of C-SDK section 7 (7 kinds). */
 export const SdkEventKind = enumeration([
   'CLIENT_STATE_CHANGED',
   'DELIVERY_STATE_CHANGED',
   'MESSAGE_RECEIVED',
   'INBOUND_DISCARDED',
+  'RECEIVE_STATE_CAPACITY',
+  'RECEIVE_STATE_FAILED',
+  'RECEIVE_STATE_CLOCK_SKEW',
 ]);
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -126,6 +137,14 @@ const FAILED_STATES = new Set(['FAILED_NOT_ACCEPTED', 'FAILED_NO_RECEIPT']);
 const RECEIPT_MODES = new Set(['RECIPIENT_RECEIPT', 'RELAY_ACCEPTANCE_ONLY']);
 /** C-SDK section 5.2: the only codes of `INBOUND_DISCARDED`. */
 const DISCARD_CODES = new Set(['E_SDK_INBOUND_INVALID', 'E_SDK_SESSION_FAILED', 'E_SDK_UNKNOWN_CODE']);
+/** C-SDK section 7: the only codes of `RECEIVE_STATE_FAILED`. */
+/** C-SDK section 4.2: the receive-state codes `start()` may return. */
+const LOAD_CODES = new Set([
+  'E_SDK_RECEIVE_STATE_FAILED', 'E_SDK_RECEIVE_STATE_INCOMPATIBLE', 'E_SDK_UNKNOWN_CODE',
+]);
+const RECEIVE_FAILED_CODES = new Set([
+  'E_SDK_RECEIVE_STATE_FAILED', 'E_SDK_RECEIVE_STATE_CONFLICT', 'E_SDK_UNKNOWN_CODE',
+]);
 
 /** C-DLV section 3: bounds and defaults of the delivery configuration. */
 const DELIVERY_BOUNDS = Object.freeze({
@@ -271,7 +290,8 @@ function validateConfig(config) {
     const alreadyRead = Object.create(null);
     alreadyRead.interfaceVersion = versionDescriptor;
     const top = readClosed(
-      config, ['interfaceVersion', 'relays', 'ports'], ['clock', 'random', 'delivery', 'publicRelayHosts'], alreadyRead,
+      config, ['interfaceVersion', 'relays', 'ports'], ['clock', 'random', 'delivery', 'publicRelayHosts', 'receive'],
+      alreadyRead,
     );
     if (top === null) return invalid;
 
@@ -307,8 +327,9 @@ function validateConfig(config) {
       relays.push(descriptor.value);
     }
 
-    // ports: a closed object over the three ports, each exposing its methods.
-    const ports = readClosed(top.ports, ['storage', 'session', 'identity']);
+    // ports: a closed object over the three ports, each exposing its methods,
+    // and the optional receive-state port (C-SDK section 8.5).
+    const ports = readClosed(top.ports, ['storage', 'session', 'identity'], ['receiveState']);
     if (ports === null) return invalid;
     for (const name of ['storage', 'session', 'identity']) {
       const port = ports[name];
@@ -316,6 +337,21 @@ function validateConfig(config) {
       for (const method of PORT_METHODS[name]) {
         if (!methodReadsAsFunction(port, method)) return invalid;
       }
+    }
+
+    // receiveState: all seven methods, and then the two session methods, or
+    // none; `config.receive` only with the port (C-SDK section 4.1).
+    let receiveState = null;
+    let receiveLimits = null;
+    if (hasOwn(ports, 'receiveState')) {
+      receiveState = ports.receiveState;
+      if (receiveState === null || (typeof receiveState !== 'object' && typeof receiveState !== 'function')) return invalid;
+      for (const method of RECEIVE_PORT_METHODS) if (!methodReadsAsFunction(receiveState, method)) return invalid;
+      for (const method of RECEIVE_SESSION_METHODS) if (!methodReadsAsFunction(ports.session, method)) return invalid;
+      receiveLimits = readReceiveLimits(hasOwn(top, 'receive') ? top.receive : undefined);
+      if (receiveLimits === null) return invalid;
+    } else if (hasOwn(top, 'receive')) {
+      return invalid;
     }
 
     const inviteMethods = [
@@ -367,6 +403,8 @@ function validateConfig(config) {
       session: ports.session,
       identity: ports.identity,
       invitationsConfigured,
+      receiveState,
+      receiveLimits,
       clock,
       random,
       delivery: Object.freeze(delivery),
@@ -1086,8 +1124,14 @@ function buildClient(settings) {
     settled: 2 * P, // S3: one port-call timeout
     outboxStop: 5 * P, // four port-call timeouts (C-DLV section 5.5)
     dispose: delivery.perRelayTimeoutMs + P, // connection attempts settle within 10 000 ms (C-DLV section 5.5)
+    // M3-RECEIVE: one `acknowledgeMessage` behind the write chain (C-DLV
+    // section 7.4). Shutdown waits for the receive state within `settled`:
+    // an open unit that has not settled by then stays `PENDING`.
+    receive: 5 * P,
   });
-  const ports = { storage: settings.storage, session: settings.session, identity: settings.identity };
+  const ports = {
+    storage: settings.storage, session: settings.session, identity: settings.identity, receiveState: settings.receiveState,
+  };
   let clock = settings.clock !== null ? settings.clock : createDefaultClock();
   let random = settings.random !== null ? settings.random : createDefaultRandom();
   const readSendResult = readItemResult(new Set(['QUEUED']));
@@ -1135,11 +1179,13 @@ function buildClient(settings) {
    * Record one checked event: schedule its dispatch with `queueMicrotask` to
    * the currently live ordinary audience, or to the reserved message audience.
    * Ordinary events skip registrations removed before dispatch; a reserved
-   * message retains its audience through its one in-flight delivery.
+   * message retains its audience through its one in-flight delivery. With
+   * `gate`, read once when the dispatch runs, a `false` dispatches nothing
+   * (M3-RECEIVE: an entry acknowledged since it was scheduled).
    *
    * @param {() => object} makeEvent builds a fresh frozen event per listener
    */
-  function record(makeEvent, reserved = null) {
+  function record(makeEvent, reserved = null, gate = null) {
     const audience = reserved !== null ? reserved : (shutdownAudience !== null ? shutdownAudience : registrations).slice();
     let delivered;
     const completion = new Promise((resolve) => { delivered = resolve; });
@@ -1147,7 +1193,13 @@ function buildClient(settings) {
     queueMicrotask(() => {
       let invoked = 0;
       try {
-        for (const registration of audience) {
+        let wanted = true;
+        try {
+          wanted = gate === null || gate() === true;
+        } catch {
+          wanted = false;
+        }
+        for (const registration of wanted ? audience : []) {
           if (reserved === null && !registration.live) continue;
           invoked += 1;
           // A throw/rejection still counts as invocation, never as processing.
@@ -1175,9 +1227,30 @@ function buildClient(settings) {
       if (accepted === null || accepted.kind !== 'MESSAGE_RECEIVED') return false;
       const payload = new Uint8Array(accepted.payload);
       return record(() => Object.freeze({
-        kind: 'MESSAGE_RECEIVED', sender: accepted.sender, payload: new Uint8Array(payload),
+        kind: 'MESSAGE_RECEIVED', sender: accepted.sender, payload: new Uint8Array(payload), eventId: accepted.eventId,
       }), audience);
     };
+  }
+
+  /**
+   * M3-RECEIVE: dispatch one READY entry of the receive state to the
+   * registrations live now, reserved for that one delivery. Returns `null`
+   * when no audience can be reserved, else a promise of whether a listener
+   * was invoked. `wanted` is read once when the dispatch runs.
+   *
+   * @param {{ eventId: string, sender: string, payload: Uint8Array }} message
+   * @param {() => boolean} wanted
+   * @returns {Promise<boolean> | null}
+   */
+  function deliverReady(message, wanted) {
+    if (stopping) return null;
+    const audience = registrations.filter((registration) => registration.live);
+    if (audience.length === 0) return null;
+    const payload = new Uint8Array(message.payload);
+    const { sender, eventId } = message;
+    return record(() => Object.freeze({
+      kind: 'MESSAGE_RECEIVED', sender, payload: new Uint8Array(payload), eventId,
+    }), audience, wanted);
   }
 
   /** Wait until every dispatch already scheduled has run. */
@@ -1224,9 +1297,9 @@ function buildClient(settings) {
       lostEventsDuringShutdown += 1;
     }
     if (accepted.kind === 'MESSAGE_RECEIVED') {
-      const sender = accepted.sender;
+      const { sender, eventId } = accepted;
       const payload = new Uint8Array(accepted.payload);
-      record(() => Object.freeze({ kind: 'MESSAGE_RECEIVED', sender, payload: new Uint8Array(payload) }));
+      record(() => Object.freeze({ kind: 'MESSAGE_RECEIVED', sender, payload: new Uint8Array(payload), eventId }));
       return;
     }
     const frozen = Object.freeze(accepted);
@@ -1257,15 +1330,31 @@ function buildClient(settings) {
       };
     }
     if (kind === 'MESSAGE_RECEIVED') {
-      const fields = exactFields(event, ['kind', 'sender', 'payload']);
+      const fields = exactFields(event, ['kind', 'sender', 'payload', 'eventId']);
       if (fields === null || typeof fields.sender !== 'string' || !HEX64.test(fields.sender)) return null;
+      if (typeof fields.eventId !== 'string' || !HEX64.test(fields.eventId)) return null;
       if (uint8ArrayByteCount(fields.payload) < 0) return null;
-      return { kind, sender: fields.sender, payload: fields.payload };
+      return { kind, sender: fields.sender, payload: fields.payload, eventId: fields.eventId };
     }
     if (kind === 'INBOUND_DISCARDED') {
       const fields = exactFields(event, ['kind', 'code']);
       if (fields === null || !DISCARD_CODES.has(fields.code)) return null;
       return { kind, code: fields.code };
+    }
+    if (kind === 'RECEIVE_STATE_CAPACITY') {
+      const fields = exactFields(event, ['kind', 'scope']);
+      if (fields === null || typeof fields.scope !== 'string') return null;
+      return { kind, scope: fields.scope };
+    }
+    if (kind === 'RECEIVE_STATE_FAILED') {
+      const fields = exactFields(event, ['kind', 'code']);
+      if (fields === null || !RECEIVE_FAILED_CODES.has(fields.code)) return null;
+      return { kind, code: fields.code };
+    }
+    if (kind === 'RECEIVE_STATE_CLOCK_SKEW') {
+      const fields = exactFields(event, ['kind', 'scope', 'relay']);
+      if (fields === null || typeof fields.scope !== 'string' || !relays.includes(fields.relay)) return null;
+      return { kind, scope: fields.scope, relay: fields.relay };
     }
     // The client is the only emitter of CLIENT_STATE_CHANGED.
     return null;
@@ -1306,6 +1395,11 @@ function buildClient(settings) {
   async function cleanUpFailedStart(held) {
     // Cleanup faults never change the code. Each wait has its host-time
     // backstop (`BOUND`).
+    if (held.receive !== null) {
+      crossBoundary(held.receive, 'stop', []);
+      await crossBoundaryAsync(held.receive, 'settled', [], { timeoutMs: BOUND.settled });
+      crossBoundary(held.receive, 'dispose', []);
+    }
     if (held.receipts !== null) {
       crossBoundary(held.receipts, 'shutdown', []);
       await crossBoundaryAsync(held.receipts, 'settled', [], { timeoutMs: BOUND.settled });
@@ -1535,6 +1629,66 @@ function buildClient(settings) {
   };
 
   /**
+   * M3-RECEIVE: the relay seams of the durable receipt obligations (C-DLV
+   * section 7.4). `publish` returns `true` only when the relay-set attempt
+   * wrote the receipt on at least one connected current pool, and reports
+   * the first `ACCEPTED` outcome to `onAccepted`; otherwise the attempt is
+   * neutralised (acknowledgements ignored, both gates refusing) and the
+   * obligation is deferred. `drain` is S6 during the shutdown drain.
+   *
+   * @param {object} held
+   */
+  function receiveRelaySeams(held) {
+    return Object.freeze({
+      connected: () => {
+        try {
+          const count = held.relaySet === null ? 0 : held.relaySet.connectedRelays;
+          return Number.isSafeInteger(count) ? count : 0;
+        } catch {
+          return 0;
+        }
+      },
+      publish: (receipt, onAccepted) => {
+        if (stopping || held.relaySet === null) return false;
+        const published = crossBoundary(held.relaySet, 'publish', [receipt]);
+        if (published.settled !== 'value') return false;
+        const attempt = published.value;
+        if (checkAttempt(attempt, receipt) !== 'ok') {
+          crossBoundary(attempt, 'ignoreAcks', [], { ownData: true });
+          return false;
+        }
+        let wrote = false;
+        try {
+          const once = Reflect.getOwnPropertyDescriptor(attempt, 'publishedOnce').value;
+          for (let index = 0; index < relayCount; index += 1) if (once[index] === true) wrote = true;
+        } catch {
+          wrote = false;
+        }
+        if (!wrote) {
+          crossBoundary(attempt, 'ignoreAcks', [], { ownData: true });
+          for (const gate of ['acceptGate', 'latePublishGate']) setThroughBoundary(attempt, gate, () => false);
+          return false;
+        }
+        let reported = false;
+        crossBoundary(attempt, 'onOutcome', [(relayIndex, outcome) => {
+          if (reported || outcome !== 'ACCEPTED') return;
+          reported = true;
+          try {
+            onAccepted();
+          } catch {
+            // The receive state never throws.
+          }
+        }], { ownData: true });
+        return true;
+      },
+      drain: (receipt) => {
+        if (held.relaySet === null) return;
+        crossBoundary(held.relaySet, 'publishDrain', [receipt]);
+      },
+    });
+  }
+
+  /**
    * One inbound frame: hand it to the inbound processor and check its return.
    *
    * @param {object} held
@@ -1550,6 +1704,10 @@ function buildClient(settings) {
       if (checked.verdict === 'unknown') {
         sink({ kind: 'INBOUND_DISCARDED', code: SdkResultCode.E_SDK_UNKNOWN_CODE });
       }
+      // M3-RECEIVE: a counted frame the queue did not take is a barrier failure.
+      if (held.receive !== null && !(checked.verdict === 'ok' && checked.value.queued === true)) {
+        crossBoundary(held.receive, 'account', [frame, 'dropped']);
+      }
     } catch {
       // A fault on the inbound path records nothing.
     }
@@ -1563,7 +1721,7 @@ function buildClient(settings) {
    */
   async function runStart() {
     const held = {
-      outbox: null, receipts: null, relaySet: null, catchUp: null, disposal: null, publicKey: null,
+      outbox: null, receipts: null, relaySet: null, catchUp: null, disposal: null, publicKey: null, receive: null,
     };
     modules = held;
     const fail = async (code) => {
@@ -1628,15 +1786,54 @@ function buildClient(settings) {
     // on no further module is created and no connection is opened.
     if (stopping) return fail(SdkResultCode.E_SDK_CLIENT_STOPPED);
 
-    // (4) The relay set.
     let subscriptionId;
     try {
       subscriptionId = 's' + bytesToHex(randomBytes(16));
     } catch {
       return fail(SdkResultCode.E_SDK_INTERNAL);
     }
+
+    // (3a) M3-RECEIVE: with `ports.receiveState`, `load` before any relay
+    // connection, then the recovery pass of the PENDING entries (C-SDK
+    // section 8.5, C-DLV section 7.4).
+    if (ports.receiveState !== null) {
+      const createdReceive = crossCall(createReceiveState, undefined, [{
+        port: ports.receiveState,
+        session: ports.session,
+        identity: ports.identity,
+        clock,
+        publicKey: key,
+        relays: [...relays],
+        limits: settings.receiveLimits,
+        subscriptionBase: subscriptionId,
+        call: (holder, method, args) => crossBoundaryAsync(holder, method, args, {
+          timeoutMs: portCallTimeoutMs, track: trackPortCall,
+        }),
+        scan: scanClosedSlots,
+        emit: sink,
+        deliver: deliverReady,
+      }]);
+      if (!isModuleCall(createdReceive)) return fail(SdkResultCode.E_SDK_INTERNAL);
+      held.receive = createdReceive.value;
+      const loading = await crossBoundaryAsync(held.receive, 'load', [], { timeoutMs: 2 * P });
+      if (stopping) return fail(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      if (loading.settled !== 'value') return fail(SdkResultCode.E_SDK_RECEIVE_STATE_FAILED);
+      if (loading.value !== null) {
+        return fail(LOAD_CODES.has(loading.value) ? loading.value : SdkResultCode.E_SDK_RECEIVE_STATE_FAILED);
+      }
+      // The READY entries are eligible for emission from now on.
+      crossBoundary(held.receive, 'wake', []);
+      const recovered = await crossBoundaryAsync(held.receive, 'recover', []);
+      if (stopping) return fail(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      if (recovered.settled !== 'value' || recovered.value !== null) {
+        return fail(SdkResultCode.E_SDK_RECEIVE_STATE_FAILED);
+      }
+    }
+
+    // (4) The relay set.
     const createdCatchUp = crossCall(createCatchUp, undefined, [{
       relayCount, subscriptionId, clock,
+      cursors: held.receive,
       isRunning: () => clientState === 'RUNNING' && !stopping,
       resubscribe: (index, since) => {
         if (stopping || held.relaySet === null) return;
@@ -1656,6 +1853,10 @@ function buildClient(settings) {
       subscriptionId,
       filter: { kinds: [...SUBSCRIBED_KINDS], '#p': [key] },
       reconnectDelay: retryDelayMs,
+      ...(held.receive !== null ? {
+        subscriptionIdFor: (index) => valueOfCall(crossBoundary(held.receive, 'poolSubscriptionId', [index])),
+        onRelayConnected: () => crossBoundary(held.receive, 'relayConnected', []),
+      } : {}),
       subscriptionSince: (index) => {
         const called = crossBoundary(held.catchUp, 'subscriptionSince', [index]);
         return called.settled === 'value' && (called.value === null
@@ -1685,12 +1886,15 @@ function buildClient(settings) {
       publishReceipt: publishReceiptSeam(held),
       acceptReceipt,
       onEvent: sink,
+      ...(held.receive !== null ? { receiveState: held.receive } : {}),
     }]);
     if (!isModuleCall(createdReceipts)) return fail(SdkResultCode.E_SDK_INTERNAL);
     held.receipts = createdReceipts.value;
     // A rejection (or a returned thenable that fails) is a failed call, as for
     // every other seam call; the value itself is not a lane result.
     const subscribed = await crossBoundaryAsync(held.relaySet, 'onFrame', [(frame) => {
+      // M3-RECEIVE: every EVENT frame is counted before the volatile queue.
+      if (held.receive !== null) crossBoundary(held.receive, 'countFrame', [frame]);
       crossBoundary(held.catchUp, 'observe', [frame]);
       return onInboundFrame(held, frame);
     }], {
@@ -1727,6 +1931,7 @@ function buildClient(settings) {
     clientState = 'RUNNING';
     retainedOutbox = held.outbox;
     crossBoundary(held.catchUp, 'start', []);
+    if (held.receive !== null) crossBoundary(held.receive, 'startRunning', [receiveRelaySeams(held)]);
     recordClientState('RUNNING');
     return success(Object.freeze({ clientState: 'RUNNING', connectedRelays }));
   }
@@ -1741,6 +1946,19 @@ function buildClient(settings) {
     if (stopping || clientState === 'STOPPED') return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
     if (clientState !== 'RUNNING') return failure(SdkResultCode.E_SDK_NOT_STARTED);
     return null;
+  }
+
+  /**
+   * M3-RECEIVE fail-stop (C-SDK section 8.5): while the receive state is
+   * paused or frozen, a provider-mutating method fails before any storage,
+   * provider or network mutation. Returns a failure envelope or `null`.
+   */
+  function admitProviderMutation() {
+    const receive = modules !== null ? modules.receive : null;
+    if (receive === null || receive === undefined) return null;
+    const blocked = crossBoundary(receive, 'blocked', []);
+    if (blocked.settled === 'value' && blocked.value === false) return null;
+    return failure(SdkResultCode.E_SDK_RECEIVE_STATE_FAILED);
   }
 
   /**
@@ -1792,7 +2010,7 @@ function buildClient(settings) {
 
   async function send(argument) {
     try {
-      const refused = admitRunningCall();
+      const refused = admitRunningCall() ?? admitProviderMutation();
       if (refused !== null) return refused;
       let fields;
       try {
@@ -1803,7 +2021,7 @@ function buildClient(settings) {
       if (fields === null) return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
       // Reading the argument may have run caller code (a `Proxy` trap) that
       // stopped the client: the state rule is read again.
-      const stoppedMeanwhile = admitRunningCall();
+      const stoppedMeanwhile = admitRunningCall() ?? admitProviderMutation();
       if (stoppedMeanwhile !== null) return stoppedMeanwhile;
       const payload = fields.payload;
       // The byte count through the intrinsic brand check, never through the
@@ -1879,6 +2097,10 @@ function buildClient(settings) {
       if (!stopping && modules !== null && modules.receipts !== null) {
         crossBoundary(modules.receipts, 'wake', []);
       }
+      // M3-RECEIVE: a new registration wakes emission of every READY entry.
+      if (!stopping && modules !== null && modules.receive !== null) {
+        crossBoundary(modules.receive, 'wake', []);
+      }
       const unsubscribe = () => {
         try {
           if (!registration.live) return undefined;
@@ -1902,6 +2124,8 @@ function buildClient(settings) {
       const refused = admitRunningCall();
       if (refused !== null) return refused;
       if (!settings.invitationsConfigured) return failure(SdkResultCode.E_SDK_NOT_CONFIGURED);
+      const blocked = admitProviderMutation();
+      if (blocked !== null) return blocked;
       if (invitations === null) {
         const made = crossCall(createInvitations, undefined, [{
           relays, delivery, identity: ports.identity, session: ports.session, clock, random,
@@ -1920,7 +2144,16 @@ function buildClient(settings) {
       ]);
       const timeoutMs = name === 'acceptInvite'
         ? delivery.deadlineMs + 1000 + 2 * P + 10000 : 2 * P + 3 * delivery.perRelayTimeoutMs + 10000;
-      const returned = valueOfCall(await crossBoundaryAsync(invitations, name, [argument], { timeoutMs }));
+      // M3-RECEIVE (C-DLV section 5.4): no delivery cursor is committed for a
+      // request issued before an invite or acceptance ends.
+      const receive = name !== 'publishKeyPackage' && modules !== null ? modules.receive : null;
+      if (receive !== null) crossBoundary(receive, 'invitationStarted', []);
+      let returned;
+      try {
+        returned = valueOfCall(await crossBoundaryAsync(invitations, name, [argument], { timeoutMs }));
+      } finally {
+        if (receive !== null) crossBoundary(receive, 'invitationEnded', []);
+      }
       const checked = checkEnvelope(returned, (value) => {
         if (name === 'acceptInvite') {
           const fields = exactFields(value, ['inviter']);
@@ -1941,6 +2174,36 @@ function buildClient(settings) {
       return checked.verdict === 'ok' ? success(Object.freeze(checked.value)) : failure(verdictCode(checked));
     } catch { return failure(SdkResultCode.E_SDK_INTERNAL); }
   }
+  /**
+   * `acknowledgeMessage({ eventId })` (C-SDK section 4.2, M3-RECEIVE): allowed
+   * once a valid `load` completed in `start()` and while `RUNNING`.
+   */
+  async function acknowledgeMessage(argument) {
+    try {
+      if (stopping || clientState === 'STOPPED') return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      const receive = modules !== null ? modules.receive : null;
+      const loaded = receive !== null && receive !== undefined
+        && valueOfCall(crossBoundary(receive, 'isLoaded', [])) === true;
+      if (clientState !== 'RUNNING' && !loaded) return failure(SdkResultCode.E_SDK_NOT_STARTED);
+      if (ports.receiveState === null) return failure(SdkResultCode.E_SDK_NOT_CONFIGURED);
+      let eventId = null;
+      try {
+        const fields = readClosed(argument, ['eventId']);
+        if (fields !== null && typeof fields.eventId === 'string' && HEX64.test(fields.eventId)) eventId = fields.eventId;
+      } catch {
+        eventId = null;
+      }
+      if (eventId === null) return failure(SdkResultCode.E_SDK_INVALID_ARGUMENT);
+      if (stopping) return failure(SdkResultCode.E_SDK_CLIENT_STOPPED);
+      const acknowledged = await crossBoundaryAsync(receive, 'acknowledge', [eventId], { timeoutMs: BOUND.receive });
+      if (acknowledged.settled !== 'value') return failure(SdkResultCode.E_SDK_INTERNAL);
+      if (acknowledged.value === null) return success(Object.freeze({ eventId }));
+      return failure(isKnownResultCode(acknowledged.value) ? acknowledged.value : SdkResultCode.E_SDK_UNKNOWN_CODE);
+    } catch {
+      return failure(SdkResultCode.E_SDK_INTERNAL);
+    }
+  }
+
   const publishKeyPackage = () => invitationMethod('publishKeyPackage');
   const invite = (argument) => invitationMethod('invite', argument);
   const acceptInvite = (argument) => invitationMethod('acceptInvite', argument);
@@ -1963,6 +2226,7 @@ function buildClient(settings) {
       // Each call is synchronous at the call; a fault in one never prevents
       // the next (C-SDK section 4.2).
       if (held.receipts !== null) crossBoundary(held.receipts, 'shutdown', []);
+      if (held.receive !== null) crossBoundary(held.receive, 'stop', []);
       if (held.catchUp !== null) crossBoundary(held.catchUp, 'freeze', []);
       if (held.relaySet !== null) crossBoundary(held.relaySet, 'freeze', []);
       if (held.outbox !== null) {
@@ -1991,6 +2255,10 @@ function buildClient(settings) {
         const waits = await Promise.all([
           crossBoundaryAsync(held.receipts, 'settled', [], { timeoutMs: BOUND.settled }),
           crossBoundaryAsync(held.receipts, 'drained', [], { timeoutMs: BOUND.settled }),
+          // M3-RECEIVE: the open unit, the write chain and an owed receipt in
+          // progress settle within their bound before disposal.
+          held.receive !== null
+            ? crossBoundaryAsync(held.receive, 'settled', [], { timeoutMs: BOUND.settled }) : Promise.resolve(null),
         ]);
         const drained = waits[1];
         if (drained.settled === 'value' && scanClosedSlots(drained.value).unknown) {
@@ -2011,6 +2279,7 @@ function buildClient(settings) {
       // port-call timeout, has settled before the relay set is disposed.
       await portCallsSettled();
       await dispatchQueueEmpty();
+      if (held !== null && held.receive !== null) crossBoundary(held.receive, 'dispose', []);
       await Promise.all([
         held !== null ? disposeRelaySet(held) : Promise.resolve(),
         invitations !== null ? crossBoundaryAsync(invitations, 'dispose', [], {
@@ -2040,10 +2309,13 @@ function buildClient(settings) {
     ports.storage = null;
     ports.session = null;
     ports.identity = null;
+    ports.receiveState = null;
     clock = null;
     random = null;
     return success(Object.freeze({ clientState: 'STOPPED', lost }));
   }
 
-  return Object.freeze({ start, send, getDelivery, cancel, onEvent, shutdown, publishKeyPackage, invite, acceptInvite });
+  return Object.freeze({
+    start, send, getDelivery, cancel, onEvent, shutdown, publishKeyPackage, invite, acceptInvite, acknowledgeMessage,
+  });
 }

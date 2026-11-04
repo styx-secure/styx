@@ -19,9 +19,9 @@ M3-INVITE #525 adds caller-port invitation orchestration only. The identity port
 These bounds are part of the interface. No value, state or event defined here claims more than they allow.
 
 1. **Finite attempts and deadline.** Every outbound item has a finite attempt count and a finite deadline. When either is exhausted without the item's success state, the item reaches a terminal failed state. There is no unbounded retransmission.
-2. **No exactly-once, ordering or cross-restart guarantee.** A message may be received zero, one or more times, and in any order relative to other messages. Nothing persists or resumes across process restarts.
+2. **No exactly-once, ordering or cross-restart guarantee.** A message may be received zero, one or more times, and in any order relative to other messages. Nothing persists or resumes across process restarts. This is the default and stays in force without `ports.receiveState`. The only exception is the conditional durable-receive exception of §8.5: with `ports.receiveState` configured, every admitted inbound kind-4741 event whose `stage` has completed durably stays recoverable locally across stop, restart and crash; no event id whose outcome was durably committed is passed to MLS processing again (an attempt that was not committed may be repeated on the previous authoritative state, in the same run or after restart); and every committed application result is redelivered until it is acknowledged. Before `stage` completes, recovery still depends on the relays. The exception rests on caller semantics the SDK cannot verify (§8.2, §8.5), resumes no outbound item, and adds no completeness, global ordering or exactly-once claim for application effects.
 3. **Relay acceptance is not recipient receipt.** `RELAY_ACCEPTED` and `RELAY_ACCEPTED_AWAITING_RECEIPT` mean only that at least one relay acknowledged the publication. `RECIPIENT_RECEIPT_RECEIVED` means only that a receipt attributed to the recipient identity was received and validated as `C-DLV` specifies. Neither proves that a person read the message.
-4. **Process lifetime only.** Delivery guarantees hold only within one process lifetime. On an explicit, orderly `shutdown()`, every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case.
+4. **Process lifetime only.** Delivery guarantees hold only within one process lifetime. On an explicit, orderly `shutdown()`, every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case. The sole exception is the inbound receive state recovered under the conditional durable-receive exception of bound 2.
 5. **No normative wire format.** Any on-wire structure the SDK produces or consumes (message identifier, receipt, acknowledgement, event kind or tag) is SDK-internal, experimental and versioned with `sdkWireVersion`, independently of `sdkInterfaceVersion`. It is not normative. Using the allowed transport exports with the event formats they already produce selects no new semantic.
 6. **Relay URLs are injected only.** Relay endpoints reach the SDK only through `config.relays`. No module under `styx-js/src/sdk/**` contains a relay URL literal, a relay host name, a default relay list or a fallback relay. Hosts are limited by §4.1 and reach the SDK only through caller configuration.
 
@@ -29,8 +29,8 @@ The SDK makes no confidentiality, integrity, authenticity, identity-hiding, unli
 
 ## 3. Versioning
 
-- The exact interface version string is `styx-m3-sdk/0.3.1-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`.
-- Independently, `SDK_WIRE_VERSION` is `styx-m3-sdk/0.3.0-experimental`, exported by `wire-version.js` and re-exported by the public module. It alone is written/checked in every `v` tag of kinds 4741, 4742, 4743 and the 4744 Welcome rumor. Kinds 1059 and 13 are unchanged and carry no new `v` tag. This preserves the existing experimental 0.3.0 wire; it is not a protocol interoperability claim.
+- The exact interface version string is `styx-m3-sdk/0.4.0-experimental`. It is exported as the constant `SDK_INTERFACE_VERSION`. It replaces `styx-m3-sdk/0.3.1-experimental` (M3-RECEIVE-1, #556 and #557); a configuration carrying the older string returns `E_SDK_UNSUPPORTED_VERSION`.
+- Independently, `SDK_WIRE_VERSION` is `styx-m3-sdk/0.3.0-experimental`, exported by `wire-version.js` and re-exported by the public module. It alone is written/checked in every `v` tag of kinds 4741, 4742, 4743 and the 4744 Welcome rumor. Kinds 1059 and 13 are unchanged and carry no new `v` tag. This preserves the existing experimental 0.3.0 wire; it is not a protocol interoperability claim. Interface 0.4.0 changes no kind, tag, field, content or bound on the wire.
 - `createStyxClient(config)` requires `config.interfaceVersion` to equal that string exactly (byte-for-byte, case-sensitive). Any other value, including a missing one, returns `E_SDK_UNSUPPORTED_VERSION` and creates no client. There is no negotiation, range, downgrade or fallback.
 - The version is experimental. It carries no stability, compatibility or deprecation promise to third parties before a later owner act. Any change to an entry point, field, code, state, event kind, port method, bound inherited from §2 or allowed import requires a new hash-ratified version of this document with a new version string.
 - SDK-internal on-wire structures carry or are keyed by `SDK_WIRE_VERSION`, not `SDK_INTERFACE_VERSION`, as `C-DLV` specifies; an inbound delivery structure from any other wire version is not interpreted: it emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and nothing else. Invitation candidates on their independent subscriptions are instead ignored without an event (§4.2).
@@ -64,7 +64,8 @@ Synchronous. Returns a result envelope (§5.1) for every input value, including 
 | `interfaceVersion` | yes | exactly `SDK_INTERFACE_VERSION` (§3). |
 | `relays` | yes | array of 1 to 16 distinct strings. Each is either a syntactically valid absolute `ws:` or `wss:` URL with no userinfo and no fragment whose host is a loopback IP literal (IPv4 in the loopback block or the IPv6 loopback address), under the unchanged I-SDK RFC 3986 loopback rule; or an allowlisted remote URL under the rule below. Order and every accepted string are preserved unchanged; nothing is added, removed, normalised or reordered. Every other value REJECTs with `E_SDK_INVALID_CONFIG`. |
 | `publicRelayHosts` | no | array of 1 to 16 pairwise distinct host-name strings under the exact ASCII rule below. Absent means no remote relay is allowed; present `undefined` is invalid. |
-| `ports` | yes | closed object `{ storage, session, identity }`; each is required and must expose its required methods of §8 as functions. The optional invitation group comprises all five session/identity methods of §8.2–§8.3 or none; any partial or non-function group REJECTs with `E_SDK_INVALID_CONFIG`. Without the group, every invitation method returns `E_SDK_NOT_CONFIGURED` in `RUNNING` without calling a port. |
+| `ports` | yes | closed object `{ storage, session, identity, receiveState? }`; `storage`, `session` and `identity` are required and must expose their required methods of §8 as functions. The optional invitation group comprises all five session/identity methods of §8.2–§8.3 or none; any partial or non-function group REJECTs with `E_SDK_INVALID_CONFIG`. Without the group, every invitation method returns `E_SDK_NOT_CONFIGURED` in `RUNNING` without calling a port. The optional `receiveState` port (§8.5) is an object or function exposing all seven methods of §8.5 as functions, and when it is present the session port must also expose `openCandidate` and `isKnownSender` (§8.2) as functions; a `receiveState` that is `null` or a primitive, or that lacks any of its seven methods as a function, REJECTs with `E_SDK_INVALID_CONFIG`, as does a missing session method. |
+| `receive` | no | allowed only with `ports.receiveState`; otherwise `E_SDK_INVALID_CONFIG`. A closed plain object whose optional fields are positive safe integers at most their maximum: `maxPending` (default 4 096, maximum 65 536), `maxUnacknowledged` (default 4 096, maximum 65 536), `maxSeen` (default 1 048 576, maximum 16 777 216), `maxStoredBytes` (default 268 435 456, maximum 4 294 967 296). An absent field takes its default; an unknown field, `0`, a negative, non-integer or out-of-bound value REJECTs with `E_SDK_INVALID_CONFIG`. The quotas apply as §8.5 states. |
 | `clock` | no | closed object `{ now, setTimer, clearTimer }` (§8.4). Absent means the built-in `Date.now`, `setTimeout` and `clearTimeout`. |
 | `random` | no | closed object `{ nextUint32 }` (§8.4). Absent means the built-in `crypto.getRandomValues`. |
 | `delivery` | no | closed object `{ maxAttempts, deadlineMs, perRelayTimeoutMs, receiptMode }`. Each numeric field, when present, is a positive safe integer within the bounds `C-DLV` fixes; `receiptMode` is `RECIPIENT_RECEIPT` or `RELAY_ACCEPTANCE_ONLY`. An absent field takes the finite default `C-DLV` fixes. `Infinity`, `NaN`, `0`, negatives, non-integers and out-of-bound values REJECT. |
@@ -81,7 +82,7 @@ Every method below is asynchronous and **always resolves** to a result envelope 
 
 | Method | Allowed client state | Success `value` | Effect |
 | --- | --- | --- | --- |
-| `start()` | `CREATED` | `{ clientState: 'RUNNING', connectedRelays }` | Checks that the storage port holds no item (otherwise `E_SDK_STORAGE_NOT_EMPTY`), connects to the configured relays as `C-DLV` specifies, and subscribes for inbound messages and receipts addressed to the identity port's public key. Its relay-connection phase ends no later than one per-relay timeout after it begins (measured by the clock port of §8, with the same host-`setTimeout` backstop that §8 uses for port calls, so a clock whose timers never fire cannot extend it) and never waits longer on a relay that hangs; port calls made by `start()` are bounded separately as §8 specifies, and a port call that does not settle within that bound is that port's failure. It succeeds when at least one relay has connected by the end of the connection phase, and `connectedRelays` is the number connected when it resolves. If none connects within the per-relay timeout, returns `E_SDK_NO_RELAY_AVAILABLE`. Every failed `start()` called in `CREATED`, whatever its code, leaves the client in `CREATED` with no open relay connection, subscription or timer and no cached public key; the SDK closes anything it opened before resolving, and a later `start()` begins from scratch. |
+| `start()` | `CREATED` | `{ clientState: 'RUNNING', connectedRelays }` | Checks that the storage port holds no item (otherwise `E_SDK_STORAGE_NOT_EMPTY`), connects to the configured relays as `C-DLV` specifies, and subscribes for inbound messages and receipts addressed to the identity port's public key. Its relay-connection phase ends no later than one per-relay timeout after it begins (measured by the clock port of §8, with the same host-`setTimeout` backstop that §8 uses for port calls, so a clock whose timers never fire cannot extend it) and never waits longer on a relay that hangs; port calls made by `start()` are bounded separately as §8 specifies, and a port call that does not settle within that bound is that port's failure. It succeeds when at least one relay has connected by the end of the connection phase, and `connectedRelays` is the number connected when it resolves. If none connects within the per-relay timeout, returns `E_SDK_NO_RELAY_AVAILABLE`. With `ports.receiveState`, after `getPublicKey()` and before any relay connection, `start()` calls `load` once and then runs the recovery pass of §8.5; a failed, timed-out or malformed `load` returns `E_SDK_RECEIVE_STATE_FAILED`, an incompatible snapshot `E_SDK_RECEIVE_STATE_INCOMPATIBLE`, an out-of-set value `E_SDK_UNKNOWN_CODE`, and a recovery pass that leaves the receive state paused or frozen `E_SDK_RECEIVE_STATE_FAILED`; nothing is reset or deleted in either case. Every failed `start()` called in `CREATED`, whatever its code, leaves the client in `CREATED` with no open relay connection, subscription or timer and no cached public key; the SDK closes anything it opened before resolving, and a later `start()` begins from scratch. |
 | `send({ recipient, payload })` | `RUNNING` | `{ deliveryId, state: 'QUEUED' }` | Validates, seals `payload` through the session port, stores one outbound item through the storage port, and schedules delivery. Returns before any network attempt completes. |
 | `getDelivery({ deliveryId })` | `RUNNING`, `STOPPED` | a delivery snapshot (§6.2) | Read-only. Unknown id returns `E_SDK_UNKNOWN_DELIVERY`. |
 | `cancel({ deliveryId })` | `RUNNING` | `{ deliveryId, state: 'CANCELLED' }` | Moves a non-terminal item to `CANCELLED` and stops further attempts. A publication already handed to a relay is not recalled. A terminal item returns `E_SDK_DELIVERY_TERMINAL` and is unchanged. |
@@ -91,6 +92,11 @@ Every method below is asynchronous and **always resolves** to a result envelope 
 | `publishKeyPackage()` | `RUNNING` | `{ keyPackageEventId, acceptedRelays }` | Create and sign a kind-4743 KeyPackage, publish on an independent relay set and remember its id for this client's lifetime. |
 | `invite({ invitee })` | `RUNNING` | `{ keyPackageEventId, welcomeEventId, acceptedRelays }` | Fetch valid kind-4743 events of the named invitee, choose newest `created_at` and lowest id on a tie, call `startSession`, delegate wrap construction, and publish the wrap unchanged. |
 | `acceptInvite({ inviter, keyPackageEventId })` | `RUNNING` | `{ inviter }` | Wait on an independent kind-1059 subscription addressed to the own key. Ignore failing candidates, require the explicitly named inviter, and pass the first acceptable Welcome to `joinSession`. |
+| `acknowledgeMessage({ eventId })` | `RUNNING`; in `CREATED` only during a `start()` whose `load` succeeded | `{ eventId }` | Acknowledges one application result of the receive state (§8.5): removes its payload from the active durable state through `ack` and ends its redelivery. |
+
+`acknowledgeMessage` rules: `eventId` is 64 lowercase hex digits in a closed argument object (else `E_SDK_INVALID_ARGUMENT`). Once `shutdown()` has been called it returns `E_SDK_CLIENT_STOPPED`; in `CREATED` before a successful `load` it returns `E_SDK_NOT_STARTED`; without `ports.receiveState` it returns `E_SDK_NOT_CONFIGURED` and calls no port. It succeeds for a `READY` id only after at least one reserved listener has been invoked with that entry in the current run (§7.1), through one `ack` write; and, idempotently without a write, for an id already acknowledged. A `READY` id not yet invoked in this run, an unknown id and a rejected id (present only in `seen`) return `E_SDK_UNKNOWN_MESSAGE`. While the receive state is paused or frozen, or when the `ack` write fails, it returns `E_SDK_RECEIVE_STATE_FAILED` (a failed `ack` freezes the receive state, §8.5). Concurrent calls for one id share one write. It is bounded by five port-call timeouts of host time; an internal fault or that bound is `E_SDK_INTERNAL`, and an out-of-set code from the receive state is `E_SDK_UNKNOWN_CODE` (§5.3). An acknowledgement in progress at `shutdown()` completes or fails within that bound.
+
+With `ports.receiveState`, while the receive state is paused or frozen (§8.5), `send`, `publishKeyPackage`, `invite` and `acceptInvite` return `E_SDK_RECEIVE_STATE_FAILED` before any storage, provider or network mutation: `send` after the client-state check, both before and after reading its argument; the invitation methods after the client-state and `E_SDK_NOT_CONFIGURED` checks and before argument validation. Calls already in progress are checked by the caller's coordinator (§8.2).
 
 A call in a client state not listed returns: `E_SDK_NOT_STARTED` in `CREATED`, `E_SDK_ALREADY_STARTED` for `start()` in `RUNNING`, and `E_SDK_CLIENT_STOPPED` in `STOPPED`. A `STOPPED` client never restarts; a new client is created instead, and it does not see the old client's items.
 
@@ -111,6 +117,8 @@ At the synchronous `shutdown()` call every invocation is marked stopped and its 
 ### 4.3 Inbound messages
 
 Inbound application messages are delivered only through `MESSAGE_RECEIVED` events (§7). The SDK passes the inbound ciphertext to the session port's `open` method and emits the event only when `open` returns success. An inbound structure that fails parsing, version checks, signature verification or `open` emits no `MESSAGE_RECEIVED`; it emits `INBOUND_DISCARDED` with one of the three inbound discard codes of §5.2 and no payload, sender, or content-derived field. Duplicate inbound messages may be emitted more than once unless `C-DLV` suppresses them within the process lifetime; the interface makes no exactly-once claim.
+
+With `ports.receiveState`, kind-4741 messages follow §8.5 instead: the session port's `open` is not called for them; an admitted event is staged durably, opened with `openCandidate` and committed, and only a committed application result is emitted as `MESSAGE_RECEIVED` (§7.1), redelivered until `acknowledgeMessage`. A committed rejection emits `INBOUND_DISCARDED` with `E_SDK_SESSION_FAILED` once and is never emitted as a message. Delivery stays at least once; the application de-duplicates by `eventId`.
 
 ## 5. Result envelope and codes
 
@@ -154,15 +162,39 @@ Nothing else is returned. A failure carries no message text, stack, upstream err
 
 | `E_SDK_INVITE_TIMEOUT` | No acceptable Welcome before the wait deadline. |
 
+| `E_SDK_RECEIVE_STATE_FAILED` | The receive-state port failed, threw, timed out or returned a malformed value, or the receive state is paused or frozen (§8.5). |
+| `E_SDK_RECEIVE_STATE_INCOMPATIBLE` | `load` reported, or returned, a snapshot of another identity, scope or schema, or one the caller found inconsistent (§8.5). |
+| `E_SDK_RECEIVE_STATE_CONFLICT` | (receive-state port and `RECEIVE_STATE_FAILED` only) A write named a revision other than the current one. |
+| `E_SDK_RECEIVE_STATE_CAPACITY` | (receive-state port only) A `commit` was refused for capacity and wrote nothing. |
+| `E_SDK_UNKNOWN_MESSAGE` | `acknowledgeMessage` named no acknowledgeable application result (§4.2). |
+
 `E_SDK_INBOUND_INVALID`, `E_SDK_SESSION_FAILED` and `E_SDK_UNKNOWN_CODE` are the only codes that appear in `INBOUND_DISCARDED`: the first for parsing, version and signature failures, the second for a failed `open`, the third when a lane component or the session port yields a value outside the closed sets (§5.3). `E_SDK_INBOUND_INVALID` never appears in a method result.
 
-When a method other than `shutdown()` fails, it makes no change visible to the caller as a usable item: an item is either fully created (stored, with its `deliveryId` returned) or not created as a deliverable item. If a storage write may have happened before a later step failed, the SDK removes the item before resolving; if that removal itself fails, the method resolves `E_SDK_STORAGE_FAILED`, and the residual item, if present, is never sent and is reported through events as `FAILED_NOT_ACCEPTED`. For delivery items these are the only two departures from no-change-on-failure: this residual-item rule and the unconditional `shutdown()` of §4.2. Invitation methods create no delivery item and cannot roll back caller session state or a published event (§4.2). The four invitation codes occur only in invitation method results, never in `INBOUND_DISCARDED`.
+When a method other than `shutdown()` fails, it makes no change visible to the caller as a usable item: an item is either fully created (stored, with its `deliveryId` returned) or not created as a deliverable item. If a storage write may have happened before a later step failed, the SDK removes the item before resolving; if that removal itself fails, the method resolves `E_SDK_STORAGE_FAILED`, and the residual item, if present, is never sent and is reported through events as `FAILED_NOT_ACCEPTED`. For delivery items these are the only two departures from no-change-on-failure: this residual-item rule and the unconditional `shutdown()` of §4.2. Invitation methods create no delivery item and cannot roll back caller session state or a published event (§4.2). The four invitation codes occur only in invitation method results, never in `INBOUND_DISCARDED`. The five codes added by M3-RECEIVE-1 (the last five rows above) never appear in `INBOUND_DISCARDED`; `E_SDK_RECEIVE_STATE_CONFLICT` and `E_SDK_RECEIVE_STATE_CAPACITY` are never returned by a method.
 
 ### 5.3 Unknown codes and states fail closed
 
 - **Inside the SDK.** A code, state or outcome produced by a lane component or a port that is not a member of the closed sets here is never forwarded as is. In a result of a client method of §4.2 it becomes `{ ok: false, code: 'E_SDK_UNKNOWN_CODE' }`; `createStyxClient` calls no port or lane component, and any internal fault there returns `E_SDK_INVALID_CONFIG`, never success. For a non-terminal outbound item it moves the item to `FAILED_NOT_ACCEPTED` (if no relay acceptance was recorded) or, in `RECIPIENT_RECEIPT` mode after a relay acceptance was recorded, to `FAILED_NO_RECEIPT`, with `lastCode: 'E_SDK_UNKNOWN_CODE'`, and stops further attempts. A terminal item, including `RELAY_ACCEPTED` in `RELAY_ACCEPTANCE_ONLY` mode (where relay acceptance is itself terminal), is never changed by an unknown value. It never yields `ok: true`, a success state or a success event; the only success that can coexist with an unknown value is the unconditional `shutdown()` result, which reports the affected item as `LOST_ON_SHUTDOWN`, never as delivered.
 - **In consumers.** A consumer MUST treat as failure any envelope whose `ok` is not exactly the boolean `true`, any `code` for which `isKnownResultCode` is `false`, any delivery state not in §6 and any event kind not in §7. A consumer MUST NOT infer success, acceptance or receipt from an unknown value.
 - Unknown is never mapped to a weaker failure, retried as success, or ignored.
+
+### 5.4 Method → code table
+
+A method never returns a code outside its row (§12). `E_SDK_RECEIVE_STATE_FAILED`, `E_SDK_RECEIVE_STATE_INCOMPATIBLE` and `E_SDK_UNKNOWN_MESSAGE` are returned only with `ports.receiveState`; without it, `acknowledgeMessage` returns `E_SDK_NOT_CONFIGURED` once started.
+
+| Method | Codes |
+| --- | --- |
+| `createStyxClient` | `E_SDK_UNSUPPORTED_VERSION`, `E_SDK_INVALID_CONFIG` |
+| `start` | `E_SDK_ALREADY_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_STORAGE_NOT_EMPTY`, `E_SDK_NO_RELAY_AVAILABLE`, `E_SDK_STORAGE_FAILED`, `E_SDK_IDENTITY_FAILED`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE`, `E_SDK_RECEIVE_STATE_FAILED`, `E_SDK_RECEIVE_STATE_INCOMPATIBLE` |
+| `send` | `E_SDK_NOT_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_INVALID_ARGUMENT`, `E_SDK_PAYLOAD_TOO_LARGE`, `E_SDK_QUEUE_FULL`, `E_SDK_STORAGE_FAILED`, `E_SDK_SESSION_FAILED`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE`, `E_SDK_RECEIVE_STATE_FAILED` |
+| `getDelivery` | `E_SDK_NOT_STARTED`, `E_SDK_INVALID_ARGUMENT`, `E_SDK_UNKNOWN_DELIVERY`, `E_SDK_STORAGE_FAILED`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE` |
+| `cancel` | `E_SDK_NOT_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_INVALID_ARGUMENT`, `E_SDK_UNKNOWN_DELIVERY`, `E_SDK_DELIVERY_TERMINAL`, `E_SDK_STORAGE_FAILED`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE` |
+| `onEvent` | `E_SDK_INVALID_ARGUMENT`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE` |
+| `shutdown` | `E_SDK_CLIENT_STOPPED` |
+| `publishKeyPackage` | `E_SDK_NOT_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_NOT_CONFIGURED`, `E_SDK_NO_RELAY_AVAILABLE`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE`, `E_SDK_SESSION_FAILED`, `E_SDK_IDENTITY_FAILED`, `E_SDK_PUBLISH_NOT_ACCEPTED`, `E_SDK_RECEIVE_STATE_FAILED` |
+| `invite` | `E_SDK_NOT_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_NOT_CONFIGURED`, `E_SDK_NO_RELAY_AVAILABLE`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE`, `E_SDK_INVALID_ARGUMENT`, `E_SDK_KEYPACKAGE_NOT_FOUND`, `E_SDK_SESSION_FAILED`, `E_SDK_IDENTITY_FAILED`, `E_SDK_PUBLISH_NOT_ACCEPTED`, `E_SDK_RECEIVE_STATE_FAILED` |
+| `acceptInvite` | `E_SDK_NOT_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_NOT_CONFIGURED`, `E_SDK_NO_RELAY_AVAILABLE`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE`, `E_SDK_INVALID_ARGUMENT`, `E_SDK_SESSION_FAILED`, `E_SDK_INVITE_TIMEOUT`, `E_SDK_RECEIVE_STATE_FAILED` |
+| `acknowledgeMessage` | `E_SDK_NOT_STARTED`, `E_SDK_CLIENT_STOPPED`, `E_SDK_NOT_CONFIGURED`, `E_SDK_INVALID_ARGUMENT`, `E_SDK_UNKNOWN_MESSAGE`, `E_SDK_RECEIVE_STATE_FAILED`, `E_SDK_INTERNAL`, `E_SDK_UNKNOWN_CODE` |
 
 ## 6. Delivery states
 
@@ -219,8 +251,11 @@ A snapshot contains no payload, ciphertext, secret key material or relay URL; th
 | --- | --- |
 | `CLIENT_STATE_CHANGED` | `clientState` |
 | `DELIVERY_STATE_CHANGED` | `deliveryId`, `state`, `terminal`, `lastCode` |
-| `MESSAGE_RECEIVED` | `sender` (lowercase 64-hex public key the inbound structure was verified against), `payload` (a fresh `Uint8Array` returned by the session port's `open`) |
+| `MESSAGE_RECEIVED` | `sender` (lowercase 64-hex public key the inbound structure was verified against), `payload` (a fresh `Uint8Array` returned by the session port's `open`, or with `ports.receiveState` a fresh copy of the committed plaintext), `eventId` (the 64 lowercase hex event id of the inbound kind-4741 event, with or without `ports.receiveState`) |
 | `INBOUND_DISCARDED` | `code` (`E_SDK_INBOUND_INVALID`, `E_SDK_SESSION_FAILED` or `E_SDK_UNKNOWN_CODE`) |
+| `RECEIVE_STATE_CAPACITY` | `scope` (the scope literal of §8.5) |
+| `RECEIVE_STATE_FAILED` | `code` (`E_SDK_RECEIVE_STATE_FAILED`, `E_SDK_RECEIVE_STATE_CONFLICT` or `E_SDK_UNKNOWN_CODE`) |
+| `RECEIVE_STATE_CLOCK_SKEW` | `scope` (the scope literal of §8.5), `relay` (the exact string of `config.relays` concerned) |
 
 Rules:
 
@@ -229,12 +264,23 @@ Rules:
 - For `MESSAGE_RECEIVED`, before starting `session.open` the SDK reserves the currently live `onEvent` registrations. With none, the validated event waits as ciphertext under C-DLV's shared 1 024-entry volatile bound; no open, processed-id insertion or receipt occurs. A newly registered listener wakes this queue. All callbacks qualify, including callbacks ignoring that event kind. Admitted messages are opened in local arrival order; no sender/global ordering claim follows.
 - Unsubscribing the last listener pauses future opens. A callback reserved for an already-started open remains eligible for that one delivery after unsubscribe or the start of shutdown; no later registration receives that message. Each reserved callback receives its own payload copy asynchronously in registration order. Its invocation, including a throw/rejected promise, authorizes a requested receipt; callback completion/processing/reading is not awaited or attested. Shutdown starts no new open, drops unopened ciphertext, and settles that already-reserved delivery within the existing host-time bounds before disposal. No replay or recovery survives restart.
 - `MESSAGE_RECEIVED` carries no relay URL, transport identifier, timing or raw transport event. It may be emitted more than once for the same message (§2 bound 2 and §4.3).
+- The three `RECEIVE_STATE_*` kinds occur only with `ports.receiveState` (§8.5) and are delivered like ordinary events. `RECEIVE_STATE_CAPACITY` is emitted once per crossing of a quota; `RECEIVE_STATE_FAILED` once per entry into the paused or frozen condition from the normal one; `RECEIVE_STATE_CLOCK_SKEW` at most once per relay per run. None of them is emitted after `shutdown()` has been called.
+
+The third and fourth rules above (reservation before `session.open`; unsubscription, shutdown and no recovery after restart) describe the path without `ports.receiveState`. With it, kind-4741 messages are emitted under §7.1 instead; `INBOUND_DISCARDED` keeps its three codes.
+
+### 7.1 Emission with `ports.receiveState`
+
+- Only a committed application result (a `READY` entry, §8.5) is emitted, never before its durable `commit` or a `resolve` reporting `committed`, and no ciphertext waits for an audience: admission, staging, opening and committing proceed without a listener.
+- A `READY` entry is dispatched when it can reserve the `onEvent` registrations live at that moment, as one reserved delivery with a fresh payload copy per callback in registration order. Without a live registration it stays `READY`; a new registration wakes emission of every unacknowledged `READY` entry. At most one dispatch per entry is scheduled or in flight; further wakeups for it are coalesced.
+- `READY` entries are emitted in commit order (loaded entries first, in `load` order): after `load` in `start()` (before the first relay connection), at commit, at each new registration, and by a redelivery pass every 60 000 ms on the clock port while `RUNNING`. Redelivery continues during the run and after restart until `acknowledgeMessage` succeeds for the entry; listener invocation, return, throw or rejection is not acknowledgement.
+- The entry is read once when its dispatch runs: an entry acknowledged since the dispatch was scheduled invokes no callback; otherwise it is marked invoked for the current run immediately before its reserved callbacks are called, so a callback may acknowledge it. The invocation, including a throw or rejected promise, makes a requested receipt due (§8.5).
+- From the synchronous `shutdown()` call no new dispatch is scheduled; a dispatch already scheduled settles within the existing drain bound. Unacknowledged entries stay `READY` in the receive state.
 
 ## 8. Injected ports
 
-All ports are caller-supplied objects. The SDK calls them only through the methods below, treats every return value as untrusted, and validates its shape. Every storage, session and identity port method may be synchronous or return a promise. A port call that throws, rejects, returns a malformed value, or does not settle within the port-call timeout is a failure of that port (`E_SDK_STORAGE_FAILED`, `E_SDK_SESSION_FAILED` or `E_SDK_IDENTITY_FAILED`). The port-call timeout is always finite: `C-DLV` fixes its value, which never exceeds the client's `delivery.perRelayTimeoutMs`, and the SDK enforces it with the host's own `setTimeout`, not with the injected clock port, so neither a port that never settles nor a clock whose timers never fire can hold a method open past that bound. Clock and random port methods (§8.4) are called synchronously; a promise or other non-synchronous return from them is an invalid value. The SDK never reads a port's other properties, never wraps or replaces a port, and never serialises a port object.
+All ports are caller-supplied objects. The SDK calls them only through the methods below, treats every return value as untrusted, and validates its shape. Every storage, session, identity and receive-state port method may be synchronous or return a promise. A port call that throws, rejects, returns a malformed value, or does not settle within the port-call timeout is a failure of that port (`E_SDK_STORAGE_FAILED`, `E_SDK_SESSION_FAILED`, `E_SDK_IDENTITY_FAILED` or, for the receive-state port of §8.5, `E_SDK_RECEIVE_STATE_FAILED`; a failure of `openCandidate` or `isKnownSender` follows §8.5). The port-call timeout is always finite: `C-DLV` fixes its value, which never exceeds the client's `delivery.perRelayTimeoutMs`, and the SDK enforces it with the host's own `setTimeout`, not with the injected clock port, so neither a port that never settles nor a clock whose timers never fire can hold a method open past that bound. Clock and random port methods (§8.4) are called synchronously; a promise or other non-synchronous return from them is an invalid value. The SDK never reads a port's other properties, never wraps or replaces a port, and never serialises a port object.
 
-No port may be backed, inside the lane, by `styx-js/src/storage/**`, `styx-js/src/crypto/**`, `styx-js/src/config/**`, `styx-js/apps/**` or the M2 session adapter. Lane code does not import those paths (§9). Wiring the SDK to the M2 adapter or to durable storage is a separate owner act; until then any such wiring is unsupported and carries no claim. The sole M3-INVITE exception is the unchanged `MlsEngine` and vendored WASM used by `styx-js/test/sdk-mls/invite-mls.test.js`, under #317/6316724633; no product module or other test inherits it.
+No port may be backed, inside the lane, by `styx-js/src/storage/**`, `styx-js/src/crypto/**`, `styx-js/src/config/**`, `styx-js/apps/**` or the M2 session adapter. Lane code does not import those paths (§9). Wiring the SDK to the M2 adapter or to durable storage is a separate owner act; until then any such wiring is unsupported and carries no claim. Durable receive state behind the optional caller-injected port of §8.5 is the one authorized exception to the latter (M3-RECEIVE-1 scope extension #400/6629916795, shared source #556); the caller implements it, and no lane module backs it. The sole M3-INVITE exception is the unchanged `MlsEngine` and vendored WASM used by `styx-js/test/sdk-mls/invite-mls.test.js`, under #317/6316724633; no product module or other test inherits it.
 
 ### 8.1 Storage port (`ports.storage`)
 
@@ -269,6 +315,17 @@ Optional invitation session methods, present exactly when both optional identity
 
 The caller MUST bind the KeyPackage credential to `peer`, create exactly a two-member session in `startSession`, and fail without creation for a wrong credential or existing peer session. `joinSession` MUST fail for a different other member or an existing peer session, else bind the group to `peer`; it may consume local KeyPackage state even on failure. Subsequent `seal`/`open` for that peer use that group. These are caller semantics, not properties the SDK verifies. A size violation is the corresponding session-port failure.
 
+Receive session methods, required exactly when `ports.receiveState` is present (§4.1, §8.5) and called only for kind-4741 events:
+
+| Method | Input | Success return |
+| --- | --- | --- |
+| `openCandidate({ sender, ciphertext })` | lowercase 64-hex string, non-empty `Uint8Array` | closed `{ receiveOutcome, ticket, plaintext? }`: `receiveOutcome` is `application`, `retry` or `reject` (its own closed set, never a `RelayOutcome`); `plaintext`, a `Uint8Array`, is present exactly for `application`; `ticket` is present, opaque, and passed unchanged to `commit` |
+| `isKnownSender({ sender })` | lowercase 64-hex string | boolean |
+
+`reject` is only for a positively classified permanent rejection, at least: a ciphertext that is not an MLS application `PrivateMessage`, and an application message that yields no peer plaintext. Every other failure, including a binding error of an established session and every engine exception, is `retry`. `isKnownSender` is `true` only when the caller holds a durable peer binding for `sender`. A throw, rejection, timeout or malformed return of either method is neither `retry` nor `false` as a value: for `openCandidate` the entry stays `PENDING` as for `retry`; for `isKnownSender` the event is not staged and the relay's cursor barrier fails (§8.5). An out-of-set value also emits `INBOUND_DISCARDED` with `E_SDK_UNKNOWN_CODE`.
+
+Caller semantics with `ports.receiveState` (normative, not checked by the SDK): one exclusive coordinator per MLS provider, shared by every port that uses it, serialises `openCandidate`, `commit`, `resolve` and candidate installation with every other provider mutation (`seal`, `createKeyPackage`, `startSession`, `joinSession`), and checks calls already in progress immediately before each provider mutation while the receive state is frozen (§8.5); no operation observes an uncommitted candidate; a ticket records the provider generation it was made from; after `commit` succeeds or `resolve` returns `committed` the candidate becomes authoritative; after a failed commit or `aborted` the authoritative state is the one immediately before the candidate was prepared, including every mutation already completed under the coordinator, never an older receive checkpoint; a `retry` or `reject` candidate never replaces the authoritative state, and a failed or timed-out `openCandidate` is discarded or rolled back before any other provider mutation resumes; a late result after a timeout never reactivates an abandoned candidate. The caller makes each provider mutation recoverable before its effect leaves the process (for `seal`, before returning the ciphertext, which the SDK stores and publishes only after its `put`) and coordinates that checkpoint with receive commits; this covers MLS state only, with no outbox resume and no recovery of interrupted invitations. A new session is added to the caller's peer bindings before it is used for reception. Both a candidate-copy and a restore strategy are allowed under this exclusion. The caller may record its own peer-binding changes in the unit that `commit` makes durable; their form is not part of this interface.
+
 ### 8.3 Signing and identity port (`ports.identity`)
 
 | Method | Input | Success return |
@@ -299,6 +356,36 @@ The caller MUST implement a kind-1059 NIP-59 wrap for `recipient`, a kind-13 sea
 
 They exist so that timing and backoff jitter are deterministic in tests. They are not security inputs; `deliveryId` generation is not required to use them. A clock or random function that throws or returns an invalid value is `E_SDK_INTERNAL` for the affected operation and moves an affected item to its applicable terminal failed state.
 
+### 8.5 Receive-state port (`ports.receiveState`)
+
+Optional (§4.1): all seven methods or none, and with it the receive session methods of §8.2. Without it nothing in this section applies and the client behaves as interface 0.3.1 plus `eventId`, `acknowledgeMessage` (`E_SDK_NOT_CONFIGURED`) and the enlarged closed sets; the default of §2 bound 2 holds. With it, the **conditional durable-receive exception** of §2 bound 2 applies: every admitted inbound kind-4741 event whose `stage` has completed durably stays recoverable locally across stop, restart and crash; no event id whose outcome was durably committed is passed to `openCandidate` again; every committed application result is redelivered until it is acknowledged. The exception holds only under the caller semantics of §8.2 and this section, which the SDK cannot verify; it covers kind 4741 only and never an outbound item.
+
+The scope literal is `styx-m3-delivery/4741/wire-0.3.0`; the only snapshot schema is `styx-m3-receive-state/v1`. Every call is bounded by the port-call timeout and its return validated; the SDK issues at most one write at a time, in issue order. Each of the five write methods carries a fresh `operationId` (32 lowercase hex digits from `randomBytes(16)`, never reused within the client) and `revision`, the last revision the SDK adopted; `resolve` generates none.
+
+| Method | Input | Success return |
+| --- | --- | --- |
+| `load({ identity, scope })` | own public key, scope literal | closed snapshot `{ schema, identity, scope, revision, storedBytes, cursors, pending, ready, acknowledged, receiptsDue, seen }` |
+| `stage({ operationId, revision, event })` | `event` = `{ eventId, sender, ciphertext, receiptRequested }` | `{ revision, storedBytes }` |
+| `commit({ operationId, revision, eventId, ticket, result })` | `result` = `{ type: 'application', sender, payload, receiptDue }` or `{ type: 'rejected' }` | `{ revision, storedBytes }` |
+| `ack({ operationId, revision, eventId })` | id of a `READY` entry | `{ revision, storedBytes }` |
+| `receiptDone({ operationId, revision, eventId })` | id of a receipt obligation | `{ revision, storedBytes }` |
+| `commitCursor({ operationId, revision, relay, generation, syncedUntil })` | exact `config.relays` string, pool number of `C-DLV` §5.4, whole seconds | `{ revision, storedBytes }` |
+| `resolve({ operationId })` | the `operationId` of an earlier `commit` whose result is uncertain | `{ status: 'committed', revision, storedBytes, result }` or `{ status: 'aborted', revision }` |
+
+A method may instead return a closed `{ code }`: `load` with `E_SDK_RECEIVE_STATE_FAILED` or `E_SDK_RECEIVE_STATE_INCOMPATIBLE`; `stage`, `ack`, `receiptDone` and `commitCursor` with `E_SDK_RECEIVE_STATE_FAILED` or `E_SDK_RECEIVE_STATE_CONFLICT`; `commit` with those two or `E_SDK_RECEIVE_STATE_CAPACITY`; `resolve` with `E_SDK_RECEIVE_STATE_FAILED`. Every `revision` and `storedBytes` is a non-negative safe integer; the SDK adopts those of each success. A write return that is neither its success shape nor one of its codes (a throw, rejection, timeout, malformed value or another code) is an uncertain result: the write may or may not have taken effect. A value outside a closed set of this document in a closed slot is `E_SDK_UNKNOWN_CODE` (§5.3).
+
+Port semantics (caller requirements): `load` is called once in each `start()`, before any relay connection; before it returns, the caller restores its MLS checkpoint and peer bindings. It returns `E_SDK_RECEIVE_STATE_INCOMPATIBLE` for another identity, scope or unknown schema, or a snapshot it finds semantically inconsistent (for example a peer binding whose session cannot be loaded). A missing snapshot is a valid empty state (`revision` 0, empty arrays) only if the caller says so explicitly. `stage` makes a durable `PENDING` entry keyed by event id, idempotent per id. `commit` makes durable, atomically as one unit, the session state bound to `ticket` (including any peer-binding change the caller made under the candidate), the entry's new state (`READY` for an application result, `REJECTED` otherwise), its receipt obligation and the seen mark; `E_SDK_RECEIVE_STATE_CAPACITY` guarantees that nothing was written. `ack` atomically removes the payload from the active state and from every later `load`, keeps the seen mark and adds the id to `acknowledged`. `receiptDone` removes the receipt obligation. `commitCursor` records a cursor that has passed the complete barrier of `C-DLV` §5.4; it may be lower than the stored value only in the clock-skew case. `resolve` is read-only and repeatable and answers only for the named `commit`: `committed` carries exactly that commit's closed `result`, `aborted` is returned only when that commit can no longer take effect, and the caller retains the resolution at least until the next successful `load`. A write against a revision other than the current one returns `E_SDK_RECEIVE_STATE_CONFLICT`. One client owns one receive state; a second writer is unsupported. `storedBytes` is the logical size of the active durable receive state (pending ciphertext, ready payloads, receipt, seen and acknowledged records, cursors, MLS checkpoint and peer-binding data), not a physical file or journal size.
+
+Snapshot records are closed plain objects with own data properties, in genuine arrays: `pending` `{ eventId, sender, ciphertext, receiptRequested }` in stage order; `ready` `{ eventId, sender, payload, receiptDue }` in commit order; `receiptsDue` `{ eventId, sender }`; `cursors` `{ relay, syncedUntil }`; `seen`, the ids of every durable kind-4741 entry in any state (`PENDING`, `READY`, acknowledged, `REJECTED`); `acknowledged`, the ids of acknowledged application results only. The SDK checks: `schema`, `identity` and `scope` exactly (else `E_SDK_RECEIVE_STATE_INCOMPATIBLE`); `seen` holds distinct 64-hex ids; `pending`, `ready` and `acknowledged` are disjoint subsets of `seen` without repetition; senders are 64-hex; `ciphertext` is a non-empty and `payload` any `Uint8Array`; flags are booleans; each `receiptsDue` entry names either a `READY` entry with `receiptDue` true and the same sender, or an acknowledged id; `cursors` relay strings are distinct and `syncedUntil` is a non-negative safe integer. Any other violation is `E_SDK_RECEIVE_STATE_FAILED`. A cursor of a relay no longer in `config.relays` is ignored; a new relay starts without one.
+
+Quotas (`config.receive`, §4.1) count the entries returned by `load` plus later writes. New admission stops while `PENDING` entries reach `maxPending`, `READY` entries reach `maxUnacknowledged`, `seen` reaches `maxSeen`, the latest adopted `storedBytes` reaches `maxStoredBytes`, or after a `commit` refused for capacity until the next successful `ack`. The write that crosses a limit completes; nothing is deleted; `RECEIVE_STATE_CAPACITY` is emitted once per crossing and again only after the state has dropped below every limit. Reaching `maxSeen` is persistent saturation: no caller compaction may drop tombstones still required.
+
+Fail-stop. Any definite refusal or uncertain result of `stage`, `ack`, `receiptDone` or `commitCursor`, and a `commit` refused with `E_SDK_RECEIVE_STATE_FAILED` or `E_SDK_RECEIVE_STATE_CONFLICT`, freezes the receive state for the rest of the client's lifetime; recovery needs `shutdown()` and a new client whose `start()` completes a successful `load`. An uncertain `commit` pauses it: `resolve` is called at once and then at every periodic pass of `C-DLV` §7.4; `committed` adopts the revision and applies the committed result, `aborted` adopts the revision and leaves the entry `PENDING`, and either returns to the normal condition; a failed `resolve` keeps it paused. A `commit` refused with `E_SDK_RECEIVE_STATE_CAPACITY` neither pauses nor freezes: the entry stays `PENDING` and the quota rule applies. While paused or frozen, nothing is admitted or opened, no cursor is committed, no receipt publication starts, `acknowledgeMessage` returns `E_SDK_RECEIVE_STATE_FAILED`, and `send`, `publishKeyPackage`, `invite` and `acceptInvite` return it before any storage, provider or network mutation (§4.2). `RECEIVE_STATE_FAILED` reports each entry into the condition once. Nothing ever falls back to the path without the port.
+
+The inbound flow is fixed by `C-DLV` §5.4 and §7.4: kind 4741 only, de-duplicated against the durable `seen` set; admission requires `isKnownSender` `true` and no quota reached, and an event not admitted is neither staged nor opened, emitted, receipted or remembered; then `stage`, `openCandidate` and, for `application` or `reject`, `commit`; `retry` leaves the entry `PENDING` for a later bounded retry. A recovery pass in `start()`, after `load` and before the first relay connection, opens every loaded `PENDING` entry once in stage order. A receipt obligation is committed with an application result whose event requested one, published only after a reserved listener was invoked with the entry (§7.1), at most once per run, and removed by `receiptDone` after the first observed `OK true`; opening a message again to build a receipt is forbidden. Kind 4742 keeps its existing path. At `shutdown()` admission stops at the synchronous call, no new candidate or commit starts, a commit already issued completes and the next `load` shows its outcome, every uncommitted entry stays `PENDING`, and the open unit, the write chain and a receipt in progress are awaited within the existing settle bound of two port-call timeouts before relay disposal (a unit not settled by then stays `PENDING`).
+
+At rest (caller requirement): the port holds ciphertext, plaintext until `ack`, MLS state, peer bindings and receive metadata, all of which the caller encrypts at rest. At `ack` the payload leaves the active state and every later `load`; physical erasure from journals, snapshots, backups or media is not claimed unless an atomic compaction has completed, and no secure-erase guarantee is given.
+
 ## 9. Exact allowed imports
 
 This section is the upper bound for every lane module under `styx-js/src/sdk/**` and every lane test under `styx-js/test/sdk/**`, except the preview tests under `styx-js/test/sdk/flegias-preview/**` and the preview files under `styx-js/examples/flegias-preview/**`. The preview's imports are fixed by its own contract within the scope record's `importRule` (which also lets preview files import other preview files and Node and browser built-ins); this document neither widens nor narrows them. Each card contract enumerates its own exact subset; nothing outside this table may be imported, and dynamic `import()` and `require()` of any specifier outside it are forbidden as well.
@@ -328,7 +415,7 @@ Rules:
 
 ## 10. Non-claims and gates
 
-The SDK is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. Third-party relays see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and the client network address; they may store, refuse or drop events. A listed host may resolve to any address, including private or loopback; no DNS policy or TLS pinning is provided, and host WebSocket TLS validation is not attested. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message.
+The SDK is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. Third-party relays see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and the client network address; they may store, refuse or drop events. A listed host may resolve to any address, including private or loopback; no DNS policy or TLS pinning is provided, and host WebSocket TLS validation is not attested. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. With `ports.receiveState`, the conditional durable-receive exception of §2 bound 2 and §8.5 is the only cross-restart claim; it rests on caller semantics the SDK cannot verify, and it claims no completeness, no global ordering and no exactly-once application effect. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message.
 
 These statements stay in force verbatim:
 
@@ -348,7 +435,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
 {
   "schema": "styx-m3-sdk-interface/v1",
   "closed": true,
-  "sdkInterfaceVersion": "styx-m3-sdk/0.3.1-experimental",
+  "sdkInterfaceVersion": "styx-m3-sdk/0.4.0-experimental",
   "sdkWireVersion": "styx-m3-sdk/0.3.0-experimental",
   "messageAdmission": {
     "requiresListenerBeforeOpen": true,
@@ -356,7 +443,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "wake": "onEvent registration",
     "lastUnsubscribe": "pause future opens; reserved in-flight delivery stays eligible",
     "receiptAfter": "actual invocation, not callback completion",
-    "shutdown": "drop unopened ciphertext; settle reserved in-flight delivery under existing bounds"
+    "shutdown": "drop unopened ciphertext; settle reserved in-flight delivery under existing bounds",
+    "appliesTo": "kind 4741 without ports.receiveState; with it see receiveState.emission"
   },
   "stability": "experimental-no-stability-promise",
   "publicModule": "styx-js/src/sdk/index.js",
@@ -383,7 +471,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       "clock",
       "random",
       "delivery",
-      "publicRelayHosts"
+      "publicRelayHosts",
+      "receive"
     ],
     "relays": {
       "minItems": 1,
@@ -437,6 +526,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       "session",
       "identity"
     ],
+    "optionalPorts": [
+      "receiveState"
+    ],
     "delivery": {
       "fields": [
         "maxAttempts",
@@ -449,6 +541,35 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "RECIPIENT_RECEIPT",
         "RELAY_ACCEPTANCE_ONLY"
       ]
+    },
+    "receive": {
+      "requires": "ports.receiveState",
+      "fields": [
+        "maxPending",
+        "maxUnacknowledged",
+        "maxSeen",
+        "maxStoredBytes"
+      ],
+      "numericRule": "positive safe integer at most max; absent means default",
+      "limits": {
+        "maxPending": {
+          "default": 4096,
+          "max": 65536
+        },
+        "maxUnacknowledged": {
+          "default": 4096,
+          "max": 65536
+        },
+        "maxSeen": {
+          "default": 1048576,
+          "max": 16777216
+        },
+        "maxStoredBytes": {
+          "default": 268435456,
+          "max": 4294967296
+        }
+      },
+      "withoutReceiveState": "E_SDK_INVALID_CONFIG"
     },
     "unknownField": "E_SDK_INVALID_CONFIG"
   },
@@ -470,7 +591,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "E_SDK_STORAGE_FAILED",
         "E_SDK_IDENTITY_FAILED",
         "E_SDK_INTERNAL",
-        "E_SDK_UNKNOWN_CODE"
+        "E_SDK_UNKNOWN_CODE",
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_INCOMPATIBLE"
       ]
     },
     "send": {
@@ -486,7 +609,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "E_SDK_STORAGE_FAILED",
         "E_SDK_SESSION_FAILED",
         "E_SDK_INTERNAL",
-        "E_SDK_UNKNOWN_CODE"
+        "E_SDK_UNKNOWN_CODE",
+        "E_SDK_RECEIVE_STATE_FAILED"
       ]
     },
     "getDelivery": {
@@ -552,7 +676,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "E_SDK_UNKNOWN_CODE",
         "E_SDK_SESSION_FAILED",
         "E_SDK_IDENTITY_FAILED",
-        "E_SDK_PUBLISH_NOT_ACCEPTED"
+        "E_SDK_PUBLISH_NOT_ACCEPTED",
+        "E_SDK_RECEIVE_STATE_FAILED"
       ]
     },
     "invite": {
@@ -570,7 +695,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "E_SDK_KEYPACKAGE_NOT_FOUND",
         "E_SDK_SESSION_FAILED",
         "E_SDK_IDENTITY_FAILED",
-        "E_SDK_PUBLISH_NOT_ACCEPTED"
+        "E_SDK_PUBLISH_NOT_ACCEPTED",
+        "E_SDK_RECEIVE_STATE_FAILED"
       ]
     },
     "acceptInvite": {
@@ -586,7 +712,24 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
         "E_SDK_UNKNOWN_CODE",
         "E_SDK_INVALID_ARGUMENT",
         "E_SDK_SESSION_FAILED",
-        "E_SDK_INVITE_TIMEOUT"
+        "E_SDK_INVITE_TIMEOUT",
+        "E_SDK_RECEIVE_STATE_FAILED"
+      ]
+    },
+    "acknowledgeMessage": {
+      "allowedIn": [
+        "RUNNING"
+      ],
+      "alsoAllowedDuringStartAfterLoad": true,
+      "codes": [
+        "E_SDK_NOT_STARTED",
+        "E_SDK_CLIENT_STOPPED",
+        "E_SDK_NOT_CONFIGURED",
+        "E_SDK_INVALID_ARGUMENT",
+        "E_SDK_UNKNOWN_MESSAGE",
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_INTERNAL",
+        "E_SDK_UNKNOWN_CODE"
       ]
     }
   },
@@ -628,7 +771,12 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "E_SDK_NOT_CONFIGURED",
     "E_SDK_PUBLISH_NOT_ACCEPTED",
     "E_SDK_KEYPACKAGE_NOT_FOUND",
-    "E_SDK_INVITE_TIMEOUT"
+    "E_SDK_INVITE_TIMEOUT",
+    "E_SDK_RECEIVE_STATE_FAILED",
+    "E_SDK_RECEIVE_STATE_INCOMPATIBLE",
+    "E_SDK_RECEIVE_STATE_CONFLICT",
+    "E_SDK_RECEIVE_STATE_CAPACITY",
+    "E_SDK_UNKNOWN_MESSAGE"
   ],
   "inboundDiscardCodes": [
     "E_SDK_INBOUND_INVALID",
@@ -740,10 +888,21 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     ],
     "MESSAGE_RECEIVED": [
       "sender",
-      "payload"
+      "payload",
+      "eventId"
     ],
     "INBOUND_DISCARDED": [
       "code"
+    ],
+    "RECEIVE_STATE_CAPACITY": [
+      "scope"
+    ],
+    "RECEIVE_STATE_FAILED": [
+      "code"
+    ],
+    "RECEIVE_STATE_CLOCK_SKEW": [
+      "scope",
+      "relay"
     ]
   },
   "ports": {
@@ -769,12 +928,22 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     ],
     "random": [
       "nextUint32"
+    ],
+    "receiveState": [
+      "load",
+      "stage",
+      "commit",
+      "ack",
+      "receiptDone",
+      "commitCursor",
+      "resolve"
     ]
   },
   "portFailureCodes": {
     "storage": "E_SDK_STORAGE_FAILED",
     "session": "E_SDK_SESSION_FAILED",
     "identity": "E_SDK_IDENTITY_FAILED",
+    "receiveState": "E_SDK_RECEIVE_STATE_FAILED",
     "clock": "E_SDK_INTERNAL",
     "random": "E_SDK_INTERNAL"
   },
@@ -906,7 +1075,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "duplicate handling",
     "per-relay outcome rules",
     "SDK-internal record and on-wire structures, including message identifiers, receipts, acknowledgements, Nostr event kinds and tags",
-    "terminal processing slack"
+    "terminal processing slack",
+    "durable receive flow, retry budget and passes, per-pool subscription ids, cursor barrier and clock-skew rule (C-DLV 5.4, 7.4)"
   ],
   "cDlvMayNotChange": [
     "exports",
@@ -945,6 +1115,224 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "failedCandidateEmits": false,
     "shutdown": "section 4.2, disposal in step 4 after LOST_ON_SHUTDOWN",
     "retry": "fresh engines, ports and clients on both sides after session failure"
+  },
+  "receiveState": {
+    "optional": true,
+    "allOrNone": true,
+    "methods": [
+      "load",
+      "stage",
+      "commit",
+      "ack",
+      "receiptDone",
+      "commitCursor",
+      "resolve"
+    ],
+    "requiredSessionMethods": [
+      "openCandidate",
+      "isKnownSender"
+    ],
+    "partialOrMissingSessionMethod": "E_SDK_INVALID_CONFIG",
+    "absent": "0.3.1 behaviour plus eventId, acknowledgeMessage E_SDK_NOT_CONFIGURED and the enlarged closed sets; H17 stays declared",
+    "conditionalDurableReceiveException": {
+      "requires": "ports.receiveState and the caller semantics of sections 8.2 and 8.5",
+      "kinds": [
+        4741
+      ],
+      "stagedEventRecoverableAcrossRestartAndCrash": true,
+      "committedIdOpenedAgain": false,
+      "redeliveredUntilAcknowledged": true,
+      "beforeStage": "relay-dependent",
+      "outboundResume": false,
+      "completeness": false,
+      "globalOrdering": false,
+      "exactlyOnceApplicationEffect": false,
+      "verifiedBySdk": false
+    },
+    "scope": "styx-m3-delivery/4741/wire-0.3.0",
+    "schema": "styx-m3-receive-state/v1",
+    "operationId": "32 lowercase hex from randomBytes(16), fresh per write, never reused within the client; none for resolve",
+    "writesSerialized": true,
+    "portCallTimeout": "each call",
+    "snapshotFields": [
+      "schema",
+      "identity",
+      "scope",
+      "revision",
+      "storedBytes",
+      "cursors",
+      "pending",
+      "ready",
+      "acknowledged",
+      "receiptsDue",
+      "seen"
+    ],
+    "records": {
+      "pending": [
+        "eventId",
+        "sender",
+        "ciphertext",
+        "receiptRequested"
+      ],
+      "ready": [
+        "eventId",
+        "sender",
+        "payload",
+        "receiptDue"
+      ],
+      "receiptsDue": [
+        "eventId",
+        "sender"
+      ],
+      "cursors": [
+        "relay",
+        "syncedUntil"
+      ],
+      "seen": "event ids of every durable kind-4741 entry in any state",
+      "acknowledged": "event ids of acknowledged application results only"
+    },
+    "disjointSubsetsOfSeen": [
+      "pending",
+      "ready",
+      "acknowledged"
+    ],
+    "commitResults": {
+      "application": [
+        "type",
+        "sender",
+        "payload",
+        "receiptDue"
+      ],
+      "rejected": [
+        "type"
+      ]
+    },
+    "writeSuccess": [
+      "revision",
+      "storedBytes"
+    ],
+    "resolveResults": {
+      "committed": [
+        "status",
+        "revision",
+        "storedBytes",
+        "result"
+      ],
+      "aborted": [
+        "status",
+        "revision"
+      ]
+    },
+    "portCodes": {
+      "load": [
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_INCOMPATIBLE"
+      ],
+      "stage": [
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_CONFLICT"
+      ],
+      "commit": [
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_CONFLICT",
+        "E_SDK_RECEIVE_STATE_CAPACITY"
+      ],
+      "ack": [
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_CONFLICT"
+      ],
+      "receiptDone": [
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_CONFLICT"
+      ],
+      "commitCursor": [
+        "E_SDK_RECEIVE_STATE_FAILED",
+        "E_SDK_RECEIVE_STATE_CONFLICT"
+      ],
+      "resolve": [
+        "E_SDK_RECEIVE_STATE_FAILED"
+      ]
+    },
+    "uncertainWrite": "throw, rejection, timeout, malformed value or code outside the method set",
+    "openCandidate": {
+      "fields": [
+        "receiveOutcome",
+        "ticket",
+        "plaintext"
+      ],
+      "receiveOutcome": [
+        "application",
+        "retry",
+        "reject"
+      ],
+      "plaintextExactlyFor": "application",
+      "ticket": "present, opaque, passed unchanged to commit",
+      "failure": "entry stays PENDING, as retry"
+    },
+    "isKnownSender": {
+      "returns": "boolean",
+      "false": "not admitted; not staged, opened, emitted, receipted or remembered",
+      "failure": "not staged; barrier failure"
+    },
+    "quotas": {
+      "counts": "entries returned by load plus later writes",
+      "reached": "new admission stops; crossing write completes; nothing deleted",
+      "event": "RECEIVE_STATE_CAPACITY once per crossing",
+      "commitCapacityRefusal": "entry stays PENDING; admission stops until the next successful ack",
+      "maxSeenSaturationPersistent": true
+    },
+    "failStop": {
+      "frozenBy": "any definite refusal or uncertain result of stage, ack, receiptDone or commitCursor; commit refused with E_SDK_RECEIVE_STATE_FAILED or E_SDK_RECEIVE_STATE_CONFLICT",
+      "frozenUntil": "shutdown and a new client whose start completes a successful load",
+      "pausedBy": "uncertain commit",
+      "pausedUntil": "resolve committed or aborted; failed resolve keeps paused",
+      "blocked": [
+        "admission",
+        "open",
+        "cursor commit",
+        "receipt publication",
+        "acknowledgeMessage",
+        "send",
+        "publishKeyPackage",
+        "invite",
+        "acceptInvite"
+      ],
+      "methodCode": "E_SDK_RECEIVE_STATE_FAILED",
+      "event": "RECEIVE_STATE_FAILED once per entry into the condition",
+      "fallbackToPathWithoutPort": false
+    },
+    "acknowledgeMessage": {
+      "success": [
+        "eventId"
+      ],
+      "readyRequiresInvocationInCurrentRun": true,
+      "alreadyAcknowledged": "success without a write",
+      "unknownNotInvokedOrRejected": "E_SDK_UNKNOWN_MESSAGE",
+      "hostBound": "5 * port-call timeout"
+    },
+    "emission": {
+      "only": "committed application results (READY)",
+      "waitsForListenerBeforeOpen": false,
+      "order": "commit order, loaded entries first",
+      "wake": [
+        "load in start",
+        "commit",
+        "onEvent registration",
+        "redelivery pass"
+      ],
+      "redeliveryIntervalMs": 60000,
+      "oneDispatchPerEntry": true,
+      "acknowledgedBeforeDispatchInvokesNothing": true,
+      "invocationIsAcknowledgement": false
+    },
+    "receipts": "obligation committed with the application result; published after a reserved listener invocation or acknowledgement, at most once per run, receiptDone after first OK true; never reopened",
+    "inboundDiscardedCodes": [
+      "E_SDK_INBOUND_INVALID",
+      "E_SDK_SESSION_FAILED",
+      "E_SDK_UNKNOWN_CODE"
+    ],
+    "atRest": "caller encrypts ciphertext, plaintext until ack, MLS state, peer bindings and metadata; physical erasure not claimed",
+    "callerSemantics": "section 8.2 coordinator and section 8.5; not checked by the SDK"
   }
 }
 ```
@@ -967,3 +1355,5 @@ M3-PUBLIC-RELAYS #522 produces version 0.2.0 under #400/6489853937 and the cited
 The final file SHA-256 must be owner hash-ratified by a `styx-m3-ratification:v1` comment on #400 before `C-DLV` relies on it as ratified and before any dependent implementation. Any byte change voids that ratification. Removing this file fully rolls back `C-SDK`; no code, dependency or persisted bytes are introduced.
 
 M3-INVITE #525 amends only the enumerated sections under #400/6544668029, scope replacement 5 #400/6544596450 and the existing #317/6316724633 act. The version-0.2.0 predecessor is integrated and ratified by #400/6544441411. These version-0.3.0 bytes remain output candidates until separately exact-head hash-ratified; historical O-SCEN3/C-PREV citations remain unchanged.
+
+M3-RECEIVE-1 (contract #557, shared normative source #556) amends only §2, §3, §4, §5, §7, §8, §10 (the non-claim qualifier), §11 and this section, under the scope extension #400/6629916795 and its exact-contract approval; version 0.4.0 replaces 0.3.1. The §9 import exceptions for the reference adapter and its tests are not part of it. These bytes remain output candidates until separately exact-head hash-ratified.

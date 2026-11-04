@@ -474,6 +474,9 @@ export function createReceipts(options) {
       // S1: the option is present when the property exists, own or inherited,
       // whatever its value, `undefined` included.
       publicKeyPresent: 'publicKey' in Object(source),
+      // M3-RECEIVE: the durable receive state of receive-state.js, present
+      // only when the caller configured `ports.receiveState`.
+      receiveState: source.receiveState === undefined ? null : source.receiveState,
     };
   } catch {
     read = null;
@@ -549,6 +552,20 @@ export function createReceipts(options) {
     publicKeyRead = true;
     publicKey = typeof read.publicKey === 'string' && HEX64.test(read.publicKey) ? read.publicKey : null;
     publicKeyUnknown = false;
+  }
+
+  /* M3-RECEIVE (C-DLV section 7.4): with the durable receive state, a valid
+   * kind-4741 event is handed to it in arrival order instead of waiting for a
+   * listener here, and every counted frame is accounted for its barrier. */
+  const durable = read !== null && read.receiveState !== null && typeof read.receiveState === 'object'
+    ? read.receiveState : null;
+  function accountFrame(frame, outcome, eventId = null) {
+    if (durable === null) return;
+    try {
+      durable.account(frame, outcome, eventId);
+    } catch {
+      // The receive state never throws; nothing further here.
+    }
   }
 
   /* C-DLV section 4.6 step (4): every port call and seam call in progress,
@@ -996,6 +1013,7 @@ export function createReceipts(options) {
       kind: EVENT_KIND_MESSAGE_RECEIVED,
       sender: event.pubkey,
       payload: new Uint8Array(plaintext.value),
+      eventId: event.id,
     })], portCallTimeoutMs, () => drainExpired);
     if (!delivered.ok || delivered.value !== true || drainExpired) return null;
     if (job !== null) owed.add(job);
@@ -1130,14 +1148,26 @@ export function createReceipts(options) {
        * keeps its own code ahead of the step-3 failure. */
       if (stopped) return;
       discard(validated.unknown === true ? DISCARD_UNKNOWN_CODE : DISCARD_INVALID);
+      accountFrame(frame, 'invalid');
       return;
     }
-    if (isDuplicate(validated.event.id)) return;
     if (validated.kind === EVENT_KIND_RECEIPT) {
+      accountFrame(frame, 'receipt');
+      if (isDuplicate(validated.event.id)) return;
       remember(validated.event.id);
       await acknowledge(validated.event);
       return;
     }
+    if (durable !== null) {
+      // The durable seen set replaces the in-memory window for kind 4741.
+      try {
+        await durable.admit(validated.event, frame);
+      } catch {
+        accountFrame(frame, 'failed', validated.event.id);
+      }
+      return;
+    }
+    if (isDuplicate(validated.event.id)) return;
     if (waitingIds.has(validated.event.id)) return;
     validating = false;
     waiting.push(validated.event);
