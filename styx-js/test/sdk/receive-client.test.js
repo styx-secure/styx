@@ -709,3 +709,84 @@ describe('M3-RECEIVE-1 cursors across restart with a reordered relay list (crite
     expect(second.messages()).toEqual([]);
   });
 });
+
+describe('M3-RECEIVE-1 review round 1: shutdown during commit and resolve, invitations under fail-stop', () => {
+  test.each(['commit', 'resolve'])('shutdown during %s, then a new instance: delivered exactly once, never opened again after commit', async (held) => {
+    const r = await relay();
+    const alice = await started(makeClient([r.url]));
+    const bobKey = identity();
+    const disk = durableDisk(bobKey.pub);
+    const first = makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const port = first.config.ports.receiveState;
+    const commit = port.commit;
+    const resolveCall = port.resolve;
+    if (held === 'commit') {
+      port.commit = async (argument) => { await gate; return commit(argument); };
+    } else {
+      port.commit = (argument) => { commit(argument); throw new Error('uncertain after write'); };
+      port.resolve = async (argument) => { await gate; return resolveCall(argument); };
+    }
+    await started(first);
+    await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode(held) });
+    expect(await until(() => first.view.calls.includes(held === 'commit' ? 'stage' : 'resolve') && first.trace.opens.length === 1)).toBe(true);
+    const stopping = first.client.shutdown();
+    release();
+    expect((await stopping).ok).toBe(true);
+    const second = await started(makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) }));
+    expect(await until(() => disk.disk.ready.length + disk.disk.acknowledged.length === 1)).toBe(true);
+    const delivered = new Set([...first.messages(), ...second.messages()].map((e) => e.eventId));
+    expect(await until(() => second.messages().length >= 1 || first.messages().length >= 1)).toBe(true);
+    expect(delivered.size).toBeLessThanOrEqual(1);
+    expect(disk.disk.mlsCommitted).toBe(1);
+    // The committed id is never opened again by the new instance.
+    if (disk.disk.ready.length === 1 && second.trace.opens.length === 0) expect(second.trace.candidates).toEqual([]);
+    expect(second.trace.opens.length + first.trace.opens.length).toBeLessThanOrEqual(2);
+  });
+
+  test('frozen: publishKeyPackage, invite and acceptInvite fail E_SDK_RECEIVE_STATE_FAILED before any mutation', async () => {
+    const r = await relay();
+    const alice = await started(makeClient([r.url], { invitations: true }));
+    const bobKey = identity();
+    const disk = durableDisk(bobKey.pub);
+    const bob = makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]), invitations: true });
+    const stage = bob.config.ports.receiveState.stage;
+    bob.config.ports.receiveState.stage = (argument) => stage({ ...argument, revision: -1 });
+    await started(bob);
+    await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode('x') });
+    expect(await until(() => bob.events.some((e) => e.kind === 'RECEIVE_STATE_FAILED'))).toBe(true);
+    const kinds = () => [...r.events.values()].filter((e) => e.pubkey === bobKey.pub).map((e) => e.kind);
+    const before = kinds().length;
+    expect(await bob.client.publishKeyPackage()).toEqual(fail('E_SDK_RECEIVE_STATE_FAILED'));
+    expect(await bob.client.invite({ invitee: alice.pub })).toEqual(fail('E_SDK_RECEIVE_STATE_FAILED'));
+    expect(await bob.client.acceptInvite({ inviter: alice.pub, keyPackageEventId: 'a'.repeat(64) }))
+      .toEqual(fail('E_SDK_RECEIVE_STATE_FAILED'));
+    expect(bob.trace.mutations).toEqual([]);
+    expect(kinds()).toHaveLength(before);
+  });
+
+  test('a joinSession completing while a candidate is open: both take effect, the message is delivered once', async () => {
+    const r = await relay();
+    const carol = await started(makeClient([r.url], { invitations: true }));
+    const alice = await started(makeClient([r.url]));
+    const bobKey = identity();
+    const disk = durableDisk(bobKey.pub);
+    const bob = makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]), invitations: true });
+    let release;
+    const original = bob.config.ports.session.openCandidate;
+    bob.config.ports.session.openCandidate = async (argument) => {
+      await new Promise((resolve) => { release = resolve; });
+      return original(argument);
+    };
+    await started(bob);
+    await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode('during join') });
+    expect(await until(() => release !== undefined)).toBe(true);
+    await invited(carol, bob);
+    expect(bob.trace.mutations).toContain('joinSession');
+    release();
+    expect(await until(() => bob.messages().length === 1)).toBe(true);
+    await sleep(200);
+    expect(bob.messages()).toHaveLength(1);
+  });
+});

@@ -480,11 +480,14 @@ describe('M3-RECEIVE-1 receive state: H17 retries (criterion 13)', () => {
     await h.arrive(0, 'f2');
     h.sess.session.openCandidate = () => ({ receiveOutcome: 'application', ticket: 1 });
     await h.arrive(1, 'f2');
+    // An out-of-set receiveOutcome is an unknown closed value (one discard), then retry.
+    expect(h.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
     h.sess.session.openCandidate = () => ({ code: 'E_OUT_OF_SET' });
     h.clock.advance(RETRY_INTERVAL_MS);
     await flush();
-    expect(h.kinds()).toEqual(['INBOUND_DISCARDED']);
-    expect(h.events[0].code).toBe('E_SDK_UNKNOWN_CODE');
+    expect(h.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
+      { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+    expect(h.store.disk.pending).toHaveLength(1);
     h.sess.session.openCandidate = original;
     h.clock.advance(RETRY_INTERVAL_MS);
     await flush();
@@ -988,5 +991,100 @@ describe('M3-RECEIVE-1 receive state: closed edges', () => {
     h.receive.stop();
     expect(await h.receive.acknowledge(event.id)).toBe('E_SDK_CLIENT_STOPPED');
     expect(h.store.count('ack')).toBe(0);
+  });
+});
+
+describe('M3-RECEIVE-1 receive state: review round 1', () => {
+  test('a commitCursor queued behind another write is not written once an invitation started meanwhile', async () => {
+    const h = harness();
+    await h.start();
+    const event = await h.arrive(0, 'hold');
+    let release;
+    const ack = h.store.port.ack;
+    h.store.port.ack = async (argument) => { await new Promise((resolve) => { release = resolve; }); return ack(argument); };
+    const acking = h.receive.acknowledge(event.id);
+    await flush();
+    h.eose(0);
+    await flush();
+    h.receive.invitationStarted();
+    release();
+    expect(await acking).toBeNull();
+    await flush();
+    expect(h.store.count('commitCursor')).toBe(0);
+    h.receive.invitationEnded();
+    h.receive.issue(0);
+    h.eose(0);
+    await flush();
+    expect(h.store.count('commitCursor')).toBe(1);
+  });
+
+  test('a commitCursor queued behind another write is not written after a drop accounted meanwhile', async () => {
+    const h = harness();
+    await h.start();
+    const event = await h.arrive(0, 'hold2');
+    let release;
+    const ack = h.store.port.ack;
+    h.store.port.ack = async (argument) => { await new Promise((resolve) => { release = resolve; }); return ack(argument); };
+    const acking = h.receive.acknowledge(event.id);
+    await flush();
+    h.eose(0);
+    await flush();
+    const lost = h.frame(0, 'lost-meanwhile');
+    h.receive.countFrame(lost.record);
+    h.receive.account(lost.record, 'dropped');
+    release();
+    await acking;
+    await flush();
+    expect(h.store.count('commitCursor')).toBe(0);
+  });
+
+  test('a capacity refusal is lifted by a later successful commit, also a rejection', async () => {
+    const h = harness();
+    await h.start();
+    h.store.faults.push({ method: 'commit', kind: 'code', code: 'E_SDK_RECEIVE_STATE_CAPACITY' });
+    h.sess.script.set('bad', 'reject');
+    await h.arrive(0, 'bad');
+    expect(h.kinds()).toEqual(['RECEIVE_STATE_CAPACITY']);
+    h.clock.advance(RETRY_INTERVAL_MS);
+    await flush();
+    expect(h.store.disk.pending).toEqual([]);
+    await h.arrive(0, 'after');
+    expect(h.deliveries.map((d) => d.label)).toEqual(['plain:after']);
+  });
+
+  test('a commit queued behind another write does not start after stop; the entry stays PENDING', async () => {
+    const h = harness();
+    await h.start();
+    const event = await h.arrive(0, 'first');
+    let release;
+    const ack = h.store.port.ack;
+    h.store.port.ack = async (argument) => { await new Promise((resolve) => { release = resolve; }); return ack(argument); };
+    const acking = h.receive.acknowledge(event.id);
+    await flush();
+    await h.arrive(1, 'second');
+    h.receive.stop();
+    release();
+    await acking;
+    await flush();
+    expect(h.store.count('commit')).toBe(1);
+    expect(h.store.disk.pending.map((e) => utf8Decode(e.ciphertext))).toEqual(['second']);
+  });
+
+  test('H17 13(b) with many slow messages: retried within one interval is separate from delivered', async () => {
+    const h = harness();
+    await h.start();
+    for (let i = 0; i < 5; i += 1) h.sess.script.set(`s${i}`, ['retry', 'application']);
+    for (let i = 0; i < 5; i += 1) await h.arrive(0, `s${i}`);
+    h.state.audience = false;
+    h.clock.advance(RETRY_INTERVAL_MS);
+    await flush(80);
+    // Every entry was retried and committed within the interval; nothing delivered yet.
+    expect(h.sess.opens).toHaveLength(10);
+    expect(h.store.count('commit')).toBe(5);
+    expect(h.deliveries).toEqual([]);
+    h.state.audience = true;
+    h.receive.wake();
+    await flush(80);
+    expect(h.deliveries.map((d) => d.label)).toEqual(['plain:s0', 'plain:s1', 'plain:s2', 'plain:s3', 'plain:s4']);
   });
 });
