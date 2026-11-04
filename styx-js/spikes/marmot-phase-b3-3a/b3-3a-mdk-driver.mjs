@@ -13,6 +13,8 @@ const DEFAULT_BINARY = resolve(
   directory, '..', 'marmot-phase-b3', 'mdk-peer', 'target', 'debug', 'styx-b3-mdk-peer',
 );
 const RPC_TIMEOUT_MS = 60_000;
+// Error code of an RpcError with terminate = true in the MDK peer (fatal_peer).
+const MDK_PEER_QUARANTINED = 'mdk_peer_quarantined';
 
 function exactFields(value, fields, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -32,9 +34,12 @@ export class MdkB33aProcess {
   #pending = new Map();
   #stderr = '';
   #spawnError;
+  #quarantined = false;
+  #exited;
 
   constructor(binary = DEFAULT_BINARY) {
     this.#child = spawn(binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    this.#exited = new Promise((resolveExit) => this.#child.once('exit', resolveExit));
     createInterface({ input: this.#child.stdout, crlfDelay: Infinity })
       .on('line', (line) => this.#receive(line));
     this.#child.stderr.setEncoding('utf8');
@@ -85,6 +90,10 @@ export class MdkB33aProcess {
       this.#rejectAll(error);
       return;
     }
+    // The peer writes a quarantine response and then exits on its own
+    // (RpcError terminate), so its stdin may already be closed when close()
+    // runs. Record it even when the request has already timed out.
+    if (!response.ok && response.error.code === MDK_PEER_QUARANTINED) this.#quarantined = true;
     const pending = this.#pending.get(response.id);
     if (!pending) {
       const error = new Error('MDK peer returned an unexpected response id');
@@ -124,9 +133,31 @@ export class MdkB33aProcess {
     });
   }
 
+  #hasExited() {
+    return this.#child.exitCode !== null || this.#child.signalCode !== null;
+  }
+
+  async #waitForExit(label) {
+    if (this.#hasExited()) return;
+    let timer;
+    try {
+      await Promise.race([this.#exited, new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} MDK peer did not exit; stderr=${this.#stderr}`);
+          error.code = B33A_ERROR.INVALID;
+          reject(error);
+        }, RPC_TIMEOUT_MS);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  // Resolves only after the peer process has exited, so its durable storage
+  // is closed before a caller copies it or opens it from a fresh process.
   async close() {
-    if (this.#child.exitCode === null) {
-      try { await this.request('checkpoint_and_exit'); } finally { this.#child.stdin.end(); }
-    }
+    if (this.#hasExited()) return;
+    // A quarantined peer is already exiting: never write to it.
+    if (this.#quarantined) return this.#waitForExit('quarantined');
+    try { await this.request('checkpoint_and_exit'); } finally { this.#child.stdin.end(); }
+    return this.#waitForExit('checkpointed');
   }
 }
