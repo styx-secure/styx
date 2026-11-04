@@ -11,7 +11,7 @@ use cgka_engine::account_identity_proof::{
     AccountIdentityProofRequest, AccountIdentityProofSigner,
 };
 use cgka_engine::canonicalization::ConvergenceStatus;
-use cgka_engine::{ConvergenceClock, Engine, EngineBuilder, SystemConvergenceClock};
+use cgka_engine::{ConvergenceClock, Engine, EngineBuilder, ManualConvergenceClock};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
 use cgka_traits::engine::{
@@ -40,8 +40,22 @@ const MAX_GROUP_ID_BYTES: usize = 64;
 const MAX_APPLICATION_EVENT_BYTES: usize = 320 * 1024;
 const MAX_GROUP_MESSAGE_BYTES: usize = 1024 * 1024;
 
+// MDK schedules a convergence pass with a dual clock: process-local monotonic
+// milliseconds, and persisted wall milliseconds that rebase the pass deadlines
+// after a restart. This synthetic peer drives convergence only through the
+// explicit `monotonic_ms` of its requests, so both domains are frozen at the same
+// values in every peer process: real elapsed time, host load and restarts can
+// neither mature nor expire a settlement quiescence window. After a restart the
+// remaining quiescence is therefore always the full window, measured from the
+// request's `monotonic_ms`.
+const HARNESS_CONVERGENCE_MONOTONIC_MS: u64 = 0;
+const HARNESS_CONVERGENCE_WALL_MS: u64 = 1_700_000_000_000;
+
 fn harness_convergence_clock() -> Arc<dyn ConvergenceClock> {
-    Arc::new(SystemConvergenceClock::default())
+    Arc::new(ManualConvergenceClock::new(
+        HARNESS_CONVERGENCE_MONOTONIC_MS,
+        HARNESS_CONVERGENCE_WALL_MS,
+    ))
 }
 
 #[derive(Default)]
