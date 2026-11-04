@@ -120,11 +120,11 @@ async function flow(a, b) {
 }
 
 describe('M3-INVITE, caller ports over loopback only', () => {
-  test('0.2.0 rejected, exactly nine members and 22 codes; partial groups invalid', async () => {
+  test('0.2.0 rejected, exactly ten members and 27 codes; partial groups invalid', async () => {
     const r = await relay(); const a = make([r]);
     expect(createStyxClient({ ...a.config, interfaceVersion: 'styx-m3-sdk/0.2.0-experimental' })).toEqual(fail('E_SDK_UNSUPPORTED_VERSION'));
-    expect(Reflect.ownKeys(a.client).sort()).toEqual(['start', 'send', 'getDelivery', 'cancel', 'onEvent', 'shutdown', 'publishKeyPackage', 'invite', 'acceptInvite'].sort());
-    expect(Reflect.ownKeys(SdkResultCode)).toHaveLength(22);
+    expect(Reflect.ownKeys(a.client).sort()).toEqual(['start', 'send', 'getDelivery', 'cancel', 'onEvent', 'shutdown', 'publishKeyPackage', 'invite', 'acceptInvite', 'acknowledgeMessage'].sort());
+    expect(Reflect.ownKeys(SdkResultCode)).toHaveLength(27);
     for (const name of ['createKeyPackage', 'startSession', 'joinSession']) {
       const session = { ...a.config.ports.session }; delete session[name];
       expect(createStyxClient({ ...a.config, ports: { ...a.config.ports, session } })).toEqual(fail('E_SDK_INVALID_CONFIG'));

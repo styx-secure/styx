@@ -332,10 +332,11 @@ describe('owed receipt drain', () => {
     await sleep(10);
     expect(opens).toBe(1);
     expect(a.events.filter((e) => e.kind === 'MESSAGE_RECEIVED')).toEqual([
-      { kind: 'MESSAGE_RECEIVED', sender: b.pub, payload: new Uint8Array([5]) },
+      { kind: 'MESSAGE_RECEIVED', sender: b.pub, payload: new Uint8Array([5]), eventId: expect.stringMatching(/^[0-9a-f]{64}$/) },
     ]);
     const receipts = relays.flatMap((r) => r.events).filter((e) => e.kind === 4742);
     expect(receipts).toHaveLength(2);
+    expect(a.events.find((e) => e.kind === 'MESSAGE_RECEIVED').eventId).toBe(receipts[0].tags[1][1]);
     expect(new Set(receipts.map((event) => event.id)).size).toBe(1);
     const invoked = trace.findIndex((entry) => entry.type === 'reserved-invocation');
     expect(invoked).toBeGreaterThanOrEqual(0);

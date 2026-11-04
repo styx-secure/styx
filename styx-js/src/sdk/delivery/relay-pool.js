@@ -92,6 +92,9 @@ function relayState(url, index) {
     losses: 0,
     // Armed reconnection timer handle on the clock port (C-SDK §8.4).
     reconnectHandle: NOT_ARMED,
+    // The subscription id of the current pool (M3-RECEIVE: one per pool when
+    // the caller supplies `subscriptionIdFor`, else the client's single id).
+    subscriptionId: null,
   };
 }
 
@@ -300,6 +303,13 @@ function publicAttempt(record) {
  *   `{ nextUint32 }`, used only for reconnection delays.
  * @param {number} options.perRelayTimeoutMs - per relay, per attempt.
  * @param {string} options.subscriptionId - one per client (C-DLV §5.4).
+ * @param {Function} [options.subscriptionIdFor] - M3-RECEIVE: called with the
+ *   relay index whenever a pool is prepared, before its issue notice; its
+ *   string return is that pool's subscription id for its `REQ`, re-requests
+ *   and inbound frame matching (C-DLV §5.4). Absent: `subscriptionId`.
+ * @param {Function} [options.onRelayConnected] - M3-RECEIVE: called with the
+ *   relay index when a pool's connection attempt settles connected before the
+ *   close; its throw is ignored.
  * @param {object} options.filter - the subscription filter (C-DLV §5.4).
  * @param {object} [options.transport] - in-process transport port
  *   `{ create(url) -> pool }`. The default creates the unchanged `RelayPool`
@@ -319,6 +329,8 @@ export function createRelaySet(options) {
     subscriptionId,
     filter,
     subscriptionSince,
+    subscriptionIdFor,
+    onRelayConnected: connectedSeam,
     transport,
     reconnectDelay: delayOf = reconnectDelay,
   } = options;
@@ -467,6 +479,19 @@ export function createRelaySet(options) {
     } catch {
       // as above
     }
+    // M3-RECEIVE (C-DLV section 5.4): with `subscriptionIdFor`, every prepared
+    // pool gets its own subscription id, read before the issue notice below; a
+    // fault or a value that is not a non-empty string of at most 64 characters
+    // keeps the client's single id.
+    state.subscriptionId = subscriptionId;
+    if (typeof subscriptionIdFor === 'function') {
+      try {
+        const own = subscriptionIdFor(state.index);
+        if (typeof own === 'string' && own.length > 0 && own.length <= 64) state.subscriptionId = own;
+      } catch {
+        // as above
+      }
+    }
     let since = null;
     try {
       if (typeof subscriptionSince === 'function') since = subscriptionSince(state.index);
@@ -475,7 +500,7 @@ export function createRelaySet(options) {
       // Faulty cursor seam: prepare the original unbounded filter.
     }
     try {
-      const subscribed = pool.subscribe(subscriptionId,
+      const subscribed = pool.subscribe(state.subscriptionId,
         Number.isSafeInteger(since) && since >= 0 ? { ...filter, since } : filter);
       Promise.resolve(subscribed).catch(() => {});
     } catch {
@@ -537,6 +562,13 @@ export function createRelaySet(options) {
         if (state.connected) {
           state.losses = 0;
           onRelayConnected(state.index);
+          if (typeof connectedSeam === 'function') {
+            try {
+              connectedSeam(state.index);
+            } catch {
+              // A faulty observer never changes a relay.
+            }
+          }
         } else {
           settleLostConnection(state);
           retireAndScheduleReplacement(state);
@@ -660,7 +692,7 @@ export function createRelaySet(options) {
     // C-DLV §5.4: a frame that is not one of the five known kinds, or, for an
     // EVENT, EOSE or CLOSED frame, names another subscription, is ignored.
     if (kind !== 'EVENT' && kind !== 'OK' && kind !== 'EOSE' && kind !== 'NOTICE' && kind !== 'CLOSED') return;
-    if (kind !== 'OK' && kind !== 'NOTICE' && data[1] !== subscriptionId) return;
+    if (kind !== 'OK' && kind !== 'NOTICE' && data[1] !== states[relayIndex].subscriptionId) return;
     if (kind === 'OK') {
       const eventId = data[1];
       const attempt = attemptsByEventId.get(eventId);
@@ -1121,7 +1153,7 @@ export function createRelaySet(options) {
       // A faulty observer cannot prevent the best-effort base request.
     }
     try {
-      Promise.resolve(state.pool.subscribe(subscriptionId, since === null ? filter : { ...filter, since })).catch(() => {});
+      Promise.resolve(state.pool.subscribe(state.subscriptionId, since === null ? filter : { ...filter, since })).catch(() => {});
     } catch {
       // No successful result is inferred from a faulty transport.
     }

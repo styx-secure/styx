@@ -1,6 +1,9 @@
 // M3-CATCHUP: local-clock cursors, one per configured relay (not per pool).
 // No EVENT field participates in a cursor. Catch-up is best effort and has no
 // host timer backstop, unlike publication deadlines and attempt timeouts.
+// M3-RECEIVE: with the optional `cursors` source (the durable receive state of
+// receive-state.js), the issue notice, the `since` of every request and the
+// EOSE observation are delegated to it; the timer below is unchanged.
 const INTERVAL_MS = 10000;
 const MARGIN_SECONDS = 120;
 const NOT_ARMED = Symbol('catch-up: no timer armed');
@@ -11,7 +14,7 @@ function ignoreRejection(value) {
   Promise.resolve(value).catch(() => {});
 }
 
-export function createCatchUp({ relayCount, subscriptionId, clock, isRunning, resubscribe }) {
+export function createCatchUp({ relayCount, subscriptionId, clock, isRunning, resubscribe, cursors = null }) {
   const states = Array.from({ length: relayCount }, () => ({ syncedUntil: null, outstanding: null }));
   let frozen = false;
   let disposed = false;
@@ -30,6 +33,7 @@ export function createCatchUp({ relayCount, subscriptionId, clock, isRunning, re
   const subscriptionSince = (index) => {
     const state = stateAt(index);
     if (state === null || frozen || disposed) return null;
+    if (cursors !== null) return cursors.issue(index);
     try {
       const now = clock.now();
       ignoreRejection(now);
@@ -44,6 +48,10 @@ export function createCatchUp({ relayCount, subscriptionId, clock, isRunning, re
   };
   const observe = (frame) => {
     if (frozen || disposed || !frame || !Array.isArray(frame.data)) return;
+    if (cursors !== null) {
+      cursors.observe(frame);
+      return;
+    }
     if (frame.data[0] !== 'EOSE' || frame.data[1] !== subscriptionId) return;
     const state = stateAt(frame.relayIndex);
     if (state === null || state.outstanding === null) return;
@@ -62,7 +70,8 @@ export function createCatchUp({ relayCount, subscriptionId, clock, isRunning, re
         if (!live()) return;
         handle = NOT_ARMED;
         for (let index = 0; index < states.length && live(); index += 1) {
-          try { ignoreRejection(resubscribe(index, since(index))); } catch { /* best effort */ }
+          const value = cursors !== null ? cursors.since(index) : since(index);
+          try { ignoreRejection(resubscribe(index, value)); } catch { /* best effort */ }
         }
         arm();
       }, INTERVAL_MS);

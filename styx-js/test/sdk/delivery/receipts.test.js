@@ -455,16 +455,18 @@ describe('section 7.1 step 2 -- the kind', () => {
 
 describe('section 7.1 step 3 -- the tag list of kind 4741', () => {
   const withTags = (harness, tags, content) => {
-    harness.module.ingest(frame(['EVENT', 'sub', buildEvent({
+    const event = buildEvent({
       priv: harness.other.priv, pub: harness.other.pub, tags, content,
-    })]));
+    });
+    harness.module.ingest(frame(['EVENT', 'sub', event]));
+    return event;
   };
 
   test('the three fixed tags, in order, are accepted', async () => {
     const harness = makeHarness();
-    withTags(harness, [['p', harness.owner.pub], ['v', VERSION], ['n', FRAME_N]], 'AA==');
+    const event = withTags(harness, [['p', harness.owner.pub], ['v', VERSION], ['n', FRAME_N]], 'AA==');
     await flush();
-    expect(harness.events).toEqual([{ kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) }]);
+    expect(harness.events).toEqual([{ kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]), eventId: event.id }]);
   });
 
   test('the three fixed tags plus ["r", "1"] as the fourth are accepted', async () => {
@@ -864,12 +866,14 @@ describe('section 7.2 -- a valid kind-4741 event', () => {
     expect(Array.from(harness.opens[0].ciphertext)).toEqual([1, 2, 3]);
   });
 
-  test('the MESSAGE_RECEIVED event carries exactly kind, sender and payload and is frozen', async () => {
+  test('the MESSAGE_RECEIVED event carries exactly kind, sender, payload and eventId and is frozen', async () => {
     const harness = makeHarness();
-    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    const message = messageEvent({ sender: harness.other, owner: harness.owner.pub });
+    harness.module.ingest(eventFrame(message));
     await flush();
     const [event] = harness.events;
-    expect(Object.keys(event).sort()).toEqual(['kind', 'payload', 'sender']);
+    expect(Object.keys(event).sort()).toEqual(['eventId', 'kind', 'payload', 'sender']);
+    expect(event.eventId).toBe(message.id);
     expect(Object.isFrozen(event)).toBe(true);
     expect(() => {
       event.sender = 'x';
@@ -1519,7 +1523,7 @@ describe('generative invariants over a deterministic draw stream', () => {
         }
         seen.add(step.event.id);
         if (step.kind === 4741) {
-          expectedEvents.push({ kind: 'MESSAGE_RECEIVED', sender: sender.pub, payload: new Uint8Array(step.payload) });
+          expectedEvents.push({ kind: 'MESSAGE_RECEIVED', sender: sender.pub, payload: new Uint8Array(step.payload), eventId: step.event.id });
           if (step.askReceipt) expectedReceiptsFor.push(step.event.id);
         } else {
           expectedAcks.push({ eventId: step.event.tags[1][1], recipient: sender.pub });
@@ -1697,14 +1701,14 @@ describe('O-SCEN3 duplicateAndReordered / inboundDuplicateReordered -- exact rep
     /* The recipient: relay1 replays in reverse insertion order, each twice. */
     await recipient.deliver(21105, e2, 1);
     expect(recipient.harness.events).toEqual([
-      { kind: 'MESSAGE_RECEIVED', sender: senderKey.pub, payload: new Uint8Array([0x50, 0x32]) },
+      { kind: 'MESSAGE_RECEIVED', sender: senderKey.pub, payload: new Uint8Array([0x50, 0x32]), eventId: e2.id },
     ]);
     expect(recipient.harness.published.map((receipt) => receipt.tags[1][1])).toEqual([e2.id]);
     await recipient.deliver(21115, e2, 1);
     await recipient.deliver(21125, e1, 1);
     expect(recipient.harness.events).toHaveLength(2);
     expect(recipient.harness.events[1]).toEqual(
-      { kind: 'MESSAGE_RECEIVED', sender: senderKey.pub, payload: new Uint8Array([0x50, 0x31]) },
+      { kind: 'MESSAGE_RECEIVED', sender: senderKey.pub, payload: new Uint8Array([0x50, 0x31]), eventId: e1.id },
     );
     await recipient.deliver(21135, e1, 1);
     /* 21 205: relay0's insertion-order replay, e1 then e2, both dropped. */
@@ -1760,7 +1764,7 @@ describe('O-SCEN3 offlineRecipient -- exact replays', () => {
     });
     await recipient.deliver(61105, message, 0);
     expect(recipient.harness.events).toEqual([
-      { kind: 'MESSAGE_RECEIVED', sender: sender.harness.owner.pub, payload: new Uint8Array([0x50]) },
+      { kind: 'MESSAGE_RECEIVED', sender: sender.harness.owner.pub, payload: new Uint8Array([0x50]), eventId: message.id },
     ]);
     expect(recipient.harness.published).toHaveLength(1);
     const receipt = recipient.harness.published[0];
@@ -1887,10 +1891,11 @@ describe('round-1 counterexamples', () => {
   test('a signature return carrying an unknown closed slot is E_SDK_UNKNOWN_CODE after the message', async () => {
     const harness = makeHarness();
     harness.options.identity.sign = () => Object.assign(new Uint8Array(64), { code: 'E_FUTURE_RESULT' });
-    harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+    const message = messageEvent({ sender: harness.other, owner: harness.owner.pub });
+    harness.module.ingest(eventFrame(message));
     await flush();
     expect(harness.events).toEqual([
-      { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) },
+      { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]), eventId: message.id },
       { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
     ]);
     expect(harness.published).toHaveLength(0);
@@ -2206,10 +2211,11 @@ describe('(c)1 -- the five closed slots are read on any object return', () => {
   test('a typed-array return that carries a closed slot outside its set is E_SDK_UNKNOWN_CODE', async () => {
     const sign = makeHarness();
     sign.options.identity.sign = () => Object.assign(new Uint8Array(64), { state: 'FUTURE_STATE' });
-    sign.module.ingest(eventFrame(messageEvent({ sender: sign.other, owner: sign.owner.pub })));
+    const message = messageEvent({ sender: sign.other, owner: sign.owner.pub });
+    sign.module.ingest(eventFrame(message));
     await flush();
     expect(sign.events).toEqual([
-      { kind: 'MESSAGE_RECEIVED', sender: sign.other.pub, payload: new Uint8Array([7, 8, 9]) },
+      { kind: 'MESSAGE_RECEIVED', sender: sign.other.pub, payload: new Uint8Array([7, 8, 9]), eventId: message.id },
       { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
     ]);
     expect(sign.published).toHaveLength(0);
@@ -2296,10 +2302,11 @@ describe('C1 -- C-DLV section 4.5 on the clock return (owner decision R4)', () =
       Object.assign(new Number(12000), { code: 'E_FUTURE_RESULT' }),
     ]) {
       const harness = makeHarness({ clock: { now: () => reading } });
-      harness.module.ingest(eventFrame(messageEvent({ sender: harness.other, owner: harness.owner.pub })));
+      const message = messageEvent({ sender: harness.other, owner: harness.owner.pub });
+      harness.module.ingest(eventFrame(message));
       await flush();
       expect(harness.events).toEqual([
-        { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]) },
+        { kind: 'MESSAGE_RECEIVED', sender: harness.other.pub, payload: new Uint8Array([7, 8, 9]), eventId: message.id },
         { kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' },
       ]);
       expect(harness.published).toHaveLength(0);

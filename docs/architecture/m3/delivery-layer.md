@@ -19,9 +19,9 @@ Invitation cryptography is delegated entirely to caller session and identity por
 The outer bounds of #400 §2(b), restated in interface §2, bind every rule below:
 
 1. Every outbound item has a finite attempt count (`maxAttempts`, at most 10) and a finite deadline (`deadlineMs`, at most 600 000 ms). When either is exhausted without the item's success state, the item reaches a terminal failed state. There is no unbounded retransmission.
-2. No exactly-once, ordering or cross-restart guarantee. The duplicate suppression of §8 is a bounded, best-effort, per-process measure and is not an exactly-once claim.
+2. No exactly-once, ordering or cross-restart guarantee. The duplicate suppression of §8 is a bounded, best-effort, per-process measure and is not an exactly-once claim. This stays the default without `ports.receiveState`. With it, the conditional durable-receive exception of interface §2 bound 2 and §8.5 applies to inbound kind-4741 events only, as §7.4 implements it: an admitted event whose `stage` completed durably stays recoverable locally across stop, restart and crash, no id whose outcome was durably committed is opened again, and every committed application result is redelivered until it is acknowledged; it adds no completeness, global ordering or exactly-once claim.
 3. Relay acceptance (`RELAY_ACCEPTED`, `RELAY_ACCEPTED_AWAITING_RECEIPT`, per-relay `ACCEPTED`) and recipient receipt (`RECIPIENT_RECEIPT_RECEIVED`) are distinct. A valid receipt establishes only that a structure signed with the recipient identity's key acknowledged this message's event id (§7.3). A conforming recipient SDK sends a receipt only after it opened the message and emitted `MESSAGE_RECEIVED` (§7.2), but the sender cannot verify that. Neither relay acceptance nor a receipt proves that a person read the message.
-4. Process lifetime only. Every queue, timer, window and record of this document lives in the memory of one client in one process. On an explicit, orderly `shutdown()` every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case.
+4. Process lifetime only. Every queue, timer, window and record of this document lives in the memory of one client in one process. On an explicit, orderly `shutdown()` every non-terminal item is reported as `LOST_ON_SHUTDOWN`. After a crash or abrupt termination nothing is reported and nothing is recovered; no claim is made for that case. The sole exception is the receive state that the caller's `ports.receiveState` holds under bound 2; the outbound queue is never recovered.
 5. No normative wire format. The structures of §6 are SDK-internal, experimental and versioned with `SDK_WIRE_VERSION`, independently of the interface version string. They are not a Styx protocol semantic and not a Nostr standard.
 6. Relay URLs reach the delivery layer only from `config.relays`. No module contains a relay URL literal, a default relay list or a fallback relay. Hosts are loopback IP literals or caller-allowlisted `wss:` hosts under interface §4.1, with no host literal or default list in lane code; lane tests, preview and examples remain loopback-only.
 
@@ -54,6 +54,9 @@ Fixed values (not configurable in this version):
 | Relay supervision interval | 1 000 ms | §5.2. |
 | Catch-up interval | 10 000 ms | §5.4; clock port only, best effort, no host backstop. |
 | Catch-up margin | 120 s | §5.4; overlap before a relay's local-clock cursor. |
+| Receive retry interval | 10 000 ms (the catch-up interval) | §7.4, with `ports.receiveState` only: periodic pass over `PENDING` entries and per-entry in-run retry budget; clock port only, no host backstop. |
+| Redelivery interval | 60 000 ms | §7.4, with `ports.receiveState` only: redelivery pass of unacknowledged `READY` entries; clock port only, no host backstop. |
+| Receive-state bounds | five port-call timeouts; two port-call timeouts | §7.4, with `ports.receiveState` only: five port-call timeouts bound `acknowledgeMessage`; the shutdown and failed-`start()` waits for the open unit, the write chain and a receipt in progress use the existing settle bound of two port-call timeouts, so the shutdown bound does not grow. |
 | Reconnect interval | the backoff schedule of §4.3, by consecutive failures of that relay, capped at 30 000 ms | §5.2. |
 
 The SDK does not inspect the size of a ciphertext or a plaintext that the session port returns (interface §8.2). Relays may refuse large events; such a refusal is an ordinary relay outcome (§5.3). Inbound, the SDK reads only the length of an event's `content` string (§7.1 step 1), never ciphertext bytes; a sender whose session port returns more than 262 146 bytes (whose base64 exceeds 349 528 characters) publishes an event that conforming recipients discard, and the sender is not told.
@@ -156,7 +159,7 @@ The delivery layer uses `RelayPool` from `styx-js/src/transport/nostr-transport.
 
 A relay's pool is never reconnected. After its connection is lost or its connection attempt fails, it is retired and replaced by a new pool (§5.2). `RelayPool` handles the close of a socket by deleting that URL's entry from its own connection map; replacing the pool confines a late close of an old socket to the retired pool, so it cannot remove a newer socket from the map that `dispose()` closes.
 
-Each pool is prepared, before it connects, in this order: the SDK calls its `disconnectAll()`, which on a pool with no connection only clears the pool's own automatic-reconnect flag, so the pool never schedules a reconnection timer of its own; it calls `subscribe(subscriptionId, filter)` (§5.4), with `since` on a replacement when that relay has a cursor, which `RelayPool` stores and sends when the connection opens; and it attaches one listener to the pool's `messages` emitter. The SDK never calls `reconnect()`, `addRelay()`, `removeRelay()` or `publishAndVerify()`, and never reads or writes a property whose name starts with `_`.
+Each pool is prepared, before it connects, in this order: the SDK calls its `disconnectAll()`, which on a pool with no connection only clears the pool's own automatic-reconnect flag, so the pool never schedules a reconnection timer of its own; it calls `subscribe(subscriptionId, filter)` (§5.4; with `ports.receiveState`, the pool's own subscription id), with `since` on a replacement when that relay has a cursor (with `ports.receiveState`, also on a first pool with a loaded cursor), which `RelayPool` stores and sends when the connection opens; and it attaches one listener to the pool's `messages` emitter. The SDK never calls `reconnect()`, `addRelay()`, `removeRelay()` or `publishAndVerify()`, and never reads or writes a property whose name starts with `_`.
 
 ### 5.2 Connection, supervision and reconnection
 
@@ -181,13 +184,20 @@ Each pool is prepared, before it connects, in this order: the SDK calls its `dis
 
 ### 5.4 Subscribe
 
-`start()` registers one subscription on every pool before it connects (§5.1), so `RelayPool` sends the `REQ` when each connection opens, including on replacement pools. It uses one `subscriptionId` per client (the letter `s` followed by 32 lowercase hexadecimal digits from `randomBytes`) and the filter `{ "kinds": [4741, 4742], "#p": [<own public key>] }`. The first subscription of a relay has no `since`; no subscription has a `limit`: a relay may replay events stored before this client started, including from earlier process lifetimes. That replay is a possibility, not a guarantee, and §8 treats it as a duplicate source. Frames from each pool are handled independently as they arrive; no relay waits for another. A frame that is not a JSON array, is not `EVENT`, `OK`, `EOSE`, `NOTICE` or `CLOSED`, or, for an `EVENT`, `EOSE` or `CLOSED` frame, names another subscription is ignored; `OK` frames are matched by event id (§5.3).
+`start()` registers one subscription on every pool before it connects (§5.1), so `RelayPool` sends the `REQ` when each connection opens, including on replacement pools. Without `ports.receiveState` it uses one `subscriptionId` per client (the letter `s` followed by 32 lowercase hexadecimal digits from `randomBytes`); with it, each pool has its own id (below). The filter is `{ "kinds": [4741, 4742], "#p": [<own public key>] }`. Without `ports.receiveState` the first subscription of a relay has no `since`; no subscription has a `limit`: a relay may replay events stored before this client started, including from earlier process lifetimes. That replay is a possibility, not a guarantee, and §8 treats it as a duplicate source. Frames from each pool are handled independently as they arrive; no relay waits for another. A frame that is not a JSON array, is not `EVENT`, `OK`, `EOSE`, `NOTICE` or `CLOSED`, or, for an `EVENT`, `EOSE` or `CLOSED` frame, names another subscription is ignored; `OK` frames are matched by event id (§5.3).
 
-For each relay index in `config.relays`, surviving pool replacement, the client keeps `syncedUntil` in local-clock seconds. Each issued initial, replacement or repeated subscription records `floor(clock.now() / 1000)` as outstanding; an invalid clock reading (interface §8.4) records nothing. An `EOSE` naming this subscription from the relay's current pool advances the cursor to the earliest outstanding issue time if later than its current value, then clears that relay's outstanding times. Without an outstanding request it does nothing. No field of an `EVENT` frame is read for the cursor. Without an `EOSE` there is no cursor. A relay's `since` is `max(0, syncedUntil - 120)` when a cursor exists, otherwise absent.
+For each relay index in `config.relays`, surviving pool replacement, the client keeps `syncedUntil` in local-clock seconds. Without `ports.receiveState` the cursor rules of this paragraph apply; with it, the durable cursor rules below replace them. Each issued initial, replacement or repeated subscription records `floor(clock.now() / 1000)` as outstanding; an invalid clock reading (interface §8.4) records nothing. An `EOSE` naming this subscription from the relay's current pool advances the cursor to the earliest outstanding issue time if later than its current value, then clears that relay's outstanding times. Without an outstanding request it does nothing. No field of an `EVENT` frame is read for the cursor. Without an `EOSE` there is no cursor. A relay's `since` is `max(0, syncedUntil - 120)` when a cursor exists, otherwise absent.
 
-While `RUNNING`, every catch-up interval the client re-issues this same subscription id and base filter to each relay whose current pool's `healthCheck()` reports connected, adding `since` when present and omitting it otherwise. Thus a lost initial `REQ` or `EOSE` does not stop recovery. Each re-request records its issue time. A prepared replacement already uses that relay's current `since`, if present, on its first `REQ`. Re-requests pass through unchanged inbound validation and the 4 096-id duplicate window (§7.1, §8). Catch-up is inert from synchronous shutdown step (1), never re-requests during the receipt drain, and its handle is cleared in step (4) after the `LOST_ON_SHUTDOWN` events.
+While `RUNNING`, every catch-up interval the client re-issues this same subscription id (with `ports.receiveState`, the current pool's id) and base filter to each relay whose current pool's `healthCheck()` reports connected, adding `since` when present and omitting it otherwise. Thus a lost initial `REQ` or `EOSE` does not stop recovery. Each re-request records its issue time. A prepared replacement already uses that relay's current `since`, if present, on its first `REQ`. Re-requests pass through unchanged inbound validation and the 4 096-id duplicate window (§7.1, §8; with `ports.receiveState`, the durable `seen` set for kind 4741). Catch-up is inert from synchronous shutdown step (1), never re-requests during the receipt drain, and its handle is cleared in step (4) after the `LOST_ON_SHUTDOWN` events.
 
 S7 adds the synchronous option `subscriptionSince(relayIndex)` to the relay set: it is called whenever a pool is prepared, notifying the request issue, and its non-negative safe-integer return adds `since`; every other return or throw uses the base filter. The synchronous member `resubscribe(relayIndex, since)` never throws: only for a connected current pool it issues `subscribe(subscriptionId, { ...filter, since })` for a non-negative safe integer, the base filter for `null`, and otherwise nothing. Its connected request gives the same synchronous issue notice. After `freeze()` or `dispose()` it does nothing.
+
+**With `ports.receiveState`** (interface §8.5) the following replaces the cursor rules above; the catch-up timer, the re-request rule and S7 are unchanged.
+
+- *Subscription ids.* The unchanged `RelayPool` exposes no `CLOSE`, so the catch-up generation is per pool: every pool of a relay, the first and each replacement, gets a fresh id `<base>.<n>`, where `<base>` is the client's `s`-prefixed id above and `n` counts from 1 the pools prepared for that relay in this client run. That id is used for the pool's first `REQ`, every re-request on it and the matching of its inbound `EVENT`, `EOSE` and `CLOSED` frames; a late `EOSE` or frame carrying another id has no effect. The relay set reads it through the option S8 `subscriptionIdFor(relayIndex)`, called when a pool is prepared, before its issue notice; a throw or a return that is not a non-empty string of at most 64 characters keeps `<base>`. The option `onRelayConnected(relayIndex)` is called when a pool's connection attempt settles connected; its throw is ignored.
+- *Issue and `since`.* Each issue notice (initial, replacement or periodic) records the issue time `floor(clock.now() / 1000)` as outstanding on the current pool; an invalid clock reading records nothing and the request has no `since`. A cursor, loaded or committed in this run, with `syncedUntil > floor(clock.now() / 1000)` at an issue is treated as absent from then on: the request has no `since`, the value is not reused, the next complete barrier replaces it even when lower, and `RECEIVE_STATE_CLOCK_SKEW` is emitted once per relay per run. Otherwise `since = max(0, syncedUntil − 120)`, also on the first `REQ` of the first pool; no cursor is derived from `created_at` or any other `EVENT` field. The rule decides the filter actually sent, including the explicit `since` passed to S7 `resubscribe`. A local clock running ahead while requests are issued remains a limit: the cursor it produces is corrected at the first request issued after the clock returns.
+- *Barrier.* Every inbound `EVENT` frame is counted per relay **before** the volatile queue of §7.1, including live frames after `EOSE`. Each counted frame is later accounted as staged, durably seen, invalid, a receipt, or not admitted because `isKnownSender` returned `false`, or as a failure: a queue drop, a failed or timed-out `isKnownSender`, a failed or uncertain `stage`, a refused or uncertain `commit`, an admission refused at a quota, or a frame received while the receive state is paused or frozen. A failure tied to a known event id is cleared only once that id has later been accounted as staged, durably seen or not admitted, or its entry committed or its uncertain commit resolved; an invalid copy does not clear it (precision of #556 §9: an invalid copy carrying the id does not show that the authentic event with that id is invalid, so the failure holds until a valid copy is accounted or the run ends); a failure whose event cannot be identified blocks cursor commits for that relay for the rest of the client run. A later `EOSE` or clean pool never clears a failure by itself.
+- *Commit.* An `EOSE` of the current pool's id may commit at most the earliest issue time among that pool's outstanding requests (re-requests on one pool share its id), then clears them; the commit waits until every frame of that relay counted before the `EOSE` has been accounted, and is written with `commitCursor({ relay, generation: n, syncedUntil })` only when no barrier failure remains for the relay, the receive state is normal, the value exceeds the stored cursor (or that cursor is skewed), and the invitation rule allows it. From the start of `invite` or `acceptInvite` until it ends, and for every request issued before it ended, no delivery cursor is committed; after it ends only a request issued later, whose `since` comes from the cursor committed before the operation, can commit. A failed or uncertain `commitCursor` freezes the receive state (interface §8.5). Relays no longer configured are ignored and new relays start without a cursor; a restart retries from the last committed cursor, and an event lost before `stage` remains relay-dependent.
 
 ### 5.5 Closing
 
@@ -199,7 +209,7 @@ Invitation operations each own a relay set, subscription id and phase; they neve
 
 ## 6. SDK-internal on-wire and record structures (non-normative)
 
-Everything in this section is SDK-internal, experimental and tied to `SDK_WIRE_VERSION` = `styx-m3-sdk/0.3.0-experimental`, independently of interface 0.3.1. Every `v` tag in §6.2, §6.3, §6.5 and §6.6 uses only that wire constant; the 13/1059 layers remain unchanged. It is not a Styx protocol semantic, not a Nostr standard and not a persisted format; a later version may change it without migration. It uses the event shape that Nostr relays already accept, as the existing transport code does, and selects no new semantic.
+Everything in this section is SDK-internal, experimental and tied to `SDK_WIRE_VERSION` = `styx-m3-sdk/0.3.0-experimental`, independently of interface 0.4.0. Every `v` tag in §6.2, §6.3, §6.5 and §6.6 uses only that wire constant; the 13/1059 layers remain unchanged. It is not a Styx protocol semantic, not a Nostr standard and not a persisted format; a later version may change it without migration. It uses the event shape that Nostr relays already accept, as the existing transport code does, and selects no new semantic.
 
 ### 6.1 Event shape and id
 
@@ -262,11 +272,15 @@ Inbound `EVENT` frames for the client's subscription are validated one at a time
 
 Then the duplicate check of §8 runs; a duplicate is dropped without an event. A frame dropped because the pending bound is full, a duplicate, and a valid receipt that matches no item (§7.3) are not structures that failed parsing, version, signature or `open`, so they emit nothing (interface §4.3 requires `INBOUND_DISCARDED` only for those failures). Inbound delivery carries no guarantee; a relay may deliver a dropped event again.
 
+With `ports.receiveState` (§7.4), every `EVENT` frame is also counted for the cursor barrier of §5.4 before it enters the queue, and a frame the queue does not take is a barrier failure. A kind-4741 event that passed steps 1 to 5 does not wait for an audience and does not use the duplicate window: it goes to the admission of §7.4 in arrival order, so the 1 024-entry bound counts raw and in-validation frames only. Kind 4742 keeps the path of this section and §7.3 unchanged.
+
 These delivery-discard rules apply only to the delivery subscription. Invitation candidates are checked independently, fail closed and emit no `INBOUND_DISCARDED`, including other interface versions. KeyPackage checks run shape → kind → exact tags/version → size → expiration and future bound (§6.5) → recomputed id → signature, requiring the named invitee. Wrap checks run shape/kind/exact p/size → id → signature before unwrapping. Each invitation operation keeps at most 1 024 candidate events not yet examined; an `EVENT` frame that arrives while that bound is full is dropped and is not recovered by the operation, and examined candidates are not retained. An acceptance unwraps each pair of wrap `pubkey` and `content` at most once while that pair is remembered: after the shape/kind/exact p/size checks, a candidate whose pair is remembered (the same wrap again, or a copy re-signed under the same wrap key) is ignored without an unwrap; a pair is remembered, as the SHA-256 digest of `JSON.stringify([pubkey, content])`, only after its candidate passed the id and signature checks, and only the 4 096 most recent digests of the acceptance are kept, first in, first out, so a pair evicted from that window may be unwrapped again. A different wrap key never suppresses a candidate. Unwrap throw/reject/timeout/malformed/out-of-set data is ignored; the rumor must have §6.6 exact keys, kind, e/version/tags and sizes, with both `sealSigner` and rumor `pubkey` equal to the explicit inviter. Wrong/third-party candidates are ignored and waiting continues until the deadline. Immediately before `joinSession`, one `clock.now()` reading checks both the admission deadline and the expiration of the own KeyPackage that the rumor's `e` tag names (§6.5): a candidate read at or after either is ignored without a join, and waiting continues until the deadline (`E_SDK_INVITE_TIMEOUT`). The first passing candidate calls bounded `joinSession`; false/failed/malformed join is `E_SDK_SESSION_FAILED` and ends the operation, also when a later candidate of the same inviter would have been usable: the session port does not tell whether a failed join consumed caller state, so no further candidate is tried. No rollback: caller state may be consumed, and restarting needs fresh state on both sides.
 
 ### 7.2 Message events
 
-A valid kind-4741 event waits as validated ciphertext when no listener can be reserved (interface §7). Its `content` is decoded only when the SDK can reserve an audience, immediately before `session.open({ sender: pubkey, ciphertext })`; a decoding failure or empty result is `E_SDK_INBOUND_INVALID`. Open is bounded by the port-call timeout; failure/malformed plaintext produces the existing discard code, subject to §4.5. A successful plaintext is dispatched to the reserved audience with a fresh per-listener copy; no plaintext backlog is introduced. All such admitted messages preserve local arrival order, independent of passing receipts.
+This section applies without `ports.receiveState`. With it, listener gating, opening and receipts of kind-4741 events follow §7.4: no ciphertext waits for a listener, opening and committing do not need an audience, and a receipt is owed only after a reserved listener was invoked with the committed entry.
+
+A valid kind-4741 event waits as validated ciphertext when no listener can be reserved (interface §7). Its `content` is decoded only when the SDK can reserve an audience, immediately before `session.open({ sender: pubkey, ciphertext })`; a decoding failure or empty result is `E_SDK_INBOUND_INVALID`. Open is bounded by the port-call timeout; failure/malformed plaintext produces the existing discard code, subject to §4.5. A successful plaintext is dispatched to the reserved audience with a fresh per-listener copy and the event's id as `eventId`; no plaintext backlog is introduced. All such admitted messages preserve local arrival order, independent of passing receipts.
 
 If the event carries the `r` tag, the SDK then publishes one receipt (§6.3) for it: it signs the receipt through `identity.sign` (bounded by the port-call timeout; a return other than a 64-byte `Uint8Array` means no receipt) and calls `publish` once on every connected current pool. Signing and publishing a receipt run beside the inbound queue: once the listener was invoked, the validation and acknowledgement of later frames do not wait for that signature, so a slow signing port never delays the processing of a receipt that has already arrived. The next admitted open still starts only after that receipt was published or abandoned, so there is still one open/delivery unit at a time and the message order is unchanged. Each signing call stays bounded by the port-call timeout. A receipt is sent at most once per message event id while that id is in the duplicate window. Receipt publication is best effort: no retry, no outcome tracking, no event to the recipient's caller. A signing failure or an unconnected relay means no receipt; the sender then reports `FAILED_NO_RECEIPT` at its deadline, which interface §6.1 defines as not meaning that the recipient did not receive the message.
 
@@ -283,10 +297,23 @@ A kind-4742 event that passed every check of §7.1 (including its `p` tag equal 
 
 Relay acknowledgement (§5.3) and recipient receipt are recorded separately and never inferred from each other.
 
+### 7.4 Inbound flow with `ports.receiveState`
+
+This section applies only with the receive-state port of interface §8.5, to kind 4741 only. Nothing in it ever falls back to §7.2, and a paused or frozen receive state (interface §8.5) blocks every step that admits, opens, commits, commits a cursor or publishes a receipt.
+
+1. **Load and recovery.** `start()` calls `load` after `getPublicKey()` and before any pool is prepared, bounded by two port-call timeouts of host time. After a valid snapshot, every loaded `READY` entry becomes eligible for emission (interface §7.1), then the recovery pass opens every loaded `PENDING` entry once, in stage order, through the open unit of step 4; `start()` connects relays only after it, and fails with `E_SDK_RECEIVE_STATE_FAILED` if the receive state is then paused or frozen. Each port call of the pass has its own port-call timeout; the pass has no overall bound, so its duration grows with the number of loaded `PENDING` entries.
+2. **De-duplication.** After §7.1 steps 1 to 5, an id already in the durable `seen` set is not staged again: a copy of a `PENDING` id triggers one retry of that entry when its retry budget is available (step 5) and otherwise nothing; a copy of any other seen id is dropped without an event. The 4 096-id window is not used for kind 4741.
+3. **Admission.** The `content` is decoded; a decoding failure or an empty result emits `INBOUND_DISCARDED` with `E_SDK_INBOUND_INVALID` and is accounted as invalid. Then `isKnownSender({ sender: pubkey })` must return `true` and no quota of interface §8.5 may be reached. `false` means not admitted: the event is not staged, opened, emitted, receipted or remembered, so a later replay can admit it. A failed, timed-out or malformed `isKnownSender` (an out-of-set value also emits `INBOUND_DISCARDED` with `E_SDK_UNKNOWN_CODE`) and a reached quota (which emits `RECEIVE_STATE_CAPACITY` once per crossing) are not non-admission: the event is not staged and the relay's barrier fails (§5.4). An admitted event is staged with `stage`, `receiptRequested` being the presence of the `r` tag; a failed or uncertain `stage` freezes the receive state. Admission and staging of one frame complete in the inbound queue before the next frame is validated; they never wait for a listener.
+4. **Open unit.** At most one entry is open at a time: `openCandidate({ sender, ciphertext })`, then for `application` a `commit` with `{ type: 'application', sender, payload, receiptDue }` (`receiptDue` = `receiptRequested`) and for `reject` a `commit` with `{ type: 'rejected' }`, carrying the `ticket` unchanged. `retry`, and a failed, timed-out or malformed `openCandidate`, start no commit and leave the entry `PENDING`; an out-of-set value also emits `INBOUND_DISCARDED` with `E_SDK_UNKNOWN_CODE`. The unit alternates between a newly staged entry and a backlog retry, so neither starves the other; no retry is queued for the entry already in the unit. A committed application result makes the entry `READY` and eligible for emission (interface §7.1); a committed rejection makes it `REJECTED` (a seen tombstone with no payload and no receipt, never emitted) and emits `INBOUND_DISCARDED` with `E_SDK_SESSION_FAILED`. Commit refusals and uncertain commits follow interface §8.5 (capacity: entry stays `PENDING`; paused until `resolve`; frozen).
+5. **Retry budget and periodic pass.** While `RUNNING`, a periodic pass runs every catch-up interval (10 000 ms on the clock port) and queues every `PENDING` entry whose in-run retry budget is available and that is neither queued nor in the open unit; while the receive state is paused, the pass instead calls `resolve` again. An entry's budget is available from its first attempt in the run (at staging or by the recovery pass, which consume none); when an in-run retry starts, by a copy or by the pass, the budget renews 10 000 ms after that start on the clock port (an invalid clock reading at that start leaves the entry without budget for the rest of the run). Hence at most one in-run retry per entry per catch-up interval, and an entry whose budget has renewed is retried by the first pass at or after the renewal, however long earlier opens took. A `retry` never re-stages the id and never blocks later events; a permanently unclassified ciphertext stays `PENDING`, counts against the quotas and is retried at this rate; nothing is deleted.
+6. **Emission and acknowledgement.** `READY` entries are emitted and redelivered as interface §7.1 states, with the redelivery pass every 60 000 ms on the clock port while `RUNNING`; `acknowledgeMessage` follows interface §4.2. No ciphertext or plaintext waits in the volatile queue of §7.1.
+7. **Receipts.** A receipt obligation (`receiptsDue`) is committed with an application result whose event carried the `r` tag. It becomes eligible once a reserved listener was invoked with the entry in the current run, or once the entry is acknowledged (which proves an earlier invocation, so a still-due receipt of an acknowledged entry is published after restart). While `RUNNING` and normal, eligible obligations are processed one at a time, in load then commit order, each at most once per run: the SDK builds the receipt of §6.3 with `created_at` from `clock.now()` at that moment and a fresh `n` tag, obtains `identity.sign` (port-call timeout), and publishes it through the relay set's `publish` on the current connected pools. If no pool is connected, or the publication reached no connected current pool, the attempt is deferred, not consumed, and the next connection of a pool wakes it. A signing failure or an unusable clock reading consumes the run's attempt without a publication; a signing failure, refusal or missing `OK true` keeps the obligation in `receiptsDue`; the first observed `OK true` (`ACCEPTED`) of that publication leads to `receiptDone`. During the shutdown drain a receipt being built goes through S6 without waiting for `OK`, and without an observed `OK true` the obligation stays durable. The message is never opened again to build a receipt; duplicate receipts are allowed.
+8. **Shutdown.** At the synchronous call (§4.6 step (1)) no frame is admitted, no candidate, commit, pass or receipt starts, and the periodic and redelivery passes become inert; their timers are cleared in step (4). A commit already issued completes (an uncertain one gets at most its one immediate `resolve`), and the next `load` shows its outcome; every uncommitted entry stays `PENDING`. Step (4) also waits, concurrently with its existing waits and under the same host-time bound as they (two port-call timeouts), until the open unit, the write chain and a receipt in progress have settled; a failed `start()` waits the same way before its cleanup. The §5.5 shutdown bound does not grow; a unit that has not settled within it is abandoned and its entry stays `PENDING` (a commit already issued may still take effect, and the next `load` shows it).
+
 ## 8. Duplicate handling
 
 - **Outbound.** Retransmissions republish the identical signed event with the same event id. A relay may answer a repeated event with `OK true "duplicate: …"`, which counts as `ACCEPTED` (§5.3), or with any other answer or none, which §5.3 handles like any first publication. No claim is made about how many copies a relay stores. A recipient may receive the same event from several relays or more than once from one relay, which §8 treats as duplicates.
-- **Inbound.** Re-requests (§5.4), including their overlap margin, are another duplicate source. Each client remembers at most 4 096 processed inbound event ids, FIFO. A valid receipt enters this window before acknowledgement processing. A kind-4741 id enters only immediately before its `session.open` call, never while waiting for a listener or when dropped for capacity; a failed open remains processed as before. This is a declared limit: the session port does not tell a failure before MLS processing from one after it, so a copy of the same id from another relay, or from a re-request, is not opened again while the id is in the window, even when the first failure was transient. Closing it needs durable receive state stored before decryption, with results kept until the application acknowledges them, which is the scope of the separate M3-RECEIVE contract; this document makes no such claim. Waiting message ids occupy a separate bounded set and duplicate copies do not add another waiting entry. A processed duplicate is dropped without an event or second receipt. An id outside the processed window, or in a new client/process, may be opened again; no exactly-once claim follows.
+- **Inbound.** Re-requests (§5.4), including their overlap margin, are another duplicate source. Each client remembers at most 4 096 processed inbound event ids, FIFO. With `ports.receiveState` this window serves kind 4742 only; kind 4741 is de-duplicated against the durable `seen` set of §7.4 instead, which holds every staged id in any state and is never evicted (it saturates at `maxSeen`). The rest of this bullet describes the path without the port. A valid receipt enters this window before acknowledgement processing. A kind-4741 id enters only immediately before its `session.open` call, never while waiting for a listener or when dropped for capacity; a failed open remains processed as before. This is a declared limit: the session port does not tell a failure before MLS processing from one after it, so a copy of the same id from another relay, or from a re-request, is not opened again while the id is in the window, even when the first failure was transient. Closing it needs durable receive state stored before decryption, with results kept until the application acknowledges them. Without `ports.receiveState` this limit (H17) stays declared and this document makes no such claim. With it, the conditional durable-receive exception of §2 and §7.4 applies instead: an entry whose open failed or returned `retry` stays `PENDING` and is retried by a copy of the same id or by the periodic pass within its retry budget, without a second `stage`, and only an id whose outcome was durably committed is never opened again. Waiting message ids occupy a separate bounded set and duplicate copies do not add another waiting entry. A processed duplicate is dropped without an event or second receipt. An id outside the processed window, or in a new client/process, may be opened again; no exactly-once claim follows.
 - **Ordering.** Inbound events are emitted in the order this client processes them, which need not match sending order.
 
 ## 9. Delivery modules and imports
@@ -299,7 +326,8 @@ The delivery layer is split over the implementation cards of the scope record. E
 | `I-RELAY` | `styx-js/src/sdk/delivery/relay-pool.js` | one current `RelayPool` per relay, §5.1 to §5.5, per-relay outcomes and timeouts |
 | `I-QUEUE` | `styx-js/src/sdk/delivery/outbox.js` | the item lifecycle of §4, building the outbound message event of §6.2, the record of §6.4 behind the storage port, retention |
 | `I-ACK` | `styx-js/src/sdk/delivery/receipts.js` | the common structure rules of §6.1 as applied to inbound events, the receipt of §6.3, inbound validation of §7, receipts and duplicate handling of §8 |
-| `M3-CATCHUP` | `styx-js/src/sdk/delivery/catch-up.js` | per-relay local-clock cursors, EOSE observation and catch-up timer of §5.4 |
+| `M3-CATCHUP` | `styx-js/src/sdk/delivery/catch-up.js` | per-relay local-clock cursors, EOSE observation and catch-up timer of §5.4; with `ports.receiveState` the issue notice, `since` and EOSE observation are delegated to `M3-RECEIVE` |
+| `M3-RECEIVE` | `styx-js/src/sdk/delivery/receive-state.js` | with `ports.receiveState` only: the durable receive state of §7.4 (seen set, entries, admission, open unit, retry budget, emission and redelivery, receipt obligations, fail-stop) and the per-pool subscription ids, barrier and durable cursors of §5.4 |
 | `M3-INVITE` | `styx-js/src/sdk/invite.js` | independent invitation operations and the builders/checks of §6.5–§6.7 |
 | `I-SDK` | `styx-js/src/sdk/index.js`, `styx-js/src/sdk/client.js` | assembly behind the interface |
 
@@ -329,9 +357,11 @@ Unit tests of `I-RELAY` and `I-ACK` that need a relay build their own within the
 
 ## 11. Non-claims and gates
 
-The delivery layer is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. Third-party relays may store, refuse or drop events and may keep synthetic events after clients stop; no retention, deletion, DNS, TLS-pinning or privacy assurance follows from acceptance or readback. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection. Relays and network observers see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and network metadata; a receipt also tells the sender's relays that a holder of the recipient's key answered. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message. Because every item is retained for the client's lifetime, the client's memory grows with the number of items sent; a long-running caller creates a new client to release it.
+The delivery layer is experimental, internal to the repository, not audited, not a product and not authorized for sensitive use. Third-party relays may store, refuse or drop events and may keep synthetic events after clients stop; no retention, deletion, DNS, TLS-pinning or privacy assurance follows from acceptance or readback. It claims no exactly-once delivery, ordering, cross-restart reliability, durable persistence, payload confidentiality beyond the injected session port, identity hiding, unlinkability, padding, timing protection, onion routing or metadata protection, except, with `ports.receiveState`, the conditional durable-receive exception of §2, which rests on caller semantics the SDK cannot verify. Relays and network observers see public keys, the `p`, `e`, `v`, `n` and `r` tags, timing, sizes and network metadata; a receipt also tells the sender's relays that a holder of the recipient's key answered. Relay acceptance and recipient receipt are distinct, and neither proves that a person read a message. Because every item is retained for the client's lifetime, the client's memory grows with the number of items sent; a long-running caller creates a new client to release it.
 
 Relays see a re-request every catch-up interval on connected pools. Catch-up is best effort: relays may rate-limit it or ignore `since`; events older than the local cursor minus 120 seconds may be missed, and ids evicted from the unchanged duplicate window may be opened again. A relay's EOSE affects only its own cursor, not another relay's. No catch-up occurs when the injected clock's timers do not fire.
+
+With `ports.receiveState`, `EOSE` is still no proof of completeness: events never delivered by any relay, or lost before `stage`, remain unrecoverable. Admission filtering acts after decoding, validation and signature verification, so it protects the durable state and MLS processing, not network, CPU or inbound-queue availability; there is no per-sender fairness, and permanently unclassified ciphertext from a known sender occupies capacity and is retried once per catch-up interval. No retry, redelivery or catch-up pass runs when the injected clock's timers do not fire.
 
 These statements stay in force verbatim:
 
@@ -352,15 +382,16 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   "schema": "styx-m3-delivery-layer/v1",
   "closed": true,
   "card": "C-DLV",
-  "sdkInterfaceVersion": "styx-m3-sdk/0.3.1-experimental",
+  "sdkInterfaceVersion": "styx-m3-sdk/0.4.0-experimental",
   "sdkWireVersion": "styx-m3-sdk/0.3.0-experimental",
   "sdkInterfaceDoc": {
     "path": "docs/architecture/m3/sdk-interface.md",
-    "sha256": "f9285b6593864e593d55c33212887962905cdd0ec7c7649bf40400b4590253fd"
+    "sha256": "9a0b1c4ba77c6e5e6c90902ddf49b4c0193e21c6f13732bec2e74f0b05272184"
   },
   "publicSurfaceChanged": true,
-  "surfaceAmendment": "M3-LISTENER: interface version and SDK_WIRE_VERSION export only",
+  "surfaceAmendment": "M3-RECEIVE-1: interface 0.4.0 (eventId, acknowledgeMessage, config.receive, ports.receiveState, five codes, three event kinds); wire unchanged",
   "receiveWaiting": {
+    "appliesTo": "without ports.receiveState",
     "storage": "volatile ciphertext only; no plaintext queue or disk writes",
     "bound": "raw queue + validation in progress + validated ciphertext waiting <= 1024; plus one active open/delivery",
     "requiresListenerBeforeOpen": true,
@@ -403,6 +434,10 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "relaySupervisionMs": 1000,
     "catchUpIntervalMs": 10000,
     "catchUpMarginSeconds": 120,
+    "receiveRetryIntervalMs": 10000,
+    "receiveRedeliveryIntervalMs": 60000,
+    "acknowledgeMessageBoundMs": "5 * portCallTimeoutMs",
+    "receiveStateSettleBoundMs": "2 * portCallTimeoutMs",
     "keyPackageLifetimeSeconds": 3600,
     "keyPackageMaxBytes": 65536,
     "welcomeMaxBytes": 262144,
@@ -552,7 +587,12 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "E_SDK_NOT_CONFIGURED",
     "E_SDK_PUBLISH_NOT_ACCEPTED",
     "E_SDK_KEYPACKAGE_NOT_FOUND",
-    "E_SDK_INVITE_TIMEOUT"
+    "E_SDK_INVITE_TIMEOUT",
+    "E_SDK_RECEIVE_STATE_FAILED",
+    "E_SDK_RECEIVE_STATE_INCOMPATIBLE",
+    "E_SDK_RECEIVE_STATE_CONFLICT",
+    "E_SDK_RECEIVE_STATE_CAPACITY",
+    "E_SDK_UNKNOWN_MESSAGE"
   ],
   "relays": {
     "poolPerRelay": true,
@@ -579,7 +619,12 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "startPhaseMs": "perRelayTimeoutMs",
     "reconnectInterval": "delay(k,u) by consecutive failures of that relay",
     "closeWaitsForConnectSettleMs": 10000,
-    "lateConnection": "tracked until connectAll settles (host time); never counts in connectedRelays; after a successful start it becomes the relay connection, after a failed start it is disposed once settled"
+    "lateConnection": "tracked until connectAll settles (host time); never counts in connectedRelays; after a successful start it becomes the relay connection, after a failed start it is disposed once settled",
+    "subscriptionIds": {
+      "withoutReceiveState": "one per client: s + 32 lowercase hex",
+      "withReceiveState": "<base>.<n> per pool, n counting the pools of that relay from 1; first REQ, re-requests and frame matching",
+      "otherIdFrames": "no effect"
+    }
   },
   "relayOutcomeRules": {
     "outcomes": [
@@ -645,7 +690,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       "pTag": "own public key",
       "since": {
         "first": false,
-        "replacementAndReRequest": "syncedUntil - 120 when a cursor exists, otherwise absent"
+        "replacementAndReRequest": "syncedUntil - 120 when a cursor exists, otherwise absent",
+        "withReceiveState": "max(0, syncedUntil - 120) from a loaded or committed cursor, also on the first REQ; absent when no cursor, skewed cursor or invalid clock reading"
       },
       "limit": false
     },
@@ -737,14 +783,16 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "earlyReceiptHeldUntilAcceptance": true,
     "receiptImpliesRelayAcceptance": false,
     "receiptProvesOpening": false,
-    "receiptProvesReading": false
+    "receiptProvesReading": false,
+    "withReceiveState": "section 7.4: durable obligation, eligible after reserved listener invocation or acknowledgement, at most once per run, deferred without a connected pool, receiptDone after first OK true"
   },
   "duplicates": {
     "outboundSameEventOnRetransmit": true,
     "inboundWindow": 4096,
     "inboundDuplicateEmits": "nothing",
     "exactlyOnce": false,
-    "ordering": false
+    "ordering": false,
+    "inboundWithReceiveState": "durable seen set for kind 4741; window for kind 4742 only"
   },
   "outerBounds": {
     "finiteAttemptsAndDeadline": true,
@@ -774,6 +822,9 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     ],
     "M3-CATCHUP": [
       "styx-js/src/sdk/delivery/catch-up.js"
+    ],
+    "M3-RECEIVE": [
+      "styx-js/src/sdk/delivery/receive-state.js"
     ],
     "I-SDK": [
       "styx-js/src/sdk/index.js",
@@ -886,6 +937,82 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "shutdownAdditionalBound": "one perRelayTimeoutMs plus one port-call timeout",
     "stateRollback": false,
     "startSessionFailure": "E_SDK_SESSION_FAILED; caller engine state may remain; no claim"
+  },
+  "receiveState": {
+    "appliesTo": "ports.receiveState only; kind 4741 only",
+    "conditionalDurableReceiveException": "interface section 2 bound 2 and 8.5; default without the port unchanged",
+    "load": "once in start before any pool is prepared; host bound 2 * portCallTimeoutMs",
+    "recoveryPass": "every loaded PENDING entry once in stage order before the first relay connection; no overall bound",
+    "deduplication": "durable seen set; copy of a PENDING id triggers one retry when its budget is available; other seen ids dropped",
+    "admission": [
+      "content decodes to non-empty bytes",
+      "isKnownSender true",
+      "no quota reached"
+    ],
+    "notAdmitted": "not staged, opened, emitted, receipted or remembered",
+    "stageBeforeOpen": true,
+    "openUnit": "one at a time; alternates newly staged and backlog retry",
+    "retryBudget": {
+      "availableFrom": "first attempt in the run (staging or recovery pass consume none)",
+      "renewsAfterRetryStartMs": 10000,
+      "clock": "clock port",
+      "invalidClockAtRetryStart": "no budget for the rest of the run",
+      "perEntryPerInterval": 1
+    },
+    "periodicPass": {
+      "intervalMs": 10000,
+      "while": "RUNNING",
+      "queues": "every PENDING entry with available budget, not queued and not in the open unit",
+      "paused": "calls resolve instead"
+    },
+    "redeliveryPassMs": 60000,
+    "barrier": {
+      "countedBeforeQueue": true,
+      "includesLiveFramesAfterEose": true,
+      "accounted": [
+        "staged",
+        "durably seen",
+        "invalid",
+        "receipt",
+        "isKnownSender false"
+      ],
+      "failure": [
+        "queue drop",
+        "isKnownSender failure",
+        "stage failure or uncertainty",
+        "commit refusal or uncertainty",
+        "quota reached",
+        "paused or frozen"
+      ],
+      "knownIdFailureCleared": "when the id is later staged, seen or not admitted, or its entry committed or resolved",
+      "unidentifiedFailure": "blocks cursor commits for that relay for the rest of the run",
+      "laterCleanEoseClears": false
+    },
+    "cursorCommit": {
+      "on": "EOSE of the current pool id",
+      "value": "earliest issue time among that pool outstanding requests",
+      "waitsFor": "every frame of that relay counted before the EOSE accounted",
+      "requires": [
+        "no barrier failure on the relay",
+        "normal receive state",
+        "greater than stored cursor or stored cursor skewed",
+        "no invitation active",
+        "request issued after the last invitation ended"
+      ],
+      "write": "commitCursor({ relay, generation: n, syncedUntil })",
+      "fromCreatedAt": false
+    },
+    "clockSkew": {
+      "when": "cursor syncedUntil > floor(clock.now() / 1000) at a request issue",
+      "effect": "no since; value not reused; next complete barrier replaces it even when lower",
+      "event": "RECEIVE_STATE_CLOCK_SKEW once per relay per run"
+    },
+    "invitationOperations": [
+      "invite",
+      "acceptInvite"
+    ],
+    "shutdown": "no admission, candidate, commit, pass or receipt starts; uncommitted entries stay PENDING; open unit, write chain and receipt in progress awaited within 2 * portCallTimeoutMs, concurrent with step-4 waits; a unit not settled by then stays PENDING",
+    "shutdownBoundGrowthMs": "0"
   }
 }
 ```
@@ -909,8 +1036,12 @@ Conformance of M3-INBOUND-ROBUSTNESS demonstrates: an inbound `content` of more 
 
 Conformance of M3-ROBUSTNESS-LOW demonstrates: a Welcome is not joined when the reading before join is at or after the expiration of the KeyPackage it names, whether the acceptance began after that expiration, at it, or before it with the Welcome arriving later, and also when that reading is exactly the expiration, and `acceptInvite` then ends with `E_SDK_INVITE_TIMEOUT` with no `joinSession`; a Welcome read before the expiration is still joined. It also fixes the declared limits: a relay whose newer KeyPackage and EOSE arrive within the fetch wait makes that KeyPackage the choice, while a relay silent for the whole wait, or answering after it, does not; an authentic Welcome refused by `joinSession` ends the acceptance with `E_SDK_SESSION_FAILED` and a later valid one is not examined; a failed `startSession` is `E_SDK_SESSION_FAILED` with no further session call and nothing published; after a failed open a copy of the same message from a second relay is not opened again while a fresh message still is; and `start()` reads every listed record with the same work after one `storage.list` call, for 100 and 10 000 records, still returning `E_SDK_UNKNOWN_CODE` for an out-of-set value in the last of 10 000, also when the first record is malformed. These amendments change no entry point, method, code, state, transition, event, port method, outer bound, import, `SDK_INTERFACE_VERSION` or `SDK_WIRE_VERSION`; their bytes need a separate exact-head owner output ratification.
 
+Conformance of M3-RECEIVE-1, with deterministic fake ports, demonstrates: without `ports.receiveState`, the unchanged 0.3.1 behaviour plus `eventId`, including the declared H17 limit; with it, recovery across two client instances at every kill point a fake port can express, with no staged event lost and no committed id opened again; the cursor barrier under slow `stage`, cross-relay duplicates, queue overflow followed by a clean `EOSE`, late `EOSE` of an older pool, re-requests on one pool, pool replacement and invitations; admission of a once-unknown sender on a later replay, and 10 000 valid events from unknown keys leaving the durable state unchanged and never opened; the clock-skew rule; capacity, conflict and failure paths that delete nothing and never enable the path without the port; the acknowledgement lifecycle, including an acknowledgement inside the listener; and the in-run retry budget of §7.4 step 5.
+
 ## 14. Authority and ratification
 
 This contract implements card `C-DLV` of the M3 scope record (Issue #400 comment `5950987413`) under the owner act in Issue #400, on base `m3/integration` at `12e6570fa2588999c30d33203f0e8f687a46448c`, which contains the ratified `C-SDK` document. Its only file is `docs/architecture/m3/delivery-layer.md`.
 
 The final file SHA-256 must be owner hash-ratified by a `styx-m3-ratification:v1` comment on #400 that names the author model vendor and the reviewer model vendor. Any byte change voids that ratification. Removing this file fully rolls back `C-DLV`; no code, dependency or persisted bytes are introduced.
+
+M3-RECEIVE-1 (contract #557, shared normative source #556) amends §2, §3, §5.1, §5.4, §6 (interface version only), §7.1, §7.2, the new §7.4, §8, §9, §11, §12 and §13 under the scope extension #400/6629916795 and its exact-contract approval. These bytes remain output candidates until separately exact-head hash-ratified.
