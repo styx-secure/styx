@@ -512,7 +512,7 @@ describe('M3-RECEIVE-1 restart: cursor, recovery and admission (criteria 4, 6, 1
 });
 
 /** The joint oracle of criterion 3 after a restart. */
-function oracle(disk, stagedIds) {
+function oracle(disk, stagedIds, relays, liveCandidates = []) {
   const seen = new Set(disk.disk.seen);
   for (const id of stagedIds) expect(seen.has(id)).toBe(true);
   const pending = disk.disk.pending.map((e) => e.eventId);
@@ -521,6 +521,15 @@ function oracle(disk, stagedIds) {
   expect(new Set(all).size).toBe(all.length);
   for (const id of all) expect(seen.has(id)).toBe(true);
   for (const r of disk.disk.receiptsDue) expect([...ready, ...disk.disk.acknowledged]).toContain(r.eventId);
+  // Cursors: exact configured relay strings, whole non-negative seconds.
+  for (const c of disk.disk.cursors) {
+    expect(relays).toContain(c.relay);
+    expect(Number.isSafeInteger(c.syncedUntil) && c.syncedUntil >= 0).toBe(true);
+  }
+  // The committed MLS state counts exactly the committed results (no rejections here),
+  // and no live candidate is ahead of it.
+  expect(disk.disk.mlsCommitted).toBe(ready.length + disk.disk.acknowledged.length);
+  for (const live of liveCandidates) expect(live).toBeLessThanOrEqual(disk.disk.mlsCommitted);
 }
 
 describe('M3-RECEIVE-1 crash matrix with two client instances (criterion 3, fake ports)', () => {
@@ -556,7 +565,7 @@ describe('M3-RECEIVE-1 crash matrix with two client instances (criterion 3, fake
     // A new instance on the same durable store; the dead one stays silent.
     const second = await started(makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) }));
     expect(await until(() => disk.disk.ready.length + disk.disk.acknowledged.length === 1)).toBe(true);
-    oracle(disk, stagedBefore);
+    oracle(disk, stagedBefore, [r.url], second.trace.candidates);
     const delivered = [...first.messages(), ...second.messages()].map((e) => e.eventId);
     expect(new Set(delivered).size).toBe(1);
     const opened = second.trace.opens.length;
@@ -847,5 +856,53 @@ describe('M3-RECEIVE-1 review round 1: shutdown during commit and resolve, invit
     expect(await until(() => bob.messages().length === 1)).toBe(true);
     await sleep(200);
     expect(bob.messages()).toHaveLength(1);
+  });
+});
+
+describe('M3-RECEIVE-1 review round 3: resolve failure across instances, seal behind a prepared candidate', () => {
+  test('uncertain commit, then the process dies in resolve: the new instance delivers once, MLS committed once', async () => {
+    const r = await relay();
+    const alice = await started(makeClient([r.url]));
+    const bobKey = identity();
+    const disk = durableDisk(bobKey.pub);
+    const first = makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) });
+    const commit = first.config.ports.receiveState.commit;
+    first.config.ports.receiveState.commit = async (argument) => { await commit(argument); throw new Error('uncertain'); };
+    first.view.crashAt = { method: 'resolve', when: 'before' };
+    await started(first);
+    await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode('resolve dies') });
+    expect(await until(() => first.view.dead)).toBe(true);
+    const stagedBefore = [...disk.disk.seen];
+    const second = await started(makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) }));
+    expect(await until(() => second.messages().length === 1)).toBe(true);
+    oracle(disk, stagedBefore, [r.url], second.trace.candidates);
+    expect(second.trace.opens).toEqual([]);
+    expect(first.messages()).toEqual([]);
+  });
+
+  test('a seal requested while a candidate is prepared waits for its commit, then completes', async () => {
+    const r = await relay();
+    const alice = await started(makeClient([r.url]));
+    const bobKey = identity();
+    const disk = durableDisk(bobKey.pub);
+    const bob = makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) });
+    let release;
+    const original = bob.config.ports.session.openCandidate;
+    bob.config.ports.session.openCandidate = async (argument) => {
+      const value = original(argument);
+      await new Promise((resolve) => { release = resolve; });
+      return value;
+    };
+    await started(bob);
+    await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode('candidate first') });
+    expect(await until(() => release !== undefined)).toBe(true);
+    const sending = bob.client.send({ recipient: alice.pub, payload: utf8Encode('sealed after') });
+    await sleep(200);
+    expect(bob.trace.seals).toBe(0);
+    release();
+    expect((await sending).ok).toBe(true);
+    expect(bob.trace.mutations).toEqual(['commit', 'seal']);
+    expect(await until(() => alice.messages().length === 1)).toBe(true);
+    expect(await until(() => bob.messages().length === 1)).toBe(true);
   });
 });
