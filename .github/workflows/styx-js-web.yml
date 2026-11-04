@@ -117,15 +117,8 @@ jobs:
           RUSTUP_TOOLCHAIN: 1.97.1
         run: |
           npm ci
-          npm test -- --runInBand --testTimeout=20000
-      - name: Run the exact paired B3.3b-2b fork proof
-        working-directory: styx-js
-        env:
-          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
-          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
-          RUSTUP_TOOLCHAIN: 1.97.1
-        run: |
-          node spikes/marmot-phase-b3-3b-2b/concurrent-fork-probe.mjs --verify-paired-runs
+          # The five fresh-build live suites run in phase-b-mdk, not twice.
+          npm test -- --runInBand --testTimeout=20000 --testPathIgnorePatterns='/test/crypto/mls-phase-b3-3b-(1-stage[01]|2a-retained-window|2b-(stage0|durable))\.test\.js$'
       - name: Build the PWA
         working-directory: styx-js/apps/chat
         run: |
@@ -208,6 +201,61 @@ jobs:
           grep -rl 'styxchat:styx:identity\|IDENTITY_SYNC_VERIFIED' dist-vault-test/ | grep -q .
           rm -rf dist-vault-test
 
+  phase-b-mdk:
+    name: Phase B MDK proofs
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Checkout the exact pinned MDK source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: marmot-protocol/mdk
+          ref: 3fb4b4759ac676b0c21c4c3527074866c9fa4c89
+          path: .styx-pins/mdk-3fb4b475
+          persist-credentials: false
+          fetch-depth: 1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+      - name: Install the exact Rust toolchain used by the approved probes
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          test "$(RUSTUP_TOOLCHAIN=1.97.1 rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(RUSTUP_TOOLCHAIN=1.97.1 cargo --version | awk '{print $2}')" = "1.97.1"
+      - name: Provision the approved private probe parent
+        run: |
+          set -euo pipefail
+          sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 /home/mverde
+      - name: Run the five live Phase B MDK suites
+        working-directory: styx-js
+        env:
+          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          B33B2A_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          RUSTUP_TOOLCHAIN: 1.97.1
+        run: |
+          npm ci
+          npm test -- --runInBand --testTimeout=20000 --runTestsByPath \
+            test/crypto/mls-phase-b3-3b-1-stage0.test.js \
+            test/crypto/mls-phase-b3-3b-1-stage1.test.js \
+            test/crypto/mls-phase-b3-3b-2a-retained-window.test.js \
+            test/crypto/mls-phase-b3-3b-2b-stage0.test.js \
+            test/crypto/mls-phase-b3-3b-2b-durable.test.js
+      - name: Run the exact paired B3.3b-2b fork proof
+        working-directory: styx-js
+        env:
+          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-3fb4b475
+          RUSTUP_TOOLCHAIN: 1.97.1
+        run: |
+          node spikes/marmot-phase-b3-3b-2b/concurrent-fork-probe.mjs --verify-paired-runs
+
   vault-db-probes:
     name: Vault browser probes
     needs: changes
@@ -254,7 +302,7 @@ jobs:
 
   gate:
     name: styx-js web gate
-    needs: [changes, build-and-gate, vault-db-probes]
+    needs: [changes, build-and-gate, phase-b-mdk, vault-db-probes]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -264,6 +312,7 @@ jobs:
           WEB: ${{ needs.changes.outputs.web }}
           VAULTDB: ${{ needs.changes.outputs.vaultdb }}
           BUILD: ${{ needs.build-and-gate.result }}
+          PHASE_B: ${{ needs.phase-b-mdk.result }}
           PROBES: ${{ needs.vault-db-probes.result }}
         run: |
           set -euo pipefail
@@ -277,6 +326,8 @@ jobs:
           fi
           echo "build-and-gate: $BUILD"
           [ "$BUILD" = "success" ] || { echo "styx-js web gate FAILED."; exit 1; }
+          echo "phase-b-mdk: $PHASE_B"
+          [ "$PHASE_B" = "success" ] || { echo "styx-js web gate FAILED (Phase B MDK proofs)."; exit 1; }
           if [ "$VAULTDB" = "true" ]; then
             echo "vault-db-probes: $PROBES"
             [ "$PROBES" = "success" ] || { echo "styx-js web gate FAILED (vault probes)."; exit 1; }
