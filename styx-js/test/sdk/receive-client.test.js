@@ -526,8 +526,9 @@ function oracle(disk, stagedIds, relays, liveCandidates = []) {
     expect(relays).toContain(c.relay);
     expect(Number.isSafeInteger(c.syncedUntil) && c.syncedUntil >= 0).toBe(true);
   }
-  // The committed MLS state counts exactly the committed results (no rejections here),
-  // and no live candidate is ahead of it.
+  // The committed MLS state counts exactly the committed results (no rejections here), and no
+  // live candidate of the new instance is ahead of it. (`disk.provider` counts seal mutations of
+  // the fake, not receive candidates, so it is not compared here.)
   expect(disk.disk.mlsCommitted).toBe(ready.length + disk.disk.acknowledged.length);
   for (const live of liveCandidates) expect(live).toBeLessThanOrEqual(disk.disk.mlsCommitted);
 }
@@ -562,10 +563,16 @@ describe('M3-RECEIVE-1 crash matrix with two client instances (criterion 3, fake
     expect(await until(() => first.view.dead, 6000)).toBe(true);
     const stagedBefore = [...disk.disk.seen];
     const committedBefore = [...disk.disk.ready.map((e) => e.eventId), ...disk.disk.acknowledged];
+    const cursorsBefore = disk.disk.cursors.map((c) => ({ ...c }));
     // A new instance on the same durable store; the dead one stays silent.
     const second = await started(makeClient([r.url], { key: bobKey, disk, known: new Set([alice.pub]) }));
     expect(await until(() => disk.disk.ready.length + disk.disk.acknowledged.length === 1)).toBe(true);
     oracle(disk, stagedBefore, [r.url], second.trace.candidates);
+    // A cursor written before the crash (including one whose commitCursor result was lost) is
+    // still there after the restart. (Each instance has its own accelerated clock, so the new
+    // instance may lawfully replace a cursor that is in its future with a lower one.)
+    for (const before of cursorsBefore) expect(disk.disk.cursors.map((c) => c.relay)).toContain(before.relay);
+    if (point.method === 'commitCursor') expect(cursorsBefore.length).toBe(1);
     const delivered = [...first.messages(), ...second.messages()].map((e) => e.eventId);
     expect(new Set(delivered).size).toBe(1);
     const opened = second.trace.opens.length;
