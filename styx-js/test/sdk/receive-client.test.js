@@ -169,10 +169,37 @@ function durableDisk(publicKey) {
 }
 
 /** A cleartext session port over a fake MLS provider generation, with candidate semantics. */
+/**
+ * A fake exclusive coordinator (caller semantics of #556 section 4): a prepared
+ * candidate holds the provider until its commit or resolve settles; other
+ * provider mutations wait; an aborted candidate restores the provider state
+ * immediately before it was prepared (completed mutations survive).
+ */
+function coordinator(disk, trace) {
+  const coord = { busy: null, release: null, snapshot: 0 };
+  coord.hold = () => {
+    coord.snapshot = disk === null ? 0 : disk.provider;
+    coord.busy = new Promise((resolve) => { coord.release = resolve; });
+  };
+  coord.done = (outcome) => {
+    if (coord.busy === null) return;
+    if (outcome === 'aborted' && disk !== null) disk.provider = coord.snapshot;
+    trace.mutations.push(outcome);
+    const release = coord.release;
+    coord.busy = null;
+    coord.release = null;
+    release();
+  };
+  coord.idle = async () => { while (coord.busy !== null) await coord.busy; };
+  return coord;
+}
+
 function cleartextSession(disk, view, known, invitations = null) {
   const trace = { opens: [], candidates: [], seals: 0, outcomes: [], mutations: [] };
+  const coord = coordinator(disk, trace);
   const session = {
-    seal: ({ plaintext }) => {
+    seal: async ({ plaintext }) => {
+      await coord.idle();
       trace.seals += 1;
       trace.mutations.push('seal');
       if (disk !== null) disk.provider += 1;
@@ -182,18 +209,24 @@ function cleartextSession(disk, view, known, invitations = null) {
     openCandidate: ({ sender, ciphertext }) => {
       if (view !== null && view.dead) return NEVER;
       trace.opens.push(bytesToHex(ciphertext));
-      if (view !== null && view.crashAt?.method === 'openCandidate') { view.dead = true; return NEVER; }
+      if (view !== null && view.crashAt?.method === 'openCandidate' && view.crashAt.when === 'before') {
+        view.dead = true;
+        return NEVER;
+      }
       const plan = trace.outcomes.length > 0 ? trace.outcomes.shift() : 'application';
       if (plan === 'retry') return { receiveOutcome: 'retry', ticket: null };
       const generation = (disk?.mlsCommitted ?? 0) + 1;
       trace.candidates.push(generation);
+      coord.hold();
+      if (view !== null && view.crashAt?.method === 'openCandidate') { view.dead = true; return NEVER; }
       return { receiveOutcome: 'application', plaintext: new Uint8Array(ciphertext), ticket: { sender, generation } };
     },
     isKnownSender: ({ sender }) => known.has(sender),
   };
   if (invitations !== null) {
     session.createKeyPackage = () => utf8Encode(invitations.pub);
-    session.startSession = ({ peer, keyPackage }) => {
+    session.startSession = async ({ peer, keyPackage }) => {
+      await coord.idle();
       if (known.has(peer) || utf8Decode(keyPackage) !== peer) throw Error('credential/existing');
       known.add(peer);
       trace.mutations.push('startSession');
@@ -202,12 +235,13 @@ function cleartextSession(disk, view, known, invitations = null) {
     session.joinSession = async ({ peer, welcome }) => {
       if (known.has(peer) || utf8Decode(welcome) !== peer + ':' + invitations.pub) throw Error('welcome/existing');
       if (invitations.joinGate) await invitations.joinGate;
+      await coord.idle();
       known.add(peer);
       trace.mutations.push('joinSession');
       return true;
     };
   }
-  return { session, trace };
+  return { session, trace, coord };
 }
 
 function identity() {
@@ -243,8 +277,24 @@ function wrapping(key) {
 
 function makeClient(urls, { key = identity(), disk = null, known = new Set(), clock = fastClock(), receiptMode = 'RECIPIENT_RECEIPT', receive, invitations = false, joinGate = null } = {}) {
   const view = disk === null ? null : disk.view();
-  const { session, trace } = cleartextSession(disk?.disk ?? null, view, known,
+  const { session, trace, coord } = cleartextSession(disk?.disk ?? null, view, known,
     invitations ? { pub: key.pub, joinGate } : null);
+  if (view !== null) {
+    // The coordinator releases the candidate when its commit or resolve settles.
+    const { commit, resolve } = view.port;
+    view.port.commit = async (argument) => {
+      // A thrown commit is uncertain: the candidate stays held until resolve.
+      const value = await commit(argument);
+      coord.done(value?.code === undefined ? 'commit' : 'aborted');
+      return value;
+    };
+    view.port.resolve = async (argument) => {
+      const value = await resolve(argument);
+      if (value?.status === 'committed') coord.done('commit');
+      if (value?.status === 'aborted') coord.done('aborted');
+      return value;
+    };
+  }
   const records = new Map();
   const ports = {
     storage: {
@@ -477,9 +527,11 @@ describe('M3-RECEIVE-1 crash matrix with two client instances (criterion 3, fake
   test.each([
     ['before stage', { method: 'stage', when: 'before' }],
     ['lost result of stage', { method: 'stage', when: 'after' }],
-    ['during openCandidate', { method: 'openCandidate', when: 'before' }],
+    ['after stage, before openCandidate', { method: 'openCandidate', when: 'before' }],
+    ['during openCandidate, candidate prepared', { method: 'openCandidate', when: 'after' }],
     ['during commit, not written (resolve aborted)', { method: 'commit', when: 'before' }],
     ['during commit, written (resolve committed)', { method: 'commit', when: 'after' }],
+    ['after commit, before candidate installation and MESSAGE_RECEIVED', { method: 'commit', when: 'after' }],
     ['after the application effect, before ack', { method: 'ack', when: 'before' }],
     ['lost result of ack', { method: 'ack', when: 'after' }],
     ['after receipt publication, before receiptDone', { method: 'receiptDone', when: 'before' }],
@@ -674,9 +726,11 @@ describe('M3-RECEIVE-1 provider mutations during a candidate (criteria 3 and 12,
     release();
     expect(await until(() => bob.events.some((e) => e.kind === 'RECEIVE_STATE_FAILED'))).toBe(true);
     expect(await until(() => alice.messages().length === 1)).toBe(true);
-    // resolve answered aborted: the entry stays PENDING, the seal mutation is not rolled back.
+    // resolve answered aborted: the entry stays PENDING; the coordinator restored the state
+    // immediately before the candidate, which includes the completed seal.
     expect(disk.disk.pending).toHaveLength(1);
     expect(disk.disk.provider).toBe(1);
+    expect(bob.trace.mutations.slice(0, 2)).toEqual(['seal', 'aborted']);
     bob.config.ports.session.openCandidate = original;
     expect(await until(() => bob.messages().length === 1, 6000)).toBe(true);
     expect(disk.disk.ready.length + disk.disk.acknowledged.length).toBe(1);
@@ -722,15 +776,16 @@ describe('M3-RECEIVE-1 review round 1: shutdown during commit and resolve, invit
     const port = first.config.ports.receiveState;
     const commit = port.commit;
     const resolveCall = port.resolve;
+    let entered = false;
     if (held === 'commit') {
-      port.commit = async (argument) => { await gate; return commit(argument); };
+      port.commit = async (argument) => { entered = true; await gate; return commit(argument); };
     } else {
       port.commit = (argument) => { commit(argument); throw new Error('uncertain after write'); };
-      port.resolve = async (argument) => { await gate; return resolveCall(argument); };
+      port.resolve = async (argument) => { entered = true; await gate; return resolveCall(argument); };
     }
     await started(first);
     await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode(held) });
-    expect(await until(() => first.view.calls.includes(held === 'commit' ? 'stage' : 'resolve') && first.trace.opens.length === 1)).toBe(true);
+    expect(await until(() => entered)).toBe(true);
     const stopping = first.client.shutdown();
     release();
     expect((await stopping).ok).toBe(true);
@@ -776,15 +831,19 @@ describe('M3-RECEIVE-1 review round 1: shutdown during commit and resolve, invit
     let release;
     const original = bob.config.ports.session.openCandidate;
     bob.config.ports.session.openCandidate = async (argument) => {
+      const value = original(argument); // the candidate is prepared and holds the provider
       await new Promise((resolve) => { release = resolve; });
-      return original(argument);
+      return value;
     };
     await started(bob);
     await alice.client.send({ recipient: bobKey.pub, payload: utf8Encode('during join') });
     expect(await until(() => release !== undefined)).toBe(true);
-    await invited(carol, bob);
-    expect(bob.trace.mutations).toContain('joinSession');
+    const joining = invited(carol, bob);
+    await sleep(300);
+    expect(bob.trace.mutations).not.toContain('joinSession');
     release();
+    await joining;
+    expect(bob.trace.mutations).toEqual(['commit', 'joinSession']);
     expect(await until(() => bob.messages().length === 1)).toBe(true);
     await sleep(200);
     expect(bob.messages()).toHaveLength(1);

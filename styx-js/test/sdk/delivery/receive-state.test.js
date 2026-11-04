@@ -1056,15 +1056,31 @@ describe('M3-RECEIVE-1 receive state: review round 1', () => {
     const h = harness();
     await h.start();
     const event = await h.arrive(0, 'first');
-    let release;
+    // Hold the open of 'second' after its stage completed.
+    let releaseOpen;
+    const open = h.sess.session.openCandidate;
+    h.sess.session.openCandidate = async (argument) => {
+      await new Promise((resolve) => { releaseOpen = resolve; });
+      return open(argument);
+    };
+    const second = h.frame(1, 'second');
+    h.receive.countFrame(second.record);
+    const admitted = h.receive.admit(second.event, second.record);
+    await flush();
+    expect(h.store.count('stage')).toBe(2);
+    expect(typeof releaseOpen).toBe('function');
+    // Hold an ack in the write chain, then let the open finish: its commit queues behind the ack.
+    let releaseAck;
     const ack = h.store.port.ack;
-    h.store.port.ack = async (argument) => { await new Promise((resolve) => { release = resolve; }); return ack(argument); };
+    h.store.port.ack = async (argument) => { await new Promise((resolve) => { releaseAck = resolve; }); return ack(argument); };
     const acking = h.receive.acknowledge(event.id);
     await flush();
-    await h.arrive(1, 'second');
+    releaseOpen();
+    await flush();
     h.receive.stop();
-    release();
+    releaseAck();
     await acking;
+    await admitted;
     await flush();
     expect(h.store.count('commit')).toBe(1);
     expect(h.store.disk.pending.map((e) => utf8Decode(e.ciphertext))).toEqual(['second']);
@@ -1086,5 +1102,20 @@ describe('M3-RECEIVE-1 receive state: review round 1', () => {
     h.receive.wake();
     await flush(80);
     expect(h.deliveries.map((d) => d.label)).toEqual(['plain:s0', 'plain:s1', 'plain:s2', 'plain:s3', 'plain:s4']);
+  });
+
+  test('a receiptDone that brings storedBytes below the limit re-arms the capacity event', async () => {
+    const h = harness({ limits: { maxStoredBytes: 150 } });
+    await h.start();
+    const receiptDone = h.store.port.receiptDone;
+    h.store.port.receiptDone = (argument) => {
+      const value = receiptDone(argument);
+      return value?.revision === undefined ? value : Object.freeze({ revision: value.revision, storedBytes: 0 });
+    };
+    await h.arrive(0, 'aaaaaaaaaaaaaaaaaaaa', { receipt: true });
+    expect(h.kinds().filter((k) => k === 'RECEIVE_STATE_CAPACITY')).toHaveLength(1);
+    expect(h.store.count('receiptDone')).toBe(1);
+    await h.arrive(0, 'bbbbbbbbbbbbbbbbbbbb');
+    expect(h.kinds().filter((k) => k === 'RECEIVE_STATE_CAPACITY')).toHaveLength(2);
   });
 });
