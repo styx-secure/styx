@@ -11,7 +11,7 @@ use cgka_engine::account_identity_proof::{
     AccountIdentityProofRequest, AccountIdentityProofSigner,
 };
 use cgka_engine::canonicalization::ConvergenceStatus;
-use cgka_engine::{Engine, EngineBuilder};
+use cgka_engine::{ConvergenceClock, Engine, EngineBuilder, SystemConvergenceClock};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
 use cgka_traits::engine::{
@@ -39,6 +39,10 @@ const MAX_HEX_BYTES: usize = 2 * 1024 * 1024;
 const MAX_GROUP_ID_BYTES: usize = 64;
 const MAX_APPLICATION_EVENT_BYTES: usize = 320 * 1024;
 const MAX_GROUP_MESSAGE_BYTES: usize = 1024 * 1024;
+
+fn harness_convergence_clock() -> Arc<dyn ConvergenceClock> {
+    Arc::new(SystemConvergenceClock::default())
+}
 
 #[derive(Default)]
 struct DirectMlsPeeler;
@@ -800,6 +804,7 @@ fn initialize(state: &mut PeerState, request: &Map<String, Value>) -> Result<Val
         .account_identity_proof_signer(Arc::new(signer))
         .protocol_profile(ProtocolProfile::Current)
         .peeler(Box::new(DirectMlsPeeler))
+        .convergence_clock(harness_convergence_clock())
         .build()
         .map_err(|error| RpcError::peer(format!("build current-profile engine: {error}")))?;
     engine
@@ -1744,6 +1749,18 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn harness_convergence_clock_ignores_real_time_and_restarts() {
+        let before_restart = harness_convergence_clock();
+        let opened = before_restart.now();
+        std::thread::sleep(std::time::Duration::from_millis(
+            cgka_engine::canonicalization::V1_SETTLEMENT_QUIESCENCE_MS + 100,
+        ));
+        assert_eq!(before_restart.now(), opened);
+        let after_restart = harness_convergence_clock();
+        assert_eq!(after_restart.now(), opened);
+    }
 
     #[test]
     fn message_ids_are_domain_separated() {
