@@ -50,7 +50,8 @@ export function createInvitations(options) {
   const P = Math.floor(delivery.perRelayTimeoutMs / 2);
   const T = delivery.perRelayTimeoutMs;
   const operations = new Set();
-  const published = new Set();
+  // Own accepted KeyPackage ids and their Nostr expiration in seconds (C-DLV section 6.5).
+  const published = new Map();
   let stopped = false;
   let releaseDisposal;
   const disposalAllowed = new Promise((resolve) => { releaseDisposal = resolve; });
@@ -272,7 +273,7 @@ export function createInvitations(options) {
         tags: [['v', VERSION], ['expiration', String(expiration)]], content: bytesToBase64(keyPackage) });
       await connect(op, { kinds: [4743], authors: [publicKey] });
       const acceptedRelays = await publish(op, event);
-      published.add(event.id);
+      published.set(event.id, expiration);
       return ok({ keyPackageEventId: event.id, acceptedRelays });
     }),
     invite: (argument) => operation(async (op) => {
@@ -302,6 +303,8 @@ export function createInvitations(options) {
       const inviter = peerArgument(argument, ['inviter', 'keyPackageEventId'], 'inviter');
       const id = argument.keyPackageEventId;
       if (typeof id !== 'string' || !HEX.test(id) || !published.has(id)) error('E_SDK_INVALID_ARGUMENT');
+      // A Welcome is accepted only while the KeyPackage it refers to is unexpired (C-DLV section 6.5).
+      const expiresAt = published.get(id) * 1000;
       const admitted = now();
       const deadline = admitted + delivery.deadlineMs;
       const hostDeadline = Date.now() + delivery.deadlineMs + 1000;
@@ -337,7 +340,10 @@ export function createInvitations(options) {
           if (!exact(payload, ['welcome', 'ratchetTree'])) continue;
           const welcome = decode(payload.welcome, 262144);
           const ratchetTree = decode(payload.ratchetTree, 262144);
-          if (!welcome || !ratchetTree || Date.now() >= hostDeadline || now() >= deadline) continue;
+          if (!welcome || !ratchetTree || Date.now() >= hostDeadline) continue;
+          // One reading checks both the admission deadline and the KeyPackage expiration.
+          const current = now();
+          if (current >= deadline || current >= expiresAt) continue;
           const joined = await boundary(session, 'joinSession', [{ peer: inviter, welcome, ratchetTree }], 'E_SDK_SESSION_FAILED');
           if (joined !== true) error('E_SDK_SESSION_FAILED');
           return ok({ inviter });
