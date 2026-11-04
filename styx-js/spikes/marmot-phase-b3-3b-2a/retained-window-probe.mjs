@@ -148,13 +148,22 @@ async function initializeMdk(peer, fields) {
   });
 }
 
-// Runs `use` on a fresh MDK peer opened on `fields` with the group restored, then closes that peer. A
-// close failure after successful work propagates unless `maskClose` is set.
+// Runs `use` on a fresh MDK peer opened on `fields` with the group restored, then closes that peer. The
+// peer is closed on every path: if initialize, restore_group or `use` fails it is closed before that
+// failure propagates unchanged (a close failure cannot replace it), because a peer left running keeps
+// waiting on its stdin and the Node process never exits. A close failure after successful work
+// propagates unless `maskClose` is set.
 export async function withRestoredMdk(executable, fields, groupIdHex, use, { maskClose = false } = {}) {
   const peer = new MdkB33aProcess(executable);
-  await initializeMdk(peer, fields);
-  await peer.request('restore_group', { group_id_hex: groupIdHex });
-  const result = await use(peer);
+  let result;
+  try {
+    await initializeMdk(peer, fields);
+    await peer.request('restore_group', { group_id_hex: groupIdHex });
+    result = await use(peer);
+  } catch (error) {
+    await peer.close().catch(() => {});
+    throw error;
+  }
   const closing = peer.close();
   await (maskClose ? closing.catch(() => {}) : closing);
   return result;
