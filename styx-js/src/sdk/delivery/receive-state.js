@@ -615,7 +615,10 @@ export function createReceiveState(options) {
     const current = cursors.get(index);
     if (current !== undefined && !current.skewed && target <= current.syncedUntil) return;
     serialized(async () => {
-      if (stopped || mode !== 'normal') return;
+      // Re-checked when the write actually starts: a barrier failure or an
+      // invitation that began while the write waited in the chain prevents it.
+      if (stopped || mode !== 'normal' || relay.blocked || relay.failedIds.size > 0) return;
+      if (invitationsActive > 0 || generation.issueSeq <= lastInvitationEndSeq) return;
       const latest = cursors.get(index);
       if (latest !== undefined && !latest.skewed && target <= latest.syncedUntil) return;
       const result = await portWrite('commitCursor', {
@@ -800,6 +803,18 @@ export function createReceiveState(options) {
     });
   }
 
+  /** Whether an `openCandidate` result carries a `receiveOutcome` outside its closed set. */
+  function outcomeOutOfSet(value) {
+    try {
+      if (value === null || typeof value !== 'object') return false;
+      const descriptor = Reflect.getOwnPropertyDescriptor(value, 'receiveOutcome');
+      return descriptor !== undefined && hasOwn(descriptor, 'value') && typeof descriptor.value === 'string'
+        && !OUTCOMES.has(descriptor.value);
+    } catch {
+      return false;
+    }
+  }
+
   /** The closed `openCandidate` result, or `null` for a malformed one. */
   function readCandidate(value) {
     const fields = closed(value, ['receiveOutcome', 'ticket'], ['plaintext']);
@@ -821,8 +836,11 @@ export function createReceiveState(options) {
     if (stopped) return;
     let candidate = null;
     if (called.settled === 'value') {
-      if (scan(called.value).unknown) safeEmit({ kind: 'INBOUND_DISCARDED', code: UNKNOWN });
-      else candidate = readCandidate(called.value);
+      if (scan(called.value).unknown || outcomeOutOfSet(called.value)) {
+        safeEmit({ kind: 'INBOUND_DISCARDED', code: UNKNOWN });
+      } else {
+        candidate = readCandidate(called.value);
+      }
     }
     if (candidate === null || candidate.outcome === 'retry') return;
     const result = candidate.outcome === 'application'
@@ -833,7 +851,8 @@ export function createReceiveState(options) {
   }
 
   async function commitEntry(entry, ticket, result) {
-    if (mode !== 'normal') return;
+    // Shutdown starts no commit that was only queued behind another write.
+    if (stopped || mode !== 'normal') return;
     const written = await portWrite('commit', { eventId: entry.eventId, ticket, result }, COMMIT_CODES);
     if (written.status === 'ok') {
       adopt(written);
@@ -871,6 +890,8 @@ export function createReceiveState(options) {
       safeEmit({ kind: 'INBOUND_DISCARDED', code: 'E_SDK_SESSION_FAILED' });
     }
     clearFailedId(entry.eventId);
+    // A capacity refusal of the port holds until a later write succeeds.
+    portCapacity = false;
     if (quotaReached()) reportCapacity(); else recheckCapacity();
   }
 

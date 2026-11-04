@@ -56,7 +56,7 @@ Fixed values (not configurable in this version):
 | Catch-up margin | 120 s | §5.4; overlap before a relay's local-clock cursor. |
 | Receive retry interval | 10 000 ms (the catch-up interval) | §7.4, with `ports.receiveState` only: periodic pass over `PENDING` entries and per-entry in-run retry budget; clock port only, no host backstop. |
 | Redelivery interval | 60 000 ms | §7.4, with `ports.receiveState` only: redelivery pass of unacknowledged `READY` entries; clock port only, no host backstop. |
-| Receive-state settle bound | five port-call timeouts | §7.4, with `ports.receiveState` only: host-time bound of `acknowledgeMessage` and of the shutdown and failed-`start()` waits for the open unit, the write chain and a receipt in progress. |
+| Receive-state bounds | five port-call timeouts; two port-call timeouts | §7.4, with `ports.receiveState` only: five port-call timeouts bound `acknowledgeMessage`; the shutdown and failed-`start()` waits for the open unit, the write chain and a receipt in progress use the existing settle bound of two port-call timeouts, so the shutdown bound does not grow. |
 | Reconnect interval | the backoff schedule of §4.3, by consecutive failures of that relay, capped at 30 000 ms | §5.2. |
 
 The SDK does not inspect the size of a ciphertext or a plaintext that the session port returns (interface §8.2). Relays may refuse large events; such a refusal is an ordinary relay outcome (§5.3). Inbound, the SDK reads only the length of an event's `content` string (§7.1 step 1), never ciphertext bytes; a sender whose session port returns more than 262 146 bytes (whose base64 exceeds 349 528 characters) publishes an event that conforming recipients discard, and the sender is not told.
@@ -196,7 +196,7 @@ S7 adds the synchronous option `subscriptionSince(relayIndex)` to the relay set:
 
 - *Subscription ids.* The unchanged `RelayPool` exposes no `CLOSE`, so the catch-up generation is per pool: every pool of a relay, the first and each replacement, gets a fresh id `<base>.<n>`, where `<base>` is the client's `s`-prefixed id above and `n` counts from 1 the pools prepared for that relay in this client run. That id is used for the pool's first `REQ`, every re-request on it and the matching of its inbound `EVENT`, `EOSE` and `CLOSED` frames; a late `EOSE` or frame carrying another id has no effect. The relay set reads it through the option S8 `subscriptionIdFor(relayIndex)`, called when a pool is prepared, before its issue notice; a throw or a return that is not a non-empty string of at most 64 characters keeps `<base>`. The option `onRelayConnected(relayIndex)` is called when a pool's connection attempt settles connected; its throw is ignored.
 - *Issue and `since`.* Each issue notice (initial, replacement or periodic) records the issue time `floor(clock.now() / 1000)` as outstanding on the current pool; an invalid clock reading records nothing and the request has no `since`. A cursor, loaded or committed in this run, with `syncedUntil > floor(clock.now() / 1000)` at an issue is treated as absent from then on: the request has no `since`, the value is not reused, the next complete barrier replaces it even when lower, and `RECEIVE_STATE_CLOCK_SKEW` is emitted once per relay per run. Otherwise `since = max(0, syncedUntil − 120)`, also on the first `REQ` of the first pool; no cursor is derived from `created_at` or any other `EVENT` field. The rule decides the filter actually sent, including the explicit `since` passed to S7 `resubscribe`. A local clock running ahead while requests are issued remains a limit: the cursor it produces is corrected at the first request issued after the clock returns.
-- *Barrier.* Every inbound `EVENT` frame is counted per relay **before** the volatile queue of §7.1, including live frames after `EOSE`. Each counted frame is later accounted as staged, durably seen, invalid, a receipt, or not admitted because `isKnownSender` returned `false`, or as a failure: a queue drop, a failed or timed-out `isKnownSender`, a failed or uncertain `stage`, a refused or uncertain `commit`, an admission refused at a quota, or a frame received while the receive state is paused or frozen. A failure tied to a known event id is cleared only once that id has later been accounted as staged, durably seen or not admitted, or its entry committed or its uncertain commit resolved; a failure whose event cannot be identified blocks cursor commits for that relay for the rest of the client run. A later `EOSE` or clean pool never clears a failure by itself.
+- *Barrier.* Every inbound `EVENT` frame is counted per relay **before** the volatile queue of §7.1, including live frames after `EOSE`. Each counted frame is later accounted as staged, durably seen, invalid, a receipt, or not admitted because `isKnownSender` returned `false`, or as a failure: a queue drop, a failed or timed-out `isKnownSender`, a failed or uncertain `stage`, a refused or uncertain `commit`, an admission refused at a quota, or a frame received while the receive state is paused or frozen. A failure tied to a known event id is cleared only once that id has later been accounted as staged, durably seen or not admitted, or its entry committed or its uncertain commit resolved; an invalid copy does not clear it (precision of #556 §9: an invalid copy carrying the id does not show that the authentic event with that id is invalid, so the failure holds until a valid copy is accounted or the run ends); a failure whose event cannot be identified blocks cursor commits for that relay for the rest of the client run. A later `EOSE` or clean pool never clears a failure by itself.
 - *Commit.* An `EOSE` of the current pool's id may commit at most the earliest issue time among that pool's outstanding requests (re-requests on one pool share its id), then clears them; the commit waits until every frame of that relay counted before the `EOSE` has been accounted, and is written with `commitCursor({ relay, generation: n, syncedUntil })` only when no barrier failure remains for the relay, the receive state is normal, the value exceeds the stored cursor (or that cursor is skewed), and the invitation rule allows it. From the start of `invite` or `acceptInvite` until it ends, and for every request issued before it ended, no delivery cursor is committed; after it ends only a request issued later, whose `since` comes from the cursor committed before the operation, can commit. A failed or uncertain `commitCursor` freezes the receive state (interface §8.5). Relays no longer configured are ignored and new relays start without a cursor; a restart retries from the last committed cursor, and an event lost before `stage` remains relay-dependent.
 
 ### 5.5 Closing
@@ -386,7 +386,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   "sdkWireVersion": "styx-m3-sdk/0.3.0-experimental",
   "sdkInterfaceDoc": {
     "path": "docs/architecture/m3/sdk-interface.md",
-    "sha256": "73ccce05241efd27cabd0371c96cd2fc2e67f422d546a9f46ac99e809464e795"
+    "sha256": "ee614414e86b1baa7889889e4e6cd4e7a012865caabfb98aa23399a33b5bbf9d"
   },
   "publicSurfaceChanged": true,
   "surfaceAmendment": "M3-RECEIVE-1: interface 0.4.0 (eventId, acknowledgeMessage, config.receive, ports.receiveState, five codes, three event kinds); wire unchanged",
@@ -436,7 +436,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "catchUpMarginSeconds": 120,
     "receiveRetryIntervalMs": 10000,
     "receiveRedeliveryIntervalMs": 60000,
-    "receiveStateSettleBoundMs": "5 * portCallTimeoutMs",
+    "acknowledgeMessageBoundMs": "5 * portCallTimeoutMs",
+    "receiveStateSettleBoundMs": "2 * portCallTimeoutMs",
     "keyPackageLifetimeSeconds": 3600,
     "keyPackageMaxBytes": 65536,
     "welcomeMaxBytes": 262144,
@@ -586,7 +587,12 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
     "E_SDK_NOT_CONFIGURED",
     "E_SDK_PUBLISH_NOT_ACCEPTED",
     "E_SDK_KEYPACKAGE_NOT_FOUND",
-    "E_SDK_INVITE_TIMEOUT"
+    "E_SDK_INVITE_TIMEOUT",
+    "E_SDK_RECEIVE_STATE_FAILED",
+    "E_SDK_RECEIVE_STATE_INCOMPATIBLE",
+    "E_SDK_RECEIVE_STATE_CONFLICT",
+    "E_SDK_RECEIVE_STATE_CAPACITY",
+    "E_SDK_UNKNOWN_MESSAGE"
   ],
   "relays": {
     "poolPerRelay": true,
@@ -1005,8 +1011,8 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       "invite",
       "acceptInvite"
     ],
-    "shutdown": "no admission, candidate, commit, pass or receipt starts; uncommitted entries stay PENDING; open unit, write chain and receipt in progress settle within 5 * portCallTimeoutMs, concurrent with step-4 waits",
-    "shutdownBoundGrowthMs": "3 * portCallTimeoutMs"
+    "shutdown": "no admission, candidate, commit, pass or receipt starts; uncommitted entries stay PENDING; open unit, write chain and receipt in progress awaited within 2 * portCallTimeoutMs, concurrent with step-4 waits; a unit not settled by then stays PENDING",
+    "shutdownBoundGrowthMs": "0"
   }
 }
 ```
