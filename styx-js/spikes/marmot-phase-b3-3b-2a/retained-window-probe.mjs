@@ -148,6 +148,18 @@ async function initializeMdk(peer, fields) {
   });
 }
 
+// Runs `use` on a fresh MDK peer opened on `fields` with the group restored, then closes that peer. A
+// close failure after successful work propagates unless `maskClose` is set.
+export async function withRestoredMdk(executable, fields, groupIdHex, use, { maskClose = false } = {}) {
+  const peer = new MdkB33aProcess(executable);
+  await initializeMdk(peer, fields);
+  await peer.request('restore_group', { group_id_hex: groupIdHex });
+  const result = await use(peer);
+  const closing = peer.close();
+  await (maskClose ? closing.catch(() => {}) : closing);
+  return result;
+}
+
 function clearRecovery(value) {
   clearBytes(value?.stateBytes);
   clearBytes(value?.parentStateBytes);
@@ -525,23 +537,23 @@ export async function runRetainedWindowProbe(candidatePath) {
     futureFromStyx = await context.adapter.prepareApplicationOutbound(
       event(context.styxIdentityHex, context.groupIdHex, 21),
     );
-    let futureMdk = new MdkB33aProcess(context.mdkExecutable);
     const futureMdkFields = { ...context.mdkFields, databasePath: futureDatabasePath };
-    await initializeMdk(futureMdk, futureMdkFields);
-    await futureMdk.request('restore_group', { group_id_hex: context.groupIdHex });
-    const futureMdkBefore = await futureMdk.request('public_projection');
-    let futureMdkRejected = false;
-    try {
-      await futureMdk.request('ingest_group_message', {
-        group_message_hex: bytesToHex(futureFromStyx.ciphertextBytes),
-      });
-    } catch { futureMdkRejected = true; }
-    await futureMdk.close().catch(() => {});
-    futureMdk = new MdkB33aProcess(context.mdkExecutable);
-    await initializeMdk(futureMdk, futureMdkFields);
-    await futureMdk.request('restore_group', { group_id_hex: context.groupIdHex });
-    const futureMdkAfter = await futureMdk.request('public_projection');
-    await futureMdk.close();
+    const { futureMdkBefore, futureMdkRejected } = await withRestoredMdk(
+      context.mdkExecutable, futureMdkFields, context.groupIdHex, async (futureMdk) => {
+        const before = await futureMdk.request('public_projection');
+        let rejected = false;
+        try {
+          await futureMdk.request('ingest_group_message', {
+            group_message_hex: bytesToHex(futureFromStyx.ciphertextBytes),
+          });
+        } catch { rejected = true; }
+        return { futureMdkBefore: before, futureMdkRejected: rejected };
+      }, { maskClose: true },
+    );
+    const futureMdkAfter = await withRestoredMdk(
+      context.mdkExecutable, futureMdkFields, context.groupIdHex,
+      (futureMdk) => futureMdk.request('public_projection'),
+    );
     if (!futureMdkRejected || !sameJson(futureMdkBefore, futureMdkAfter)) {
       failB33b2a('B33B2A_CORRUPT', 'future-epoch MDK control mutated or was accepted');
     }
