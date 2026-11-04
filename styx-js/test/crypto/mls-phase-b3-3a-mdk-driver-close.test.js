@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +17,7 @@ IFS= read -r _request
 exec 0<&-
 printf '%s\\n' '{"id":1,"ok":false,"error":{"code":"mdk_peer_quarantined","details":null,"message":"synthetic quarantine"}}'
 sleep 0.3
+: > "\${0%/*}/quarantine-exited"
 exit 0
 `;
 const CHECKPOINT_PEER = `#!/bin/sh
@@ -45,6 +48,8 @@ describe('Phase B3.3a MDK driver close boundary', () => {
     await expect(mdk.request('ingest_group_message', { group_message_hex: '00' }))
       .rejects.toMatchObject({ code: 'mdk_peer_quarantined' });
     await expect(mdk.close()).resolves.toBeUndefined();
+    // The stand-in writes this marker just before it exits.
+    expect(existsSync(join(directory, 'quarantine-exited'))).toBe(true);
   });
 
   test('close of a live peer still requests checkpoint_and_exit', async () => {

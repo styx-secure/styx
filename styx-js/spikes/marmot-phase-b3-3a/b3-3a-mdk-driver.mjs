@@ -90,6 +90,10 @@ export class MdkB33aProcess {
       this.#rejectAll(error);
       return;
     }
+    // The peer writes a quarantine response and then exits on its own
+    // (RpcError terminate), so its stdin may already be closed when close()
+    // runs. Record it even when the request has already timed out.
+    if (!response.ok && response.error.code === MDK_PEER_QUARANTINED) this.#quarantined = true;
     const pending = this.#pending.get(response.id);
     if (!pending) {
       const error = new Error('MDK peer returned an unexpected response id');
@@ -101,9 +105,6 @@ export class MdkB33aProcess {
     clearTimeout(pending.timer);
     if (response.ok) pending.resolve(response.result);
     else {
-      // The peer writes this response and then exits on its own (RpcError
-      // terminate), so its stdin may already be closed when close() runs.
-      if (response.error.code === MDK_PEER_QUARANTINED) this.#quarantined = true;
       const error = new Error(response.error.message);
       error.code = response.error.code;
       error.details = response.error.details;
