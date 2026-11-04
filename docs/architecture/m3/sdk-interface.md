@@ -177,7 +177,7 @@ When a method other than `shutdown()` fails, it makes no change visible to the c
 - **Inside the SDK.** A code, state or outcome produced by a lane component or a port that is not a member of the closed sets here is never forwarded as is. In a result of a client method of §4.2 it becomes `{ ok: false, code: 'E_SDK_UNKNOWN_CODE' }`; `createStyxClient` calls no port or lane component, and any internal fault there returns `E_SDK_INVALID_CONFIG`, never success. For a non-terminal outbound item it moves the item to `FAILED_NOT_ACCEPTED` (if no relay acceptance was recorded) or, in `RECIPIENT_RECEIPT` mode after a relay acceptance was recorded, to `FAILED_NO_RECEIPT`, with `lastCode: 'E_SDK_UNKNOWN_CODE'`, and stops further attempts. A terminal item, including `RELAY_ACCEPTED` in `RELAY_ACCEPTANCE_ONLY` mode (where relay acceptance is itself terminal), is never changed by an unknown value. It never yields `ok: true`, a success state or a success event; the only success that can coexist with an unknown value is the unconditional `shutdown()` result, which reports the affected item as `LOST_ON_SHUTDOWN`, never as delivered.
 - **In consumers.** A consumer MUST treat as failure any envelope whose `ok` is not exactly the boolean `true`, any `code` for which `isKnownResultCode` is `false`, any delivery state not in §6 and any event kind not in §7. A consumer MUST NOT infer success, acceptance or receipt from an unknown value.
 - Unknown is never mapped to a weaker failure, retried as success, or ignored.
-- **Per port.** The closed `code` slots read from `ports.storage`, `ports.session` and `ports.identity` keep the code set of interface 0.3.1: the five codes added in 0.4.0 belong to `ports.receiveState` and to `acknowledgeMessage`, and on another port they read as unknown (`E_SDK_UNKNOWN_CODE`).
+- **Unchanged lane modules.** The outbound queue and the 0.3.1 inbound path read the closed `code` slots of the values they inspect themselves against the code set of interface 0.3.1, so one of the five codes added in 0.4.0 found there reads as unknown (`E_SDK_UNKNOWN_CODE`), a stricter reading. Every other closed `code` slot the client reads uses the set of §5.2.
 
 ### 5.4 Method → code table
 
@@ -1282,7 +1282,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       "counts": "entries returned by load plus later writes",
       "reached": "new admission stops; crossing write completes; nothing deleted",
       "event": "RECEIVE_STATE_CAPACITY once per crossing",
-      "commitCapacityRefusal": "entry stays PENDING; admission stops until the next successful ack",
+      "commitCapacityRefusal": "entry stays PENDING; admission stops until the next successful commit or ack",
       "maxSeenSaturationPersistent": true
     },
     "failStop": {

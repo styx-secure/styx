@@ -306,6 +306,8 @@ export function createReceiveState(options) {
       const result = await portWrite(name, fields, WRITE_CODES);
       if (result.status === 'ok') {
         adopt(result);
+        // The adopted `storedBytes` may cross a limit or drop below it.
+        if (quotaReached()) reportCapacity(); else recheckCapacity();
         return true;
       }
       failState('frozen', result.code);

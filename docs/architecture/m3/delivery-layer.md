@@ -386,7 +386,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   "sdkWireVersion": "styx-m3-sdk/0.3.0-experimental",
   "sdkInterfaceDoc": {
     "path": "docs/architecture/m3/sdk-interface.md",
-    "sha256": "ee614414e86b1baa7889889e4e6cd4e7a012865caabfb98aa23399a33b5bbf9d"
+    "sha256": "9a0b1c4ba77c6e5e6c90902ddf49b4c0193e21c6f13732bec2e74f0b05272184"
   },
   "publicSurfaceChanged": true,
   "surfaceAmendment": "M3-RECEIVE-1: interface 0.4.0 (eventId, acknowledgeMessage, config.receive, ports.receiveState, five codes, three event kinds); wire unchanged",
