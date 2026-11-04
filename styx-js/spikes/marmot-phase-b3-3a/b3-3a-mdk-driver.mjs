@@ -133,22 +133,31 @@ export class MdkB33aProcess {
     });
   }
 
+  #hasExited() {
+    return this.#child.exitCode !== null || this.#child.signalCode !== null;
+  }
+
+  async #waitForExit(label) {
+    if (this.#hasExited()) return;
+    let timer;
+    try {
+      await Promise.race([this.#exited, new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} MDK peer did not exit; stderr=${this.#stderr}`);
+          error.code = B33A_ERROR.INVALID;
+          reject(error);
+        }, RPC_TIMEOUT_MS);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  // Resolves only after the peer process has exited, so its durable storage
+  // is closed before a caller copies it or opens it from a fresh process.
   async close() {
-    if (this.#child.exitCode !== null || this.#child.signalCode !== null) return;
-    if (this.#quarantined) {
-      // A quarantined peer is already exiting: never write to it, wait for its exit.
-      let timer;
-      try {
-        await Promise.race([this.#exited, new Promise((_, reject) => {
-          timer = setTimeout(() => {
-            const error = new Error(`quarantined MDK peer did not exit; stderr=${this.#stderr}`);
-            error.code = B33A_ERROR.INVALID;
-            reject(error);
-          }, RPC_TIMEOUT_MS);
-        })]);
-      } finally { clearTimeout(timer); }
-      return;
-    }
+    if (this.#hasExited()) return;
+    // A quarantined peer is already exiting: never write to it.
+    if (this.#quarantined) return this.#waitForExit('quarantined');
     try { await this.request('checkpoint_and_exit'); } finally { this.#child.stdin.end(); }
+    return this.#waitForExit('checkpointed');
   }
 }

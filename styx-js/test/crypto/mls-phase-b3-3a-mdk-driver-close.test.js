@@ -24,7 +24,10 @@ const CHECKPOINT_PEER = `#!/bin/sh
 IFS= read -r request
 case "$request" in
   *'"id":1,"op":"checkpoint_and_exit"'*)
-    printf '%s\\n' '{"id":1,"ok":true,"result":{"checkpointed":true}}' ;;
+    printf '%s\\n' '{"id":1,"ok":true,"result":{"checkpointed":true}}'
+    # Like the real peer, which closes its durable storage only when it exits.
+    sleep 0.3
+    : > "\${0%/*}/checkpoint-exited" ;;
   *)
     printf '%s\\n' '{"id":1,"ok":false,"error":{"code":"invalid_request","details":null,"message":"unexpected request"}}' ;;
 esac
@@ -52,8 +55,10 @@ describe('Phase B3.3a MDK driver close boundary', () => {
     expect(existsSync(join(directory, 'quarantine-exited'))).toBe(true);
   });
 
-  test('close of a live peer still requests checkpoint_and_exit', async () => {
+  test('close of a live peer requests checkpoint_and_exit and waits for the exit', async () => {
     const mdk = new MdkB33aProcess(script('checkpoint-peer.sh', CHECKPOINT_PEER));
     await expect(mdk.close()).resolves.toBeUndefined();
+    // The stand-in writes this marker only after a valid checkpoint_and_exit, just before it exits.
+    expect(existsSync(join(directory, 'checkpoint-exited'))).toBe(true);
   });
 });
