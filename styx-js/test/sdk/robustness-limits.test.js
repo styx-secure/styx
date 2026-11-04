@@ -70,8 +70,11 @@ function clock(speed = SPEED) {
   const origin = Date.now(); const shift = { by: 0, next: null };
   const raw = () => origin + (Date.now() - origin) * speed;
   const port = { now: () => {
-    if (shift.next !== null) { shift.by = shift.next - raw(); shift.next = null; }
-    return raw() + shift.by;
+    const value = raw();
+    if (shift.next === null) return value + shift.by;
+    const target = shift.next;
+    shift.by = target - value; shift.next = null;
+    return target;
   }, setTimer: (f, ms) => setTimeout(f, ms / speed), clearTimer: clearTimeout };
   shifts.set(port, shift);
   return port;
