@@ -63,12 +63,16 @@ function testSession(pk, calls) {
     },
   };
 }
-// A caller clock SPEED times faster than host time; `shifts.get(port).by` moves only its readings.
+// A caller clock SPEED times faster than host time; `shifts.get(port).by` moves only its readings,
+// and `shifts.get(port).next`, when set, is returned exactly by the next reading, from which time goes on.
 const shifts = new WeakMap();
 function clock(speed = SPEED) {
-  const origin = Date.now(); const shift = { by: 0 };
-  const port = { now: () => origin + (Date.now() - origin) * speed + shift.by,
-    setTimer: (f, ms) => setTimeout(f, ms / speed), clearTimer: clearTimeout };
+  const origin = Date.now(); const shift = { by: 0, next: null };
+  const raw = () => origin + (Date.now() - origin) * speed;
+  const port = { now: () => {
+    if (shift.next !== null) { shift.by = shift.next - raw(); shift.next = null; }
+    return raw() + shift.by;
+  }, setTimer: (f, ms) => setTimeout(f, ms / speed), clearTimer: clearTimeout };
   shifts.set(port, shift);
   return port;
 }
@@ -202,6 +206,19 @@ describe('C-DLV section 6.5 -- a Welcome is joined only while its own KeyPackage
     expect(b.calls.filter((c) => c === 'joinSession')).toHaveLength(0);
   });
 
+  test('a Welcome whose pre-join reading is exactly the expiration is ignored', async () => {
+    const { a, b, kp, expiration } = await invited();
+    // 20 s of caller time before the expiration is 1 s of host time; the Welcome is already stored.
+    shiftTo(b.time, (expiration - 20) * 1000);
+    const unwrap = b.id.unwrapGift; let unwraps = 0;
+    // The first clock reading after the unwrap is the one immediately before joinSession.
+    b.id.unwrapGift = (argument) => { unwraps++; shifts.get(b.time).next = expiration * 1000; return unwrap(argument); };
+    expect(await b.client.acceptInvite({ inviter: a.id.pk, keyPackageEventId: kp.value.keyPackageEventId }))
+      .toEqual({ ok: false, code: 'E_SDK_INVITE_TIMEOUT' });
+    expect(unwraps).toBe(1);
+    expect(b.calls.filter((c) => c === 'joinSession')).toHaveLength(0);
+  });
+
   test('a Welcome read before the expiration is joined as before', async () => {
     const { a, b, kp, expiration } = await invited();
     // 60 s of caller time before the expiration is 3 s of host time.
@@ -257,8 +274,9 @@ describe('interface section 4.2 -- declared limit: a failed startSession is not 
   test('startSession failing is E_SDK_SESSION_FAILED, with no further session call and no Welcome published', async () => {
     const r = await relay(); const a = await started([r]); const b = identity();
     // The content is not the invitee's credential, so the test session refuses it.
-    r.events.push(signed({ pubkey: b.pk, created_at: seconds(a.time), kind: 4743,
-      tags: [['v', V], ['expiration', String(seconds(a.time) + 3600)]], content: bytesToBase64(new Uint8Array([1, 2, 3])) }, b.key));
+    const createdAt = seconds(a.time);
+    r.events.push(signed({ pubkey: b.pk, created_at: createdAt, kind: 4743,
+      tags: [['v', V], ['expiration', String(createdAt + 3600)]], content: bytesToBase64(new Uint8Array([1, 2, 3])) }, b.key));
     expect(await a.client.invite({ invitee: b.pk })).toEqual({ ok: false, code: 'E_SDK_SESSION_FAILED' });
     expect(a.calls).toEqual(['startSession']);
     expect(r.events.filter((e) => e.kind === 1059)).toHaveLength(0);
@@ -291,7 +309,7 @@ describe('C-DLV section 8 -- declared limit: a failed open remains processed', (
   });
 });
 
-describe('C-DLV section 5.2 -- declared limit: start() inspects every listed record in one pass', () => {
+describe('C-DLV section 5.2 -- declared limit: start() inspects every listed record synchronously, closed slots before shape', () => {
   const template = (i, state = 'RELAY_ACCEPTED') => ({ deliveryId: 'd' + (i + 1), recipient: 'a'.repeat(64),
     receiptMode: 'RELAY_ACCEPTANCE_ONLY', state, attempts: 1, createdAt: 0, deadlineAt: 120000, lastCode: null,
     relayOutcomes: [{ relayIndex: 0, outcome: 'ACCEPTED' }], ciphertext: null, event: null });
@@ -319,8 +337,9 @@ describe('C-DLV section 5.2 -- declared limit: start() inspects every listed rec
     expect(new Set([...small.reads, ...large.reads])).toEqual(new Set([perRecord]));
   }, 60000);
 
-  test('an out-of-set state in the last of 10 000 records is still E_SDK_UNKNOWN_CODE', async () => {
+  test('an out-of-set state in the last of 10 000 records is still E_SDK_UNKNOWN_CODE, also after a malformed first record', async () => {
     const records = Array.from({ length: 10000 }, (_, i) => template(i));
+    records[0] = { ...template(0), extra: true };
     records[9999] = template(9999, 'NOT_A_STATE');
     expect((await inspect(records)).result).toEqual({ ok: false, code: 'E_SDK_UNKNOWN_CODE' });
   }, 60000);
