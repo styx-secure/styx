@@ -4,8 +4,44 @@
 // online/presence flag is runtime-only and never persisted.
 
 import { EventEmitter } from '../utils.js';
+import { isPlainObject, isValidMessageTs, ownDataProperty } from './inbound-payload.js';
 
 const INDEX_KEY = 'styx:contacts';
+
+/**
+ * A persisted contact record with every field of the wrong type replaced by its
+ * empty value, or null when the record is not an object at all. Other own data
+ * fields are kept as they are; pubkey always comes from the index key.
+ * @param {string} pubkey the index key
+ * @param {unknown} raw
+ * @returns {object|null}
+ */
+function normalizeContactRecord(pubkey, raw) {
+  if (!isPlainObject(raw)) return null;
+  const record = {};
+  for (const key of Object.keys(raw)) {
+    const field = ownDataProperty(raw, key);
+    if (field !== undefined) {
+      Object.defineProperty(record, key, { value: field, enumerable: true, writable: true, configurable: true });
+    }
+  }
+  const alias = ownDataProperty(raw, 'alias');
+  const unread = ownDataProperty(raw, 'unread');
+  const lastPreview = ownDataProperty(raw, 'lastPreview');
+  const lastTs = ownDataProperty(raw, 'lastTs');
+  const verifiedAt = ownDataProperty(raw, 'verifiedAt');
+  const verified = ownDataProperty(raw, 'verified') === true;
+  delete record.online; // presence is runtime-only, never persisted
+  return Object.assign(record, {
+    pubkey,
+    alias: typeof alias === 'string' ? alias : '',
+    unread: Number.isSafeInteger(unread) && unread >= 0 ? unread : 0,
+    lastPreview: typeof lastPreview === 'string' ? lastPreview : null,
+    lastTs: isValidMessageTs(lastTs) ? lastTs : null,
+    verified,
+    verifiedAt: verified && isValidMessageTs(verifiedAt) ? verifiedAt : null,
+  });
+}
 
 /**
  * @typedef {object} Contact
@@ -44,7 +80,17 @@ export class ContactRoster {
    */
   async load() {
     const index = (await this._backend.get(INDEX_KEY)) || {};
-    this._contacts = new Map(Object.entries(index));
+    // A record written before inbound validation existed may carry a lastTs,
+    // preview or counter of the wrong type (for example an object as lastTs),
+    // which would make sorting and rendering throw at every start. Such fields
+    // are neutralised here; the cleaned index is written back at the next save.
+    this._contacts = new Map();
+    if (isPlainObject(index)) {
+      for (const pubkey of Object.keys(index)) {
+        const record = normalizeContactRecord(pubkey, ownDataProperty(index, pubkey));
+        if (record) this._contacts.set(pubkey, record);
+      }
+    }
     this._loaded = true;
   }
 
@@ -138,7 +184,8 @@ export class ContactRoster {
    */
   async touch(pubkey, { preview, ts, incrementUnread = false }) {
     const record = this._require(pubkey);
-    record.lastPreview = preview;
+    if (!isValidMessageTs(ts)) throw new TypeError('ContactRoster.touch: ts must be a valid timestamp');
+    record.lastPreview = typeof preview === 'string' ? preview : null;
     record.lastTs = ts;
     if (incrementUnread) record.unread += 1;
     await this._persist();
