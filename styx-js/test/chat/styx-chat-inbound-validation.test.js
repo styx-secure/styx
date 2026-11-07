@@ -164,6 +164,29 @@ describe('inbound payload validation (StyxChat._processApp)', () => {
     expect(await h.chat.listMessages(PEER)).toEqual([]);
     expect(h.sent).toEqual([]);
   });
+
+  test('an instance assembled without the constructor still discards and counts', async () => {
+    const roster = new ContactRoster({ backend: memBackend() });
+    await roster.load();
+    await roster.add({ pubkey: PEER, alias: 'Peer' });
+    const plaintext = new TextEncoder().encode(JSON.stringify(msg({ ts: poisoned() })));
+    const stored = [];
+    const bare = Object.assign(Object.create(StyxChat.prototype), {
+      _engine: { session: () => ({ decrypt: () => ({ kind: 'application', plaintext }) }) },
+      _persistMls: async () => {},
+      _roster: roster,
+      _pending: new Map(),
+      _emitter: { emit() {} },
+      _seenIncoming: new Set(),
+      _store: { append: async (m) => { stored.push(m); } },
+      _persistMessages: async () => {},
+      _sendReceipt: async () => {},
+    });
+    await expect(bare._processApp(PEER, { t: 'app', ct: 'AAAA' })).resolves.toBe(true);
+    expect(bare._inboundDiscards?.['invalid-ts']).toBe(1);
+    expect(stored).toEqual([]);
+    expect((await roster.get(PEER)).lastTs).toBeNull();
+  });
 });
 
 describe('stored history neutralisation at init()', () => {
