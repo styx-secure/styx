@@ -10,20 +10,28 @@ const INDEX_KEY = 'styx:contacts';
 
 /**
  * A persisted contact record with every field of the wrong type replaced by its
- * empty value, or null when the record is not an object at all.
+ * empty value, or null when the record is not an object at all. Other own data
+ * fields are kept as they are; pubkey always comes from the index key.
  * @param {string} pubkey the index key
  * @param {unknown} raw
  * @returns {object|null}
  */
 function normalizeContactRecord(pubkey, raw) {
   if (!isPlainObject(raw)) return null;
+  const record = {};
+  for (const key of Object.keys(raw)) {
+    const field = ownDataProperty(raw, key);
+    if (field !== undefined) {
+      Object.defineProperty(record, key, { value: field, enumerable: true, writable: true, configurable: true });
+    }
+  }
   const alias = ownDataProperty(raw, 'alias');
   const unread = ownDataProperty(raw, 'unread');
   const lastPreview = ownDataProperty(raw, 'lastPreview');
   const lastTs = ownDataProperty(raw, 'lastTs');
   const verifiedAt = ownDataProperty(raw, 'verifiedAt');
   const verified = ownDataProperty(raw, 'verified') === true;
-  return {
+  return Object.assign(record, {
     pubkey,
     alias: typeof alias === 'string' ? alias : '',
     unread: Number.isSafeInteger(unread) && unread >= 0 ? unread : 0,
@@ -31,7 +39,7 @@ function normalizeContactRecord(pubkey, raw) {
     lastTs: isValidMessageTs(lastTs) ? lastTs : null,
     verified,
     verifiedAt: verified && isValidMessageTs(verifiedAt) ? verifiedAt : null,
-  };
+  });
 }
 
 /**

@@ -61,6 +61,23 @@ export function isPlainObject(value) {
   }
 }
 
+/**
+ * A new plain object with the own enumerable data properties of a plain object;
+ * accessors are not read and a '__proto__' key stays an ordinary property.
+ * @param {object} value
+ * @returns {object}
+ */
+function copyOwnData(value) {
+  const copy = {};
+  for (const key of Object.keys(value)) {
+    const field = ownDataProperty(value, key);
+    if (field !== undefined) {
+      Object.defineProperty(copy, key, { value: field, enumerable: true, writable: true, configurable: true });
+    }
+  }
+  return copy;
+}
+
 /** A timestamp the chat stores: a safe integer in [MIN_MESSAGE_TS, MAX_MESSAGE_TS]. */
 export function isValidMessageTs(ts) {
   return Number.isSafeInteger(ts) && ts >= MIN_MESSAGE_TS && ts <= MAX_MESSAGE_TS;
@@ -118,7 +135,7 @@ export function classifyInboundPayload(payload) {
  * be shown safely: id not a non-empty string, text not a string, ts outside the
  * accepted range, or contact/direction missing. Lengths are not re-checked here
  * so that history written by this device before the bounds existed survives.
- * Only the fields the chat writes are kept.
+ * Other own data fields of a kept record are kept as they are.
  * @param {unknown} raw
  * @returns {object|null}
  */
@@ -133,14 +150,14 @@ export function normalizeStoredMessage(raw) {
   if (typeof id !== 'string' || id.length === 0) return null;
   if (typeof text !== 'string' || !isValidMessageTs(ts)) return null;
   if (typeof contactPubkey !== 'string' || (direction !== 'in' && direction !== 'out')) return null;
-  return {
+  return Object.assign(copyOwnData(raw), {
     id,
     contactPubkey,
     direction,
     text,
     ts,
     state: typeof state === 'string' ? state : null,
-  };
+  });
 }
 
 /**
