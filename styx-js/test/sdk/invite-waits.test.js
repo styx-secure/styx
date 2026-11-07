@@ -370,6 +370,13 @@ describe('C-DLV 5.5 an inconsistent S9 report is E_SDK_INTERNAL', () => {
     descending: (n) => Object.freeze([...Array(n).keys()].reverse()),
     'out-of-range': (n) => Object.freeze([...Array(n).keys()].map((i) => i + 5)),
     'non-integer': (n) => Object.freeze([...Array(n).keys()].map((i) => i + 0.5)),
+    // Kimi review cycle 2: the copy reads the indexed elements, never the array's iterator.
+    'iterator-empty': (n) => { const a = new Array(n); a[Symbol.iterator] = function* empty() {}; return Object.freeze(a); },
+    'iterator-ascending': (n) => {
+      const a = [...Array(n).keys()].reverse();
+      a[Symbol.iterator] = function* ascending() { yield* [...Array(n).keys()]; };
+      return Object.freeze(a);
+    },
   };
   test.each(Object.keys(reports))('S9 report %s: publishKeyPackage and invite end with E_SDK_INTERNAL', async (name) => {
     const invitee = identity();
