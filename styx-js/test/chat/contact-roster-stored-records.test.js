@@ -50,6 +50,25 @@ describe('ContactRoster stored-record neutralisation', () => {
     }]);
   });
 
+  test('other own data fields of a valid record survive load and the next save', async () => {
+    const backend = memBackend({
+      [INDEX_KEY]: {
+        aa: {
+          pubkey: 'aa', alias: 'A', unread: 1, lastPreview: 'x', lastTs: poisoned,
+          verified: false, verifiedAt: null, custom: 'keep',
+        },
+      },
+    });
+    const roster = new ContactRoster({ backend });
+    await roster.load();
+    expect(await roster.get('aa')).toMatchObject({ custom: 'keep', lastTs: null, online: false });
+    await roster.clearUnread('aa');
+    expect((await backend.get(INDEX_KEY)).aa).toEqual({
+      pubkey: 'aa', alias: 'A', unread: 0, lastPreview: 'x', lastTs: null,
+      verified: false, verifiedAt: null, custom: 'keep',
+    });
+  });
+
   test('the cleaned index is written back at the next save', async () => {
     const backend = memBackend({
       [INDEX_KEY]: { aa: { pubkey: 'aa', alias: 'A', unread: 0, lastPreview: null, lastTs: poisoned } },

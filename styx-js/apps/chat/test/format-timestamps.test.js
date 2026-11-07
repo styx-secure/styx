@@ -1,7 +1,7 @@
 // test/format-timestamps.test.js — the date/time helpers never throw on a
 // malformed timestamp: anything that is not a finite, representable number
 // formats as '' and is never on the same day as anything.
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect, jest } from '@jest/globals';
 import { hhmm, relTime, dayLabel, sameDay } from '../src/lib/format.js';
 
 const poisoned = { valueOf: 0, toString: 0 };
@@ -17,11 +17,19 @@ describe('format helpers on malformed timestamps', () => {
   });
 
   test('valid timestamps keep their previous formatting', () => {
-    const now = Date.now();
-    expect(relTime(now)).toBe('ora');
-    expect(dayLabel(now)).toBe('Oggi');
-    expect(hhmm(now)).toMatch(/^\d{2}:\d{2}$/);
-    expect(sameDay(now, now)).toBe(true);
-    expect(relTime(0)).toBe('');
+    // A fixed local noon, so the checks cannot straddle midnight.
+    const now = new Date(2026, 10, 7, 12, 0, 0).getTime();
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      expect(relTime(now)).toBe('ora');
+      expect(relTime(now - 5 * 60000)).toBe('5m');
+      expect(dayLabel(now)).toBe('Oggi');
+      expect(dayLabel(now - 86400000)).toBe('Ieri');
+      expect(hhmm(now)).toBe('12:00');
+      expect(sameDay(now, now)).toBe(true);
+      expect(relTime(0)).toBe('');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

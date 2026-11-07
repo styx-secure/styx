@@ -12,14 +12,18 @@ describe('render error boundary', () => {
   test('ErrorBoundary is a class component implementing both error hooks', () => {
     const src = read('../src/components/ErrorBoundary.jsx');
     expect(src).toMatch(/class ErrorBoundary extends Component/);
-    expect(src).toMatch(/static getDerivedStateFromError\(/);
+    expect(src).toMatch(/static getDerivedStateFromError\(\) \{\s*return \{ failed: true \};\s*\}/);
+    expect(src).toMatch(/this\.state = \{ failed: false \}/);
+    expect(src).toMatch(/if \(!this\.state\.failed\) return this\.props\.children;/);
     expect(src).toMatch(/componentDidCatch\(/);
-    expect(src).toMatch(/location\.reload\(\)/);
+    expect(src).toMatch(/role="alert"/);
+    expect(src).toMatch(/onClick=\{\(\) => location\.reload\(\)\}/);
   });
 
   test('the error screen does not print the error message (it may carry chat content)', () => {
     const src = read('../src/components/ErrorBoundary.jsx');
-    expect(src).not.toMatch(/error\.message|\.stack/);
+    expect(src).not.toMatch(/\.message\b|\.stack\b|\{error\}|String\(error/);
+    expect(src).toMatch(/console\.error\('Styx UI render error:', error\?\.name \|\| 'Error'\);/);
   });
 
   test('main.jsx renders App inside ErrorBoundary', () => {

@@ -75,4 +75,19 @@ describe('inbound-payload', () => {
     expect(normalizeStoredMessages([good])).toEqual({ messages: {}, dropped: 0 });
     expect(normalizeStoredMessages({ [PEER]: [{ ...good, state: 7 }] }).messages[PEER][0].state).toBeNull();
   });
+
+  test('normalizeStoredMessages keeps other own data fields of a valid record', () => {
+    const good = { id: 'g1', contactPubkey: PEER, direction: 'out', text: 'ok', ts: TS, state: 'read' };
+    let ran = false;
+    const raw = { ...good, localMeta: 'keep', nested: { a: 1 } };
+    Object.defineProperty(raw, 'computed', { enumerable: true, get() { ran = true; return 'x'; } });
+    Object.defineProperty(raw, '__proto__', { enumerable: true, value: { polluted: true } });
+    const [kept] = normalizeStoredMessages({ [PEER]: [raw] }).messages[PEER];
+    expect(kept).toMatchObject({ ...good, localMeta: 'keep', nested: { a: 1 } });
+    expect(Object.getOwnPropertyDescriptor(kept, '__proto__')?.value).toEqual({ polluted: true });
+    expect(Object.getPrototypeOf(kept)).toBe(Object.prototype);
+    expect(kept.polluted).toBeUndefined();
+    expect(Object.hasOwn(kept, 'computed')).toBe(false);
+    expect(ran).toBe(false);
+  });
 });
