@@ -712,6 +712,19 @@ export class StyxChat {
     return queue;
   }
 
+  /**
+   * Count one discarded inbound payload under its reason. Runtime only; the
+   * counters are created on first use so the count never depends on how the
+   * instance was assembled.
+   * @param {string} reason one of INBOUND_DISCARD_REASONS
+   */
+  _countInboundDiscard(reason) {
+    if (!this._inboundDiscards) {
+      this._inboundDiscards = Object.fromEntries(INBOUND_DISCARD_REASONS.map((r) => [r, 0]));
+    }
+    this._inboundDiscards[reason] = (this._inboundDiscards[reason] || 0) + 1;
+  }
+
   _rememberIncoming(id) {
     if (this._seenIncoming.has(id)) return false;
     this._seenIncoming.add(id);
@@ -931,7 +944,7 @@ export class StyxChat {
     }
 
     if (inbound.kind === 'discard') {
-      this._inboundDiscards[inbound.reason] += 1;
+      this._countInboundDiscard(inbound.reason);
       return true;
     }
 
