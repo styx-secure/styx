@@ -171,10 +171,12 @@ export function createInvitations(options) {
     if (!exact(result, ['connectedRelays']) || !Number.isInteger(result.connectedRelays)
         || result.connectedRelays < 0 || result.connectedRelays > relays.length) error('E_SDK_INTERNAL');
     if (!result.connectedRelays) error('E_SDK_NO_RELAY_AVAILABLE');
-    const counted = op.phaseConnected;
-    if (!Array.isArray(counted) || counted.length !== result.connectedRelays
-        || !counted.every((index, i) => Number.isInteger(index) && index >= 0 && index < relays.length
-          && (i === 0 || index > counted[i - 1]))) error('E_SDK_INTERNAL');
+    if (!Array.isArray(op.phaseConnected) || op.phaseConnected.length !== result.connectedRelays) error('E_SDK_INTERNAL');
+    // A dense private copy: `every` skips holes, so a sparse report would otherwise pass this
+    // check and make the fetch predicate vacuously true; a later change of the report is ignored.
+    const counted = Array.from(op.phaseConnected);
+    if (!counted.every((index, i) => Number.isInteger(index) && index >= 0 && index < relays.length
+        && (i === 0 || index > counted[i - 1]))) error('E_SDK_INTERNAL');
     return counted;
   }
   async function publish(op, event) {
