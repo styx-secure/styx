@@ -181,7 +181,9 @@ export function normalizeStoredMessages(snapshot) {
       if (msg && msg.contactPubkey === key) kept.push(msg);
       else dropped += 1;
     }
-    if (kept.length) messages[key] = kept;
+    if (kept.length) {
+      Object.defineProperty(messages, key, { value: kept, enumerable: true, writable: true, configurable: true });
+    }
   }
   return { messages, dropped };
 }

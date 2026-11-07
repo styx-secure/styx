@@ -31,6 +31,7 @@ function normalizeContactRecord(pubkey, raw) {
   const lastTs = ownDataProperty(raw, 'lastTs');
   const verifiedAt = ownDataProperty(raw, 'verifiedAt');
   const verified = ownDataProperty(raw, 'verified') === true;
+  delete record.online; // presence is runtime-only, never persisted
   return Object.assign(record, {
     pubkey,
     alias: typeof alias === 'string' ? alias : '',
