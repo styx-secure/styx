@@ -36,6 +36,12 @@ import {
   migrateLegacyMlsState,
 } from '../storage/mls-state-migration.js';
 import { ContactRoster } from './contact-roster.js';
+import {
+  INBOUND_DISCARD_REASONS,
+  MAX_MESSAGE_TEXT_LENGTH,
+  classifyInboundPayload,
+  normalizeStoredMessages,
+} from './inbound-payload.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
 import { registrationDigest } from '../push/registration-digest.js';
 import { LocalStorageBackend } from '../storage/local-storage-backend.js';
@@ -167,6 +173,10 @@ export class StyxChat {
     this._readSent = new Set(); // inbound message ids we've already sent a 'read' receipt for
     this._inviteNonce = null; // nonce of the outstanding QR invite, if any (single-use)
     this._pending = new Map(); // pubkey -> { pubkey, alias? } authenticated, not yet a contact
+    // Authenticated inbound payloads discarded because a field failed validation,
+    // per reason (see inbound-payload.js). Runtime only, never persisted.
+    this._inboundDiscards = Object.fromEntries(INBOUND_DISCARD_REASONS.map((r) => [r, 0]));
+    this._storedMessagesDropped = 0; // stored messages dropped at load (invalid fields)
     if (deps.identity && deps.engine && deps.roster && deps.transport) {
       this._identity = { ...deps.identity };
       this._engine = deps.engine;
@@ -234,8 +244,12 @@ export class StyxChat {
       this._roster = new ContactRoster({ backend: be });
       await this._roster.load();
 
-      // Restore message history.
-      this._store.hydrate(await be.get('msgs'));
+      // Restore message history. A stored message whose id, text or ts is outside
+      // the accepted bounds (written before inbound validation existed) is dropped
+      // here; the cleaned history is written back at the next save.
+      const restored = normalizeStoredMessages(await be.get('msgs'));
+      this._storedMessagesDropped = restored.dropped;
+      this._store.hydrate(restored.messages);
 
       // An invite shown before a reload must still be joinable: restore its nonce.
       const savedNonce = await be.get(INVITE_NONCE_KEY);
@@ -482,6 +496,10 @@ export class StyxChat {
   async sendText(pubkey, text) {
     const session = this._engine.session(pubkey);
     if (!session) throw new Error(`No MLS session for ${pubkey}`);
+    // The recipient discards a text over this bound, so refuse it before storing.
+    if (String(text).length > MAX_MESSAGE_TEXT_LENGTH) {
+      throw new RangeError(`StyxChat: message text exceeds ${MAX_MESSAGE_TEXT_LENGTH} characters`);
+    }
     const msg = {
       id: uuidv4(), contactPubkey: pubkey, direction: 'out',
       text: String(text), ts: Date.now(), state: 'sending',
@@ -896,16 +914,30 @@ export class StyxChat {
     await this._persistMls(); // ratchet advanced on decrypt
     if (res.kind !== 'application') return true;
 
-    // Decode the typed payload; tolerate a bare-string legacy plaintext.
+    // Decode the typed payload; tolerate a bare-string legacy plaintext. The
+    // payload is authenticated but peer-chosen: every field that is stored or
+    // shown is validated first, and a payload that fails is discarded and
+    // counted. It never reaches the message store, the roster or the UI.
     let payload;
     try { payload = JSON.parse(utf8Decode(res.plaintext)); } catch { payload = null; }
+    let inbound;
     if (!payload || typeof payload !== 'object') {
-      payload = { t: 'msg', id: uuidv4(), text: utf8Decode(res.plaintext), ts: Date.now() };
+      const text = utf8Decode(res.plaintext);
+      inbound = text.length > MAX_MESSAGE_TEXT_LENGTH
+        ? { kind: 'discard', reason: 'invalid-text' }
+        : { kind: 'msg', id: uuidv4(), text, ts: Date.now() };
+    } else {
+      inbound = classifyInboundPayload(payload);
     }
 
-    if (payload.t === 'intro') {
+    if (inbound.kind === 'discard') {
+      this._inboundDiscards[inbound.reason] += 1;
+      return true;
+    }
+
+    if (inbound.kind === 'intro') {
       // The peer's display name, arriving encrypted. Untrusted: sanitize it.
-      const alias = sanitizeAlias(payload.alias);
+      const alias = sanitizeAlias(inbound.alias);
       if (alias) {
         if (await this._roster.get(from)) await this._roster.update(from, { alias });
         else this._pending.set(from, { pubkey: from, alias });
@@ -913,27 +945,25 @@ export class StyxChat {
       return true;
     }
 
-    if (payload.t === 'receipt') {
+    if (inbound.kind === 'receipt') {
       // A delivery/read acknowledgement for one of our outgoing messages.
       // Never acknowledge a receipt — that would loop.
-      if (payload.ref && (payload.kind === 'delivered' || payload.kind === 'read')) {
-        this._emitter.emit('state', payload.ref, payload.kind);
-      }
+      this._emitter.emit('state', inbound.ref, inbound.receipt);
       return true;
     }
 
     // A chat message. Use the sender's id + send time; dedup relay replay.
-    if (!this._rememberIncoming(payload.id)) return true;
+    if (!this._rememberIncoming(inbound.id)) return true;
     const msg = {
-      id: payload.id, contactPubkey: from, direction: 'in',
-      text: String(payload.text ?? ''), ts: payload.ts || Date.now(), state: 'delivered',
+      id: inbound.id, contactPubkey: from, direction: 'in',
+      text: inbound.text, ts: inbound.ts, state: 'delivered',
     };
     await this._store.append(msg);
     await this._persistMessages();
     await this._touch(from, msg.text, msg.ts, true);
     this._emitter.emit('message', msg);
     // Auto-acknowledge delivery (encrypted through MLS, opaque on the wire).
-    await this._sendReceipt(from, payload.id, 'delivered');
+    await this._sendReceipt(from, inbound.id, 'delivered');
     return true;
   }
 
