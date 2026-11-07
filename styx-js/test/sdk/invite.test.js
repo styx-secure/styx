@@ -142,8 +142,11 @@ describe('M3-INVITE, caller ports over loopback only', () => {
     const rs = [await relay(), await relay()];
     const [a, b] = await Promise.all([started(rs), started(rs)]);
     const { kp, invitation } = await flow(a, b);
-    expect(kp.value.acceptedRelays).toEqual([0, 1]);
-    expect(invitation.value.acceptedRelays).toEqual([0, 1]);
+    // Publication ends at the first ACCEPTED (C-DLV section 5.5): the indices
+    // accepting by then, at least one, ascending.
+    for (const accepted of [kp.value.acceptedRelays, invitation.value.acceptedRelays]) {
+      expect([[0], [1], [0, 1]]).toContainEqual([...accepted]);
+    }
     expect(Object.isFrozen(invitation.value.acceptedRelays)).toBe(true);
     const receivedA = [], receivedB = [];
     await a.client.onEvent((event) => receivedA.push(event)); await b.client.onEvent((event) => receivedB.push(event));
