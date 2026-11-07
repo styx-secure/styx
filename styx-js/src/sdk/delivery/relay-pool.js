@@ -310,6 +310,10 @@ function publicAttempt(record) {
  * @param {Function} [options.onRelayConnected] - M3-RECEIVE: called with the
  *   relay index when a pool's connection attempt settles connected before the
  *   close; its throw is ignored.
+ * @param {Function} [options.onPhaseConnected] - S9: called once, synchronously,
+ *   at the end of a successful connection phase, before `start()` resolves,
+ *   with a frozen ascending array of exactly the relay indices counted in its
+ *   `connectedRelays` (C-DLV §5.5); its throw is ignored.
  * @param {object} options.filter - the subscription filter (C-DLV §5.4).
  * @param {object} [options.transport] - in-process transport port
  *   `{ create(url) -> pool }`. The default creates the unchanged `RelayPool`
@@ -331,6 +335,7 @@ export function createRelaySet(options) {
     subscriptionSince,
     subscriptionIdFor,
     onRelayConnected: connectedSeam,
+    onPhaseConnected: phaseSeam,
     transport,
     reconnectDelay: delayOf = reconnectDelay,
   } = options;
@@ -950,6 +955,16 @@ export function createRelaySet(options) {
       return { connectedRelays: 0 };
     }
     running = !stopped;
+    // S9: the identity of the relays counted in `connectedRelays`, read at the
+    // same point (C-DLV §5.5). A faulty observer never changes the set.
+    if (typeof phaseSeam === 'function') {
+      const counted = Object.freeze(states.filter((state) => state.connected).map((state) => state.index));
+      try {
+        phaseSeam(counted);
+      } catch {
+        // as above
+      }
+    }
     // A relay whose connection attempt settled without a connection at the
     // phase end takes the replacement path (C-DLV §5.2).
     for (const state of states) {

@@ -132,7 +132,12 @@ export function createInvitations(options) {
     running();
     const subscriptionId = 'i' + bytesToHex(randomBytes(16));
     let set;
-    try { set = createRelaySet({ relays: [...relays], clock, random, perRelayTimeoutMs: T, subscriptionId, filter, reconnectDelay: retryDelayMs }); }
+    // S9 (C-DLV section 5.5): the relays counted connected at the phase end, by identity.
+    const onPhaseConnected = (indices) => { if (op.set === set) op.phaseConnected = indices; };
+    try {
+      set = createRelaySet({ relays: [...relays], clock, random, perRelayTimeoutMs: T, subscriptionId, filter,
+        reconnectDelay: retryDelayMs, onPhaseConnected });
+    }
     catch { error('E_SDK_INTERNAL'); }
     op.set = set;
     Promise.resolve(set).catch(() => {});
@@ -166,7 +171,11 @@ export function createInvitations(options) {
     if (!exact(result, ['connectedRelays']) || !Number.isInteger(result.connectedRelays)
         || result.connectedRelays < 0 || result.connectedRelays > relays.length) error('E_SDK_INTERNAL');
     if (!result.connectedRelays) error('E_SDK_NO_RELAY_AVAILABLE');
-    return result.connectedRelays;
+    const counted = op.phaseConnected;
+    if (!Array.isArray(counted) || counted.length !== result.connectedRelays
+        || !counted.every((index, i) => Number.isInteger(index) && index >= 0 && index < relays.length
+          && (i === 0 || index > counted[i - 1]))) error('E_SDK_INTERNAL');
+    return counted;
   }
   async function publish(op, event) {
     running();
@@ -193,10 +202,13 @@ export function createInvitations(options) {
       healthy(op);
       const settled = syncResult(attempt, 'isSettled', [], (v) => typeof v === 'boolean');
       validateAttempt();
-      return settled;
+      // C-DLV section 5.5: publication ends at the first ACCEPTED or at the attempt timeout.
+      return settled || attempt.outcomes.some((outcome) => outcome === 'ACCEPTED');
     };
     const unsubscribe = await boundary(attempt, 'onSettled', [() => op.wake?.()], 'E_SDK_INTERNAL');
     if (typeof unsubscribe !== 'function') error('E_SDK_INTERNAL');
+    const unsubscribeOutcome = await boundary(attempt, 'onOutcome', [() => op.wake?.()], 'E_SDK_INTERNAL');
+    if (typeof unsubscribeOutcome !== 'function') error('E_SDK_INTERNAL');
     await wait(op, Math.max(0, T - (now() - origin)), finishPublication);
     healthy(op);
     validateAttempt();
@@ -216,7 +228,7 @@ export function createInvitations(options) {
     return value;
   }
   function operation(body) {
-    const op = { set: null, eose: new Set(), events: [], wake: null, deferredClear: [], done: null };
+    const op = { set: null, phaseConnected: null, eose: new Set(), events: [], wake: null, deferredClear: [], done: null };
     operations.add(op);
     op.done = (async () => {
       let result;
@@ -278,8 +290,10 @@ export function createInvitations(options) {
     }),
     invite: (argument) => operation(async (op) => {
       const invitee = peerArgument(argument, ['invitee'], 'invitee');
-      const connected = await connect(op, { kinds: [4743], authors: [invitee] });
-      await wait(op, T, () => op.eose.size >= connected);
+      // Every relay counted connected at the phase end, by identity (C-DLV section 5.5): an
+      // EOSE of a relay that left before the phase end, or connected after it, does not count.
+      const counted = await connect(op, { kinds: [4743], authors: [invitee] });
+      await wait(op, T, () => counted.every((index) => op.eose.has(index)));
       running();
       const candidates = op.events.map((event) => ({ event, value: keyPackage(event, invitee) })).filter((c) => c.value);
       candidates.sort((a, b) => b.event.created_at - a.event.created_at || (a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0));
