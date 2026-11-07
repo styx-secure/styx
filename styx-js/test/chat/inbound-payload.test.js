@@ -90,4 +90,15 @@ describe('inbound-payload', () => {
     expect(Object.hasOwn(kept, 'computed')).toBe(false);
     expect(ran).toBe(false);
   });
+
+  test('a conversation filed under a __proto__ key stays an ordinary own entry', () => {
+    const msg = { id: 'm1', contactPubkey: '__proto__', direction: 'in', text: 'ok', ts: TS, state: 'read' };
+    const snapshot = Object.create(null);
+    Object.defineProperty(snapshot, '__proto__', { value: [msg], enumerable: true, writable: true, configurable: true });
+    const { messages, dropped } = normalizeStoredMessages(snapshot);
+    expect(dropped).toBe(0);
+    expect(Object.getPrototypeOf(messages)).toBe(Object.prototype);
+    expect(Object.hasOwn(messages, '__proto__')).toBe(true);
+    expect(Object.entries(messages)).toEqual([['__proto__', [msg]]]);
+  });
 });

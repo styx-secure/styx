@@ -54,19 +54,21 @@ describe('ContactRoster stored-record neutralisation', () => {
     const backend = memBackend({
       [INDEX_KEY]: {
         aa: {
-          pubkey: 'aa', alias: 'A', unread: 1, lastPreview: 'x', lastTs: poisoned,
-          verified: false, verifiedAt: null, custom: 'keep',
+          pubkey: 'zz', alias: 'A', unread: 1, lastPreview: 'x', lastTs: poisoned,
+          verified: false, verifiedAt: null, custom: 'keep', online: true,
         },
       },
     });
     const roster = new ContactRoster({ backend });
     await roster.load();
-    expect(await roster.get('aa')).toMatchObject({ custom: 'keep', lastTs: null, online: false });
+    expect(await roster.get('aa')).toMatchObject({ pubkey: 'aa', custom: 'keep', lastTs: null, online: false });
     await roster.clearUnread('aa');
-    expect((await backend.get(INDEX_KEY)).aa).toEqual({
+    const saved = (await backend.get(INDEX_KEY)).aa;
+    expect(saved).toEqual({
       pubkey: 'aa', alias: 'A', unread: 0, lastPreview: 'x', lastTs: null,
       verified: false, verifiedAt: null, custom: 'keep',
     });
+    expect(Object.hasOwn(saved, 'online')).toBe(false);
   });
 
   test('the cleaned index is written back at the next save', async () => {
