@@ -3,7 +3,7 @@
 // identity, and an invitation publication ends at the first ACCEPTED.
 // In-process WebSocket double only: scripted relays, no socket is opened.
 // Test wrapping signs layers but DOES NOT ENCRYPT.
-import { describe, test, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterAll, afterEach, jest } from '@jest/globals';
 import { schnorr } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex, hexToBytes, utf8Encode, utf8Decode, bytesToBase64 } from '../../src/utils.js';
@@ -320,5 +320,71 @@ describe('C-DLV 5.5 S9 relay-set option onPhaseConnected', () => {
     scenario = { ...quiet };
     const throwing = set(() => { throw Error('observer'); });
     expect(await throwing.start()).toEqual({ connectedRelays: 2 });
+  });
+});
+
+// Kimi review cycle 1: the S9 set an invitation receives must be dense, ascending and
+// exactly `connectedRelays` long, or the operation fails closed with E_SDK_INTERNAL.
+describe('C-DLV 5.5 an inconsistent S9 report is E_SDK_INTERNAL', () => {
+  async function seam(report) {
+    jest.resetModules();
+    jest.unstable_mockModule('../../src/sdk/delivery/relay-pool.js', () => ({
+      createRelaySet: (options) => {
+        if (![4743, 1059].includes(options.filter.kinds[0])) return createRelaySet(options);
+        // The real set reports nothing; the faulty one reports `report(connectedRelays)`, or nothing.
+        const set = createRelaySet({ ...options, onPhaseConnected: undefined });
+        const start = set.start;
+        set.start = async () => {
+          const result = await start();
+          const value = report(result.connectedRelays);
+          if (value !== undefined) options.onPhaseConnected(value);
+          return result;
+        };
+        return set;
+      },
+    }));
+    const fresh = await import('../../src/sdk/index.js');
+    cleanup.push(() => { jest.unstable_mockModule('../../src/sdk/delivery/relay-pool.js', () => ({ createRelaySet: createRelaySet })); jest.resetModules(); });
+    return fresh.createStyxClient;
+  }
+  async function seamClient(factory) {
+    const id = identity();
+    const records = new Map();
+    const time = clock();
+    const created = factory({ interfaceVersion: SDK_INTERFACE_VERSION, relays: [A, B], clock: time,
+      delivery: { perRelayTimeoutMs: T, deadlineMs: 30000 },
+      ports: { identity: id, session: session(id.pk), storage: {
+        list: () => [...records.values()], get: (k) => records.get(k),
+        put: (r) => { records.set(r.deliveryId, r); return true; },
+        update: (k, v) => { records.set(k, v); return true; }, remove: (k) => records.delete(k) } } });
+    expect(created.ok).toBe(true);
+    cleanup.push(() => created.value.shutdown());
+    expect((await created.value.start()).ok).toBe(true);
+    return { client: created.value, clock: time };
+  }
+  const reports = {
+    sparse: (n) => Object.freeze(new Array(n)),
+    'sparse-tail': (n) => { const a = new Array(n); a[0] = 0; return Object.freeze(a); },
+    absent: () => undefined,
+    short: (n) => Object.freeze([...Array(n - 1).keys()]),
+    descending: (n) => Object.freeze([...Array(n).keys()].reverse()),
+    'out-of-range': (n) => Object.freeze([...Array(n).keys()].map((i) => i + 5)),
+    'non-integer': (n) => Object.freeze([...Array(n).keys()].map((i) => i + 0.5)),
+  };
+  test.each(Object.keys(reports))('S9 report %s: publishKeyPackage and invite end with E_SDK_INTERNAL', async (name) => {
+    const invitee = identity();
+    let kp = null;
+    // Both relays connect at once; the KeyPackage arrives 300 ms after the fetch REQ,
+    // so a fetch whose wait ended at once would miss it.
+    scenario = { onSend(ws, f) {
+      if (f[0] === 'EVENT') { ws.deliver(['OK', f[1].id, true, '']); return; }
+      if (f[0] !== 'REQ') return;
+      if (!isFetch(f)) { ws.deliver(['EOSE', f[1]]); return; }
+      setTimeout(() => { if (kp) ws.deliver(['EVENT', f[1], kp]); ws.deliver(['EOSE', f[1]]); }, 300);
+    } };
+    const own = await seamClient(await seam(reports[name]));
+    expect(await own.client.publishKeyPackage()).toEqual({ ok: false, code: 'E_SDK_INTERNAL' });
+    kp = keyPackageOf(invitee, own.clock);
+    expect(await own.client.invite({ invitee: invitee.pk })).toEqual({ ok: false, code: 'E_SDK_INTERNAL' });
   });
 });
