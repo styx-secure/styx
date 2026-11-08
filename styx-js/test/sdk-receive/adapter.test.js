@@ -132,7 +132,15 @@ describe('archive: creation, load, at-rest protection (G1, G2)', () => {
     const got = await receive(b, 0, alice.identity, ciphertext);
     expect(untext(got.opened.plaintext)).toBe(marker);
     const after = readFileSync(join(alice.directory, SNAPSHOT_NAME));
-    expect(Buffer.from(after.subarray(10, 54)).equals(Buffer.from(before.subarray(10, 54)))).toBe(false);
+    const headers = [before, after];
+    for (let i = 0; i < 3; i += 1) {
+      await a.session.seal({ recipient: bob.identity, plaintext: text(`rewrite ${i}`) });
+      headers.push(readFileSync(join(alice.directory, SNAPSHOT_NAME)));
+    }
+    const salts = new Set(headers.map((file) => Buffer.from(file.subarray(10, 42)).toString('hex')));
+    const nonces = new Set(headers.map((file) => Buffer.from(file.subarray(42, 54)).toString('hex')));
+    expect(salts.size).toBe(headers.length);
+    expect(nonces.size).toBe(headers.length);
     const bobFile = readFileSync(join(bob.directory, SNAPSHOT_NAME));
     expect(bobFile.includes(Buffer.from(marker))).toBe(false);
     expect(bobFile.includes(Buffer.from(alice.identity))).toBe(false);
@@ -503,6 +511,189 @@ describe('uncertain and failed commits; resolve is read-only and repeatable', ()
   });
 });
 
+describe('review cycle 1: installation, resolution, cursors, header bounds, verification faults', () => {
+  async function staged(b, alice, a, bob, plaintext, receiptRequested = true) {
+    const ciphertext = (await a.session.seal({ recipient: bob.identity, plaintext: text(plaintext) })).ciphertext;
+    const id = eventId();
+    const done = await b.receiveState.stage({
+      operationId: opId(), revision: (b.inspect().revision), event: { eventId: id, sender: alice.identity, ciphertext, receiptRequested },
+    });
+    return { id, ciphertext, revision: done.revision };
+  }
+
+  test('a failed installation after a durable commit stops the adapter: commit is uncertain, resolve fails, nothing is checkpointed', async () => {
+    const hooks = { beforeReapply: () => { throw new Error('re-apply fault'); }, beforeSwap: () => { throw new Error('swap fault'); } };
+    const { alice, bob, a } = await pair();
+    const b2 = bob.instance({ hooks: {} });
+    await loaded(b2, bob.identity);
+    const first = await staged(b2, alice, a, bob, 'one');
+    const opened1 = await b2.session.openCandidate({ sender: alice.identity, ciphertext: first.ciphertext });
+    await b2.receiveState.commit({
+      operationId: opId(), revision: first.revision, eventId: first.id, ticket: opened1.ticket,
+      result: { type: 'application', sender: alice.identity, payload: opened1.plaintext, receiptDue: true },
+    });
+    const b3 = bob.instance({ hooks });
+    await loaded(b3, bob.identity);
+    const second = await staged(b3, alice, a, bob, 'two');
+    const opened = await b3.session.openCandidate({ sender: alice.identity, ciphertext: second.ciphertext });
+    const operationId = opId();
+    await expect(b3.receiveState.commit({
+      operationId, revision: second.revision, eventId: second.id, ticket: opened.ticket,
+      result: { type: 'application', sender: alice.identity, payload: opened.plaintext, receiptDue: true },
+    })).rejects.toThrow('could not be installed');
+    expect(await b3.receiveState.resolve({ operationId })).toEqual({ code: FAILED });
+    await expect(b3.session.seal({ recipient: alice.identity, plaintext: text('x') })).rejects.toThrow('not usable');
+    const b4 = bob.instance();
+    const snapshot = await loaded(b4, bob.identity);
+    expect(snapshot.ready.map((e) => untext(e.payload))).toEqual(['one', 'two']);
+    const reply = (await b4.session.seal({ recipient: alice.identity, plaintext: text('after') })).ciphertext;
+    expect(untext((await receive(a, 0, bob.identity, reply)).opened.plaintext)).toBe('after');
+  });
+
+  test('when the re-applied state cannot be used, the committed state replaces the authoritative engine', async () => {
+    let fault = false;
+    const { alice, bob, a } = await pair();
+    const b2 = bob.instance({ hooks: { beforeReapply: () => { if (fault) throw new Error('re-apply fault'); } } });
+    await loaded(b2, bob.identity);
+    const first = await staged(b2, alice, a, bob, 'one');
+    const o1 = await b2.session.openCandidate({ sender: alice.identity, ciphertext: first.ciphertext });
+    const c1 = await b2.receiveState.commit({
+      operationId: opId(), revision: first.revision, eventId: first.id, ticket: o1.ticket,
+      result: { type: 'application', sender: alice.identity, payload: o1.plaintext, receiptDue: true },
+    });
+    fault = true;
+    const m2 = (await a.session.seal({ recipient: bob.identity, plaintext: text('two') })).ciphertext;
+    const two = await receive(b2, c1.revision, alice.identity, m2);
+    expect(two.committed.revision).toBe(c1.revision + 2);
+    expect(b2.inspect().swaps).toBe(1);
+    fault = false;
+    const m3 = (await a.session.seal({ recipient: bob.identity, plaintext: text('three') })).ciphertext;
+    expect(untext((await receive(b2, two.committed.revision, alice.identity, m3)).opened.plaintext)).toBe('three');
+    // the replaced engine never opens a committed message again
+    expect((await b2.session.openCandidate({ sender: alice.identity, ciphertext: m2 })).receiveOutcome).toBe('retry');
+  });
+
+  test('resolve keeps the exact result after ack, receiptDone and commitCursor, until the next load', async () => {
+    const { alice, bob, a, b } = await pair();
+    const one = await staged(b, alice, a, bob, 'kept');
+    const opened = await b.session.openCandidate({ sender: alice.identity, ciphertext: one.ciphertext });
+    const operationId = opId();
+    const result = { type: 'application', sender: alice.identity, payload: opened.plaintext, receiptDue: true };
+    const committed = await b.receiveState.commit({ operationId, revision: one.revision, eventId: one.id, ticket: opened.ticket, result });
+    const acked = await b.receiveState.ack({ operationId: opId(), revision: committed.revision, eventId: one.id });
+    const done = await b.receiveState.receiptDone({ operationId: opId(), revision: acked.revision, eventId: one.id });
+    const cursor = await b.receiveState.commitCursor({
+      operationId: opId(), revision: done.revision, relay: 'ws://127.0.0.1:2', generation: 1, syncedUntil: 5,
+    });
+    const resolved = await b.receiveState.resolve({ operationId });
+    expect(resolved).toEqual({ status: 'committed', revision: cursor.revision, storedBytes: cursor.storedBytes, result });
+    expect(await b.receiveState.resolve({ operationId })).toEqual(resolved);
+    // after a load the record is no longer answered, and the next write drops it
+    const b2 = bob.instance();
+    const snapshot = await loaded(b2, bob.identity);
+    expect(b2.inspect().loadedResolution).toBe(true);
+    expect((await b2.receiveState.resolve({ operationId })).status).toBe('aborted');
+    const write = await b2.receiveState.commitCursor({
+      operationId: opId(), revision: snapshot.revision, relay: 'ws://127.0.0.1:2', generation: 2, syncedUntil: 6,
+    });
+    expect(write.storedBytes).toBe(snapshot.storedBytes);
+    const b3 = bob.instance();
+    await loaded(b3, bob.identity);
+    expect(b3.inspect().loadedResolution).toBe(false);
+  });
+
+  test('an aborted operation id stays refused after more than 4 096 other resolutions, even with a fresh candidate', async () => {
+    const armed = { on: true };
+    const hooks = { beforeStep: (name, operation) => { if (armed.on && operation === 'commit' && name === 'temp-write') throw new Error('injected'); } };
+    const { alice, bob, a } = await pair();
+    const b2 = bob.instance({ hooks });
+    await loaded(b2, bob.identity);
+    const one = await staged(b2, alice, a, bob, 'late');
+    let opened = await b2.session.openCandidate({ sender: alice.identity, ciphertext: one.ciphertext });
+    const operationId = opId();
+    const argument = () => ({
+      operationId, revision: one.revision, eventId: one.id, ticket: opened.ticket,
+      result: { type: 'application', sender: alice.identity, payload: opened.plaintext, receiptDue: true },
+    });
+    expect(await b2.receiveState.commit(argument())).toEqual({ code: FAILED });
+    expect((await b2.receiveState.resolve({ operationId })).status).toBe('aborted');
+    for (let i = 0; i < 4_100; i += 1) await b2.receiveState.resolve({ operationId: opId() });
+    armed.on = false;
+    opened = await b2.session.openCandidate({ sender: alice.identity, ciphertext: one.ciphertext });
+    expect(await b2.receiveState.commit(argument())).toEqual({ code: FAILED });
+    const snapshot = await loaded(bob.instance(), bob.identity);
+    expect(snapshot.pending.map((e) => e.eventId)).toEqual([one.id]);
+  });
+
+  test('cursors: a seventeenth and a 257th cursor keep the archive readable; the least recently committed is dropped', async () => {
+    const { bob, b } = await pair();
+    let revision = 0;
+    for (let i = 0; i < 257; i += 1) {
+      ({ revision } = await b.receiveState.commitCursor({
+        operationId: opId(), revision, relay: `ws://127.0.0.1:${1000 + i}`, generation: 1, syncedUntil: i,
+      }));
+      if (i === 16) expect((await loaded(bob.instance(), bob.identity)).cursors).toHaveLength(17);
+    }
+    const snapshot = await loaded(bob.instance(), bob.identity);
+    expect(snapshot.cursors).toHaveLength(256);
+    expect(snapshot.cursors[0]).toEqual({ relay: 'ws://127.0.0.1:1001', syncedUntil: 1 });
+    expect(snapshot.cursors[255]).toEqual({ relay: 'ws://127.0.0.1:1256', syncedUntil: 256 });
+  });
+
+  test('a canonical group id longer than the adapter stores is retry, never reject', async () => {
+    const { alice, bob, b } = await pair();
+    const long = Buffer.alloc(256, 0x61);
+    const ciphertext = Uint8Array.from([0x00, 0x01, 0x00, 0x02, 0x41, 0x00, ...long, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 9, 9, 9]);
+    const got = await receive(b, 0, alice.identity, ciphertext);
+    expect(got.opened.receiveOutcome).toBe('retry');
+    expect((await loaded(bob.instance(), bob.identity)).pending.map((e) => e.eventId)).toEqual([got.id]);
+  });
+
+  test.each([['group-load'], ['export-key'], ['load-session'], ['malformed exporter value']])(
+    'a fault at %s of the invitee verification is retry; the binding is unchanged and a later retry completes it',
+    async (where) => {
+      let fail = true;
+      const hooks = {
+        beforeVerification: (step) => { if (fail && step === where) throw new Error(`fault at ${step}`); },
+        afterExport: (value) => (fail && where === 'malformed exporter value' ? value.subarray(0, 16) : value),
+      };
+      const { alice, bob, a } = await pair();
+      const b2 = bob.instance({ hooks });
+      await loaded(b2, bob.identity);
+      const one = await staged(b2, alice, a, bob, 'verified later', false);
+      const first = await b2.session.openCandidate({ sender: alice.identity, ciphertext: one.ciphertext });
+      expect(first.receiveOutcome).toBe('retry');
+      expect(b2.inspect().bindings).toEqual([{ peer: alice.identity, groupId: null }]);
+      fail = false;
+      const again = await b2.session.openCandidate({ sender: alice.identity, ciphertext: one.ciphertext });
+      expect(untext(again.plaintext)).toBe('verified later');
+      await b2.receiveState.commit({
+        operationId: opId(), revision: one.revision, eventId: one.id, ticket: again.ticket,
+        result: { type: 'application', sender: alice.identity, payload: again.plaintext, receiptDue: false },
+      });
+      expect(b2.inspect().bindings[0].groupId).toBe(headerGroupId(one.ciphertext));
+    },
+  );
+
+  test('a failure at the reported step (after the rename and the directory fsync) is uncertain, not FAILED', async () => {
+    const armed = { on: false };
+    const hooks = { beforeStep: (name, operation) => { if (armed.on && operation === 'commit' && name === 'reported') throw new Error('injected'); } };
+    const { alice, bob, a } = await pair();
+    const b2 = bob.instance({ hooks });
+    await loaded(b2, bob.identity);
+    const one = await staged(b2, alice, a, bob, 'reported');
+    const opened = await b2.session.openCandidate({ sender: alice.identity, ciphertext: one.ciphertext });
+    armed.on = true;
+    const operationId = opId();
+    await expect(b2.receiveState.commit({
+      operationId, revision: one.revision, eventId: one.id, ticket: opened.ticket,
+      result: { type: 'application', sender: alice.identity, payload: opened.plaintext, receiptDue: true },
+    })).rejects.toThrow('outcome unknown');
+    expect(await b2.receiveState.resolve({ operationId })).toEqual({ code: FAILED });
+    expect((await loaded(bob.instance(), bob.identity)).ready.map((e) => e.eventId)).toEqual([one.id]);
+  });
+});
+
 describe('storedBytes', () => {
   test('is the canonical formula, not the file size', async () => {
     const { bob, a, alice, b } = await pair();
@@ -514,5 +705,7 @@ describe('storedBytes', () => {
       mlsState: { length: mls }, pending: [], ready: [{ payload: text('abc') }], seen: [got.id], acknowledged: [],
       receiptsDue: [{}], cursors: [], bindings: [{ groupId: headerGroupId(ciphertext) }],
     }));
+    // Until the next load the resolution record of the last commit (65 + payload) is counted too.
+    expect(got.committed.storedBytes).toBe(snapshot.storedBytes + 65 + 3);
   });
 });

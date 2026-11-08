@@ -122,9 +122,13 @@ export async function relay({ delayMs = 0, port = 0 } = {}) {
   const peers = new Map();
   const events = new Map();
   const requests = [];
-  const state = { delayMs, silent: false };
+  const state = { delayMs, silent: false, sent: [] };
   const send = (socket, frame) => {
-    const go = () => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(frame)); };
+    const go = () => {
+      if (socket.readyState !== WebSocket.OPEN) return;
+      socket.send(JSON.stringify(frame));
+      if (frame[0] === 'EVENT') state.sent.push(frame[2].id); // ids of EVENT frames actually sent, in order
+    };
     if (state.delayMs > 0 && frame[0] === 'EVENT') setTimeout(go, state.delayMs); else go();
   };
   server.on('connection', (socket) => {

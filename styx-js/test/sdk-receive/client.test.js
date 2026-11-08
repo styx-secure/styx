@@ -154,12 +154,16 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     const { bob, a } = await invited(rs);
     let failing = true;
     const b = await run(bob, rs, {
-      clock: fastClock(5), // catch-up interval: 2 s of host time
+      clock: fastClock(1), // catch-up interval: 10 s of host time, far beyond the copies
       hooks: { beforeCandidate: () => { if (failing) throw new Error('still failing'); } },
     });
-    await a.client.send({ recipient: bob.identity, payload: text('h17-d') });
+    const sent = await a.client.send({ recipient: bob.identity, payload: text('h17-d') });
+    expect(sent.ok).toBe(true);
     expect(await until(() => b.calls.open.length >= 1)).toBe(true);
-    await sleep(600);
+    const id = [...rs[0].events.values()].find((e) => e.kind === 4741 && e.tags.some(([t, v]) => t === 'p' && v === bob.identity)).id;
+    // Every relay has actually sent its copy to Bob; then give the client time to process them.
+    expect(await until(() => rs.every((r) => r.state.sent.includes(id)))).toBe(true);
+    await sleep(300);
     expect(b.calls.open).toHaveLength(2); // the first attempt and one retry by the first copy
     expect(b.calls.stage).toHaveLength(1);
     failing = false;
@@ -174,13 +178,18 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     await a.client.send({ recipient: bob.identity, payload: text('h17-c') });
     expect(await until(() => b.messages().length >= 1)).toBe(true);
     const id = b.messages()[0].eventId;
+    const count = (r) => r.state.sent.filter((x) => x === id).length;
+    const before = [count(rs[0]), count(rs[1])];
     rs[0].replay(id);
     rs[1].replay(id);
-    await sleep(200);
+    expect(await until(() => count(rs[0]) > before[0] && count(rs[1]) > before[1])).toBe(true);
+    await sleep(300);
     expect(b.calls.open).toHaveLength(1);
     expect((await b.client.acknowledgeMessage({ eventId: id })).ok).toBe(true);
+    const again = count(rs[0]);
     rs[0].replay(id);
-    await sleep(200);
+    expect(await until(() => count(rs[0]) > again)).toBe(true);
+    await sleep(300);
     expect(b.calls.open).toHaveLength(1);
     expect(b.calls.stage).toHaveLength(1);
   });

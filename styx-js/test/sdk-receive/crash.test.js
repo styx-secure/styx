@@ -103,8 +103,10 @@ async function crashCase(killAt) {
     if (!recoveryLoad || recoveryLoad.code !== null) problems.push(`recovery load: ${JSON.stringify(recoveryLoad)}`);
     // 1. No staged event lost: every stage that returned before the kill is in the recovered seen set.
     for (const line of of('kill', 'stage-ok')) if (!recoveryLoad?.seen?.includes(line.id)) problems.push(`staged ${line.id} lost`);
-    // 2. No committed id processed by MLS again after the restart.
+    // 2. No committed id processed by MLS again after the restart: every id durably committed at the
+    //    recovery (seen and not PENDING in the recovered snapshot), and every commit that returned.
     const committed = new Set(of('kill', 'commit-ok').map((l) => l.id));
+    if (recoveryLoad?.seen) for (const id of recoveryLoad.seen) if (!recoveryLoad.pending.includes(id)) committed.add(id);
     for (const line of [...of('verify', 'open'), ...of('reply', 'open')]) {
       if (line.id === null || committed.has(line.id)) problems.push(`committed ${line.id} opened again`);
     }
@@ -125,6 +127,16 @@ async function crashCase(killAt) {
     //    from the recovered state) opens at Alice, and Alice received Bob's receipts.
     if (!(await until(() => aliceClient.messages().some((m) => untext(m.payload) === 'reply-reply'), 10_000))) {
       problems.push('Alice did not receive the reply sealed after recovery');
+    }
+    // 5. The durable MLS checkpoint is not behind the committed entries: from the final archive, no
+    //    committed message opens again (its key material is consumed), so a checkpoint left at an
+    //    earlier state (which would still open it) is caught.
+    const reader = bob.instance();
+    await loaded(reader, bob.identity);
+    for (const event of [...relayHandle.events.values()].filter((e) => expected.includes(e.id))) {
+      const ciphertext = Uint8Array.from(Buffer.from(event.content, 'base64'));
+      const outcome = (await reader.session.openCandidate({ sender: alice.identity, ciphertext })).receiveOutcome;
+      if (outcome === 'application') problems.push(`committed ${event.id} still opens from the durable MLS checkpoint`);
     }
     for (const deliveryId of deliveries) {
       if (!(await until(() => aliceClient.events.some((e) => e.deliveryId === deliveryId && e.state === 'RECIPIENT_RECEIPT_RECEIVED'), 10_000))) {
