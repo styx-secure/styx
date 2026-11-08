@@ -3426,3 +3426,34 @@ describe('M3-RECEIVE-LIMITS review cycle 1 -- resubscribe after a freeze or disp
     await set.dispose();
   });
 });
+
+describe('M3-RECEIVE-LIMITS review cycle 2 -- resubscribe after a freeze or dispose from the subscribe or filter reads', () => {
+  test.each(['freeze', 'dispose'])('a subscribe getter that calls %s() sends no REQ', async (method) => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    const count = pool.subscriptions.length;
+    const original = pool.subscribe;
+    Object.defineProperty(pool, 'subscribe', { configurable: true, get: () => { set[method](); return original; } });
+    set.resubscribe(0, 80);
+    expect(pool.subscriptions).toHaveLength(count);
+    await set.dispose();
+  });
+
+  test.each(['freeze', 'dispose'])('a filter getter that calls %s() sends no REQ', async (method) => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    let armed = false;
+    let set = null;
+    const filter = { '#p': FILTER['#p'] };
+    Object.defineProperty(filter, 'kinds', { enumerable: true, get: () => { if (armed) set[method](); return FILTER.kinds; } });
+    set = h.make({ filter });
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    const count = pool.subscriptions.length;
+    armed = true;
+    set.resubscribe(0, 80);
+    expect(pool.subscriptions).toHaveLength(count);
+    await set.dispose();
+  });
+});

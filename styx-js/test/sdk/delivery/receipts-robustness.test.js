@@ -458,7 +458,10 @@ describe('M3-RECEIVE-LIMITS review cycle 1 -- the largest valid frame and a stop
     const subscription = 's'.repeat(64);
     const frames = Array.from({ length: 24 }, (_, i) => ({ relayIndex: 0, relay: 'relay-0',
       data: ['EVENT', subscription, message(sender, h.owner, { content, receipt: true, n: 1000 + i })] }));
-    expect(frames.map((frame) => queued(h.module.ingest(frame)))).toEqual([...Array(23).fill(true), false]);
+    expect(queued(h.module.ingest(frames[0]))).toBe(true);
+    // The first frame is in validation, held, and keeps its charge.
+    expect(await waitFor(h.held)).toBe(true);
+    expect(frames.slice(1).map((frame) => queued(h.module.ingest(frame)))).toEqual([...Array(22).fill(true), false]);
     h.release();
     expect(await waitFor(() => received(h.events) === 23)).toBe(true);
     expect(discards(h.events)).toEqual([]);
@@ -483,5 +486,66 @@ describe('M3-RECEIVE-LIMITS review cycle 1 -- the largest valid frame and a stop
       expect(h.opens).toHaveLength(0);
       await h.module.settled();
     }
+  });
+});
+
+describe('M3-RECEIVE-LIMITS review cycle 2 -- bounds re-checked after caller code re-enters ingest', () => {
+  test('an ingest re-entered from the cost walk cannot carry the queue past 1 024 entries', () => {
+    const h = limitsHarness(); const sender = makeKey();
+    const small = Array.from({ length: 1024 }, (_, i) => eventFrame(message(sender, h.owner, { n: 2000 + i })));
+    let entered = false;
+    const event = new Proxy(message(sender, h.owner, { n: 1 }), {
+      ownKeys: (t) => {
+        if (!entered) { entered = true; for (const frame of small) h.module.ingest(frame); }
+        return Reflect.ownKeys(t);
+      },
+    });
+    expect(queued(h.module.ingest({ relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', event] }))).toBe(false);
+    expect(h.module.shutdown().value.dropped).toBe(1024);
+  });
+
+  test('an ingest re-entered from the cost walk cannot carry the retained cost past its total', () => {
+    const h = limitsHarness(); const sender = makeKey();
+    const content = 'A'.repeat(CONTENT_MAX);
+    for (let i = 0; i < MAX_MESSAGES_RETAINED - 1; i += 1) {
+      expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { content, n: 3000 + i }))))).toBe(true);
+    }
+    const inner = eventFrame(message(sender, h.owner, { content, n: 3100 }));
+    let entered = false;
+    const event = new Proxy(message(sender, h.owner, { content, n: 3101 }), {
+      ownKeys: (t) => {
+        if (!entered) { entered = true; expect(queued(h.module.ingest(inner))).toBe(true); }
+        return Reflect.ownKeys(t);
+      },
+    });
+    expect(queued(h.module.ingest({ relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', event] }))).toBe(false);
+    expect(h.module.shutdown().value.dropped).toBe(MAX_MESSAGES_RETAINED);
+  });
+
+  test('an ingest re-entered from the barrier accounting cannot carry a marker past 1 024 entries', () => {
+    const owner = makeKey(); const sender = makeKey();
+    let module = null;
+    let entered = false;
+    const extraSmall = eventFrame(message(sender, owner, { n: 4999 }));
+    module = createReceipts({
+      identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
+      session: { open: () => ({ plaintext: new Uint8Array([7]) }) },
+      clock: { now: () => OWN_CLOCK_MS },
+      perRelayTimeoutMs: 30000,
+      publishReceipt: () => {},
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      onEvent: () => {},
+      receiveState: {
+        account: () => { if (!entered) { entered = true; expect(queued(module.ingest(extraSmall))).toBe(true); } },
+        admit: async () => {},
+      },
+    });
+    for (let i = 0; i < 1023; i += 1) {
+      expect(queued(module.ingest(eventFrame(message(sender, owner, { n: 4000 + i }))))).toBe(true);
+    }
+    const oversized = { relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', message(sender, owner, { n: 5000 }), 'x'.repeat(600000)] };
+    expect(queued(module.ingest(oversized))).toBe(false);
+    expect(entered).toBe(true);
+    expect(module.shutdown().value.dropped).toBe(1024);
   });
 });
