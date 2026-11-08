@@ -184,14 +184,21 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
   test('(d) many copies of a PENDING id after its in-run retry open nothing more before the next interval', async () => {
     const rs = await relays(4, [{}, { delayMs: 60 }, { delayMs: 120 }, { delayMs: 180 }]);
     const { bob, a } = await invited(rs);
+    // The first message this run opens is the target (nothing else is sent before it); only it fails.
     const target = { hex: null, failing: true };
-    let b;
-    b = await run(bob, rs, {
+    const b = await run(bob, rs, {
       clock: fastClock(1), // catch-up interval: 10 s of host time, far beyond the copies and the barrier
-      hooks: { beforeCandidate: () => { if (target.failing && b.calls.open.at(-1) === target.hex) throw new Error('still failing'); } },
+      hooks: {
+        beforeCandidate: ({ ciphertext }) => {
+          const hex = Buffer.from(ciphertext).toString('hex');
+          if (target.hex === null) target.hex = hex;
+          if (target.failing && hex === target.hex) throw new Error('still failing');
+        },
+      },
     });
     const id = await sentId(a, rs, bob, 'h17-d');
-    target.hex = hexOf(rs, id);
+    expect(await until(() => target.hex !== null)).toBe(true);
+    expect(target.hex).toBe(hexOf(rs, id));
     expect(await until(() => opensOf(b, target.hex) >= 1)).toBe(true);
     // Every relay has sent its copy; then a sentinel per relay proves that Bob processed them.
     expect(await until(() => rs.every((r) => r.state.sent.includes(id)))).toBe(true);
