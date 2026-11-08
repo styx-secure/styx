@@ -3286,3 +3286,109 @@ describe('S2 table: freeze() from every caller hook of a connection path', () =>
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// M3-RECEIVE-LIMITS (C4): the exact OK frame of C-DLV §5.3 and the filter of an
+// S7 re-request decided by its own issue notice (C-DLV §5.4).
+// ---------------------------------------------------------------------------
+
+describe('M3-RECEIVE-LIMITS OK frame shape and re-request filter', () => {
+  test('an OK frame that is not exactly ["OK", id, boolean, string] settles nothing; the relay times out', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    for (const data of [
+      ['OK', EVENT.id, true],
+      ['OK', EVENT.id, false],
+      ['OK', EVENT.id, true, 7],
+      ['OK', EVENT.id, true, null],
+      ['OK', EVENT.id, false, undefined],
+      ['OK', EVENT.id, true, 'saved', 'extra'],
+    ]) {
+      h.created[0].messages.emit('message', { relay: h.relays[0], data });
+      h.created[1].messages.emit('message', { relay: h.relays[1], data });
+    }
+    expect(attempt.outcomes).toEqual(['PENDING', 'PENDING']);
+    h.clock.advance(PER_RELAY_TIMEOUT_MS);
+    expect(attempt.outcomes).toEqual(['TIMED_OUT', 'TIMED_OUT']);
+    await set.dispose();
+  });
+
+  test('control: four-element OK frames with a string message settle ACCEPTED and REJECTED, an empty message included', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }, { behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true, ''] });
+    h.created[1].messages.emit('message', { relay: h.relays[1], data: ['OK', EVENT.id, false, 'blocked'] });
+    expect(attempt.outcomes).toEqual(['ACCEPTED', 'REJECTED']);
+    await set.dispose();
+  });
+
+  test('a malformed OK frame does not consume the relay: a later exact OK still settles it', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const attempt = set.publish(EVENT);
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true] });
+    expect(attempt.outcomes).toEqual(['PENDING']);
+    h.created[0].messages.emit('message', { relay: h.relays[0], data: ['OK', EVENT.id, true, 'saved'] });
+    expect(attempt.outcomes).toEqual(['ACCEPTED']);
+    await set.dispose();
+  });
+
+  test('with subscriptionSince, resubscribe sends the filter its own issue notice decides', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    let issued = 70;
+    const calls = [];
+    const set = h.make({ subscriptionSince: (index) => {
+      calls.push(index);
+      if (issued === 'throw') throw new Error('since');
+      if (issued === 'reject') return Promise.reject(new Error('since'));
+      return issued;
+    } });
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    expect(calls).toEqual([0]);
+    const sent = [];
+    for (const [value, explicit] of [[70, 80], [null, 80], ['throw', 80], ['reject', 80], [-1, 80], [1.5, 80],
+      ['70', 80], [0, 80], [90, null]]) {
+      issued = value;
+      set.resubscribe(0, explicit);
+      sent.push(pool.subscriptions.at(-1));
+    }
+    await flush();
+    expect(calls).toHaveLength(10);
+    expect(sent).toEqual([
+      { subscriptionId: SUBSCRIPTION_ID, filter: { ...FILTER, since: 70 } },
+      { subscriptionId: SUBSCRIPTION_ID, filter: FILTER },
+      { subscriptionId: SUBSCRIPTION_ID, filter: FILTER },
+      { subscriptionId: SUBSCRIPTION_ID, filter: FILTER },
+      { subscriptionId: SUBSCRIPTION_ID, filter: FILTER },
+      { subscriptionId: SUBSCRIPTION_ID, filter: FILTER },
+      { subscriptionId: SUBSCRIPTION_ID, filter: FILTER },
+      { subscriptionId: SUBSCRIPTION_ID, filter: { ...FILTER, since: 0 } },
+      { subscriptionId: SUBSCRIPTION_ID, filter: { ...FILTER, since: 90 } },
+    ]);
+    // An invalid explicit value still issues nothing and gives no notice.
+    const count = pool.subscriptions.length;
+    issued = 70;
+    set.resubscribe(0, -1);
+    expect(pool.subscriptions).toHaveLength(count);
+    expect(calls).toHaveLength(10);
+    await set.dispose();
+  });
+
+  test('control: without subscriptionSince the explicit since is sent unchanged', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const set = h.make();
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    set.resubscribe(0, 80);
+    expect(pool.subscriptions.at(-1)).toEqual({ subscriptionId: SUBSCRIPTION_ID, filter: { ...FILTER, since: 80 } });
+    set.resubscribe(0, null);
+    expect(pool.subscriptions.at(-1)).toEqual({ subscriptionId: SUBSCRIPTION_ID, filter: FILTER });
+    await set.dispose();
+  });
+});

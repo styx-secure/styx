@@ -183,3 +183,266 @@ describe('C-DLV section 7.2 -- receipt signing does not hold back the inbound qu
     await h.module.settled();
   });
 });
+
+/* ------------------------------------------------------------------------- *
+ * M3-RECEIVE-LIMITS (C4): the retained-cost bounds of the inbound queue
+ * (C-DLV sections 3 and 7.1), the exact own keys of an event (section 7.1
+ * step 1) and the 0.3.1 reading of the five 0.4.0 codes (C-SDK section 5.3).
+ * ------------------------------------------------------------------------- */
+
+/** C-DLV section 3: per-frame and retained-total cost bounds. */
+const FRAME_COST_MAX = 1048576;
+const RETAINED_COST_MAX = 16777216;
+/**
+ * The cost of one `eventFrame(message(...))` with a content of exactly
+ * 349 528 characters and three tags, by the rule of C-DLV section 7.1:
+ * 16 per value, 2 per string character, 8 per array index, 8 + 2 per key
+ * character per object key.
+ */
+const MAX_MESSAGE_FRAME_COST = 700386;
+const MAX_MESSAGES_RETAINED = Math.floor(RETAINED_COST_MAX / MAX_MESSAGE_FRAME_COST);
+
+function limitsHarness({ audience = true } = {}) {
+  const owner = makeKey();
+  const opens = [], events = [];
+  let releaseKey = null;
+  let heldKey = true;
+  const state = { audience };
+  const module = createReceipts({
+    identity: {
+      getPublicKey: () => (heldKey ? new Promise((resolve) => { releaseKey = () => resolve(owner.pub); }) : owner.pub),
+      sign: ({ digest }) => schnorr.sign(digest, owner.priv),
+    },
+    session: { open: ({ sender, ciphertext }) => { opens.push({ sender, ciphertext }); return { plaintext: new Uint8Array([7]) }; } },
+    clock: { now: () => OWN_CLOCK_MS },
+    perRelayTimeoutMs: 30000,
+    publishReceipt: () => {},
+    acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+    onEvent: (event) => { events.push(event); },
+    reserveMessage: () => (state.audience ? (event) => { events.push(event); return true; } : null),
+  });
+  return {
+    module, owner, opens, events, state,
+    held: () => releaseKey !== null,
+    release: () => { heldKey = false; if (releaseKey !== null) releaseKey(); },
+  };
+}
+const queued = (envelope) => envelope.ok === true && envelope.value.queued === true;
+const received = (events) => events.filter((e) => e.kind === 'MESSAGE_RECEIVED').length;
+
+describe('C-DLV section 7.1 -- retained-cost bounds of the inbound queue', () => {
+  test('the documented cost of a maximal valid message frame', () => {
+    expect(MAX_MESSAGE_FRAME_COST).toBeLessThan(FRAME_COST_MAX);
+    expect(MAX_MESSAGES_RETAINED).toBe(23);
+  });
+
+  test('a frame over the per-frame bound is not retained: a marker keeps its turn and is E_SDK_INBOUND_INVALID', async () => {
+    const h = limitsHarness(); const sender = makeKey();
+    expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { n: 1 }))))).toBe(true);
+    expect(await waitFor(h.held)).toBe(true);
+    // A valid event whose frame carries a large extra element, and frames whose
+    // extra element is deeply nested or self-referencing.
+    const frames = [];
+    const extra = { relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', message(sender, h.owner, { n: 2 }), 'x'.repeat(600000)] };
+    let deep = [];
+    for (let i = 0; i < 200000; i += 1) deep = [deep];
+    const nested = { relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', message(sender, h.owner, { n: 3 }), deep] };
+    const cycle = {}; cycle.self = cycle;
+    const cyclic = { relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', message(sender, h.owner, { n: 4 }), cycle] };
+    frames.push(extra, nested, cyclic);
+    for (const frame of frames) expect(queued(h.module.ingest(frame))).toBe(true);
+    // The frames are not kept: replacing their data after ingest changes nothing.
+    for (const frame of frames) frame.data = ['EVENT', 'sub', message(sender, h.owner, { n: 5 })];
+    expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { n: 6 }))))).toBe(true);
+    h.release();
+    expect(await waitFor(() => h.events.length === 5)).toBe(true);
+    await flush();
+    expect(h.events.map((e) => e.kind === 'MESSAGE_RECEIVED' ? 'M' : e.code)).toEqual([
+      'M', 'E_SDK_INBOUND_INVALID', 'E_SDK_INBOUND_INVALID', 'E_SDK_INBOUND_INVALID', 'M',
+    ]);
+    expect(h.opens).toHaveLength(2);
+  });
+
+  test('control: an oversized content is still E_SDK_INBOUND_INVALID in arrival order, also far over the frame bound', async () => {
+    const h = limitsHarness(); const sender = makeKey();
+    h.release();
+    h.module.ingest(eventFrame(message(sender, h.owner, { content: 'A'.repeat(600000), n: 1 })));
+    h.module.ingest(eventFrame(message(sender, h.owner, { n: 2 })));
+    h.module.ingest(eventFrame(message(sender, h.owner, { content: 'A'.repeat(4000000), n: 3 })));
+    expect(await waitFor(() => h.events.length === 3)).toBe(true);
+    expect(h.events.map((e) => e.kind === 'MESSAGE_RECEIVED' ? 'M' : e.code)).toEqual([
+      'E_SDK_INBOUND_INVALID', 'M', 'E_SDK_INBOUND_INVALID',
+    ]);
+  });
+
+  test('with the durable receive state an over-bound frame is accounted at once: invalid event, or barrier failure', async () => {
+    const owner = makeKey(); const sender = makeKey();
+    const accounted = [];
+    const module = createReceipts({
+      identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
+      session: { open: () => ({ plaintext: new Uint8Array([7]) }) },
+      clock: { now: () => OWN_CLOCK_MS },
+      perRelayTimeoutMs: 30000,
+      publishReceipt: () => {},
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      onEvent: () => {},
+      receiveState: {
+        account: (frame, outcome) => { accounted.push([frame.tag, outcome]); },
+        admit: async (event, frame) => { accounted.push([frame.tag, 'admitted']); },
+      },
+    });
+    const tagged = (tag, data) => ({ tag, relayIndex: 0, relay: 'relay-0', data });
+    module.ingest(tagged('content', ['EVENT', 'sub', message(sender, owner, { content: 'A'.repeat(600000), n: 1 })]));
+    module.ingest(tagged('extra', ['EVENT', 'sub', message(sender, owner, { n: 2 }), 'x'.repeat(600000)]));
+    expect(accounted).toEqual([['content', 'invalid'], ['extra', 'dropped']]);
+    module.ingest(tagged('plain', ['EVENT', 'sub', message(sender, owner, { n: 3 })]));
+    expect(await waitFor(() => accounted.length === 3)).toBe(true);
+    expect(accounted[2]).toEqual(['plain', 'admitted']);
+    module.shutdown();
+    await module.settled();
+  });
+
+  test('maximal valid messages fill the retained total while validation is held; release lets replays and new frames in', async () => {
+    const h = limitsHarness(); const sender = makeKey();
+    const content = 'A'.repeat(CONTENT_MAX);
+    const events = Array.from({ length: MAX_MESSAGES_RETAINED + 2 }, (_, i) => message(sender, h.owner, { content, n: 10 + i }));
+    const first = events.map((event) => queued(h.module.ingest(eventFrame(event))));
+    expect(first).toEqual([...Array(MAX_MESSAGES_RETAINED).fill(true), false, false]);
+    expect(await waitFor(h.held)).toBe(true);
+    // A small frame still fits beside them.
+    expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { n: 99 }))))).toBe(true);
+    h.release();
+    expect(await waitFor(() => received(h.events) === MAX_MESSAGES_RETAINED + 1)).toBe(true);
+    // Every charge was released: the two refused frames are admitted on a replay.
+    expect(events.slice(MAX_MESSAGES_RETAINED).map((event) => queued(h.module.ingest(eventFrame(event))))).toEqual([true, true]);
+    expect(await waitFor(() => received(h.events) === MAX_MESSAGES_RETAINED + 3)).toBe(true);
+    // And a fresh batch fills the bound exactly as the first one did.
+    const fresh = Array.from({ length: MAX_MESSAGES_RETAINED + 1 }, (_, i) => message(sender, h.owner, { content, n: 200 + i }));
+    expect(fresh.map((event) => queued(h.module.ingest(eventFrame(event)))))
+      .toEqual([...Array(MAX_MESSAGES_RETAINED).fill(true), false]);
+    expect(await waitFor(() => received(h.events) === 2 * MAX_MESSAGES_RETAINED + 3)).toBe(true);
+    expect(discards(h.events)).toEqual([]);
+  });
+
+  test('messages waiting for an audience keep their charge until their open starts', async () => {
+    const h = limitsHarness({ audience: false }); const sender = makeKey();
+    h.release();
+    const content = 'A'.repeat(CONTENT_MAX);
+    for (let i = 0; i < MAX_MESSAGES_RETAINED; i += 1) {
+      expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { content, n: 300 + i }))))).toBe(true);
+    }
+    // A small sentinel, processed after them in arrival order, also waits.
+    expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { n: 399 }))))).toBe(true);
+    await flush(40);
+    expect(h.opens).toHaveLength(0);
+    const late = message(sender, h.owner, { content, n: 400 });
+    expect(queued(h.module.ingest(eventFrame(late)))).toBe(false);
+    h.state.audience = true;
+    h.module.wake();
+    expect(await waitFor(() => received(h.events) === MAX_MESSAGES_RETAINED + 1)).toBe(true);
+    expect(queued(h.module.ingest(eventFrame(late)))).toBe(true);
+    expect(await waitFor(() => received(h.events) === MAX_MESSAGES_RETAINED + 2)).toBe(true);
+  });
+
+  test('discarded, duplicate and receipt frames release their charge', async () => {
+    const h = limitsHarness(); const sender = makeKey();
+    h.release();
+    const content = 'A'.repeat(CONTENT_MAX);
+    const once = message(sender, h.owner, { content, n: 500 });
+    // Invalid (wrong p tag), duplicate copies and a receipt, together well past the total.
+    const stranger = makeKey();
+    for (let i = 0; i < 3 * MAX_MESSAGES_RETAINED; i += 1) {
+      expect(queued(h.module.ingest(eventFrame(message(sender, stranger, { content, n: 600 + i }))))).toBe(true);
+      expect(queued(h.module.ingest(eventFrame(once)))).toBe(true);
+      expect(queued(h.module.ingest(eventFrame(receiptFor(sender, h.owner, 'e'.repeat(64)))))).toBe(true);
+      expect(await waitFor(() => discards(h.events).length === i + 1)).toBe(true);
+    }
+    // A sentinel processed after every earlier frame.
+    h.module.ingest(eventFrame(message(sender, h.owner, { n: 699 })));
+    expect(await waitFor(() => received(h.events) === 2)).toBe(true);
+    expect(discards(h.events)).toHaveLength(3 * MAX_MESSAGES_RETAINED);
+    const batch = Array.from({ length: MAX_MESSAGES_RETAINED }, (_, i) => message(sender, h.owner, { content, n: 700 + i }));
+    expect(batch.map((event) => queued(h.module.ingest(eventFrame(event))))).toEqual(Array(MAX_MESSAGES_RETAINED).fill(true));
+    expect(await waitFor(() => received(h.events) === MAX_MESSAGES_RETAINED + 2)).toBe(true);
+  });
+
+  test('shutdown drops everything retained and reports it; nothing is queued after it', async () => {
+    const h = limitsHarness(); const sender = makeKey();
+    const content = 'A'.repeat(CONTENT_MAX);
+    for (let i = 0; i < MAX_MESSAGES_RETAINED; i += 1) h.module.ingest(eventFrame(message(sender, h.owner, { content, n: 800 + i })));
+    expect(await waitFor(h.held)).toBe(true);
+    const stopped = h.module.shutdown();
+    expect(stopped.ok).toBe(true);
+    expect(stopped.value.dropped).toBe(MAX_MESSAGES_RETAINED - 1);
+    expect(queued(h.module.ingest(eventFrame(message(sender, h.owner, { n: 900 }))))).toBe(false);
+    h.release();
+    await flush();
+    expect(h.opens).toHaveLength(0);
+    await h.module.settled();
+  });
+});
+
+describe('C-DLV section 7.1 step 1 -- exactly the seven own keys', () => {
+  test.each([
+    ['a non-enumerable eighth key', (event) => Object.defineProperty({ ...event }, 'extra', { value: 1, enumerable: false })],
+    ['a symbol key', (event) => ({ ...event, [Symbol('extra')]: 1 })],
+    ['one of the seven non-enumerable', (event) => {
+      const copy = { ...event }; delete copy.sig;
+      return Object.defineProperty(copy, 'sig', { value: event.sig, enumerable: false });
+    }],
+  ])('an event with %s is E_SDK_INBOUND_INVALID before open', async (_, shape) => {
+    const h = harness(); const sender = makeKey();
+    h.module.ingest(eventFrame(shape(message(sender, h.owner))));
+    expect(await waitFor(() => h.events.length === 1)).toBe(true);
+    expect(discards(h.events)).toEqual(['E_SDK_INBOUND_INVALID']);
+    expect(h.opens).toHaveLength(0);
+  });
+
+  test('control: a plain copy of the same event is opened', async () => {
+    const h = harness(); const sender = makeKey();
+    h.module.ingest(eventFrame({ ...message(sender, h.owner) }));
+    expect(await waitFor(() => h.events.length === 1)).toBe(true);
+    expect(h.events[0].kind).toBe('MESSAGE_RECEIVED');
+  });
+});
+
+describe('C-SDK section 5.3 -- the 0.3.1 inbound path reads the five 0.4.0 codes as unknown (S-08, unchanged)', () => {
+  const ADDED = [
+    'E_SDK_RECEIVE_STATE_FAILED',
+    'E_SDK_RECEIVE_STATE_INCOMPATIBLE',
+    'E_SDK_RECEIVE_STATE_CONFLICT',
+    'E_SDK_RECEIVE_STATE_CAPACITY',
+    'E_SDK_UNKNOWN_MESSAGE',
+  ];
+  test.each(ADDED)('session.open returning { code: %s } is E_SDK_UNKNOWN_CODE', async (code) => {
+    const owner = makeKey(); const events = [];
+    const module = createReceipts({
+      identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
+      session: { open: () => Object.freeze({ code }) },
+      clock: { now: () => OWN_CLOCK_MS },
+      perRelayTimeoutMs: 30000,
+      publishReceipt: () => {},
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      onEvent: (event) => { events.push(event); },
+    });
+    module.ingest(eventFrame(message(makeKey(), owner)));
+    expect(await waitFor(() => events.length === 1)).toBe(true);
+    expect(events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+  });
+
+  test.each(ADDED)('acceptReceipt failing with %s is E_SDK_UNKNOWN_CODE', async (code) => {
+    const owner = makeKey(); const recipient = makeKey(); const events = [];
+    const module = createReceipts({
+      identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
+      session: { open: () => ({ plaintext: new Uint8Array([7]) }) },
+      clock: { now: () => OWN_CLOCK_MS },
+      perRelayTimeoutMs: 30000,
+      publishReceipt: () => {},
+      acceptReceipt: () => Object.freeze({ ok: false, code }),
+      onEvent: (event) => { events.push(event); },
+    });
+    module.ingest(eventFrame(receiptFor(recipient, owner, 'e'.repeat(64))));
+    expect(await waitFor(() => events.length === 1)).toBe(true);
+    expect(events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+  });
+});

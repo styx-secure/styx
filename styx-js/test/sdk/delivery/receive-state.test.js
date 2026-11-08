@@ -8,6 +8,8 @@ import { SdkResultCode } from '../../../src/sdk/index.js';
 import {
   createReceiveState, readReceiveLimits, RECEIVE_SCOPE, RECEIVE_SCHEMA, RETRY_INTERVAL_MS, REDELIVERY_INTERVAL_MS,
 } from '../../../src/sdk/delivery/receive-state.js';
+import { createCatchUp } from '../../../src/sdk/delivery/catch-up.js';
+import { createRelaySet } from '../../../src/sdk/delivery/relay-pool.js';
 
 const OWN = 'a'.repeat(64);
 const PEER = 'b'.repeat(64);
@@ -1117,5 +1119,219 @@ describe('M3-RECEIVE-1 receive state: review round 1', () => {
     expect(h.store.count('receiptDone')).toBe(1);
     await h.arrive(0, 'bbbbbbbbbbbbbbbbbbbb');
     expect(h.kinds().filter((k) => k === 'RECEIVE_STATE_CAPACITY')).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3-RECEIVE-LIMITS (C4): the bounded failed-id set of the barrier, the single
+// kept outstanding request, out-of-set outcomes of any type (C-DLV sections 3,
+// 5.4, 7.4) and the filter of a periodic re-request after a skew found at its
+// own issue.
+// ---------------------------------------------------------------------------
+
+const FAILED_IDS_BOUND = 4096;
+
+describe('M3-RECEIVE-LIMITS receive state: bounded barrier failures', () => {
+  /** Count and drop `n` frames with distinct ids on relay 0, then replay each one as not admitted. */
+  async function dropThenReplay(h, n) {
+    const frames = [];
+    for (let i = 0; i < n; i += 1) {
+      const { record, event } = h.frame(0, `drop-${i}`, { sender: STRANGER, eventId: id(i + 1) });
+      h.receive.countFrame(record);
+      h.receive.account(record, 'dropped');
+      frames.push(event);
+    }
+    for (let i = 0; i < n; i += 1) {
+      // A valid replay of the same id from an unknown sender is accounted as not
+      // admitted, which clears a known failed id (C-DLV section 5.4).
+      const { record, event } = h.frame(1, `drop-${i}`, { sender: STRANGER, eventId: id(i + 1) });
+      h.receive.countFrame(record);
+      await h.receive.admit(event, record);
+    }
+    await flush();
+    return frames;
+  }
+
+  test(`control: ${FAILED_IDS_BOUND} distinct failed ids, all later replayed validly, let the next EOSE commit`, async () => {
+    const h = harness();
+    await h.start();
+    await dropThenReplay(h, FAILED_IDS_BOUND);
+    expect(h.store.count('stage')).toBe(0);
+    h.eose(0);
+    await flush();
+    expect(h.store.calls.filter((c) => c.method === 'commitCursor').map((c) => c.argument.relay)).toEqual([RELAYS[0]]);
+  });
+
+  test(`one more distinct failed id than ${FAILED_IDS_BOUND}: no cursor commit for that relay for the rest of the run, also after valid replays and EOSE`, async () => {
+    const h = harness();
+    await h.start();
+    await dropThenReplay(h, FAILED_IDS_BOUND + 1);
+    h.eose(0);
+    h.eose(1);
+    await flush();
+    // Relay 1 only saw valid replays: it still commits.
+    expect(h.store.calls.filter((c) => c.method === 'commitCursor').map((c) => c.argument.relay)).toEqual([RELAYS[1]]);
+    // A clean later generation on relay 0, with a fresh valid admission, never commits either.
+    h.clock.advance(5000);
+    h.receive.issue(0);
+    await h.arrive(0, 'clean-after');
+    h.eose(0);
+    await flush();
+    expect(h.store.calls.filter((c) => c.method === 'commitCursor').map((c) => c.argument.relay)).toEqual([RELAYS[1]]);
+    expect(h.store.count('stage')).toBe(1);
+  });
+});
+
+describe('M3-RECEIVE-LIMITS receive state: outstanding requests without EOSE', () => {
+  test('a relay that withholds EOSE: one million issue notices do not grow memory', async () => {
+    const h = harness();
+    await h.start();
+    for (let i = 0; i < 10000; i += 1) h.receive.issue(0);
+    const before = process.memoryUsage().heapUsed;
+    for (let i = 0; i < 1000000; i += 1) h.receive.issue(0);
+    const grown = process.memoryUsage().heapUsed - before;
+    // Base: about one record per notice (tens of megabytes); head: none kept.
+    expect(grown).toBeLessThan(16 * 1024 * 1024);
+    h.eose(0);
+    await flush();
+    expect(h.store.calls.filter((c) => c.method === 'commitCursor').map((c) => c.argument.syncedUntil))
+      .toEqual([1700000000]);
+  });
+
+  test('control: the EOSE commits the earliest issue time, first among equal ones, also when the clock went back', async () => {
+    const clock = manualClock(1800000500000);
+    const h = harness({ clock });
+    await h.start();
+    clock.set(1800000600000);
+    h.receive.issue(0);
+    clock.set(1800000400000);
+    h.receive.issue(0);
+    clock.set(1800000700000);
+    h.receive.issue(0);
+    h.eose(0);
+    await flush();
+    expect(h.store.calls.filter((c) => c.method === 'commitCursor').map((c) => c.argument.syncedUntil))
+      .toEqual([1800000400]);
+  });
+
+  test('control: the invitation rule still uses the earliest kept request', async () => {
+    const clock = manualClock(1800000000000);
+    const h = harness({ clock });
+    await h.start();
+    // The start() requests were issued before the invitation and are still the earliest.
+    h.receive.invitationStarted();
+    clock.set(1800000100000);
+    h.receive.issue(0);
+    h.receive.invitationEnded();
+    clock.set(1800000200000);
+    h.receive.issue(0);
+    h.eose(0);
+    await flush();
+    expect(h.store.count('commitCursor')).toBe(0);
+    clock.set(1800000300000);
+    h.receive.issue(0);
+    h.eose(0);
+    await flush();
+    expect(h.store.calls.filter((c) => c.method === 'commitCursor').map((c) => c.argument.syncedUntil))
+      .toEqual([1800000300]);
+  });
+});
+
+describe('M3-RECEIVE-LIMITS receive state: out-of-set receiveOutcome of any type', () => {
+  test.each([
+    ['a number', 7],
+    ['null', null],
+    ['undefined', undefined],
+    ['a boolean', true],
+    ['an object', { outcome: 'application' }],
+  ])('a receiveOutcome that is %s is an unknown value: one E_SDK_UNKNOWN_CODE, the entry stays PENDING', async (_, value) => {
+    const h = harness();
+    await h.start();
+    h.sess.session.openCandidate = () => ({ receiveOutcome: value, ticket: 1 });
+    await h.arrive(0, 'odd');
+    expect(h.events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+    expect(h.store.disk.pending).toHaveLength(1);
+    expect(h.store.count('commit')).toBe(0);
+  });
+
+  test('control: a missing receiveOutcome or an accessor is malformed, with no event', async () => {
+    const h = harness();
+    await h.start();
+    h.sess.session.openCandidate = () => ({ ticket: 1 });
+    await h.arrive(0, 'none');
+    h.sess.session.openCandidate = () => Object.defineProperty({ ticket: 1 }, 'receiveOutcome', {
+      get: () => 7, enumerable: true,
+    });
+    await h.arrive(0, 'getter');
+    expect(h.events).toEqual([]);
+    expect(h.store.disk.pending).toHaveLength(2);
+  });
+});
+
+describe('M3-RECEIVE-LIMITS periodic re-request after a skew found at its own issue', () => {
+  /** A pool with the surface the relay set uses; it connects at once and records its subscriptions. */
+  function tinyTransport() {
+    const pools = [];
+    return {
+      pools,
+      create: (url) => {
+        const pool = {
+          url, connected: false, subscriptions: [],
+          messages: { on: () => {}, off: () => {}, removeListener: () => {} },
+          disconnectAll: () => Promise.resolve(),
+          subscribe: (subscriptionId, filter) => { pool.subscriptions.push({ subscriptionId, filter }); },
+          connectAll: () => { pool.connected = true; return Promise.resolve(1); },
+          healthCheck: () => [{ url, isConnected: pool.connected }],
+          publish: () => (pool.connected ? 1 : 0),
+          dispose: () => { pool.connected = false; return Promise.resolve(); },
+        };
+        pools.push(pool);
+        return pool;
+      },
+    };
+  }
+
+  test('the timer reads a valid cursor, the issue notice then finds it in the future: the REQ has no since and the skew is reported', async () => {
+    const clock = manualClock(1800000100000);
+    const h = harness({ clock, initial: { cursors: [{ relay: RELAYS[0], syncedUntil: 1800000000 }] } });
+    expect(await h.receive.load()).toBeNull();
+    await h.receive.recover();
+    const transport = tinyTransport();
+    let catchUp = null;
+    let rewind = true;
+    const set = createRelaySet({
+      relays: [...RELAYS], clock, random: { nextUint32: () => 0 }, perRelayTimeoutMs: 11000,
+      subscriptionId: BASE, filter: { kinds: [4741, 4742], '#p': [OWN] }, transport,
+      subscriptionIdFor: (index) => h.receive.poolSubscriptionId(index),
+      subscriptionSince: (index) => catchUp.subscriptionSince(index),
+    });
+    catchUp = createCatchUp({
+      relayCount: RELAYS.length, subscriptionId: BASE, clock, cursors: h.receive, isRunning: () => true,
+      resubscribe: (index, since) => {
+        // The clock port reads earlier at the issue notice than at the timer's own reading.
+        if (index !== 0 || !rewind) { set.resubscribe(index, since); return; }
+        rewind = false;
+        const now = clock.now();
+        clock.set(1799999000000);
+        set.resubscribe(index, since);
+        clock.set(now);
+      },
+    });
+    const started = set.start();
+    clock.advance(11000);
+    await started;
+    expect(transport.pools[0].subscriptions[0].filter.since).toBe(1800000000 - 120);
+    catchUp.start();
+    const before = transport.pools[0].subscriptions.length;
+    clock.advance(10000);
+    expect(transport.pools[0].subscriptions).toHaveLength(before + 1);
+    expect(transport.pools[0].subscriptions.at(-1)).toEqual({
+      subscriptionId: `${BASE}.1`, filter: { kinds: [4741, 4742], '#p': [OWN] },
+    });
+    expect(h.events.filter((e) => e.kind === 'RECEIVE_STATE_CLOCK_SKEW'))
+      .toEqual([{ kind: 'RECEIVE_STATE_CLOCK_SKEW', scope: RECEIVE_SCOPE, relay: RELAYS[0] }]);
+    catchUp.dispose();
+    await set.dispose();
+    h.receive.stop();
   });
 });
