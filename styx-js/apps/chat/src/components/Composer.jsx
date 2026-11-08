@@ -45,6 +45,7 @@ export default function Composer({ onSend, onTyping }) {
           value={text}
           placeholder="Scrivi un messaggio…"
           aria-label="Scrivi un messaggio"
+          maxLength={65536}
           onChange={(e) => { setText(e.target.value); grow(); signalTyping(); }}
           onKeyDown={onKeyDown}
         />
