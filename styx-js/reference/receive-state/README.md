@@ -42,7 +42,8 @@ calls `load`, which reads the archive again.
   established binding; for an invitee binding, a header group that the provider does not hold, or whose
   exporter value is computed and differs from the stored one; and an application message that yields no
   peer plaintext. Every other failure — an unknown sender, any engine exception, a `MlsBindingError`, a
-  fault or a timeout in the verification — is `retry`.
+  fault, timeout or malformed result in the verification, and a well-formed group id longer than the
+  255 bytes this adapter stores — is `retry`.
 - **Checkpoints.** `seal`, `createKeyPackage`, `startSession` and `joinSession` make the provider state
   durable before returning. `startSession` checks the KeyPackage on a throwaway engine first and
   `joinSession` checks the Welcome on a copy first, so a refused peer leaves no group in the authoritative
@@ -55,11 +56,16 @@ calls `load`, which reads the archive again.
   and context equals the stored value (constant-time comparison); it is written with that message's commit.
   The 1:1 epoch does not change after setup, so the value is stable on that path only.
 - **Fail-stop.** A rewrite that fails before the rename leaves the archive unchanged and returns
-  `E_SDK_RECEIVE_STATE_FAILED`. A failure of the rename or of the directory fsync makes the outcome unknown:
-  the call throws (an uncertain result for the SDK) and every later call fails until a new `load`.
-- **`resolve`** is read-only and repeatable. It answers `committed` for the last durable message commit
-  (with its exact result) and `aborted` for any other operation id, which from then on can no longer take
-  effect in this process.
+  `E_SDK_RECEIVE_STATE_FAILED`. Any failure from the rename on (the rename, the directory fsync or a fault
+  after it) makes the outcome unknown: the call throws (an uncertain result for the SDK) and every later call
+  fails until a new `load`. The same holds for a commit that is durable but whose state cannot be installed in
+  the authoritative engine.
+- **`resolve`** is read-only and repeatable and waits for a commit still being installed. It answers
+  `committed` for the last durable message commit, from a resolution record in the snapshot that holds the
+  exact closed result (payload included) and survives `ack`, `receiptDone` and `commitCursor`; the record
+  is retained until the next `load`, and the first write after that load drops it. Any other operation id is
+  answered `aborted` and from then on can no longer take effect in this process (the refused ids are kept
+  for the whole run).
 
 ## Archive format (owner technical gate G1, G2)
 
@@ -86,7 +92,8 @@ One authoritative file `receive-state.snapshot` in the archive directory; no jou
   obligations and the last message commit (for `resolve`).
 - **`storedBytes`** is a fixed formula, not the file size: the MLS state length, 65 + ciphertext length per
   `PENDING` entry, 65 + payload length per `READY` entry, 32 per seen and per acknowledged id, 64 per receipt
-  obligation, relay length + 8 per cursor and 96 + group id length per binding. The adapter refuses a stage
+  obligation, relay length + 8 per cursor, 96 + group id length per binding, and 65 + payload length for
+  the resolution record of the last application commit while it is kept. The adapter refuses a stage
   over its own `maxStoredBytes` (default 512 MiB) with `E_SDK_RECEIVE_STATE_FAILED` and a commit over it with
   `E_SDK_RECEIVE_STATE_CAPACITY`; set it above the SDK's `receive.maxStoredBytes` plus one inbound event and
   one MLS checkpoint, so that the SDK's own quota stops admission first. The file read at `load` is bounded by
@@ -107,7 +114,9 @@ write stays well inside the timeout, but sustained reception slows as the unackn
   snapshot, tampering) is not detected: acknowledged payloads may reappear, and `seen`, the cursors and the MLS
   checkpoint may regress (reopening a regressed MLS state may fail or reuse key material).
 - **No secure erase.** An acknowledged payload leaves the active state and every later `load`; older bytes may
-  remain on the medium. Plaintext buffers are zeroed on a best-effort basis only: JavaScript gives no erasure
+  remain on the medium. The payload of the last committed application message also stays, encrypted, in the
+  snapshot's resolution record after its `ack`, until the next message commit or the first write after the
+  next `load`. Plaintext buffers are zeroed on a best-effort basis only: JavaScript gives no erasure
   guarantee.
 - **No key rotation** in this release.
 - **Invitee binding.** An invitee whose process restarts before the first message from the inviter cannot seal
