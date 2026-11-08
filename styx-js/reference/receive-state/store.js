@@ -123,8 +123,8 @@ export async function readSnapshot(directory, maxBytes) {
  * Replace the authoritative file with `bytes`. `hook(step)` is awaited before
  * each step of WRITE_STEPS (tests use it to stop the process there). A
  * failure before the rename leaves the authoritative file untouched and is
- * thrown as is, after a best-effort removal of the temporary file; a failure
- * of the rename or of the directory fsync is an UncertainWriteError.
+ * thrown as is, after a best-effort removal of the temporary file; any failure from the
+ * rename on (including the `directory-fsync` and `reported` hooks) is an UncertainWriteError.
  */
 export async function writeSnapshot(directory, bytes, hook) {
   const temp = join(directory, TEMP_PREFIX + randomBytes(8).toString('hex'));
@@ -158,8 +158,9 @@ export async function writeSnapshot(directory, bytes, hook) {
   try {
     await hook('directory-fsync');
     await fsyncDirectory(directory);
+    await hook('reported');
   } catch (error) {
-    throw new UncertainWriteError('the directory fsync failed', { cause: error });
+    // After the rename every failure, even one after the fsync, leaves the outcome unknown to the caller.
+    throw new UncertainWriteError('the write after the rename did not complete', { cause: error });
   }
-  await hook('reported');
 }

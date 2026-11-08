@@ -30,7 +30,7 @@ import {
 export const BINDING_LABEL = 'styx/m3-receive/invitee-binding/v1';
 export const BINDING_LENGTH = 32;
 export const DEFAULT_MAX_STORED_BYTES = 536_870_912;
-export const MAX_CURSORS = 256;
+export const MAX_CURSORS = BOUNDS.cursors;
 
 const FAILED = 'E_SDK_RECEIVE_STATE_FAILED';
 const INCOMPATIBLE = 'E_SDK_RECEIVE_STATE_INCOMPATIBLE';
@@ -38,7 +38,6 @@ const CONFLICT = 'E_SDK_RECEIVE_STATE_CONFLICT';
 const CAPACITY = 'E_SDK_RECEIVE_STATE_CAPACITY';
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX32 = /^[0-9a-f]{32}$/;
-const DEAD_OPERATIONS_BOUND = 4_096;
 const utf8 = new TextEncoder();
 const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const DEFAULT_WASM = new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url);
@@ -69,26 +68,34 @@ function readVarint(bytes, offset) {
 }
 
 /**
- * The cleartext `group_id` of an MLS application PrivateMessage (RFC 9420
- * §6.3.1), decoded as strict UTF-8 and accepted only if re-encoding yields
- * exactly the header bytes; `null` for anything else.
+ * Read the cleartext `group_id` of an MLS application PrivateMessage (RFC
+ * 9420 §6.3.1). Returns `{ groupId }` for a strict canonical UTF-8 id,
+ * `{ malformed: true }` for a ciphertext that is not a well-formed application
+ * PrivateMessage or whose id is empty or not canonical UTF-8, and
+ * `{ oversized: true }` for a well-formed id longer than the adapter stores
+ * (BOUNDS.groupId), which is not a permanent property of the message.
  */
-export function headerGroupId(ciphertext) {
-  if (!isBytes(ciphertext) || !isMlsApplicationMessage(ciphertext)) return null;
+export function readHeaderGroupId(ciphertext) {
+  if (!isBytes(ciphertext) || !isMlsApplicationMessage(ciphertext)) return { malformed: true };
   const length = readVarint(ciphertext, 4);
-  if (length === null || length.value === 0 || length.value > BOUNDS.groupId) return null;
-  if (length.next + length.value > ciphertext.length) return null;
+  if (length === null || length.value === 0 || length.next + length.value > ciphertext.length) return { malformed: true };
   const raw = ciphertext.subarray(length.next, length.next + length.value);
   let value;
   try {
     value = strictUtf8.decode(raw);
   } catch {
-    return null;
+    return { malformed: true };
   }
   const again = utf8.encode(value);
-  if (again.length !== raw.length) return null;
-  for (let i = 0; i < raw.length; i += 1) if (again[i] !== raw[i]) return null;
-  return value;
+  if (again.length !== raw.length) return { malformed: true };
+  for (let i = 0; i < raw.length; i += 1) if (again[i] !== raw[i]) return { malformed: true };
+  if (raw.length > BOUNDS.groupId) return { oversized: true };
+  return { groupId: value };
+}
+
+/** The header group id as a string, or `null` when `readHeaderGroupId` finds none. */
+export function headerGroupId(ciphertext) {
+  return readHeaderGroupId(ciphertext).groupId ?? null;
 }
 
 /* --- canonical comparison of two serialized provider states -------------- */
@@ -150,9 +157,11 @@ export function sameProviderState(a, b) {
  * @param {number} [options.maxStoredBytes] the adapter's own bound on `storedBytes`; it must be at
  *   least the SDK's `receive.maxStoredBytes` plus one inbound event and one MLS checkpoint
  * @param {Uint8Array} [options.wasmBytes] the vendored WASM bytes (read from the vendored file when absent)
- * @param {object} [options.hooks] test hooks: `beforeStep(step, operation)` is awaited before each
- *   step of a snapshot rewrite; `beforeCandidate({ sender })` is awaited inside `openCandidate`
- *   before the copy is opened (a throw is an engine fault)
+ * @param {object} [options.hooks] test hooks (fault injection only; a throw is a fault): `beforeStep(step,
+ *   operation)` before each step of a snapshot rewrite; `beforeCandidate({ sender })` inside
+ *   `openCandidate` before the copy is restored; `beforeVerification(step)` before `group-load`,
+ *   `export-key` and `load-session` of the invitee verification; `afterExport(value)` may replace the
+ *   exporter value; `beforeReapply()` and `beforeSwap()` inside the installation after a commit
  * @returns {{ receiveState: object, session: object, inspect: () => object }}
  */
 export function createReferenceReceiver(options) {
@@ -183,6 +192,8 @@ export function createReferenceReceiver(options) {
   let candidate = null;
   let ticketCounter = 0;
   const deadOperations = new Set();
+  /** The resolution record found by the last load (diagnostics only; never answered after a load). */
+  let loadedResolution = null;
   let createdArchive = false;
   let writes = 0;
   let swaps = 0;
@@ -339,7 +350,9 @@ export function createReferenceReceiver(options) {
     } catch {
       return code(INCOMPATIBLE);
     }
-    state = loaded;
+    // The resolution record is retained until this load (C-SDK §8.5); the next write drops it.
+    state = { ...loaded, lastCommit: null };
+    loadedResolution = loaded.lastCommit;
     engine = restored;
     generation += 1;
     return {
@@ -444,8 +457,10 @@ export function createReferenceReceiver(options) {
   async function classify(sender, ciphertext) {
     const bound = binding(sender);
     if (bound === null) return { outcome: 'retry' };
-    const groupId = headerGroupId(ciphertext);
-    if (groupId === null) return { outcome: 'reject' };
+    const header = readHeaderGroupId(ciphertext);
+    if (header.malformed) return { outcome: 'reject' };
+    if (header.oversized) return { outcome: 'retry' }; // beyond this adapter's bound, not a property of the message
+    const { groupId } = header;
     if (bound.groupId !== null && groupId !== bound.groupId) return { outcome: 'reject' };
     let scratch;
     try {
@@ -459,6 +474,7 @@ export function createReferenceReceiver(options) {
       // of the stored group proves that it is the group joined for `sender`.
       let handle;
       try {
+        if (hooks.beforeVerification) await hooks.beforeVerification('group-load');
         handle = Group.load(scratch.provider, groupId);
       } catch {
         return { outcome: 'retry' };
@@ -466,7 +482,9 @@ export function createReferenceReceiver(options) {
       if (handle === undefined) return { outcome: 'reject' };
       let value;
       try {
+        if (hooks.beforeVerification) await hooks.beforeVerification('export-key');
         value = handle.export_key(scratch.provider, BINDING_LABEL, utf8.encode(sender), BINDING_LENGTH);
+        if (hooks.afterExport) value = await hooks.afterExport(value);
       } catch {
         return { outcome: 'retry' };
       } finally {
@@ -477,11 +495,12 @@ export function createReferenceReceiver(options) {
     }
     let session;
     try {
+      if (hooks.beforeVerification) await hooks.beforeVerification('load-session');
       session = scratch.loadSession(sender, groupId, { expectedPeer: sender });
     } catch {
       return { outcome: 'retry' };
     }
-    if (session === null) return bound.groupId === null ? { outcome: 'retry' } : { outcome: 'retry' };
+    if (session === null) return { outcome: 'retry' };
     let opened;
     try {
       opened = session.decrypt(ciphertext);
@@ -526,6 +545,7 @@ export function createReferenceReceiver(options) {
     generation += 1;
     if (chosen.outcome !== 'application') return;
     try {
+      if (hooks.beforeReapply) await hooks.beforeReapply();
       const session = authoritativeSession(chosen.sender)
         ?? engine.loadSession(chosen.sender, chosen.groupId, { expectedPeer: chosen.sender });
       const opened = session.decrypt(chosen.ciphertext);
@@ -535,7 +555,13 @@ export function createReferenceReceiver(options) {
     }
     // The re-applied state differs: the committed bytes are authoritative.
     swaps += 1;
-    engine = await restoreEngine(chosen.stateBytes);
+    try {
+      if (hooks.beforeSwap) await hooks.beforeSwap();
+      engine = await restoreEngine(chosen.stateBytes);
+    } catch {
+      // The archive holds the commit but no engine equals it: stop every later call until a new load.
+      poisoned = true;
+    }
   }
 
   async function commitUnit(argument) {
@@ -573,7 +599,10 @@ export function createReferenceReceiver(options) {
       if (deadOperations.has(argument.operationId)) return code(FAILED);
       const index = state.pending.findIndex((item) => item.eventId === eventId);
       if (index < 0) return code(FAILED);
-      const next = withState({ revision: state.revision + 1, lastCommit: { operationId: argument.operationId, eventId } });
+      const resolution = chosen.outcome === 'application'
+        ? { type: 'application', sender: entry.sender, receiptDue: entry.receiptRequested, payload: copy(chosen.plaintext) }
+        : { type: 'rejected' };
+      const next = withState({ revision: state.revision + 1, lastCommit: { operationId: argument.operationId, eventId, result: resolution } });
       next.pending.splice(index, 1);
       if (chosen.outcome === 'application') {
         next.ready.push({ eventId, sender: entry.sender, receiptDue: entry.receiptRequested, payload: copy(chosen.plaintext) });
@@ -588,7 +617,10 @@ export function createReferenceReceiver(options) {
       if (outcome === 'uncertain') throw new UncertainWriteError('commit: outcome unknown');
       return successOf(state);
     });
-    if (written.code === undefined) await install(chosen);
+    if (written.code === undefined) {
+      await install(chosen);
+      if (poisoned) throw new UncertainWriteError('commit: written, but the authoritative engine could not be installed');
+    }
     return written;
   }
 
@@ -597,23 +629,14 @@ export function createReferenceReceiver(options) {
     if (state === null || poisoned) return code(FAILED);
     const last = state.lastCommit;
     if (last !== null && last.operationId === argument.operationId) {
-      const ready = state.ready.find((entry) => entry.eventId === last.eventId);
-      if (ready !== undefined) {
-        return Object.freeze({
-          status: 'committed', revision: state.revision, storedBytes: storedBytesOf(state),
-          result: Object.freeze({ type: 'application', sender: ready.sender, payload: copy(ready.payload), receiptDue: ready.receiptDue }),
-        });
-      }
-      if (state.acknowledged.includes(last.eventId)) return code(FAILED); // no longer reconstructible
-      return Object.freeze({
-        status: 'committed', revision: state.revision, storedBytes: storedBytesOf(state),
-        result: Object.freeze({ type: 'rejected' }),
-      });
+      const result = last.result.type === 'application'
+        ? Object.freeze({ type: 'application', sender: last.result.sender, payload: copy(last.result.payload), receiptDue: last.result.receiptDue })
+        : Object.freeze({ type: 'rejected' });
+      return Object.freeze({ status: 'committed', revision: state.revision, storedBytes: storedBytesOf(state), result });
     }
     // Not the last durable commit: it never took effect, and from now on it
     // never can (a late call with this id is refused).
-    deadOperations.add(argument.operationId);
-    if (deadOperations.size > DEAD_OPERATIONS_BOUND) deadOperations.delete(deadOperations.values().next().value);
+    deadOperations.add(argument.operationId); // kept for the rest of the run, never evicted
     return Object.freeze({ status: 'aborted', revision: state.revision, storedBytes: storedBytesOf(state) });
   }
 
@@ -707,7 +730,7 @@ export function createReferenceReceiver(options) {
     ack: (argument) => withFile(() => ackUnit(argument)),
     receiptDone: (argument) => withFile(() => receiptDoneUnit(argument)),
     commitCursor: (argument) => withFile(() => commitCursorUnit(argument)),
-    resolve: (argument) => withFile(() => resolveUnit(argument)),
+    resolve: (argument) => withProvider(() => withFile(() => resolveUnit(argument))),
   });
 
   const session = Object.freeze({
@@ -732,7 +755,7 @@ export function createReferenceReceiver(options) {
   /** Read-only diagnostics for tests and the crash oracle. */
   function inspect() {
     return {
-      loaded: state !== null, poisoned, generation, writes, swaps,
+      loaded: state !== null, poisoned, generation, writes, swaps, loadedResolution: loadedResolution !== null,
       revision: state === null ? null : state.revision,
       bindings: state === null ? [] : state.bindings.map((entry) => ({ peer: entry.peer, groupId: entry.groupId })),
       pending: state === null ? [] : state.pending.map((entry) => entry.eventId),

@@ -37,7 +37,8 @@ export const BOUNDS = Object.freeze({
   mlsIdentityKey: 1_024,
   mlsState: 1_073_741_824,
   records: 16_777_216,
-  cursors: 16,
+  /** Cursors kept (the adapter drops the least recently committed beyond this). */
+  cursors: 256,
   bindings: 1_048_576,
 });
 
@@ -223,11 +224,13 @@ class Reader {
  * formula independent of the physical file: 65 bytes plus the ciphertext per
  * PENDING entry, 65 plus the payload per READY entry, 32 per seen and per
  * acknowledged id, 64 per receipt obligation, the relay length plus 8 per
- * cursor, the MLS checkpoint length, and 96 plus the group id length per peer
- * binding.
+ * cursor, the MLS checkpoint length, 96 plus the group id length per peer
+ * binding, and 65 plus the payload length for the resolution record of the
+ * last application commit (kept for `resolve`, see lastCommit).
  */
 export function storedBytesOf(state) {
   let total = state.mlsState.length;
+  if (state.lastCommit && state.lastCommit.result.type === 'application') total += 65 + state.lastCommit.result.payload.length;
   for (const entry of state.pending) total += 65 + entry.ciphertext.length;
   for (const entry of state.ready) total += 65 + entry.payload.length;
   total += 32 * state.seen.length + 32 * state.acknowledged.length + 64 * state.receiptsDue.length;
@@ -296,6 +299,10 @@ export function checkState(state) {
     const last = state.lastCommit;
     if (!HEX32.test(last.operationId) || !seen.has(last.eventId)) fail('last commit');
     if (state.pending.some((entry) => entry.eventId === last.eventId)) fail('last commit still pending');
+    const result = last.result;
+    if (result.type === 'application') {
+      if (!HEX64.test(result.sender) || typeof result.receiptDue !== 'boolean' || !(result.payload instanceof Uint8Array)) fail('last commit result');
+    } else if (result.type !== 'rejected') fail('last commit result');
   }
 }
 
@@ -353,6 +360,15 @@ export function encodeBody(state) {
     w.u8(1);
     w.hex(state.lastCommit.operationId, 16);
     w.hex(state.lastCommit.eventId, 32);
+    const result = state.lastCommit.result;
+    if (result.type === 'application') {
+      w.u8(1);
+      w.hex(result.sender, 32);
+      w.u8(result.receiptDue ? 1 : 0);
+      w.bytes(result.payload);
+    } else {
+      w.u8(2);
+    }
   }
   return w.finish();
 }
@@ -412,7 +428,19 @@ export function decodeBody(bytes) {
   for (let i = 0; i < due; i += 1) state.receiptsDue.push({ eventId: r.hex(32), sender: r.hex(32) });
   const hasLast = r.u8();
   if (hasLast === 0) state.lastCommit = null;
-  else if (hasLast === 1) state.lastCommit = { operationId: r.hex(16), eventId: r.hex(32) };
+  else if (hasLast === 1) {
+    const operationId = r.hex(16);
+    const eventId = r.hex(32);
+    const type = r.u8();
+    let result;
+    if (type === 1) {
+      const sender = r.hex(32);
+      const receiptDue = r.bool();
+      result = { type: 'application', sender, receiptDue, payload: r.bytesField(BOUNDS.payload) };
+    } else if (type === 2) result = { type: 'rejected' };
+    else throw new SnapshotFormatError('invalid last-commit result');
+    state.lastCommit = { operationId, eventId, result };
+  }
   else throw new SnapshotFormatError('invalid last-commit flag');
   r.done();
   checkState(state);
