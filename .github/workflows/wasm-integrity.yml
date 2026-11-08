@@ -62,7 +62,9 @@ jobs:
             echo "crate=true" >> "$GITHUB_OUTPUT"; echo "light=true" >> "$GITHUB_OUTPUT"
             echo "kdf=true" >> "$GITHUB_OUTPUT"; echo "kdflight=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          changed="$(git diff --name-only "$base_sha" HEAD)"
+          # -z: names are listed as they are, never C-quoted (a quoted name would
+          # not match the anchored expressions below).
+          changed="$(git diff --name-only -z "$base_sha" HEAD | tr '\0' '\n')"
           echo "Changed files:"; echo "$changed"
           # Detectors read the list from a file written outside any condition: no
           # pipe (an early grep -q exit could kill the writer under pipefail) and no
@@ -154,7 +156,7 @@ jobs:
     name: KDF artifact + KAT checks
     needs: changes
     if: needs.changes.outputs.kdflight == 'true'
-    # Playwright 1.58.2 (pinned in the lockfile) has no browser builds for ubuntu 26.04.
+    # ubuntu-latest is Ubuntu 26.04; locked Playwright 1.58.2 has no browsers there, so npx playwright install --with-deps fails.
     runs-on: ubuntu-24.04
     env:
       KDF_DIR: styx-js/vendor/styx-kdf-wasm
