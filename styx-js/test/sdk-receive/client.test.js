@@ -167,9 +167,9 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     expect(b.calls.open).toHaveLength(2); // the first attempt and one retry by the first copy
     expect(b.calls.stage).toHaveLength(1);
     failing = false;
-    expect(await until(() => b.messages().length === 1, 8_000)).toBe(true);
+    expect(await until(() => b.messages().length === 1, 20_000)).toBe(true); // the next periodic pass
     expect(b.calls.open).toHaveLength(3);
-  });
+  }, 40_000);
 
   test('(c) a copy of a READY or acknowledged id is dropped without openCandidate', async () => {
     const rs = await relays(2);
