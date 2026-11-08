@@ -459,7 +459,11 @@ export function createReferenceReceiver(options) {
     if (bound === null) return { outcome: 'retry' };
     const header = readHeaderGroupId(ciphertext);
     if (header.malformed) return { outcome: 'reject' };
-    if (header.oversized) return { outcome: 'retry' }; // beyond this adapter's bound, not a property of the message
+    if (header.oversized) {
+      // A bound group id is at most BOUNDS.groupId bytes, so a longer one differs from it: reject. For an
+      // invitee binding the length is only this adapter's bound, not a property of the message: retry.
+      return { outcome: bound.groupId !== null ? 'reject' : 'retry' };
+    }
     const { groupId } = header;
     if (bound.groupId !== null && groupId !== bound.groupId) return { outcome: 'reject' };
     let scratch;
