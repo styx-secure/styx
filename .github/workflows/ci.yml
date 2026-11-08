@@ -55,9 +55,14 @@ jobs:
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
-          if echo "$changed" | grep -qE '^(packages/|test_integration/|pubspec\.ya?ml|pubspec\.lock|melos\.ya?ml|analysis_options\.yaml|tool/|\.github/workflows/ci\.yml)'; then
+          # Detectors read the list from a here-string, not a pipe: with pipefail an
+          # early grep -q exit could kill the writer (SIGPIPE) and turn a match into
+          # false. grep exit 1 = no match; any other failure fails the step.
+          if grep -qE '^(packages/|test_integration/|pubspec\.ya?ml|pubspec\.lock|melos\.ya?ml|analysis_options\.yaml|tool/|\.github/workflows/ci\.yml)' <<<"$changed"; then
             echo "dart=true" >> "$GITHUB_OUTPUT"
           else
+            rc=$?
+            [ "$rc" -eq 1 ] || exit "$rc"
             echo "dart=false" >> "$GITHUB_OUTPUT"
           fi
 
