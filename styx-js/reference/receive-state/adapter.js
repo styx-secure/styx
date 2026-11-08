@@ -158,7 +158,7 @@ export function sameProviderState(a, b) {
  *   least the SDK's `receive.maxStoredBytes` plus one inbound event and one MLS checkpoint
  * @param {Uint8Array} [options.wasmBytes] the vendored WASM bytes (read from the vendored file when absent)
  * @param {object} [options.hooks] test hooks (fault injection only; a throw is a fault): `beforeStep(step,
- *   operation)` before each step of a snapshot rewrite; `beforeCandidate({ sender })` inside
+ *   operation)` before each step of a snapshot rewrite; `beforeCandidate({ sender, ciphertext })` inside
  *   `openCandidate` before the copy is restored; `beforeVerification(step)` before `group-load`,
  *   `export-key` and `load-session` of the invitee verification; `afterExport(value)` may replace the
  *   exporter value; `beforeReapply()` and `beforeSwap()` inside the installation after a commit
@@ -468,7 +468,7 @@ export function createReferenceReceiver(options) {
     if (bound.groupId !== null && groupId !== bound.groupId) return { outcome: 'reject' };
     let scratch;
     try {
-      if (hooks.beforeCandidate) await hooks.beforeCandidate({ sender });
+      if (hooks.beforeCandidate) await hooks.beforeCandidate({ sender, ciphertext: copy(ciphertext) });
       scratch = await restoreEngine(engine.serializeState());
     } catch {
       return { outcome: 'retry' };
