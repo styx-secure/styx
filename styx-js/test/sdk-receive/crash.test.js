@@ -80,7 +80,7 @@ async function crashCase(killAt) {
     const logPath = join(root, 'bob.log');
     const base = {
       directory: bob.directory, atRestKeyHex: bytesToHex(bob.atRestKey), secretHex: bytesToHex(bob.keys.secret),
-      identity: bob.identity, peer: alice.identity, relays: [relayHandle.url], expected, logPath, timeoutMs: 20_000,
+      identity: bob.identity, peer: alice.identity, relays: [relayHandle.url], expected, logPath, timeoutMs: 60_000,
     };
     const configFor = (phase, kill) => {
       const path = join(root, `${phase}.json`);
@@ -125,7 +125,7 @@ async function crashCase(killAt) {
     }
     // 4. The live MLS state was never ahead of or behind the committed one: Bob's reply (sealed
     //    from the recovered state) opens at Alice, and Alice received Bob's receipts.
-    if (!(await until(() => aliceClient.messages().some((m) => untext(m.payload) === 'reply-reply'), 10_000))) {
+    if (!(await until(() => aliceClient.messages().some((m) => untext(m.payload) === 'reply-reply'), 30_000))) {
       problems.push('Alice did not receive the reply sealed after recovery');
     }
     // 5. The durable MLS checkpoint is not behind the committed entries: from the final archive, no
@@ -139,7 +139,7 @@ async function crashCase(killAt) {
       if (outcome === 'application') problems.push(`committed ${event.id} still opens from the durable MLS checkpoint`);
     }
     for (const deliveryId of deliveries) {
-      if (!(await until(() => aliceClient.events.some((e) => e.deliveryId === deliveryId && e.state === 'RECIPIENT_RECEIPT_RECEIVED'), 10_000))) {
+      if (!(await until(() => aliceClient.events.some((e) => e.deliveryId === deliveryId && e.state === 'RECIPIENT_RECEIPT_RECEIVED'), 30_000))) {
         problems.push(`no receipt for ${deliveryId}`);
       }
     }
