@@ -640,13 +640,17 @@ describe('review cycle 1: installation, resolution, cursors, header bounds, veri
     expect(snapshot.cursors[255]).toEqual({ relay: 'ws://127.0.0.1:1256', syncedUntil: 256 });
   });
 
-  test('a canonical group id longer than the adapter stores is retry, never reject', async () => {
-    const { alice, bob, b } = await pair();
+  test('a canonical group id longer than the adapter stores is retry for an invitee binding, reject for an established one', async () => {
+    const { alice, bob, a, b } = await pair();
     const long = Buffer.alloc(256, 0x61);
     const ciphertext = Uint8Array.from([0x00, 0x01, 0x00, 0x02, 0x41, 0x00, ...long, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 9, 9, 9]);
     const got = await receive(b, 0, alice.identity, ciphertext);
     expect(got.opened.receiveOutcome).toBe('retry');
     expect((await loaded(bob.instance(), bob.identity)).pending.map((e) => e.eventId)).toEqual([got.id]);
+    // Alice's binding is established (she started the group): the same header is a different group.
+    const fromBob = await receive(a, 0, bob.identity, ciphertext);
+    expect(fromBob.opened.receiveOutcome).toBe('reject');
+    expect(fromBob.committed.revision).toBe(2);
   });
 
   test.each([['group-load'], ['export-key'], ['load-session'], ['malformed exporter value']])(

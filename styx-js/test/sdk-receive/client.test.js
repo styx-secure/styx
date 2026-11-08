@@ -45,6 +45,38 @@ async function run(who, rs, { hooks, clock = fastClock(), onMessage, receiptMode
   return { ...h, receiver, calls: ports.calls };
 }
 
+/** The id of the kind-4741 event carrying `label` that Alice's client sends to Bob now. */
+async function sentId(a, rs, bob, label) {
+  const known = new Set(rs[0].events.keys());
+  const sent = await a.client.send({ recipient: bob.identity, payload: text(label) });
+  expect(sent.ok).toBe(true);
+  const fresh = () => [...rs[0].events.values()].find((e) => !known.has(e.id) && e.kind === 4741
+    && e.tags.some(([t, v]) => t === 'p' && v === bob.identity));
+  expect(await until(() => fresh() !== undefined)).toBe(true);
+  return fresh().id;
+}
+
+/** The ciphertext of a stored event as the hex the counting wrapper records. */
+const hexOf = (rs, id) => Buffer.from(rs[0].events.get(id).content, 'base64').toString('hex');
+const opensOf = (b, hex) => b.calls.open.filter((x) => x === hex).length;
+
+/**
+ * Processing barrier (C-DLV 7.1: inbound frames are processed one at a time in arrival order, and
+ * one socket keeps its order): for each relay in turn, only that relay forwards live, Alice sends a
+ * sentinel and Bob must deliver it. Every frame that relay sent before the sentinel has then been
+ * processed. The periodic catch-up must not run meanwhile (the tests use an unaccelerated clock).
+ */
+async function barrier(rs, a, b, bob, label) {
+  for (let i = 0; i < rs.length; i += 1) {
+    rs.forEach((r, j) => { r.state.silent = j !== i; });
+    const payload = `${label}-sentinel-${i}`;
+    const sent = await a.client.send({ recipient: bob.identity, payload: text(payload) });
+    expect(sent.ok).toBe(true);
+    expect(await until(() => b.messages().some((m) => untext(m.payload) === payload))).toBe(true);
+  }
+  rs.forEach((r) => { r.state.silent = false; });
+}
+
 async function invited(rs) {
   const root = tempRoot();
   const alice = party(root, 'alice');
@@ -152,46 +184,46 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
   test('(d) many copies of a PENDING id after its in-run retry open nothing more before the next interval', async () => {
     const rs = await relays(4, [{}, { delayMs: 60 }, { delayMs: 120 }, { delayMs: 180 }]);
     const { bob, a } = await invited(rs);
-    let failing = true;
-    const b = await run(bob, rs, {
-      clock: fastClock(1), // catch-up interval: 10 s of host time, far beyond the copies
-      hooks: { beforeCandidate: () => { if (failing) throw new Error('still failing'); } },
+    const target = { hex: null, failing: true };
+    let b;
+    b = await run(bob, rs, {
+      clock: fastClock(1), // catch-up interval: 10 s of host time, far beyond the copies and the barrier
+      hooks: { beforeCandidate: () => { if (target.failing && b.calls.open.at(-1) === target.hex) throw new Error('still failing'); } },
     });
-    const sent = await a.client.send({ recipient: bob.identity, payload: text('h17-d') });
-    expect(sent.ok).toBe(true);
-    expect(await until(() => b.calls.open.length >= 1)).toBe(true);
-    const id = [...rs[0].events.values()].find((e) => e.kind === 4741 && e.tags.some(([t, v]) => t === 'p' && v === bob.identity)).id;
-    // Every relay has actually sent its copy to Bob; then give the client time to process them.
+    const id = await sentId(a, rs, bob, 'h17-d');
+    target.hex = hexOf(rs, id);
+    expect(await until(() => opensOf(b, target.hex) >= 1)).toBe(true);
+    // Every relay has sent its copy; then a sentinel per relay proves that Bob processed them.
     expect(await until(() => rs.every((r) => r.state.sent.includes(id)))).toBe(true);
-    await sleep(300);
-    expect(b.calls.open).toHaveLength(2); // the first attempt and one retry by the first copy
-    expect(b.calls.stage).toHaveLength(1);
-    failing = false;
-    expect(await until(() => b.messages().length === 1, 20_000)).toBe(true); // the next periodic pass
-    expect(b.calls.open).toHaveLength(3);
+    await barrier(rs, a, b, bob, 'd');
+    expect(opensOf(b, target.hex)).toBe(2); // the first attempt and one retry by the first copy
+    expect(b.calls.stage.filter((x) => x.event.eventId === id)).toHaveLength(1);
+    target.failing = false;
+    expect(await until(() => b.messages().some((m) => m.eventId === id), 20_000)).toBe(true); // the next periodic pass
+    expect(opensOf(b, target.hex)).toBe(3);
   }, 40_000);
 
   test('(c) a copy of a READY or acknowledged id is dropped without openCandidate', async () => {
     const rs = await relays(2);
     const { bob, a } = await invited(rs);
-    const b = await run(bob, rs);
-    await a.client.send({ recipient: bob.identity, payload: text('h17-c') });
-    expect(await until(() => b.messages().length >= 1)).toBe(true);
-    const id = b.messages()[0].eventId;
+    const b = await run(bob, rs, { clock: fastClock(1) });
+    const id = await sentId(a, rs, bob, 'h17-c');
+    const hex = hexOf(rs, id);
+    expect(await until(() => b.messages().some((m) => m.eventId === id))).toBe(true);
     const count = (r) => r.state.sent.filter((x) => x === id).length;
     const before = [count(rs[0]), count(rs[1])];
     rs[0].replay(id);
     rs[1].replay(id);
     expect(await until(() => count(rs[0]) > before[0] && count(rs[1]) > before[1])).toBe(true);
-    await sleep(300);
-    expect(b.calls.open).toHaveLength(1);
+    await barrier(rs, a, b, bob, 'c-ready');
+    expect(opensOf(b, hex)).toBe(1);
     expect((await b.client.acknowledgeMessage({ eventId: id })).ok).toBe(true);
     const again = count(rs[0]);
     rs[0].replay(id);
     expect(await until(() => count(rs[0]) > again)).toBe(true);
-    await sleep(300);
-    expect(b.calls.open).toHaveLength(1);
-    expect(b.calls.stage).toHaveLength(1);
+    await barrier(rs, a, b, bob, 'c-acked');
+    expect(opensOf(b, hex)).toBe(1);
+    expect(b.calls.stage.filter((x) => x.event.eventId === id)).toHaveLength(1);
   });
 
   test('criterion 7: an openCandidate that outlives the port-call timeout leaves the entry PENDING and MLS unchanged; a later trigger delivers it once', async () => {
