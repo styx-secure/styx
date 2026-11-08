@@ -224,7 +224,8 @@ describe('probeStorage — advisory and bounded (spike F8)', () => {
       persist: async () => true,
       estimate: async () => ({ quota: 1000, usage: 10 }),
     };
-    expect(await probeStorage({ storageImpl: storage })).toEqual({
+    const timers = makeFakeTimers();
+    expect(await probeStorage({ storageImpl: storage, setTimeoutImpl: timers.setTimeoutImpl })).toEqual({
       persisted: true, persistGranted: true, quota: 1000, usage: 10,
     });
   });
