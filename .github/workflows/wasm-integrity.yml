@@ -151,7 +151,8 @@ jobs:
     name: KDF artifact + KAT checks
     needs: changes
     if: needs.changes.outputs.kdflight == 'true'
-    runs-on: ubuntu-latest
+    # Playwright 1.58.2 (pinned in the lockfile) has no browser builds for ubuntu 26.04.
+    runs-on: ubuntu-24.04
     env:
       KDF_DIR: styx-js/vendor/styx-kdf-wasm
     steps:
