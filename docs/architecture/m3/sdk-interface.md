@@ -406,6 +406,8 @@ This section is the upper bound for every lane module under `styx-js/src/sdk/**`
 
 The one test `styx-js/test/sdk-mls/invite-mls.test.js` additionally imports only the exact names granted by #317/6316724633 and #525: Jest lifecycle/test names; `MlsEngine` from the unchanged engine; `readFileSync` from `node:fs` solely for immutable WASM; `WebSocket`/`WebSocketServer`, `schnorr`, `sha256`, allowed utils and the SDK entry point. It owns its loopback harness. No other file gains crypto or filesystem access. `invite.js` uses only the contract's exact relay/retry, utils, sha256 and verify-only Schnorr imports.
 
+The M3-RECEIVE-2 reference adapter `styx-js/reference/receive-state/**` and its tests `styx-js/test/sdk-receive/**` (contract #570, scope extension #400/6723784844) lie outside the lane trees and are imported by no lane module. Beyond their own files they import only: `MlsEngine` and `MlsBindingError` from the unchanged `styx-js/src/crypto/mls/mls-engine.js`; `isMlsApplicationMessage` from the unchanged `styx-js/src/crypto/mls/mls-session.js`; the `Group` class from the immutable vendored `styx-js/vendor/openmls-wasm/openmls_wasm.js`, used only for the read-only `Group.load`, `export_key` and `free` of a handle the adapter loaded itself, and the vendored wasm bytes read as a file; the Node built-ins `node:crypto`, `node:fs`, `node:fs/promises`, `node:path` and `node:os`, `node:child_process` in `crash.test.js` only, and the `Buffer` global; and, in the tests only, the SDK entry point, the allowed utils, `schnorr`, `sha256`, `WebSocket`/`WebSocketServer` and the Jest names of this table. Every provider mutation goes through `MlsEngine` and `MlsSession`. No other file gains crypto or filesystem access through this exception.
+
 Rules:
 
 - Modules under `styx-js/src/sdk/**` import no `node:` built-in. They run unchanged in a browser, and in Node only when the host provides a global `WebSocket` (Node 18 does not); a test that needs `WebSocket` in Node supplies it from `ws`.
@@ -1059,7 +1061,53 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
       "BroadcastChannelTransport",
       "NostrChatTransport"
     ],
-    "newDependency": false
+    "newDependency": false,
+    "referenceReceiveException": {
+      "trees": [
+        "styx-js/reference/receive-state/**",
+        "styx-js/test/sdk-receive/**"
+      ],
+      "importedByLane": false,
+      "crypto": {
+        "styx-js/src/crypto/mls/mls-engine.js": [
+          "MlsEngine",
+          "MlsBindingError"
+        ],
+        "styx-js/src/crypto/mls/mls-session.js": [
+          "isMlsApplicationMessage"
+        ]
+      },
+      "vendor": {
+        "styx-js/vendor/openmls-wasm/openmls_wasm.js": [
+          "Group"
+        ],
+        "groupUse": "read-only Group.load, export_key and free of a handle the adapter loaded itself",
+        "wasmBytes": "styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm read as a file"
+      },
+      "nodeBuiltins": [
+        "node:crypto",
+        "node:fs",
+        "node:fs/promises",
+        "node:path",
+        "node:os"
+      ],
+      "nodeBuiltinsCrashTestOnly": [
+        "node:child_process"
+      ],
+      "globals": [
+        "Buffer"
+      ],
+      "testsAlso": [
+        "SDK entry point",
+        "allowed utils",
+        "schnorr",
+        "sha256",
+        "WebSocket",
+        "WebSocketServer",
+        "@jest/globals names"
+      ],
+      "authority": "M3-RECEIVE-2, contract #570, scope extension #400/6723784844"
+    }
   },
   "network": {
     "laneTestRelays": "loopback only, started inside the test",
@@ -1361,3 +1409,5 @@ The final file SHA-256 must be owner hash-ratified by a `styx-m3-ratification:v1
 M3-INVITE #525 amends only the enumerated sections under #400/6544668029, scope replacement 5 #400/6544596450 and the existing #317/6316724633 act. The version-0.2.0 predecessor is integrated and ratified by #400/6544441411. These version-0.3.0 bytes remain output candidates until separately exact-head hash-ratified; historical O-SCEN3/C-PREV citations remain unchanged.
 
 M3-RECEIVE-1 (contract #557, shared normative source #556) amends only §2, §3, §4, §5, §7, §8, §10 (the non-claim qualifier), §11 and this section, under the scope extension #400/6629916795 and its exact-contract approval; version 0.4.0 replaces 0.3.1. The §9 import exceptions for the reference adapter and its tests are not part of it. These bytes remain output candidates until separately exact-head hash-ratified.
+
+M3-RECEIVE-2 (contract #570, shared normative source #556) amends only §9 (the reference-adapter import exception), the `imports` entry `referenceReceiveException` of the §11 record and this section, under the scope extension #400/6723784844 and its exact-contract approval; the interface version, every method, code, event, port method and the wire stay unchanged. These bytes remain output candidates until separately exact-head hash-ratified.
