@@ -12,6 +12,13 @@ import WebSocket from 'ws';
 import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
 
+// Bounded wait whose timer is always cleared (no timer outlives the test).
+const withTimeout = (promise, ms, makeError) => {
+  let timer;
+  const expiry = new Promise((_, rej) => { timer = setTimeout(() => rej(makeError()), ms); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+};
+
 const RELAY = process.env.NOSTR_RELAY || 'ws://localhost:17777';
 const REQUIRE_RELAY = process.env.REQUIRE_RELAY === '1';
 const wasmBytes = readFileSync(
@@ -89,10 +96,7 @@ describe('StyxChat over a real Nostr relay', () => {
 
     const gotAtBob = new Promise((res) => bob.onMessage((m) => res(m)));
     await alice.sendText(bob.me.pubkey, 'Ciao Bob, via relay Nostr reale 🔐');
-    const msg = await Promise.race([
-      gotAtBob,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('message timeout')), 10000)),
-    ]);
+    const msg = await withTimeout(gotAtBob, 10000, () => new Error('message timeout'));
     expect(msg.text).toBe('Ciao Bob, via relay Nostr reale 🔐');
     expect(msg.contactPubkey).toBe(alice.me.pubkey);
   }, 30000);

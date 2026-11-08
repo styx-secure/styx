@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
 
+// Bounded wait whose timer is always cleared (no timer outlives the test).
+const withTimeout = (promise, ms, makeError) => {
+  let timer;
+  const expiry = new Promise((_, rej) => { timer = setTimeout(() => rej(makeError()), ms); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+};
+
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
 );
@@ -123,10 +130,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     expect((await a.listContacts()).map((c) => c.pubkey)).toContain(b.me.pubkey);
     const gotAtA = new Promise((res) => a.onMessage((m) => res(m)));
     await b.sendText(aPubkey, 'ciao dopo reload invito');
-    const msg = await Promise.race([
-      gotAtA,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000)),
-    ]);
+    const msg = await withTimeout(gotAtA, 6000, () => new Error('timeout'));
     expect(msg.text).toBe('ciao dopo reload invito');
   });
 
@@ -187,10 +191,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     // A new message from Alice is decrypted by the RESTORED session.
     const gotAfterReload = new Promise((res) => bob.onMessage((m) => res(m)));
     await alice.sendText(bobPubkey, 'dopo il reload');
-    const msg = await Promise.race([
-      gotAfterReload,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout after reload')), 6000)),
-    ]);
+    const msg = await withTimeout(gotAfterReload, 6000, () => new Error('timeout after reload'));
     expect(msg.text).toBe('dopo il reload');
   });
 });

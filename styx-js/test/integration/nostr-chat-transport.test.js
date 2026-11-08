@@ -9,6 +9,13 @@ import { schnorr } from '@noble/curves/secp256k1';
 import { NostrChatTransport } from '../../src/transport/nostr-chat-transport.js';
 import { bytesToHex } from '../../src/utils.js';
 
+// Bounded wait whose timer is always cleared (no timer outlives the test).
+const withTimeout = (promise, ms, makeError) => {
+  let timer;
+  const expiry = new Promise((_, rej) => { timer = setTimeout(() => rej(makeError()), ms); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+};
+
 const RELAY = process.env.NOSTR_RELAY || 'ws://localhost:17777';
 const REQUIRE_RELAY = process.env.REQUIRE_RELAY === '1';
 
@@ -64,10 +71,7 @@ describe('NostrChatTransport (real strfry relay)', () => {
     await new Promise((r) => setTimeout(r, 200));
     await at.send(bob.pk, new TextEncoder().encode('ciao via nostr'));
 
-    const msg = await Promise.race([
-      got,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-    ]);
+    const msg = await withTimeout(got, 8000, () => new Error('timeout'));
     expect(msg.from).toBe(alice.pk);
     expect(msg.text).toBe('ciao via nostr');
   }, 15000);
@@ -87,10 +91,7 @@ describe('NostrChatTransport (real strfry relay)', () => {
     });
     await bt.connect(); // subscription should replay the stored event
 
-    const text = await Promise.race([
-      got,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
-    ]);
+    const text = await withTimeout(got, 8000, () => new Error('timeout'));
     expect(text).toBe('messaggio in differita');
   }, 15000);
 
@@ -115,10 +116,7 @@ describe('NostrChatTransport (real strfry relay)', () => {
       });
     });
     await bt.connect();
-    await Promise.race([
-      done,
-      new Promise((_, rej) => setTimeout(() => rej(new Error(`only got ${[...received]}`)), 8000)),
-    ]);
+    await withTimeout(done, 8000, () => new Error(`only got ${[...received]}`));
     expect([...received].sort()).toEqual(['due', 'tre', 'uno']);
   }, 15000);
 

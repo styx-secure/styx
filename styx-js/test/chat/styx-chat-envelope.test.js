@@ -17,6 +17,13 @@ import {
   detectMlsStateFormat,
 } from '../../src/storage/mls-state-envelope.js';
 
+// Bounded wait whose timer is always cleared (no timer outlives the test).
+const withTimeout = (promise, ms, makeError) => {
+  let timer;
+  const expiry = new Promise((_, rej) => { timer = setTimeout(() => rej(makeError()), ms); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+};
+
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
 );
@@ -91,10 +98,7 @@ describe('StyxChat + MLS state envelope', () => {
     // The migrated-and-restored MLS session actually works.
     const got = new Promise((res) => bob.onMessage((m) => res(m)));
     await alice.sendText(bobPubkey, 'dopo la migrazione');
-    const msg = await Promise.race([
-      got,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000)),
-    ]);
+    const msg = await withTimeout(got, 6000, () => new Error('timeout'));
     expect(msg.text).toBe('dopo la migrazione');
   });
 
@@ -118,10 +122,7 @@ describe('StyxChat + MLS state envelope', () => {
     // And the session still works.
     const got = new Promise((res) => bob.onMessage((m) => res(m)));
     await alice.sendText(bobPubkey, 'dopo la ripresa');
-    const msg = await Promise.race([
-      got,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000)),
-    ]);
+    const msg = await withTimeout(got, 6000, () => new Error('timeout'));
     expect(msg.text).toBe('dopo la ripresa');
   });
 
