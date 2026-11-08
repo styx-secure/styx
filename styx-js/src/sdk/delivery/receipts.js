@@ -581,6 +581,16 @@ export function createReceipts(options) {
   // (discard, duplicate, receipt, admission, the start of its open, or
   // shutdown, which releases everything at once).
   let retainedCost = 0;
+  /**
+   * Whether one more queue entry of `cost` fits: not stopped, below the count
+   * bound and within the retained total. Checked after the last caller code
+   * an `ingest` runs, right before it charges and queues, so a stop or an
+   * `ingest` re-entered from that code cannot carry either bound past it.
+   */
+  function fits(cost) {
+    return !stopped && queue.length + waiting.length + Number(validating) < INBOUND_PENDING_BOUND
+      && retainedCost + cost <= INBOUND_RETAINED_COST_MAX;
+  }
   function release(cost) {
     if (!stopped) retainedCost = Math.max(0, retainedCost - cost);
   }
@@ -1394,7 +1404,6 @@ export function createReceipts(options) {
      * at a full count bound, before any validation. */
     const cost = frameCost(data);
     if (cost === null) {
-      if (retainedCost + OVERSIZED_MARKER_COST > INBOUND_RETAINED_COST_MAX) return success({ queued: false });
       let event;
       try {
         const descriptor = Reflect.getOwnPropertyDescriptor(data, 2);
@@ -1405,17 +1414,17 @@ export function createReceipts(options) {
       }
       accountFrame(frame, event !== undefined && frameCost(event) === null ? 'invalid' : 'dropped');
       // The cost walk and the accounting ran caller code, which may have
-      // stopped this module: nothing is queued after the stop.
-      if (stopped) return success({ queued: false });
+      // stopped this module or queued other frames: the marker is queued only
+      // if it still fits (an already accounted frame is not accounted again).
+      if (!fits(OVERSIZED_MARKER_COST)) return success({ queued: false });
       retainedCost += OVERSIZED_MARKER_COST;
       queue.push({ frame: null, cost: OVERSIZED_MARKER_COST, oversized: true });
       Promise.resolve().then(drain);
       return success({ queued: true });
     }
-    if (retainedCost + cost > INBOUND_RETAINED_COST_MAX) return success({ queued: false });
     // The reads above ran caller code (getters, proxies), which may have
-    // stopped this module: nothing is queued after the stop.
-    if (stopped) return success({ queued: false });
+    // stopped this module or queued other frames: both bounds are checked now.
+    if (!fits(cost)) return success({ queued: false });
     retainedCost += cost;
     queue.push({ frame, cost });
     /* The drain is asynchronous, so `ingest` stays synchronous and the queue

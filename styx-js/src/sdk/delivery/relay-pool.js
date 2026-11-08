@@ -1184,8 +1184,19 @@ export function createRelaySet(options) {
       }
       if (stopped || setFrozen) return;
     }
+    // Building the filter and reading `subscribe` can run caller code too, so
+    // both happen before the last check and the call follows it at once.
+    let request;
+    let subscribe;
     try {
-      Promise.resolve(state.pool.subscribe(state.subscriptionId, sent === null ? filter : { ...filter, since: sent })).catch(() => {});
+      request = sent === null ? filter : { ...filter, since: sent };
+      subscribe = state.pool.subscribe;
+    } catch {
+      return;
+    }
+    if (stopped || setFrozen) return;
+    try {
+      Promise.resolve(Reflect.apply(subscribe, state.pool, [state.subscriptionId, request])).catch(() => {});
     } catch {
       // No successful result is inferred from a faulty transport.
     }
