@@ -6,6 +6,13 @@ import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
 import { ContactRoster } from '../../src/chat/contact-roster.js';
 
+// Bounded wait whose timer is always cleared (no timer outlives the test).
+const withTimeout = (promise, ms, makeError) => {
+  let timer;
+  const expiry = new Promise((_, rej) => { timer = setTimeout(() => rej(makeError()), ms); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+};
+
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
 );
@@ -222,10 +229,7 @@ describe('StyxChat orchestrator (in-memory transport, real MLS)', () => {
     const gotAtBob = new Promise((res) => bob.onMessage((m) => res(m)));
     for (const { from, bytes } of [...captured].reverse()) bobHandler(from, bytes);
 
-    const msg = await Promise.race([
-      gotAtBob,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('message dropped')), 3000)),
-    ]);
+    const msg = await withTimeout(gotAtBob, 3000, () => new Error('message dropped'));
     expect(msg.text).toBe('fuori ordine');
   });
 
