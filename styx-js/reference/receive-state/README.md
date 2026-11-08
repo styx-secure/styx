@@ -41,9 +41,11 @@ calls `load`, which reads the archive again.
   header `group_id` is not strict canonical UTF-8; a header group other than the bound group of an
   established binding; for an invitee binding, a header group that the provider does not hold, or whose
   exporter value is computed and differs from the stored one; and an application message that yields no
-  peer plaintext. Every other failure — an unknown sender, any engine exception, a `MlsBindingError`, a
-  fault, timeout or malformed result in the verification, and a well-formed group id longer than the
-  255 bytes this adapter stores — is `retry`.
+  peer plaintext; and a well-formed group id longer than the 255 bytes this adapter stores when the binding is
+  established (the bound id is at most 255 bytes, so a longer one names a different group). Every other
+  failure — an unknown sender, any engine exception, a `MlsBindingError`, a fault, timeout or malformed result
+  in the verification, and a well-formed group id longer than 255 bytes for an invitee binding not yet
+  completed (a bound of this adapter, not a property of the message) — is `retry`.
 - **Checkpoints.** `seal`, `createKeyPackage`, `startSession` and `joinSession` make the provider state
   durable before returning. `startSession` checks the KeyPackage on a throwaway engine first and
   `joinSession` checks the Welcome on a copy first, so a refused peer leaves no group in the authoritative
