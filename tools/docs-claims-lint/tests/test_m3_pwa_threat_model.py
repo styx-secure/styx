@@ -104,7 +104,10 @@ KEY_STATEMENTS = (
     # Chat payload validation since #562, with its legacy exception.
     "validates the typed fields of every inbound payload that decodes to a JSON"
     " object before that payload is stored",
-    "A payload that is not a JSON object is still accepted as bare legacy text",
+    "A payload that decodes to a JSON array is discarded and counted as"
+    " malformed.",
+    "A payload that decodes to neither a JSON object nor a JSON array is still"
+    " accepted as bare legacy text",
     "Adding a confirmation step for these parameters is open work, not done.",
     # Honest state.
     "The review was model-assisted, not a human audit.",
