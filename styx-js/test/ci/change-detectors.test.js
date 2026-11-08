@@ -11,15 +11,16 @@
 // Required behaviour:
 //   - a protected path yields `true` wherever it appears in the list, also when
 //     the list is far larger than a pipe buffer (an early `grep -q` exit must
-//     never turn a match into `false`);
+//     never turn a match into `false`), and also when its name is one that
+//     `git diff --name-only` would C-quote by default;
 //   - lists with only unprotected paths, and the empty list, yield `false`;
 //   - an error of the list producer or of grep (for example an invalid regular
 //     expression), or a list that cannot be stored for the detectors to read,
 //     fails the step instead of yielding `false`.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const WORKFLOWS = fileURLToPath(new URL('../../../.github/workflows/', import.meta.url));
@@ -88,6 +89,18 @@ const detectorEres = (script) => [...script.matchAll(/grep -qE '([^']*)'/g)].map
 
 let dir;
 let fakeBin;
+let repo;
+let repoBase;
+// Deterministic Git for the real-repository cases: no user or system config.
+const GIT_ENV = {
+  PATH: process.env.PATH,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_AUTHOR_NAME: 'test',
+  GIT_AUTHOR_EMAIL: 'test@example.invalid',
+  GIT_COMMITTER_NAME: 'test',
+  GIT_COMMITTER_EMAIL: 'test@example.invalid',
+};
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'styx-change-detectors-'));
   fakeBin = join(dir, 'bin');
@@ -102,7 +115,10 @@ beforeAll(() => {
       '  cat-file) exit 0 ;;',
       '  diff)',
       '    if [ -n "${FAKE_GIT_DIFF_FAIL:-}" ]; then echo "fatal: bad revision" >&2; exit "$FAKE_GIT_DIFF_FAIL"; fi',
-      '    cat "$FAKE_CHANGED_FILE" ;;',
+      '    case " $* " in',
+      '      *" -z "*) tr \'\\n\' \'\\0\' < "$FAKE_CHANGED_FILE" ;;',
+      '      *) cat "$FAKE_CHANGED_FILE" ;;',
+      '    esac ;;',
       '  *) echo "unexpected git $*" >&2; exit 99 ;;',
       'esac',
       '',
@@ -120,6 +136,14 @@ beforeAll(() => {
     chmodSync(join(dir, name, 'mktemp'), 0o755);
   }
   execFileSync('mkdir', ['-p', join(dir, 'tmp')]);
+  // A real Git repository with one base commit, for file names that Git
+  // would quote in its default --name-only output.
+  repo = join(dir, 'repo');
+  execFileSync('git', ['-c', 'init.defaultBranch=main', 'init', '-q', repo], { env: GIT_ENV });
+  writeFileSync(join(repo, 'README'), 'base\n');
+  execFileSync('git', ['-C', repo, 'add', 'README'], { env: GIT_ENV });
+  execFileSync('git', ['-C', repo, 'commit', '-q', '-m', 'base'], { env: GIT_ENV });
+  repoBase = execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { env: GIT_ENV, encoding: 'utf8' }).trim();
 });
 afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -130,7 +154,7 @@ let seq = 0;
  * Run the extracted change-detection script of `workflow` as a push event
  * whose changed files are `names`. Returns {code, outputs, stderr}.
  */
-function detect(workflow, names, { script = SCRIPTS[workflow], diffFail, mktemp } = {}) {
+function detect(workflow, names, { script = SCRIPTS[workflow], diffFail, mktemp, realRepoHead } = {}) {
   const n = seq++;
   const scriptFile = join(dir, `step-${n}.sh`);
   const listFile = join(dir, `changed-${n}.txt`);
@@ -138,13 +162,18 @@ function detect(workflow, names, { script = SCRIPTS[workflow], diffFail, mktemp 
   writeFileSync(scriptFile, script);
   writeFileSync(listFile, names.length ? names.join('\n') + '\n' : '');
   writeFileSync(outFile, '');
+  // With realRepoHead the step runs inside the real repository, with real git,
+  // as a push from the base commit to that head.
   const env = {
-    PATH: `${mktemp ? `${join(dir, `mktemp-${mktemp}`)}:` : ''}${fakeBin}:${process.env.PATH}`,
+    ...(realRepoHead ? GIT_ENV : {}),
+    PATH: realRepoHead
+      ? process.env.PATH
+      : `${mktemp ? `${join(dir, `mktemp-${mktemp}`)}:` : ''}${fakeBin}:${process.env.PATH}`,
     TMPDIR: join(dir, 'tmp'),
     EVENT: 'push',
     BASE_REF: '',
     MERGE_GROUP_BASE_SHA: '',
-    BEFORE: 'a'.repeat(40),
+    BEFORE: realRepoHead ? repoBase : 'a'.repeat(40),
     GITHUB_OUTPUT: outFile,
     FAKE_CHANGED_FILE: listFile,
     ...(diffFail ? { FAKE_GIT_DIFF_FAIL: String(diffFail) } : {}),
@@ -155,6 +184,7 @@ function detect(workflow, names, { script = SCRIPTS[workflow], diffFail, mktemp 
     // Same invocation GitHub uses for `shell: bash`.
     execFileSync('bash', ['--noprofile', '--norc', '-eo', 'pipefail', scriptFile], {
       env,
+      cwd: realRepoHead ? repo : undefined,
       encoding: 'utf8',
       stdio: ['ignore', 'ignore', 'pipe'],
     });
@@ -252,6 +282,22 @@ describe('CI change detectors: a protected path is never reported as unchanged',
     const r = detect(workflow, [...FILLER, path]);
     expect(r.code).toBe(0);
     expect(r.outputs).toEqual(want);
+  });
+
+  // Names that `git diff --name-only` would C-quote by default: a double
+  // quote, a tab, a non-ASCII letter. Real git, one commit per name.
+  test.each(CASES)('$detector: protected path with a quoted-by-default name (real git) → $expect', ({ workflow, path, expect: want }) => {
+    const dot = path.lastIndexOf('.');
+    for (const special of ['"', '\t', 'é']) {
+      const name = `${path.slice(0, dot)}${special}q${path.slice(dot)}`;
+      execFileSync('git', ['-C', repo, 'checkout', '-q', '--detach', repoBase], { env: GIT_ENV });
+      mkdirSync(dirname(join(repo, name)), { recursive: true });
+      writeFileSync(join(repo, name), 'x\n');
+      execFileSync('git', ['-C', repo, 'add', '-A'], { env: GIT_ENV });
+      execFileSync('git', ['-C', repo, 'commit', '-q', '-m', 'add'], { env: GIT_ENV });
+      const r = detect(workflow, [], { realRepoHead: true });
+      expect({ name, code: r.code, outputs: r.outputs }).toEqual({ name, code: 0, outputs: want });
+    }
   });
 });
 
