@@ -699,6 +699,10 @@ export function createRelaySet(options) {
     if (kind !== 'EVENT' && kind !== 'OK' && kind !== 'EOSE' && kind !== 'NOTICE' && kind !== 'CLOSED') return;
     if (kind !== 'OK' && kind !== 'NOTICE' && data[1] !== states[relayIndex].subscriptionId) return;
     if (kind === 'OK') {
+      // C-DLV §5.3: only ["OK", <event id>, <boolean>, <string>] settles an
+      // outcome; an OK frame of any other length, or whose fourth element is
+      // not a string, is ignored.
+      if (data.length !== 4 || typeof data[3] !== 'string') return;
       const eventId = data[1];
       const attempt = attemptsByEventId.get(eventId);
       if (!attempt) return;
@@ -1160,15 +1164,39 @@ export function createRelaySet(options) {
     if (since !== null && !(Number.isSafeInteger(since) && since >= 0)) return;
     const state = states[relayIndex];
     if (!readsConnected(state)) return;
-    try {
-      // The same synchronous notice as pool preparation records issue time;
-      // its return cannot override the explicitly supplied S7 filter.
-      if (typeof subscriptionSince === 'function') Promise.resolve(subscriptionSince(relayIndex)).catch(() => {});
-    } catch {
-      // A faulty observer cannot prevent the best-effort base request.
+    // `healthCheck()` and the notice below are caller code: a freeze() or
+    // dispose() they make leaves nothing to issue (C-DLV §5.4).
+    if (stopped || setFrozen) return;
+    // The same synchronous notice as pool preparation records the issue time,
+    // and, as there, its return decides the filter actually sent (C-DLV §5.4):
+    // a non-negative safe integer adds `since`, any other return or a throw
+    // sends the base filter. The explicit `since` is used only without the
+    // option.
+    let sent = since;
+    if (typeof subscriptionSince === 'function') {
+      sent = null;
+      try {
+        const issued = subscriptionSince(relayIndex);
+        Promise.resolve(issued).catch(() => {});
+        if (Number.isSafeInteger(issued) && issued >= 0) sent = issued;
+      } catch {
+        // A faulty observer cannot prevent the best-effort base request.
+      }
+      if (stopped || setFrozen) return;
     }
+    // Building the filter and reading `subscribe` can run caller code too, so
+    // both happen before the last check and the call follows it at once.
+    let request;
+    let subscribe;
     try {
-      Promise.resolve(state.pool.subscribe(state.subscriptionId, since === null ? filter : { ...filter, since })).catch(() => {});
+      request = sent === null ? filter : { ...filter, since: sent };
+      subscribe = state.pool.subscribe;
+    } catch {
+      return;
+    }
+    if (stopped || setFrozen) return;
+    try {
+      Promise.resolve(Reflect.apply(subscribe, state.pool, [state.subscriptionId, request])).catch(() => {});
     } catch {
       // No successful result is inferred from a faulty transport.
     }

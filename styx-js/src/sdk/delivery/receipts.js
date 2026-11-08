@@ -49,6 +49,19 @@ import { base64ToBytes, bytesToHex, hexToBytes, randomBytes, utf8Encode } from '
 const INBOUND_PENDING_BOUND = 1024;
 
 /**
+ * C-DLV section 3 and section 7.1: the retained-cost bounds of the inbound
+ * queue, in the cost units of `frameCost`: at most 1 048 576 per frame and at
+ * most 16 777 216 for every frame and message the queue retains together.
+ */
+const INBOUND_FRAME_COST_MAX = 1048576;
+const INBOUND_RETAINED_COST_MAX = 16777216;
+/**
+ * C-DLV section 7.1: the cost of the marker that takes the place of a frame
+ * over the per-frame bound in the queue; the frame itself is not retained.
+ */
+const OVERSIZED_MARKER_COST = 16;
+
+/**
  * C-DLV section 3 and section 7.1 step 1: an inbound `content` string has at
  * most 349 528 characters, the standard base64 length of 262 144 bytes. Only
  * the string length is read; ciphertext bytes are never inspected.
@@ -387,15 +400,77 @@ function isPlainObject(value) {
  * @returns {boolean}
  */
 function hasExactlyEventKeys(value) {
+  /* Every own key counts, enumerable or not, symbols included, so a property
+   * that `Object.keys` would not list is still an eighth key; each of the
+   * seven must also be enumerable, as a decoded JSON object's keys are. */
+  let own;
   let keys;
   try {
+    own = Reflect.ownKeys(value);
     keys = Object.keys(value);
   } catch {
     return false;
   }
-  if (keys.length !== EVENT_KEYS.length) return false;
-  for (const key of EVENT_KEYS) if (!Object.prototype.hasOwnProperty.call(value, key)) return false;
+  if (own.length !== EVENT_KEYS.length || keys.length !== EVENT_KEYS.length) return false;
+  for (const key of EVENT_KEYS) if (!keys.includes(key)) return false;
   return true;
+}
+
+/**
+ * C-DLV section 7.1: the retained cost of one decoded frame, computed once
+ * when the frame is queued, before any validation. It is a conservative
+ * estimate in cost units, not a measurement of memory: every value visited
+ * costs 16; a string adds 2 per character; an array adds 8 per index from 0 to
+ * `length - 1` and visits each element held as an own data property; any other
+ * object adds, per own key (strings and symbols), 8 plus 2 per character of a
+ * string key, and visits each value held as an own data property. A function
+ * is not visited further, and an accessor property is counted but never read,
+ * so no caller getter runs. The walk is iterative and stops as soon as the
+ * running cost exceeds `INBOUND_FRAME_COST_MAX`, so its work is bounded by that
+ * bound whatever the shape (a cycle or a shared value is counted again on each
+ * visit). A read that throws refuses the frame.
+ *
+ * @param {unknown} data the decoded frame array
+ * @returns {number | null} the cost, or `null` when it exceeds the per-frame
+ *   bound or cannot be read
+ */
+function frameCost(data) {
+  let cost = 0;
+  const stack = [data];
+  try {
+    while (stack.length > 0) {
+      const value = stack.pop();
+      cost += 16;
+      if (typeof value === 'string') {
+        cost += 2 * value.length;
+      } else if (value !== null && typeof value === 'object') {
+        if (Array.isArray(value)) {
+          const { length } = value;
+          for (let index = 0; index < length; index += 1) {
+            cost += 8;
+            if (cost > INBOUND_FRAME_COST_MAX) return null;
+            const descriptor = Reflect.getOwnPropertyDescriptor(value, index);
+            if (descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+              stack.push(descriptor.value);
+            }
+          }
+        } else {
+          for (const key of Reflect.ownKeys(value)) {
+            cost += 8 + (typeof key === 'string' ? 2 * key.length : 0);
+            if (cost > INBOUND_FRAME_COST_MAX) return null;
+            const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
+            if (descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+              stack.push(descriptor.value);
+            }
+          }
+        }
+      }
+      if (cost > INBOUND_FRAME_COST_MAX) return null;
+    }
+  } catch {
+    return null;
+  }
+  return cost;
 }
 
 /**
@@ -495,9 +570,30 @@ export function createReceipts(options) {
     return Math.floor(value / 2);
   })();
 
+  // Raw frames, each `{ frame, cost }` with its retained cost (C-DLV 7.1).
   const queue = [];
-  // Validated messages waiting for an audience; never plaintext or seen ids.
+  // Validated messages waiting for an audience, each `{ event, cost }`, the
+  // cost carried over from its frame; never plaintext or seen ids.
   const waiting = [];
+  // C-DLV section 7.1: the summed cost of every queued frame, the frame in
+  // validation and every waiting message. It is charged when a frame is
+  // queued and released when the frame or its message leaves the bound
+  // (discard, duplicate, receipt, admission, the start of its open, or
+  // shutdown, which releases everything at once).
+  let retainedCost = 0;
+  /**
+   * Whether one more queue entry of `cost` fits: not stopped, below the count
+   * bound and within the retained total. Checked after the last caller code
+   * an `ingest` runs, right before it charges and queues, so a stop or an
+   * `ingest` re-entered from that code cannot carry either bound past it.
+   */
+  function fits(cost) {
+    return !stopped && queue.length + waiting.length + Number(validating) < INBOUND_PENDING_BOUND
+      && retainedCost + cost <= INBOUND_RETAINED_COST_MAX;
+  }
+  function release(cost) {
+    if (!stopped) retainedCost = Math.max(0, retainedCost - cost);
+  }
   const waitingIds = new Set();
   let activeMessage = false;
   // Owed receipts whose signing/publication task is still running.
@@ -1113,8 +1209,11 @@ export function createReceipts(options) {
    * the acknowledgement path.
    *
    * @param {object} frame
+   * @param {number} cost the frame's retained cost
+   * @returns {Promise<boolean>} `true` when the frame's message now waits for
+   *   an audience and carries the cost; otherwise the caller releases it
    */
-  async function processFrame(frame) {
+  async function processFrame(frame, cost) {
     let data;
     try {
       data = frame === null || frame === undefined ? undefined : frame.data;
@@ -1170,8 +1269,9 @@ export function createReceipts(options) {
     if (isDuplicate(validated.event.id)) return;
     if (waitingIds.has(validated.event.id)) return;
     validating = false;
-    waiting.push(validated.event);
+    waiting.push({ event: validated.event, cost });
     waitingIds.add(validated.event.id);
+    return true;
   }
 
   async function deliverMessage(event, deliver) {
@@ -1226,20 +1326,30 @@ export function createReceipts(options) {
         const deliver = waiting.length > 0 && settlingReceipts === 0 ? reserve() : null;
         if (stopped) break;
         if (deliver !== null) {
-          const event = waiting.shift();
+          const { event, cost } = waiting.shift();
           waitingIds.delete(event.id);
+          // The active open/delivery unit is outside the bound (C-DLV 7.1).
+          release(cost);
           try { await deliverMessage(event, deliver); } catch { /* Isolate faults. */ }
           continue;
         }
         if (queue.length === 0) break;
-        const frame = queue.shift();
+        const { frame, cost, oversized } = queue.shift();
+        if (oversized === true) {
+          // C-DLV section 7.1: the marker of a frame over the per-frame bound.
+          discard(DISCARD_INVALID);
+          release(cost);
+          continue;
+        }
         validating = true;
+        let kept = false;
         try {
-          await processFrame(frame);
+          kept = (await processFrame(frame, cost)) === true;
         } catch {
           // Validation and receipts proceed while messages await a listener.
         } finally {
           validating = false;
+          if (!kept) release(cost);
         }
       }
     } finally {
@@ -1252,7 +1362,10 @@ export function createReceipts(options) {
   /**
    * C-DLV section 7.1: queue one decoded inbound frame. At most 1 024 decoded
    * `EVENT` frames wait; a frame that arrives when the bound is full is
-   * dropped before any validation and before any session-port call. A frame
+   * dropped before any validation and before any session-port call; so is a
+   * frame whose retained cost would carry the retained total past 16 777 216
+   * units (`frameCost`). A frame over 1 048 576 units is replaced by a marker
+   * that is discarded with `E_SDK_INBOUND_INVALID` at its turn. A frame
    * that is not a decoded `EVENT` frame of this client's subscription, and a
    * frame that arrives after the stop, are not queued either.
    *
@@ -1280,7 +1393,45 @@ export function createReceipts(options) {
       return success({ queued: false });
     }
     if (queue.length + waiting.length + Number(validating) >= INBOUND_PENDING_BOUND) return success({ queued: false });
-    queue.push(frame);
+    /* C-DLV section 7.1: a frame over the per-frame cost bound cannot carry a
+     * valid event, so it is not retained. A marker of fixed cost keeps its
+     * place in the arrival order and, at its turn, is discarded with
+     * `E_SDK_INBOUND_INVALID` as a step-1 failure. With the durable receive
+     * state the frame is accounted at once (the marker holds no reference to
+     * it): as invalid when its event alone is over the bound, otherwise (only
+     * the frame's other elements are) as a barrier failure. A frame, or a
+     * marker, that would carry the retained total past its bound is dropped as
+     * at a full count bound, before any validation. */
+    const cost = frameCost(data);
+    if (cost === null) {
+      let event;
+      try {
+        const descriptor = Reflect.getOwnPropertyDescriptor(data, 2);
+        event = descriptor !== undefined && Object.prototype.hasOwnProperty.call(descriptor, 'value')
+          ? descriptor.value : undefined;
+      } catch {
+        event = undefined;
+      }
+      const outcome = event !== undefined && frameCost(event) === null ? 'invalid' : 'dropped';
+      // The cost walks ran caller code, which may have stopped this module or
+      // queued other frames. A marker that does not fit is dropped before any
+      // accounting, so the caller accounts it as a dropped frame (a barrier
+      // failure); one that fits is reserved before the accounting, whose
+      // caller code then sees it in both bounds.
+      if (!fits(OVERSIZED_MARKER_COST)) return success({ queued: false });
+      retainedCost += OVERSIZED_MARKER_COST;
+      queue.push({ frame: null, cost: OVERSIZED_MARKER_COST, oversized: true });
+      accountFrame(frame, outcome);
+      // A stop during the accounting has already dropped the marker.
+      if (stopped) return success({ queued: false });
+      Promise.resolve().then(drain);
+      return success({ queued: true });
+    }
+    // The reads above ran caller code (getters, proxies), which may have
+    // stopped this module or queued other frames: both bounds are checked now.
+    if (!fits(cost)) return success({ queued: false });
+    retainedCost += cost;
+    queue.push({ frame, cost });
     /* The drain is asynchronous, so `ingest` stays synchronous and the queue
      * keeps the arrival order (C-DLV section 7.1). */
     Promise.resolve().then(drain);
@@ -1312,6 +1463,7 @@ export function createReceipts(options) {
     queue.length = 0;
     waiting.length = 0;
     waitingIds.clear();
+    retainedCost = 0;
     return success({ dropped });
   }
 
