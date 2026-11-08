@@ -78,7 +78,8 @@ KEY_STATEMENTS = (
     "the transport decodes each frame's JSON before any SDK bound applies",
     # Cursors and EOSE.
     "EOSE is never proof of completeness.",
-    "or that were lost before `stage`, remain unrecoverable",
+    "are not recovered by the durable barrier: they depend on a later delivery or"
+    " replay by a relay",
     # Durable receive.
     "an admitted event is staged durably before `openCandidate`",
     "freezes the receive state for the rest of the client's lifetime (fail-stop)",
@@ -100,6 +101,10 @@ KEY_STATEMENTS = (
     "with no content and no sender",
     "treat `local`, `relay`, `bridge` and `ns` from the URL as hostile input",
     "These values are accepted from the URL without a confirmation step.",
+    # Chat payload validation since #562, with its legacy exception.
+    "validates the typed fields of every inbound payload that decodes to a JSON"
+    " object before that payload is stored",
+    "A payload that is not a JSON object is still accepted as bare legacy text",
     "Adding a confirmation step for these parameters is open work, not done.",
     # Honest state.
     "The review was model-assisted, not a human audit.",
@@ -132,8 +137,9 @@ VERBATIM_NON_CLAIMS = (
 )
 
 RESOLUTION_CLAIM = re.compile(
-    r"\b(is|are|was|were|has been|have been)\s+(now\s+)?(fully\s+)?"
-    r"(resolved|fixed|mitigated|eliminated|closed)\b",
+    r"\b(is|are|was|were|has been|have been)\s+(now\s+)?"
+    r"((fully|partially|largely|mostly)\s+)?"
+    r"(resolved|fixed|mitigated|remediated|eliminated|closed)\b",
     re.IGNORECASE,
 )
 
@@ -188,7 +194,8 @@ class ThreatModelDocumentTests(unittest.TestCase):
                 ]
                 self.assertEqual(order, sorted(order))
             with self.subTest(section=heading, check="threat"):
-                self.assertIn("Threat:", body)
+                threats = [line for line in body.splitlines() if line.startswith("Threat:")]
+                self.assertEqual(len(threats), 1)
 
     def test_key_statements_are_present(self):
         text = normalize(read_document())
@@ -255,6 +262,9 @@ class SectionBodyTests(unittest.TestCase):
     def test_resolution_pattern(self):
         self.assertIsNotNone(RESOLUTION_CLAIM.search("This risk is resolved."))
         self.assertIsNotNone(RESOLUTION_CLAIM.search("both were fully mitigated"))
+        self.assertIsNotNone(RESOLUTION_CLAIM.search("it is partially resolved"))
+        self.assertIsNotNone(RESOLUTION_CLAIM.search("it was largely mitigated"))
+        self.assertIsNotNone(RESOLUTION_CLAIM.search("the gap has been remediated"))
         self.assertIsNone(RESOLUTION_CLAIM.search("is not resolved by this document"))
 
 
