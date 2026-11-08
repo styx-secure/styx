@@ -1404,12 +1404,18 @@ export function createReceipts(options) {
         event = undefined;
       }
       accountFrame(frame, event !== undefined && frameCost(event) === null ? 'invalid' : 'dropped');
+      // The cost walk and the accounting ran caller code, which may have
+      // stopped this module: nothing is queued after the stop.
+      if (stopped) return success({ queued: false });
       retainedCost += OVERSIZED_MARKER_COST;
       queue.push({ frame: null, cost: OVERSIZED_MARKER_COST, oversized: true });
       Promise.resolve().then(drain);
       return success({ queued: true });
     }
     if (retainedCost + cost > INBOUND_RETAINED_COST_MAX) return success({ queued: false });
+    // The reads above ran caller code (getters, proxies), which may have
+    // stopped this module: nothing is queued after the stop.
+    if (stopped) return success({ queued: false });
     retainedCost += cost;
     queue.push({ frame, cost });
     /* The drain is asynchronous, so `ingest` stays synchronous and the queue

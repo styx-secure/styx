@@ -1164,6 +1164,9 @@ export function createRelaySet(options) {
     if (since !== null && !(Number.isSafeInteger(since) && since >= 0)) return;
     const state = states[relayIndex];
     if (!readsConnected(state)) return;
+    // `healthCheck()` and the notice below are caller code: a freeze() or
+    // dispose() they make leaves nothing to issue (C-DLV §5.4).
+    if (stopped || setFrozen) return;
     // The same synchronous notice as pool preparation records the issue time,
     // and, as there, its return decides the filter actually sent (C-DLV §5.4):
     // a non-negative safe integer adds `since`, any other return or a throw
@@ -1179,6 +1182,7 @@ export function createRelaySet(options) {
       } catch {
         // A faulty observer cannot prevent the best-effort base request.
       }
+      if (stopped || setFrozen) return;
     }
     try {
       Promise.resolve(state.pool.subscribe(state.subscriptionId, sent === null ? filter : { ...filter, since: sent })).catch(() => {});
