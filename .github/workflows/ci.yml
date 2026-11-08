@@ -55,10 +55,13 @@ jobs:
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
-          # Detectors read the list from a here-string, not a pipe: with pipefail an
-          # early grep -q exit could kill the writer (SIGPIPE) and turn a match into
-          # false. grep exit 1 = no match; any other failure fails the step.
-          if grep -qE '^(packages/|test_integration/|pubspec\.ya?ml|pubspec\.lock|melos\.ya?ml|analysis_options\.yaml|tool/|\.github/workflows/ci\.yml)' <<<"$changed"; then
+          # Detectors read the list from a file written outside any condition: no
+          # pipe (an early grep -q exit could kill the writer under pipefail) and no
+          # here-string (a failed redirection would look like "no match"); a failed
+          # write stops the step. grep exit 1 = no match; any other failure fails it.
+          changed_list="$(mktemp)"
+          printf '%s\n' "$changed" > "$changed_list"
+          if grep -qE '^(packages/|test_integration/|pubspec\.ya?ml|pubspec\.lock|melos\.ya?ml|analysis_options\.yaml|tool/|\.github/workflows/ci\.yml)' "$changed_list"; then
             echo "dart=true" >> "$GITHUB_OUTPUT"
           else
             rc=$?

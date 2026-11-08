@@ -64,18 +64,21 @@ jobs:
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
-          # Detectors read the list from a here-string, not a pipe: with pipefail an
-          # early grep -q exit could kill the writer (SIGPIPE) and turn a match into
-          # false. grep exit 1 = no match; any other failure fails the step.
-          if grep -qE '^styx-js/vendor/openmls-wasm/(patch/|build\.sh|verify\.sh|Cargo\.lock|PROVENANCE\.md|openmls_wasm(_bg)?\.(wasm|js)|.*\.d\.ts|package\.json)' <<<"$changed"; then
+          # Detectors read the list from a file written outside any condition: no
+          # pipe (an early grep -q exit could kill the writer under pipefail) and no
+          # here-string (a failed redirection would look like "no match"); a failed
+          # write stops the step. grep exit 1 = no match; any other failure fails it.
+          changed_list="$(mktemp)"
+          printf '%s\n' "$changed" > "$changed_list"
+          if grep -qE '^styx-js/vendor/openmls-wasm/(patch/|build\.sh|verify\.sh|Cargo\.lock|PROVENANCE\.md|openmls_wasm(_bg)?\.(wasm|js)|.*\.d\.ts|package\.json)' "$changed_list"; then
             crate=true; else rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; crate=false; fi
-          if [ "$crate" = "true" ] || grep -qE '^styx-js/src/(crypto/mls/|chat/)|^\.github/workflows/wasm-integrity\.yml' <<<"$changed"; then
+          if [ "$crate" = "true" ] || grep -qE '^styx-js/src/(crypto/mls/|chat/)|^\.github/workflows/wasm-integrity\.yml' "$changed_list"; then
             light=true; else rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; light=false; fi
           echo "crate=$crate" >> "$GITHUB_OUTPUT"
           echo "light=$light" >> "$GITHUB_OUTPUT"
-          if grep -qE '^styx-js/vendor/styx-kdf-wasm/' <<<"$changed"; then
+          if grep -qE '^styx-js/vendor/styx-kdf-wasm/' "$changed_list"; then
             kdf=true; else rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; kdf=false; fi
-          if [ "$kdf" = "true" ] || grep -qE '^styx-js/src/crypto/kdf-bounds\.js|^styx-js/test/crypto/kdf-|^styx-js/test/fixtures/kdf-|^styx-js/playwright\.kdf\.config\.js|^\.github/workflows/wasm-integrity\.yml' <<<"$changed"; then
+          if [ "$kdf" = "true" ] || grep -qE '^styx-js/src/crypto/kdf-bounds\.js|^styx-js/test/crypto/kdf-|^styx-js/test/fixtures/kdf-|^styx-js/playwright\.kdf\.config\.js|^\.github/workflows/wasm-integrity\.yml' "$changed_list"; then
             kdflight=true; else rc=$?; [ "$rc" -eq 1 ] || exit "$rc"; kdflight=false; fi
           echo "kdf=$kdf" >> "$GITHUB_OUTPUT"
           echo "kdflight=$kdflight" >> "$GITHUB_OUTPUT"
