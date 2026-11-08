@@ -53,11 +53,21 @@ jobs:
             echo "dart=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed="$(git diff --name-only "$base_sha" HEAD)"
+          # -z: names are listed as they are, never C-quoted (a quoted name would
+          # not match the anchored expressions below).
+          changed="$(git diff --name-only -z "$base_sha" HEAD | tr '\0' '\n')"
           echo "Changed files:"; echo "$changed"
-          if echo "$changed" | grep -qE '^(packages/|test_integration/|pubspec\.ya?ml|pubspec\.lock|melos\.ya?ml|analysis_options\.yaml|tool/|\.github/workflows/ci\.yml)'; then
+          # Detectors read the list from a file written outside any condition: no
+          # pipe (an early grep -q exit could kill the writer under pipefail) and no
+          # here-string (a failed redirection would look like "no match"); a failed
+          # write stops the step. grep exit 1 = no match; any other failure fails it.
+          changed_list="$(mktemp)"
+          printf '%s\n' "$changed" > "$changed_list"
+          if grep -qE '^(packages/|test_integration/|pubspec\.ya?ml|pubspec\.lock|melos\.ya?ml|analysis_options\.yaml|tool/|\.github/workflows/ci\.yml)' "$changed_list"; then
             echo "dart=true" >> "$GITHUB_OUTPUT"
           else
+            rc=$?
+            [ "$rc" -eq 1 ] || exit "$rc"
             echo "dart=false" >> "$GITHUB_OUTPUT"
           fi
 
