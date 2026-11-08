@@ -194,12 +194,14 @@ describe('C-DLV section 7.2 -- receipt signing does not hold back the inbound qu
 const FRAME_COST_MAX = 1048576;
 const RETAINED_COST_MAX = 16777216;
 /**
- * The cost of one `eventFrame(message(...))` with a content of exactly
- * 349 528 characters and three tags, by the rule of C-DLV section 7.1:
- * 16 per value, 2 per string character, 8 per array index, 8 + 2 per key
- * character per object key.
+ * The cost of one `eventFrame(message(...))` (subscription id `sub`, three
+ * tags) with a content of exactly 349 528 characters, by the rule of C-DLV
+ * section 7.1: 16 per value, 2 per string character, 8 per array index,
+ * 8 + 2 per key character per object key. The largest valid frame, with the
+ * `r` tag and a 64-character subscription id, costs 76 + 122 more (700 584).
  */
 const MAX_MESSAGE_FRAME_COST = 700386;
+const LARGEST_VALID_FRAME_COST = 700584;
 const MAX_MESSAGES_RETAINED = Math.floor(RETAINED_COST_MAX / MAX_MESSAGE_FRAME_COST);
 
 function limitsHarness({ audience = true } = {}) {
@@ -234,6 +236,8 @@ describe('C-DLV section 7.1 -- retained-cost bounds of the inbound queue', () =>
   test('the documented cost of a maximal valid message frame', () => {
     expect(MAX_MESSAGE_FRAME_COST).toBeLessThan(FRAME_COST_MAX);
     expect(MAX_MESSAGES_RETAINED).toBe(23);
+    expect(LARGEST_VALID_FRAME_COST).toBeLessThan(FRAME_COST_MAX);
+    expect(Math.floor(RETAINED_COST_MAX / LARGEST_VALID_FRAME_COST)).toBe(23);
   });
 
   test('a frame over the per-frame bound is not retained: a marker keeps its turn and is E_SDK_INBOUND_INVALID', async () => {
@@ -444,5 +448,40 @@ describe('C-SDK section 5.3 -- the 0.3.1 inbound path reads the five 0.4.0 codes
     module.ingest(eventFrame(receiptFor(recipient, owner, 'e'.repeat(64))));
     expect(await waitFor(() => events.length === 1)).toBe(true);
     expect(events).toEqual([{ kind: 'INBOUND_DISCARDED', code: 'E_SDK_UNKNOWN_CODE' }]);
+  });
+});
+
+describe('M3-RECEIVE-LIMITS review cycle 1 -- the largest valid frame and a stop during the cost walk', () => {
+  test('23 of the largest valid frames (r tag, 64-character subscription id) fit while validation is held; the 24th does not', async () => {
+    const h = limitsHarness(); const sender = makeKey();
+    const content = 'A'.repeat(CONTENT_MAX);
+    const subscription = 's'.repeat(64);
+    const frames = Array.from({ length: 24 }, (_, i) => ({ relayIndex: 0, relay: 'relay-0',
+      data: ['EVENT', subscription, message(sender, h.owner, { content, receipt: true, n: 1000 + i })] }));
+    expect(frames.map((frame) => queued(h.module.ingest(frame)))).toEqual([...Array(23).fill(true), false]);
+    h.release();
+    expect(await waitFor(() => received(h.events) === 23)).toBe(true);
+    expect(discards(h.events)).toEqual([]);
+  });
+
+  test('a shutdown() re-entered from the cost walk queues nothing, on the ordinary and on the marker path', async () => {
+    for (const oversized of [false, true]) {
+      const h = limitsHarness(); const sender = makeKey();
+      h.release();
+      let calls = 0;
+      const target = message(sender, h.owner, { n: 1 });
+      const event = new Proxy(target, {
+        ownKeys: (t) => { calls += 1; h.module.shutdown(); return Reflect.ownKeys(t); },
+      });
+      const data = oversized ? ['EVENT', 'sub', event, 'x'.repeat(600000)] : ['EVENT', 'sub', event];
+      const result = h.module.ingest({ relayIndex: 0, relay: 'relay-0', data });
+      expect(calls).toBe(1);
+      expect(queued(result)).toBe(false);
+      h.module.wake();
+      await flush();
+      expect(h.events).toEqual([]);
+      expect(h.opens).toHaveLength(0);
+      await h.module.settled();
+    }
   });
 });

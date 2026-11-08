@@ -3392,3 +3392,37 @@ describe('M3-RECEIVE-LIMITS OK frame shape and re-request filter', () => {
     await set.dispose();
   });
 });
+
+describe('M3-RECEIVE-LIMITS review cycle 1 -- resubscribe after a freeze or dispose from caller code', () => {
+  test.each(['freeze', 'dispose'])('a subscriptionSince notice that calls %s() sends no REQ', async (method) => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    let armed = false;
+    let set = null;
+    set = h.make({ subscriptionSince: () => {
+      if (armed) set[method]();
+      return 70;
+    } });
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    const count = pool.subscriptions.length;
+    armed = true;
+    set.resubscribe(0, 80);
+    expect(pool.subscriptions).toHaveLength(count);
+    await set.dispose();
+  });
+
+  test('a healthCheck that calls freeze() gives no issue notice and sends no REQ', async () => {
+    const h = makeHarness([{ behaviour: 'normal', answer: 'silent' }]);
+    const notices = [];
+    const set = h.make({ subscriptionSince: (index) => { notices.push(index); return 70; } });
+    await startSet(set, h.clock);
+    const pool = h.created[0];
+    const count = pool.subscriptions.length;
+    const health = pool.healthCheck.bind(pool);
+    pool.healthCheck = () => { set.freeze(); return health(); };
+    set.resubscribe(0, 80);
+    expect(notices).toEqual([0]);
+    expect(pool.subscriptions).toHaveLength(count);
+    await set.dispose();
+  });
+});
