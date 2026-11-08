@@ -1412,13 +1412,18 @@ export function createReceipts(options) {
       } catch {
         event = undefined;
       }
-      accountFrame(frame, event !== undefined && frameCost(event) === null ? 'invalid' : 'dropped');
-      // The cost walk and the accounting ran caller code, which may have
-      // stopped this module or queued other frames: the marker is queued only
-      // if it still fits (an already accounted frame is not accounted again).
+      const outcome = event !== undefined && frameCost(event) === null ? 'invalid' : 'dropped';
+      // The cost walks ran caller code, which may have stopped this module or
+      // queued other frames. A marker that does not fit is dropped before any
+      // accounting, so the caller accounts it as a dropped frame (a barrier
+      // failure); one that fits is reserved before the accounting, whose
+      // caller code then sees it in both bounds.
       if (!fits(OVERSIZED_MARKER_COST)) return success({ queued: false });
       retainedCost += OVERSIZED_MARKER_COST;
       queue.push({ frame: null, cost: OVERSIZED_MARKER_COST, oversized: true });
+      accountFrame(frame, outcome);
+      // A stop during the accounting has already dropped the marker.
+      if (stopped) return success({ queued: false });
       Promise.resolve().then(drain);
       return success({ queued: true });
     }
