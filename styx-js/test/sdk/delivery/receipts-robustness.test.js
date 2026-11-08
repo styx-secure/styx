@@ -522,10 +522,11 @@ describe('M3-RECEIVE-LIMITS review cycle 2 -- bounds re-checked after caller cod
     expect(h.module.shutdown().value.dropped).toBe(MAX_MESSAGES_RETAINED);
   });
 
-  test('an ingest re-entered from the barrier accounting cannot carry a marker past 1 024 entries', () => {
+  test('an ingest re-entered from the barrier accounting cannot carry the queue past 1 024 entries', () => {
     const owner = makeKey(); const sender = makeKey();
     let module = null;
     let entered = false;
+    let inner = null;
     const extraSmall = eventFrame(message(sender, owner, { n: 4999 }));
     module = createReceipts({
       identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
@@ -536,7 +537,7 @@ describe('M3-RECEIVE-LIMITS review cycle 2 -- bounds re-checked after caller cod
       acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
       onEvent: () => {},
       receiveState: {
-        account: () => { if (!entered) { entered = true; expect(queued(module.ingest(extraSmall))).toBe(true); } },
+        account: () => { if (!entered) { entered = true; inner = queued(module.ingest(extraSmall)); } },
         admit: async () => {},
       },
     });
@@ -544,8 +545,11 @@ describe('M3-RECEIVE-LIMITS review cycle 2 -- bounds re-checked after caller cod
       expect(queued(module.ingest(eventFrame(message(sender, owner, { n: 4000 + i }))))).toBe(true);
     }
     const oversized = { relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', message(sender, owner, { n: 5000 }), 'x'.repeat(600000)] };
-    expect(queued(module.ingest(oversized))).toBe(false);
+    // Exactly one of the two takes the last place: since review cycle 3 the
+    // marker is reserved before the accounting, so the re-entered frame is refused.
+    expect(queued(module.ingest(oversized))).toBe(true);
     expect(entered).toBe(true);
+    expect(inner).toBe(false);
     expect(module.shutdown().value.dropped).toBe(1024);
   });
 });
