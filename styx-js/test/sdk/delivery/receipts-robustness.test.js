@@ -549,3 +549,86 @@ describe('M3-RECEIVE-LIMITS review cycle 2 -- bounds re-checked after caller cod
     expect(module.shutdown().value.dropped).toBe(1024);
   });
 });
+
+describe('M3-RECEIVE-LIMITS review cycle 3 -- a marker that does not fit the retained total is a barrier failure', () => {
+  /** A one-shot barrier as the receive state's: the first outcome of a frame counts. */
+  function durableHarness() {
+    const owner = makeKey();
+    const outcomes = new Map();
+    const events = [];
+    const receiveState = {
+      account: (frame, outcome) => { if (!outcomes.has(frame)) outcomes.set(frame, outcome); },
+      admit: async () => {},
+    };
+    const module = createReceipts({
+      identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
+      session: { open: () => ({ plaintext: new Uint8Array([7]) }) },
+      clock: { now: () => OWN_CLOCK_MS },
+      perRelayTimeoutMs: 30000,
+      publishReceipt: () => {},
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      onEvent: (event) => { events.push(event); },
+      receiveState,
+    });
+    // As the client does: a counted frame the queue does not take is accounted as dropped.
+    const ingest = (frame) => {
+      const result = module.ingest(frame);
+      if (!queued(result)) receiveState.account(frame, 'dropped');
+      return result;
+    };
+    return { module, owner, outcomes, events, ingest };
+  }
+  // C-DLV section 7.1: a frame of eventFrame(message(...)) with a content of L characters costs 1 330 + 2 L.
+  const frameCostOf = (length) => 1330 + 2 * length;
+
+  test('with the retained total within 16 of its bound, an oversized event is accounted dropped, not invalid', () => {
+    const h = durableHarness(); const sender = makeKey();
+    const content = 'A'.repeat(CONTENT_MAX);
+    for (let i = 0; i < MAX_MESSAGES_RETAINED; i += 1) {
+      expect(queued(h.ingest(eventFrame(message(sender, h.owner, { content, n: 6000 + i }))))).toBe(true);
+    }
+    const fillerLength = 333500;
+    const retained = MAX_MESSAGES_RETAINED * frameCostOf(CONTENT_MAX) + frameCostOf(fillerLength);
+    expect(RETAINED_COST_MAX - retained).toBe(8);
+    expect(queued(h.ingest(eventFrame(message(sender, h.owner, { content: 'A'.repeat(fillerLength), n: 6100 }))))).toBe(true);
+    const oversized = eventFrame(message(sender, h.owner, { content: 'A'.repeat(600000), n: 6101 }));
+    expect(queued(h.ingest(oversized))).toBe(false);
+    expect(h.outcomes.get(oversized)).toBe('dropped');
+    expect(h.module.shutdown().value.dropped).toBe(MAX_MESSAGES_RETAINED + 1);
+  });
+
+  test('control: with room for the marker the same oversized event is accounted invalid and discarded at its turn', async () => {
+    const h = durableHarness(); const sender = makeKey();
+    const oversized = eventFrame(message(sender, h.owner, { content: 'A'.repeat(600000), n: 6200 }));
+    expect(queued(h.ingest(oversized))).toBe(true);
+    expect(h.outcomes.get(oversized)).toBe('invalid');
+    expect(await waitFor(() => h.events.length === 1)).toBe(true);
+    expect(discards(h.events)).toEqual(['E_SDK_INBOUND_INVALID']);
+  });
+
+  test('an ingest re-entered from the accounting sees the reserved marker', () => {
+    const owner = makeKey(); const sender = makeKey();
+    let module = null;
+    let entered = null;
+    module = createReceipts({
+      identity: { getPublicKey: () => owner.pub, sign: ({ digest }) => schnorr.sign(digest, owner.priv) },
+      session: { open: () => ({ plaintext: new Uint8Array([7]) }) },
+      clock: { now: () => OWN_CLOCK_MS },
+      perRelayTimeoutMs: 30000,
+      publishReceipt: () => {},
+      acceptReceipt: () => Object.freeze({ ok: true, value: Object.freeze({ accepted: true, deliveryId: 'd1' }) }),
+      onEvent: () => {},
+      receiveState: {
+        account: () => { if (entered === null) entered = queued(module.ingest(eventFrame(message(sender, owner, { n: 7999 })))); },
+        admit: async () => {},
+      },
+    });
+    for (let i = 0; i < 1023; i += 1) {
+      expect(queued(module.ingest(eventFrame(message(sender, owner, { n: 7000 + i }))))).toBe(true);
+    }
+    const oversized = { relayIndex: 0, relay: 'relay-0', data: ['EVENT', 'sub', message(sender, owner, { n: 8000 }), 'x'.repeat(600000)] };
+    expect(queued(module.ingest(oversized))).toBe(true);
+    expect(entered).toBe(false);
+    expect(module.shutdown().value.dropped).toBe(1024);
+  });
+});
