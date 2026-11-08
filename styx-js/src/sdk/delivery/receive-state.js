@@ -42,6 +42,12 @@ export const RETRY_INTERVAL_MS = 10000;
 export const REDELIVERY_INTERVAL_MS = 60000;
 /** C-DLV section 3: catch-up margin in seconds. */
 const MARGIN_SECONDS = 120;
+/**
+ * C-DLV sections 3 and 5.4: at most 4 096 distinct failed event ids are kept
+ * per relay; one more clears them and blocks the relay's cursor commits for
+ * the rest of the client run, as a failure whose event cannot be identified.
+ */
+const FAILED_IDS_BOUND = 4096;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const HEX32 = /^[0-9a-f]{32}$/;
@@ -492,6 +498,19 @@ export function createReceiveState(options) {
     counted.set(frame, { relay, seq, eventId });
   }
 
+  /** Block the relay's cursor commits for the rest of the run; no id is kept. */
+  function blockRelay(relay) {
+    relay.blocked = true;
+    relay.failedIds.clear();
+  }
+
+  /** Record a barrier failure tied to `eventId` (C-DLV section 5.4). */
+  function addFailedId(relay, eventId) {
+    if (relay.blocked) return;
+    relay.failedIds.add(eventId);
+    if (relay.failedIds.size > FAILED_IDS_BOUND) blockRelay(relay);
+  }
+
   function clearFailedId(eventId) {
     for (const relay of relayStates) {
       if (relay.failedIds.delete(eventId)) checkPendingCommits(relay);
@@ -512,7 +531,7 @@ export function createReceiveState(options) {
     relay.counted.delete(seq);
     if (!ACCOUNTED.has(outcome)) {
       const id = eventId !== null ? eventId : record.eventId;
-      if (id !== null) relay.failedIds.add(id); else relay.blocked = true;
+      if (id !== null) addFailedId(relay, id); else blockRelay(relay);
     } else if (CLEARING.has(outcome) && eventId !== null) {
       clearFailedId(eventId);
     }
@@ -521,7 +540,7 @@ export function createReceiveState(options) {
 
   /** Mark a barrier failure on the relays that delivered `entry`. */
   function failRelaysOf(entry) {
-    for (const relay of entry.relays) relay.failedIds.add(entry.eventId);
+    for (const relay of entry.relays) addFailedId(relay, entry.eventId);
   }
 
   /** A new pool of relay `index` is prepared: its own subscription id. */
@@ -560,7 +579,12 @@ export function createReceiveState(options) {
     if (relay === null || stopped) return null;
     const now = nowSeconds();
     issueCounter += 1;
-    if (now !== null) relay.outstanding.push({ issuedAt: now, issueSeq: issueCounter, poolSeq: relay.poolSeq });
+    // Only the earliest outstanding request of the pool is kept (the first of
+    // equal issue times): it is the only one an EOSE can commit, so memory
+    // stays constant while a relay withholds EOSE (C-DLV section 5.4).
+    if (now !== null && (relay.outstanding.length === 0 || now < relay.outstanding[0].issuedAt)) {
+      relay.outstanding = [{ issuedAt: now, issueSeq: issueCounter, poolSeq: relay.poolSeq }];
+    }
     return sinceAt(index, now);
   }
 
@@ -584,10 +608,9 @@ export function createReceiveState(options) {
       return;
     }
     if (relay.outstanding.length === 0) return;
-    // The earliest outstanding request on this pool: a late EOSE of an older
-    // request can only commit that older request's issue time.
-    let earliest = relay.outstanding[0];
-    for (const generation of relay.outstanding) if (generation.issuedAt < earliest.issuedAt) earliest = generation;
+    // The earliest outstanding request on this pool, the only one kept: a late
+    // EOSE of an older request can only commit that older request's issue time.
+    const earliest = relay.outstanding[0];
     relay.outstanding = [];
     relay.pendingCommits.push({ index, generation: earliest, mark: relay.nextSeq - 1 });
     checkPendingCommits(relay);
@@ -805,13 +828,16 @@ export function createReceiveState(options) {
     });
   }
 
-  /** Whether an `openCandidate` result carries a `receiveOutcome` outside its closed set. */
+  /**
+   * Whether an `openCandidate` result carries a `receiveOutcome` outside its
+   * closed set: any own data value other than the three outcome strings, of
+   * any type (C-SDK section 5.3), not only an unknown string.
+   */
   function outcomeOutOfSet(value) {
     try {
       if (value === null || typeof value !== 'object') return false;
       const descriptor = Reflect.getOwnPropertyDescriptor(value, 'receiveOutcome');
-      return descriptor !== undefined && hasOwn(descriptor, 'value') && typeof descriptor.value === 'string'
-        && !OUTCOMES.has(descriptor.value);
+      return descriptor !== undefined && hasOwn(descriptor, 'value') && !OUTCOMES.has(descriptor.value);
     } catch {
       return false;
     }
