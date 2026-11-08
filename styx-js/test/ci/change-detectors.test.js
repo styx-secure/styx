@@ -14,7 +14,8 @@
 //     never turn a match into `false`);
 //   - lists with only unprotected paths, and the empty list, yield `false`;
 //   - an error of the list producer or of grep (for example an invalid regular
-//     expression) fails the step instead of yielding `false`.
+//     expression), or a list that cannot be stored for the detectors to read,
+//     fails the step instead of yielding `false`.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -108,6 +109,17 @@ beforeAll(() => {
     ].join('\n'),
   );
   chmodSync(join(fakeBin, 'git'), 0o755);
+  // Stub mktemp variants: no temporary file can be created, or the one
+  // returned cannot be written (a full device).
+  for (const [name, body] of [
+    ['mktemp-fails', 'echo "mktemp: failed to create file" >&2; exit 1'],
+    ['mktemp-full', 'echo /dev/full'],
+  ]) {
+    execFileSync('mkdir', ['-p', join(dir, name)]);
+    writeFileSync(join(dir, name, 'mktemp'), `#!/usr/bin/env bash\n${body}\n`);
+    chmodSync(join(dir, name, 'mktemp'), 0o755);
+  }
+  execFileSync('mkdir', ['-p', join(dir, 'tmp')]);
 });
 afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -118,7 +130,7 @@ let seq = 0;
  * Run the extracted change-detection script of `workflow` as a push event
  * whose changed files are `names`. Returns {code, outputs, stderr}.
  */
-function detect(workflow, names, { script = SCRIPTS[workflow], diffFail } = {}) {
+function detect(workflow, names, { script = SCRIPTS[workflow], diffFail, mktemp } = {}) {
   const n = seq++;
   const scriptFile = join(dir, `step-${n}.sh`);
   const listFile = join(dir, `changed-${n}.txt`);
@@ -127,7 +139,8 @@ function detect(workflow, names, { script = SCRIPTS[workflow], diffFail } = {}) 
   writeFileSync(listFile, names.length ? names.join('\n') + '\n' : '');
   writeFileSync(outFile, '');
   const env = {
-    PATH: `${fakeBin}:${process.env.PATH}`,
+    PATH: `${mktemp ? `${join(dir, `mktemp-${mktemp}`)}:` : ''}${fakeBin}:${process.env.PATH}`,
+    TMPDIR: join(dir, 'tmp'),
     EVENT: 'push',
     BASE_REF: '',
     MERGE_GROUP_BASE_SHA: '',
@@ -198,6 +211,9 @@ describe('CI change detectors: the seven real conditions are found unchanged', (
   test.each(Object.keys(EXPECTED))('%s: step keeps set -euo pipefail and uses no expressions', (wf) => {
     expect(SCRIPTS[wf].split('\n')[0]).toBe('set -euo pipefail');
     expect(SCRIPTS[wf]).not.toContain('${{');
+    // pipefail and errexit are still in force at the end of the step.
+    expect(detect(wf, [], { script: `${SCRIPTS[wf]}false | true\necho reached >&2\n` }).code).not.toBe(0);
+    expect(detect(wf, [], { script: `${SCRIPTS[wf]}true | true\n` }).code).toBe(0);
   });
 
   test('FILLER is larger than a pipe buffer and matches no detector', () => {
@@ -258,6 +274,18 @@ describe('CI change detectors: unprotected and empty lists', () => {
 describe('CI change detectors: errors fail the step, never yield false', () => {
   test.each(Object.keys(EXPECTED))('%s: failing list producer → step fails, no flag written', (wf) => {
     const r = detect(wf, ['docs/readme.md'], { diffFail: 3 });
+    expect(r.code).not.toBe(0);
+    expect(r.outputs).toEqual({});
+  });
+
+  test.each(Object.keys(EXPECTED))('%s: no temporary file for the list → step fails, no flag written', (wf) => {
+    const r = detect(wf, ['packages/a.dart', 'styx-js/src/chat/a.js', ...FILLER], { mktemp: 'fails' });
+    expect(r.code).not.toBe(0);
+    expect(r.outputs).toEqual({});
+  });
+
+  test.each(Object.keys(EXPECTED))('%s: the list cannot be written (device full) → step fails, no flag written', (wf) => {
+    const r = detect(wf, ['packages/a.dart', 'styx-js/src/chat/a.js', ...FILLER], { mktemp: 'full' });
     expect(r.code).not.toBe(0);
     expect(r.outputs).toEqual({});
   });
