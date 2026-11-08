@@ -139,7 +139,7 @@ Threat: a crafted link changes which relays the app talks to, routes push regist
 
 ### 4.4 Inbound chat payloads and local state
 
-Behaviour on the current code: since #562 the chat library validates the typed fields of every inbound payload that decodes to a JSON object before that payload is stored (message `id`, `text` and timestamp; receipt `id` and kind; introduction alias) and discards and counts an object payload that fails. A payload that is not a JSON object is still accepted as bare legacy text, with only the text-length bound and a locally generated id and time. The MLS state advanced by decryption is persisted before the payload is classified, separately from the payload. Stored records written before that validation are neutralised on load, and the UI is wrapped in a recoverable React error boundary.
+Behaviour on the current code: since #562 the chat library validates the typed fields of every inbound payload that decodes to a JSON object before that payload is stored (message `id`, `text` and timestamp; receipt `id` and kind; introduction alias) and discards and counts an object payload that fails. A payload that decodes to a JSON array is discarded and counted as malformed. A payload that decodes to neither a JSON object nor a JSON array is still accepted as bare legacy text, with only the text-length bound and a locally generated id and time. The MLS state advanced by decryption is persisted before the payload is classified, separately from the payload. Stored records written before that validation are neutralised on load, and the UI is wrapped in a recoverable React error boundary.
 
 Threat: an authenticated peer sends values that break rendering or persist hostile state.
 
