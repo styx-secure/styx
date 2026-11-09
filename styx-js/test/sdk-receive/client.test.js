@@ -270,6 +270,10 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     if (!got) console.log('DEBUG', JSON.stringify({ open: b.calls.open.length, stage: b.calls.stage.length, commit: b.calls.commit, events: b.events.map((e) => [e.kind, e.code]), insp: { ...b.receiver.inspect(), engine: null } }));
     expect(got).toBe(true);
     expect(untext(b.messages()[0].payload)).toBe('slow');
+    // Delivered by a second openCandidate: the SDK abandoned the first, slow call at the timeout
+    // (without a timeout the first call would itself have delivered it, with one call only).
+    expect(b.calls.open).toHaveLength(2);
+    expect(await until(() => b.calls.opened.length === 2)).toBe(true);
     expect(b.calls.commit).toHaveLength(1);
     expect(b.calls.stage).toHaveLength(1);
     // The MLS state stayed consistent: the next message opens too.
