@@ -193,7 +193,8 @@ export function fastClock(factor = 5) {
  * a value that is not an object or a function releases at once; otherwise the hold ends when
  * `Promise.resolve(value)` settles (a non-thenable at once, a thenable when it settles, a value whose
  * `then` cannot be read when that read fails). The value the port returned is handed to the SDK
- * unchanged. A call the SDK abandons at its port-call timeout keeps holding the clock until it settles.
+ * unchanged, so a thenable is assimilated twice (here and by the SDK); the ports of these tests return
+ * native promises. A call the SDK abandons at its port-call timeout keeps holding the clock until it settles.
  */
 export function heldPorts(ports, clock) {
   if (!clockHolds.has(clock)) return ports;
