@@ -139,14 +139,14 @@ Threat: a crafted link changes which relays the app talks to, routes push regist
 
 ### 4.4 Inbound chat payloads and local state
 
-Behaviour on the current code: since #562 the chat library validates the typed fields of every inbound payload that decodes to a JSON object before that payload is stored (message `id`, `text` and timestamp; receipt `id` and kind; introduction alias) and discards and counts an object payload that fails. A payload that decodes to a JSON array is discarded and counted as malformed. A payload that decodes to neither a JSON object nor a JSON array is still accepted as bare legacy text, with only the text-length bound and a locally generated id and time. The MLS state advanced by decryption is persisted before the payload is classified, separately from the payload. Stored records written before that validation are neutralised on load, and the UI is wrapped in a recoverable React error boundary.
+Behaviour on the current code: since #562 the chat library validates the typed fields of every inbound payload that decodes to a JSON object before that payload is stored (message `id`, `text` and timestamp; receipt `id` and kind; introduction alias) and discards and counts an object payload that fails. A payload that decodes to a JSON array is discarded and counted as malformed. A payload that decodes to neither a JSON object nor a JSON array is still accepted as bare legacy text, with only the text-length bound and a locally generated id and time. The MLS state advanced by decryption is persisted before the payload is classified, separately from the payload. Stored records written before that validation are neutralised on load, and the UI is wrapped in a recoverable React error boundary. Since #579 the name a peer declares for itself in an introduction is kept apart from the alias chosen on the device: for an accepted contact it is stored as a separate optional field, never replaces the local alias and leaves the verified state unchanged, and the conversation header shows it, when it differs, on its own line without the verified mark.
 
 Threat: an authenticated peer sends values that break rendering or persist hostile state.
 
 - SDK obligation: none.
 - Integration contract: none.
 - Downstream duty: treat every peer-supplied field as untrusted when it is rendered; keep the validation bounds when deriving another app.
-- Residual behaviour: validation covers field types and ranges, not meaning; a peer can still send arbitrary text within the bounds. A peer-chosen introduction alias can replace the alias the user chose locally, the reference chat can mark a message sent without an open relay connection, and the pairing lifecycle after a failed join or an ignored pairing request is incomplete; these are open work, not done. Two tabs on the same identity and storage namespace are not a supported configuration.
+- Residual behaviour: validation covers field types and ranges, not meaning; a peer can still send arbitrary text within the bounds. A pairing accepted without typing a name still takes, as the local alias, the name the peer declared before acceptance (in the QR code or in its first introduction); the reference chat can mark a message sent without an open relay connection, and the pairing lifecycle after a failed join or an ignored pairing request is incomplete; these are open work, not done. Two tabs on the same identity and storage namespace are not a supported configuration.
 
 ## 5. Cross-cutting
 
@@ -156,7 +156,7 @@ Since #565 the CI path-aware change detectors read the changed-file list from a 
 
 ### 5.2 State after the model-assisted review of November 2026
 
-These corrections are integrated on `m3/integration` and are described above as current behaviour: #560 (the invitation fetch waits for the `EOSE` of its phase-end relays by identity, and invitation publication ends at the first acceptance), #565 (CI change detectors), #562 (typed inbound chat fields and the error boundary), #567 (bounded SDK reception memory and the exact C-DLV frame, filter, event-key and outcome rules). The review was model-assisted, not a human audit.
+These corrections are integrated on `m3/integration` and are described above as current behaviour: #560 (the invitation fetch waits for the `EOSE` of its phase-end relays by identity, and invitation publication ends at the first acceptance), #565 (CI change detectors), #562 (typed inbound chat fields and the error boundary), #567 (bounded SDK reception memory and the exact C-DLV frame, filter, event-key and outcome rules), #579 (the peer-declared introduction name kept apart from the local alias). The review was model-assisted, not a human audit.
 
 Other behaviour named in this document as residual (§4.1 to §4.4, the declared limits of §6) is not resolved by this document or by those corrections.
 

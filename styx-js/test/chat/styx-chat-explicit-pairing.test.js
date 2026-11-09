@@ -173,7 +173,7 @@ describe('StyxChat A4 explicit pairing + alias inside MLS', () => {
     expect(c.alias).toBe('Admin');
   });
 
-  test('an intro for an established contact updates its alias', async () => {
+  test('an intro for an established contact keeps its alias and records the declared name apart', async () => {
     const bus = makeBus();
     const bob = await peer(bus, 'bob_a4f', 'Bob');
     const alice = await peer(bus, 'alice_a4f', 'Alice');
@@ -187,7 +187,8 @@ describe('StyxChat A4 explicit pairing + alias inside MLS', () => {
     await flush();
 
     const c = (await bob.listContacts()).find((x) => x.pubkey === 'alice_a4f');
-    expect(c.alias).toBe('Alice Rossi');
+    expect(c.alias).toBe('Alice');
+    expect(c.peerAlias).toBe('Alice Rossi');
   });
 
   test('the scanner takes the inviter alias from the QR (the in-person channel)', async () => {

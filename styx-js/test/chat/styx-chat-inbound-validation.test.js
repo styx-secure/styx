@@ -155,7 +155,8 @@ describe('inbound payload validation (StyxChat._processApp)', () => {
     expect(h.chat._inboundDiscards?.['invalid-intro']).toBe(1);
     expect((await h.roster.get(PEER)).alias).toBe('Peer');
     await h.deliver({ t: 'intro', alias: 'Nuovo' });
-    expect((await h.roster.get(PEER)).alias).toBe('Nuovo');
+    expect((await h.roster.get(PEER)).alias).toBe('Peer');
+    expect((await h.roster.get(PEER)).peerAlias).toBe('Nuovo');
   });
 
   test('sendText refuses a text over the bound before storing anything', async () => {

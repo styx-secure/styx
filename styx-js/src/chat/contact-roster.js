@@ -8,6 +8,17 @@ import { isPlainObject, isValidMessageTs, ownDataProperty } from './inbound-payl
 
 const INDEX_KEY = 'styx:contacts';
 
+/** Upper bound, in UTF-16 code units, of a stored peer-declared name (64 code points). */
+const MAX_PEER_ALIAS_LENGTH = 128;
+
+/**
+ * @param {unknown} value
+ * @returns {boolean} true for a storable peer-declared name
+ */
+function isPeerAlias(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= MAX_PEER_ALIAS_LENGTH;
+}
+
 /**
  * A persisted contact record with every field of the wrong type replaced by its
  * empty value, or null when the record is not an object at all. Other own data
@@ -31,7 +42,11 @@ function normalizeContactRecord(pubkey, raw) {
   const lastTs = ownDataProperty(raw, 'lastTs');
   const verifiedAt = ownDataProperty(raw, 'verifiedAt');
   const verified = ownDataProperty(raw, 'verified') === true;
+  const peerAlias = ownDataProperty(raw, 'peerAlias');
   delete record.online; // presence is runtime-only, never persisted
+  // The peer-declared name is optional: records written before it existed have
+  // none, and a value that is not a non-empty string is dropped.
+  if (!isPeerAlias(peerAlias)) delete record.peerAlias;
   return Object.assign(record, {
     pubkey,
     alias: typeof alias === 'string' ? alias : '',
@@ -46,12 +61,17 @@ function normalizeContactRecord(pubkey, raw) {
 /**
  * @typedef {object} Contact
  * @property {string} pubkey
- * @property {string} alias
+ * @property {string} alias the name chosen locally (typed, or accepted at
+ *   pairing); a name declared later by the peer never replaces it
+ * @property {string} [peerAlias] the last name the peer declared over the
+ *   encrypted session; absent when none was received. Peer-chosen and never
+ *   covered by `verified`
  * @property {boolean} online
  * @property {number} unread
  * @property {string|null} lastPreview
  * @property {number|null} lastTs
- * @property {boolean} verified safety number compared out-of-band
+ * @property {boolean} verified safety number compared out-of-band (it binds
+ *   the public key, not any name)
  * @property {number|null} verifiedAt when it was compared
  */
 
@@ -109,9 +129,11 @@ export class ContactRoster {
    * @param {object} options
    * @param {string} options.pubkey
    * @param {string} options.alias
+   * @param {string} [options.peerAlias] name the peer declared before the
+   *   contact was accepted; an existing contact keeps its own when omitted
    * @returns {Promise<Contact>}
    */
-  async add({ pubkey, alias }) {
+  async add({ pubkey, alias, peerAlias }) {
     this._assertLoaded();
     const existing = this._contacts.get(pubkey);
     const record = {
@@ -123,6 +145,8 @@ export class ContactRoster {
       verified: existing?.verified ?? false,
       verifiedAt: existing?.verifiedAt ?? null,
     };
+    const declared = isPeerAlias(peerAlias) ? peerAlias : existing?.peerAlias;
+    if (isPeerAlias(declared)) record.peerAlias = declared;
     this._contacts.set(pubkey, record);
     await this._persist();
     return this._decorate(record);
@@ -215,6 +239,24 @@ export class ContactRoster {
     record.verified = !!verified;
     record.verifiedAt = record.verified ? Date.now() : null;
     await this._persist();
+    return this._decorate(record);
+  }
+
+  /**
+   * Record the name the peer declared over the encrypted session. It is kept
+   * apart from the locally chosen alias, which it never changes, and it leaves
+   * `verified` untouched: verification binds the public key, not a name.
+   * @param {string} pubkey
+   * @param {string} peerAlias a sanitized, non-empty name
+   * @returns {Promise<Contact>}
+   */
+  async setPeerAlias(pubkey, peerAlias) {
+    const record = this._require(pubkey);
+    if (!isPeerAlias(peerAlias)) throw new TypeError('ContactRoster.setPeerAlias: invalid name');
+    if (record.peerAlias !== peerAlias) {
+      record.peerAlias = peerAlias;
+      await this._persist();
+    }
     return this._decorate(record);
   }
 
