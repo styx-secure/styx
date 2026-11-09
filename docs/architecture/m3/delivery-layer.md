@@ -391,7 +391,7 @@ The JSON below is normative and closed. Prose clarifies but does not widen it. D
   "sdkWireVersion": "styx-m3-sdk/0.3.0-experimental",
   "sdkInterfaceDoc": {
     "path": "docs/architecture/m3/sdk-interface.md",
-    "sha256": "9a0b1c4ba77c6e5e6c90902ddf49b4c0193e21c6f13732bec2e74f0b05272184"
+    "sha256": "b432b8ab67a9aef965f6fcc3270ebd3785b4e122028aec4b57524435a08f3dbf"
   },
   "publicSurfaceChanged": true,
   "surfaceAmendment": "M3-RECEIVE-1: interface 0.4.0 (eventId, acknowledgeMessage, config.receive, ports.receiveState, five codes, three event kinds); wire unchanged",
@@ -1068,3 +1068,5 @@ M3-RECEIVE-1 (contract #557, shared normative source #556) amends §2, §3, §5.
 M3-INVITE-WAITS amends §5.5 and §13 under its own scope extension on #400 and its exact-contract approval, as a clarification of the existing fetch and publication rules (the §12 record is unchanged). These bytes remain output candidates until separately exact-head hash-ratified.
 
 M3-RECEIVE-LIMITS amends §1, §3, §5.3, §5.4, §7.1, §7.4, §11, §12 and §13 under its own scope extension on #400 and its exact-contract approval: internal inbound cost bounds, a bound on the barrier's failed ids, a single kept outstanding request per pool, the exact `OK` frame, the filter of a re-request, the own keys of an inbound event and out-of-set outcomes of any type. It changes no entry point, configuration field, method, result code, delivery state, transition, relay outcome, public event kind or field, port method, outer bound, import, `SDK_INTERFACE_VERSION`, `SDK_WIRE_VERSION` or C-SDK byte. These bytes remain output candidates until separately exact-head hash-ratified.
+
+M3-RECEIVE-3 amends only the `sdkInterfaceDoc` hash of the §12 record and this section, under its own scope extension on #400 and its exact-contract approval: the record names the C-SDK bytes as amended by M3-RECEIVE-2 (#571), which changed only C-SDK §9, the `imports` entry of its record and its authority section. Apart from that hash and this paragraph it changes no byte of this document. These bytes remain output candidates until separately exact-head hash-ratified.
