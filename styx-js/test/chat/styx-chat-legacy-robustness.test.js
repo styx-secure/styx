@@ -126,11 +126,14 @@ describe('StyxChat legacy robustness', () => {
     const padded = utf8Encode(json + ' '.repeat(chatModule.MAX_WIRE_ENVELOPE_BYTES - json.length + 1));
     expect(padded.byteLength).toBe(chatModule.MAX_WIRE_ENVELOPE_BYTES + 1);
     const parse = jest.spyOn(JSON, 'parse');
+    const decode = jest.spyOn(TextDecoder.prototype, 'decode');
     try {
       await chat._onWire(BOB, padded);
-      expect(parse).not.toHaveBeenCalled(); // dropped before any decoding
+      expect(decode).not.toHaveBeenCalled(); // no UTF-8 decoding
+      expect(parse).not.toHaveBeenCalled(); // and no JSON decoding
     } finally {
       parse.mockRestore();
+      decode.mockRestore();
     }
     expect((await chat.listMessages(BOB)).filter((m) => m.direction === 'in')).toHaveLength(0);
   });
@@ -150,8 +153,8 @@ describe('StyxChat legacy robustness', () => {
     const t0 = Date.now() - 60_000;
     await peerSays(chat, bob, BOB, 'm1', 'uno', t0);
     await peerSays(chat, bob, BOB, 'm2', 'due', t0 + 2000);
-    // Arrives last but was written before m2: on screen it sits before m2.
-    await peerSays(chat, bob, BOB, 'm3', 'tre', t0 + 1000);
+    // Arrives last, stamped like m1 (a tie, kept in arrival order) and before m2.
+    await peerSays(chat, bob, BOB, 'm3', 'tre', t0);
     const reads = countReadReceipts(chat);
     await chat.markRead(BOB, 'm1');
     expect(reads).toEqual(['m1']);
