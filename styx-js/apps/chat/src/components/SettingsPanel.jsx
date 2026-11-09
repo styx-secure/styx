@@ -3,7 +3,7 @@ import { identicon, shortKey } from '../lib/identicon.js';
 import { Close, Copy, Trash, Lock } from './Icons.jsx';
 import { requestNotificationPermission } from '../lib/notify.js';
 
-export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRemoveContact, onLock, onReset, onToast, onEnablePush }) {
+export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRemoveContact, onLock, onReset, onToast, onEnablePush, readReceipts = true, onSetReadReceipts }) {
   const [alias, setAlias] = useState(me?.alias || '');
   const [notifPerm, setNotifPerm] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
@@ -68,6 +68,22 @@ export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRem
             )}
           </div>
         </div>
+
+        {onSetReadReceipts && (
+          <div className="section">
+            <label className="label" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={readReceipts}
+                onChange={(e) => onSetReadReceipts(e.target.checked)}
+              />
+              Conferme di lettura
+            </label>
+            <div style={{ fontSize: 13, color: 'var(--text-dim)', marginTop: 6 }}>
+              Se attive, i contatti vedono quando hai letto i loro messaggi.
+            </div>
+          </div>
+        )}
 
         {contacts.length > 0 && (
           <div className="section">

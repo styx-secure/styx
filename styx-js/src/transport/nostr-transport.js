@@ -12,8 +12,18 @@ import { sha256 } from '@noble/hashes/sha256';
 export class RelayPool {
   /**
    * @param {string[]} relayUrls - WebSocket relay URLs
+   * @param {object} [opts]
+   * @param {number} [opts.maxFrameLength] when set, an inbound frame that is not
+   *   a string of at most this many UTF-16 code units is dropped before JSON
+   *   parsing. Unset (the default) keeps the unbounded behaviour.
    */
-  constructor(relayUrls) {
+  constructor(relayUrls, { maxFrameLength } = {}) {
+    if (maxFrameLength !== undefined
+      && (!Number.isSafeInteger(maxFrameLength) || maxFrameLength <= 0)) {
+      throw new TypeError('RelayPool: maxFrameLength must be a positive safe integer');
+    }
+    this._maxFrameLength = maxFrameLength;
+    this._oversizedFrames = 0;
     this._relayUrls = [...relayUrls];
     this._connections = new Map(); // url → WebSocket
     this._emitter = new EventEmitter();
@@ -32,6 +42,9 @@ export class RelayPool {
   }
 
   get messages() { return this._emitter; }
+
+  /** Inbound frames dropped before parsing because they exceeded maxFrameLength. */
+  get oversizedFrameCount() { return this._oversizedFrames; }
 
   /**
    * Connect to all relays. Returns count of successful connections.
@@ -200,6 +213,11 @@ export class RelayPool {
         };
 
         ws.onmessage = (event) => {
+          if (this._maxFrameLength !== undefined && (typeof event.data !== 'string'
+            || event.data.length > this._maxFrameLength)) {
+            this._oversizedFrames += 1;
+            return; // bounded before any parsing
+          }
           try {
             const data = JSON.parse(event.data);
             this._emitter.emit('message', { relay: url, data });

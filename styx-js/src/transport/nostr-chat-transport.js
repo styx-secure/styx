@@ -19,6 +19,30 @@ import { bytesToHex, hexToBytes, bytesToBase64, base64ToBytes, utf8Encode, uuidv
 const KIND = 1059; // regular/stored: pairing + messages survive offline
 const EPHEMERAL_KIND = 20000; // ephemeral (20000-29999): relays don't store — for typing/presence
 
+/**
+ * Largest event `content` accepted inbound, in characters: the base64 of a
+ * 1 MiB StyxChat envelope (the chat's own envelope bound). Checked before the
+ * signature hash and the base64 decoding.
+ */
+export const MAX_EVENT_CONTENT_LENGTH = Math.ceil((1024 * 1024) / 3) * 4;
+/**
+ * Largest relay frame accepted inbound, in UTF-16 code units, checked before
+ * JSON parsing: the largest content plus ample room for the event's other fields.
+ */
+export const MAX_RELAY_FRAME_LENGTH = MAX_EVENT_CONTENT_LENGTH + 64 * 1024;
+
+/**
+ * Thrown by send() when no relay connection was open, so the event was written
+ * to no relay. A caller must not report such a message as sent.
+ */
+export class NoOpenRelayError extends Error {
+  constructor() {
+    super('NostrChatTransport: no relay connection is open; the event was not sent');
+    this.name = 'NoOpenRelayError';
+    this.code = 'NO_OPEN_RELAY';
+  }
+}
+
 export class NostrChatTransport {
   /**
    * @param {object} opts
@@ -29,7 +53,7 @@ export class NostrChatTransport {
   constructor({ secretKey, pubkey, relays }) {
     this._sk = secretKey;
     this._pk = pubkey;
-    this._pool = new RelayPool(relays);
+    this._pool = new RelayPool(relays, { maxFrameLength: MAX_RELAY_FRAME_LENGTH });
     this._handler = null;
     this._poolHandler = null;
     this._subId = null;
@@ -61,6 +85,9 @@ export class NostrChatTransport {
    * @param {object} [opts]
    * @param {boolean} [opts.ephemeral] send on an ephemeral kind (not stored by
    *   relays) — used for typing/presence so they aren't replayed on reconnect.
+   * @returns {Promise<number>} how many open relay connections the event was
+   *   written to (at least 1). This is not a relay acknowledgement.
+   * @throws {NoOpenRelayError} when no relay connection was open.
    */
   async send(toPubkey, bytes, { ephemeral = false } = {}) {
     const event = {
@@ -71,7 +98,9 @@ export class NostrChatTransport {
       content: bytesToBase64(bytes),
     };
     this._sign(event);
-    this._pool.publish(event);
+    const reached = this._pool.publish(event);
+    if (!(reached > 0)) throw new NoOpenRelayError();
+    return reached;
   }
 
   /** Force reconnect + re-subscribe (call when returning to the foreground). */
@@ -122,6 +151,8 @@ export class NostrChatTransport {
     if (!Array.isArray(data) || data[0] !== 'EVENT') return;
     const ev = data[2];
     if (!ev || !ev.content || ev.pubkey === this._pk) return;
+    // Bounded before the signature hash and the base64 decoding.
+    if (typeof ev.content !== 'string' || ev.content.length > MAX_EVENT_CONTENT_LENGTH) return;
     const addressedToUs = (ev.tags || []).some((t) => t[0] === 'p' && t[1] === this._pk);
     if (!addressedToUs) return;
     // The relay is untrusted: prove the event really is from ev.pubkey and that its
@@ -136,10 +167,16 @@ export class NostrChatTransport {
       this._seen.add(ev.id);
       if (this._seen.size > 5000) this._seen = new Set([ev.id]); // bound memory
     }
+    let result;
     try {
-      this._handler?.(ev.pubkey, base64ToBytes(ev.content));
+      result = this._handler?.(ev.pubkey, base64ToBytes(ev.content));
     } catch (e) {
       console.error('[NostrChatTransport] handler error:', e);
+      return;
+    }
+    // An async handler reports its failure through the promise it returns.
+    if (result && typeof result.then === 'function') {
+      result.then(undefined, (e) => console.error('[NostrChatTransport] handler error:', e));
     }
   }
 }

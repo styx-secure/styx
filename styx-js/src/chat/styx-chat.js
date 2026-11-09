@@ -40,6 +40,7 @@ import {
   INBOUND_DISCARD_REASONS,
   MAX_MESSAGE_TEXT_LENGTH,
   classifyInboundPayload,
+  isValidMessageId,
   normalizeStoredMessages,
 } from './inbound-payload.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
@@ -61,6 +62,36 @@ const PENDING_APP_MAX_ENVELOPE_BYTES = 256 * 1024;
 const PENDING_APP_MAX_BYTES_PER_SENDER = 1024 * 1024;
 const PENDING_APP_MAX_BYTES_TOTAL = 4 * 1024 * 1024;
 const SEEN_INCOMING_MAX = 5000;
+
+/**
+ * Largest transport envelope the chat decodes, in bytes, checked before UTF-8
+ * and JSON decoding. It leaves room for the largest legitimate message (a text
+ * of MAX_MESSAGE_TEXT_LENGTH characters in the worst JSON escaping, encrypted
+ * and base64-encoded).
+ */
+export const MAX_WIRE_ENVELOPE_BYTES = 1024 * 1024;
+
+/** Storage key: false when the user turned read receipts off (absent = on). */
+const READ_RECEIPTS_KEY = 'read-receipts';
+/** Storage key: ids of inbound messages a 'read' receipt was already sent for. */
+const READ_SENT_KEY = 'read-sent';
+/** How many acknowledged message ids are remembered (oldest dropped first). */
+const READ_SENT_MAX = 5000;
+
+/** Restore the remembered read-receipt ids, dropping anything that is not a valid id. */
+function loadReadSent(raw) {
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(raw.filter((id) => isValidMessageId(id)).slice(-READ_SENT_MAX));
+}
+
+/** A group map with no prototype, so no stored key can collide with Object.prototype. */
+function groupMap(raw) {
+  const groups = Object.create(null);
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [contactPubkey, groupId] of Object.entries(raw)) groups[contactPubkey] = groupId;
+  }
+  return groups;
+}
 
 /** Return an own data property without invoking an attacker-controlled getter. */
 function dataProperty(value, key) {
@@ -165,12 +196,13 @@ export class StyxChat {
     this._started = false;
     this._assembled = false;
     this._store = deps.store || new MemoryMessageStore();
-    this._groups = {}; // contactPubkey -> MLS groupId (persisted in app mode)
+    this._groups = groupMap(); // contactPubkey -> MLS groupId (persisted in app mode)
     this._pendingApp = new Map(); // from -> [{ env, receivedAt, byteLength, order }]
     this._pendingAppBytes = 0;
     this._pendingAppOrder = 0;
     this._seenIncoming = new Set(); // inbound message ids already surfaced (dedup relay replay)
-    this._readSent = new Set(); // inbound message ids we've already sent a 'read' receipt for
+    this._readSent = new Set(); // inbound message ids we've already sent a 'read' receipt for (persisted in app mode)
+    this._readReceipts = true; // the user may turn 'read' receipts off (persisted in app mode)
     this._inviteNonce = null; // nonce of the outstanding QR invite, if any (single-use)
     this._pending = new Map(); // pubkey -> { pubkey, alias? } authenticated, not yet a contact
     // Authenticated inbound payloads discarded because a field failed validation,
@@ -255,11 +287,16 @@ export class StyxChat {
       const savedNonce = await be.get(INVITE_NONCE_KEY);
       if (savedNonce) this._inviteNonce = base64ToBytes(savedNonce);
 
+      // Read receipts: the user's choice, and the messages already acknowledged,
+      // so a reload never acknowledges the same message again.
+      this._readReceipts = (await be.get(READ_RECEIPTS_KEY)) !== false;
+      this._readSent = loadReadSent(await be.get(READ_SENT_KEY));
+
       // Reload previously-established sessions from the restored state. Each group
       // is re-bound to its contact: a stored group whose peer is not that contact,
       // or that is already another contact's session, is not loaded (the contact
       // then has no session, as when its group is missing).
-      this._groups = (await be.get('mls:groups')) || {};
+      this._groups = groupMap(await be.get('mls:groups'));
       for (const [contactPubkey, groupId] of Object.entries(this._groups)) {
         try {
           this._engine.loadSession(contactPubkey, groupId, { expectedPeer: contactPubkey });
@@ -464,6 +501,8 @@ export class StyxChat {
     delete this._groups[pubkey];
     this._pending.delete(pubkey);
     await this._persistMls();
+    // The removed history must leave the stored snapshot now, not at the next write.
+    await this._persistMessages();
   }
 
   /**
@@ -518,6 +557,8 @@ export class StyxChat {
     await this._persistMls(); // the ratchet advanced on encrypt
     try {
       await this._send(pubkey, { t: 'app', ct: bytesToBase64(ct) });
+      // The transport resolves only once the event was written to at least one
+      // open relay connection; it throws when none was open.
       this._setState(msg, 'sent');
     } catch {
       this._setState(msg, 'failed');
@@ -527,18 +568,58 @@ export class StyxChat {
 
   async listMessages(pubkey, opts) { return this._store.list(pubkey, opts); }
 
-  async markRead(pubkey) {
+  /** Whether 'read' receipts are sent (on unless the user turned them off). */
+  get readReceiptsEnabled() { return this._readReceipts; }
+
+  /**
+   * Turn 'read' receipts on or off. Off means markRead() still clears the unread
+   * counter but sends nothing. Delivery receipts are unaffected. Persisted in
+   * app mode.
+   * @param {boolean} enabled
+   */
+  async setReadReceipts(enabled) {
+    this._readReceipts = !!enabled;
+    await this._backend?.set(READ_RECEIPTS_KEY, this._readReceipts);
+  }
+
+  /**
+   * Clear a contact's unread counter and acknowledge reading.
+   *
+   * With `upToMessageId`, only inbound messages up to and including that message
+   * (in conversation order) are acknowledged: pass the newest message the user
+   * actually has on screen. An id that is not in the conversation acknowledges
+   * nothing. Without it, every inbound message in the last 1 000 is acknowledged.
+   * Each message is acknowledged at most once, across reloads too.
+   * @param {string} pubkey
+   * @param {string} [upToMessageId]
+   */
+  async markRead(pubkey, upToMessageId) {
     try { await this._roster.clearUnread(pubkey); } catch { /* unknown contact */ }
+    if (!this._readReceipts) return;
     // Acknowledge reading: one 'read' receipt per inbound message not yet acked.
     // Encrypted through MLS like any message — the relay only sees ciphertext.
     let history = [];
     try { history = await this._store.list(pubkey, { limit: 1000 }); } catch { history = []; }
-    for (const m of history) {
-      if (m.direction !== 'in' || this._readSent.has(m.id)) continue;
-      this._readSent.add(m.id);
+    if (upToMessageId !== undefined) {
+      const end = history.findIndex((m) => m.id === upToMessageId);
+      history = end === -1 ? [] : history.slice(0, end + 1);
+    }
+    const toAck = history.filter((m) => m.direction === 'in' && !this._readSent.has(m.id));
+    if (!toAck.length) return;
+    for (const m of toAck) this._readSent.add(m.id);
+    await this._persistReadSent();
+    for (const m of toAck) {
       // eslint-disable-next-line no-await-in-loop
       await this._sendReceipt(pubkey, m.id, 'read');
     }
+  }
+
+  /** Persist the acknowledged ids, oldest dropped beyond READ_SENT_MAX. No-op without a backend. @private */
+  async _persistReadSent() {
+    if (this._readSent.size > READ_SENT_MAX) {
+      this._readSent = new Set([...this._readSent].slice(-READ_SENT_MAX));
+    }
+    await this._backend?.set(READ_SENT_KEY, [...this._readSent]);
   }
 
   /**
@@ -598,7 +679,8 @@ export class StyxChat {
   async wipe() {
     try { this.destroy(); } catch { /* best effort — we are erasing anyway */ }
     this._engine = null;
-    this._groups = {};
+    this._groups = groupMap();
+    this._readSent = new Set();
     await this._backend?.clear?.();
   }
 
@@ -835,6 +917,8 @@ export class StyxChat {
     let byteLength;
     try {
       byteLength = bytes.byteLength;
+      // Bounded before the UTF-8 and JSON decoding.
+      if (!Number.isSafeInteger(byteLength) || byteLength > MAX_WIRE_ENVELOPE_BYTES) return;
       env = JSON.parse(utf8Decode(bytes));
     } catch { return; }
     const type = dataProperty(env, 't');

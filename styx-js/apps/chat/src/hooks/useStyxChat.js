@@ -18,6 +18,9 @@ const PAGE = 20;
 const STATE_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, failed: 1 };
 const advances = (from, to) => (STATE_RANK[to] ?? -1) > (STATE_RANK[from] ?? -1);
 
+/** Whether the user can see the page: a hidden tab has read nothing. */
+const pageVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
+
 export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
@@ -37,6 +40,8 @@ export function useStyxChat() {
   const [noMore, setNoMore] = useState({});
   const [pendingPairings, setPendingPairings] = useState([]);
   const [vaultPreferences, setVaultPreferences] = useState(null);
+  const [writerUnguarded, setWriterUnguarded] = useState(false);
+  const [readReceipts, setReadReceiptsState] = useState(true);
 
   // --- append/patch helpers (functional, closure-safe) ---
   const upsertMessage = useCallback((msg) => {
@@ -104,8 +109,10 @@ export function useStyxChat() {
     // Become the single MLS writer for this profile, or refuse to start a writer.
     // A second tab that cannot get the lock must not construct a writable engine —
     // that is what corrupts mls:state.
-    const { held, release } = await acquireWriterLock(navigator.locks, `styx-mls:${ns}`);
+    const { held, guarded, release } = await acquireWriterLock(navigator.locks, `styx-mls:${ns}`);
     if (!held) { setSecondaryTab(true); return; }
+    // No Web Locks: this tab writes, but nothing stops a second one. Say so.
+    setWriterUnguarded(guarded === false);
     lockReleaseRef.current = release;
 
     const chat = new StyxChat();
@@ -200,6 +207,7 @@ export function useStyxChat() {
     subsRef.current = subsRef.current.filter(Boolean); // onPairing is absent on the mock
 
     setMe(chat.me || identity);
+    setReadReceiptsState(chat.readReceiptsEnabled !== false);
     setContacts(await chat.listContacts());
     setReady(true);
     // Opt-in: if a bridge is configured and permission is already granted, register.
@@ -249,7 +257,7 @@ export function useStyxChat() {
     setMessagesByContact((prev) => ({ ...prev, [pubkey]: initial }));
     setNoMore((prev) => ({ ...prev, [pubkey]: initial.length < PAGE }));
     const last = initial[initial.length - 1];
-    if (last) chat.markRead(pubkey, last.id);
+    if (last && pageVisible()) chat.markRead(pubkey, last.id);
   }, []);
 
   const loadOlder = useCallback(async (pubkey) => {
@@ -277,8 +285,18 @@ export function useStyxChat() {
     if (msg) upsertMessage(msg); // safety: dedup handles the double
   }, [upsertMessage]);
 
+  // Read up to `messageId`, the newest message on screen. A hidden page shows
+  // nothing, so it acknowledges nothing; reopening the conversation does.
   const markRead = useCallback((pubkey, messageId) => {
+    if (!pageVisible()) return;
     chatRef.current?.markRead(pubkey, messageId);
+  }, []);
+
+  const setReadReceipts = useCallback(async (enabled) => {
+    const chat = chatRef.current;
+    if (!chat?.setReadReceipts) return;
+    await chat.setReadReceipts(enabled);
+    setReadReceiptsState(chat.readReceiptsEnabled !== false);
   }, []);
 
   const setTyping = useCallback((pubkey, isTyping) => {
@@ -343,8 +361,9 @@ export function useStyxChat() {
   };
 
   return {
-    ready, fatalError, secondaryTab, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
+    ready, fatalError, secondaryTab, writerUnguarded, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
+    readReceipts, setReadReceipts,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
     vaultPreferences, setThemePreference, dismissInstallHint, stopVaultSettings, destroyVaultSettings,
     chatRef,

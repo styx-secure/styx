@@ -190,7 +190,22 @@ export default function App() {
           onReset={onReset}
           onToast={showToast}
           onEnablePush={chat.enablePush}
+          readReceipts={chat.readReceipts}
+          onSetReadReceipts={async (on) => {
+            await chat.setReadReceipts(on);
+            showToast(on ? 'Conferme di lettura attive' : 'Conferme di lettura disattivate');
+          }}
         />
+      )}
+
+      {chat.writerUnguarded && (
+        <div
+          className="sx-badge"
+          role="status"
+          style={{ position: 'fixed', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 50, maxWidth: '90vw' }}
+        >
+          Questo browser non può impedire a due schede di scrivere insieme: tieni Styx aperto in una scheda sola.
+        </div>
       )}
 
       {toast && <div className="toast sx-badge">{toast}</div>}
