@@ -68,7 +68,7 @@ session.openCandidate = async (argument) => {
 };
 
 const delivered = new Map();
-const h = makeClient({ urls: config.relays, keys, ports: { receiveState, session }, clock: fastClock(20) });
+const h = makeClient({ urls: config.relays, keys, ports: { receiveState, session }, clock: fastClock(5) });
 const started = await h.start({
   onMessage: async (message) => {
     log({ kind: 'delivered', id: message.eventId, payload: new TextDecoder().decode(message.payload) });

@@ -155,7 +155,7 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
       hooks: { beforeCandidate: () => { if (failures > 0) { failures -= 1; throw new Error('transient'); } } },
     });
     await a.client.send({ recipient: bob.identity, payload: text('h17-a') });
-    expect(await until(() => b.messages().length === 1, 5_000)).toBe(true);
+    expect(await until(() => b.messages().length === 1, 15_000)).toBe(true);
     expect(untext(b.messages()[0].payload)).toBe('h17-a');
     expect(b.calls.stage).toHaveLength(1);
     expect(b.calls.open).toHaveLength(2);
@@ -169,13 +169,13 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     const { bob, a } = await invited(rs);
     let failures = 1;
     const b = await run(bob, rs, {
-      clock: fastClock(50),
+      clock: fastClock(5),
       hooks: { beforeCandidate: () => { if (failures > 0) { failures -= 1; throw new Error('transient'); } } },
     });
     await a.client.send({ recipient: bob.identity, payload: text('h17-b') });
     expect(await until(() => b.calls.open.length === 1)).toBe(true);
     expect(b.messages()).toHaveLength(0);
-    expect(await until(() => b.messages().length === 1, 5_000)).toBe(true);
+    expect(await until(() => b.messages().length === 1, 15_000)).toBe(true);
     expect(untext(b.messages()[0].payload)).toBe('h17-b');
     expect(b.calls.stage).toHaveLength(1);
     expect(b.calls.open).toHaveLength(2);
@@ -237,7 +237,7 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     const rs = await relays(1);
     const { bob, a } = await invited(rs);
     let slow = true;
-    const clock = fastClock(50);
+    const clock = fastClock(5);
     const b = await run(bob, rs, {
       clock,
       hooks: { beforeCandidate: async () => { if (slow) { slow = false; await sleep(6_500); } } },

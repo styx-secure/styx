@@ -88,8 +88,13 @@ export async function until(predicate, ms = 15_000) {
   return predicate();
 }
 
-/** An accelerated caller clock: time and timers both run `factor` times faster. */
-export function fastClock(factor = 50) {
+/**
+ * An accelerated caller clock: time and timers both run `factor` times faster. The SDK bounds every port
+ * call by its port-call timeout on this clock (6 000 ms by default), so the factor divides the host time a
+ * real-file adapter call may take before the SDK treats it as uncertain and freezes the receive state; the
+ * default of 5 keeps that budget at 1.2 s of host time.
+ */
+export function fastClock(factor = 5) {
   const origin = Date.now();
   return {
     now: () => origin + (Date.now() - origin) * factor,
