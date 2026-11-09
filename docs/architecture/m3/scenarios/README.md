@@ -2,7 +2,8 @@
 
 Card `O-SCEN3`, M3 early lane. This directory is the deliverable of the scope record `O-SCEN3`: a scenario set
 for the M3 delivery layer, authored by a model vendor different from the author of C-DLV, derived **only** from
-the two ratified documents.
+the two ratified documents. Those three statements describe its five records; the sixth record,
+`restart-recovery.md`, has the different provenance stated below.
 
 Sources, both read at the exact base `f14a8d54cbe5e62c844a9db12bf78f62a4858267` of `m3/integration`:
 
@@ -14,6 +15,22 @@ Sources, both read at the exact base `f14a8d54cbe5e62c844a9db12bf78f62a4858267` 
 Every scenario cites those documents by section and takes every parameter, bound, state name, code and
 behaviour name from them. Nothing here is a new protocol, a new wire format, or a claim wider than the two
 documents.
+
+Card `M3-RECEIVE-3` adds `restart-recovery.md`, the record of the conditional durable-receive exception, and
+the schema rules of §1.5 for it. Its author model vendor is the same as the author of C-DLV, an exception that
+the owner granted for that record alone in the scope act of the card; its independence rests on a reviewer of
+another vendor and on the execution of the record against the reference receiver (§4). Besides the two
+documents, it takes the names of the write steps and the three declared limits from the description and code
+of the reference receiver, and states so. Its sources are later versions of the same two documents:
+
+| Document | Path | SHA-256 |
+| --- | --- | --- |
+| C-SDK | `docs/architecture/m3/sdk-interface.md` | `b432b8ab67a9aef965f6fcc3270ebd3785b4e122028aec4b57524435a08f3dbf` |
+| C-DLV | `docs/architecture/m3/delivery-layer.md` | `ad0cae8f621260c061cf509a350ba3ac290cadac88f275ff077bc8642c79b77c` |
+
+Each record pins, in its `contracts` object, the two document versions it was written against, and it is
+checked against exactly those versions: the five records of `O-SCEN3` stay pinned to the versions in the first
+table, and a later amendment of either document does not change what they claim.
 
 ## 1. What each file is
 
@@ -35,15 +52,18 @@ event declares `at`, `actor`, `event`, `detail`, `timing` and `checks`, plus the
 declares `index`, `host`, `port`, `behaviours` and `role`, plus `holdMs` when it selects `delayFrames` and
 `replacement` when a later connection of that relay behaves differently from its first. Only the keys that the
 checker knows are allowed, and every key the checker requires must be present, so a reader can tell a missing
-rule from an unknown one.
+rule from an unknown one. The record of `restart-recovery.md` follows the conditional rules of §1.5 instead of
+the timeline, event and relay shapes above.
 
 ### 1.1 `purposeItem`
 
 One of the five items of the scope record `O-SCEN3`: `hungRelay`, `relayLoss`, `duplicateAndReordered`,
-`offlineRecipient`, `queueRestartLost`. `harnessScenarios` names the C-DLV §12 harness scenarios a file
+`offlineRecipient`, `queueRestartLost`, or the item `restartRecovery` that card `M3-RECEIVE-3` adds. Each
+appears in exactly one file. `harnessScenarios` names the C-DLV §12 harness scenarios a file
 exercises, and each timeline names, in its `harness` key, the one harness scenario it runs. The file's
 `harnessScenarios` is exactly the set of the `harness` values of its timelines, and every name is a member of
-the closed `harness.scenarios` list of the C-DLV record (§12).
+the closed `harness.scenarios` list of the C-DLV record (§12). The one exception is the harness
+`referenceReceiver` of §1.5, which is not a loopback relay scenario of C-DLV §12.
 
 ### 1.2 Timings
 
@@ -100,6 +120,58 @@ the item into `RELAY_ACCEPTED` or `RELAY_ACCEPTED_AWAITING_RECEIPT` is the first
 that records an accepted relay answer for it, and that every later accepted answer for that item moves no
 item. Two items of one timeline may have their first acceptances at different instants.
 
+### 1.5 Cross-restart records (`crossRestart`)
+
+The flag `crossRestart` of `nonClaims` is `false` in every record except the one whose `purposeItem` is
+`restartRecovery`, and that record must set it to `true`, together with `durablePersistence`; every other
+flag keeps the value of §7. The two values describe the conditional durable-receive exception of C-SDK and
+C-DLV and nothing wider: they hold only for a client configured with `ports.receiveState` and a caller that
+meets the caller semantics of the session port and the receive-state port, and without that port the default
+of no recovery across restarts and no durable state stands. A record with that claim must carry two more
+top-level keys, and no other record may carry them:
+
+- `durableReceive`, exactly the object `receiveState.conditionalDurableReceiveException` of the C-SDK record
+  it pins, key for key and value for value, so the record can neither widen nor narrow the exception;
+- `declaredLimits`, exactly `{ archiveRollbackDetected: false, secureErase: false, keyRotation: false }`: the
+  three limits that the description of the reference receiver declares (an older copy of the archive is not
+  detected, there is no secure erase from the medium, there is no rotation of the at-rest key).
+
+Its timelines run on the harness `referenceReceiver`: the experimental Node reference receiver and its tests,
+the two trees that the C-SDK record names in `imports.referenceReceiveException`, with the real MLS engine,
+the immutable vendored WASM, the SDK client and a loopback relay. A timeline of such a record declares exactly
+`id`, `harness`, `preconditions`, `clauses`, `setup`, `runs`, `killPoints`, `invariants`, `expectedEvents` and
+`notEmitted`:
+
+- `setup` is `{ sender, recipient, relays, messages, payloads, receiptMode }`, where `messages` is the number
+  of the distinct `payloads`;
+- `runs` lists the steps of the timeline in order, each `{ run, process, kind, detail, checks }`, where
+  `process` is `separate` (a process of its own) or `same`, and `kind` is one of `setup` (parties, archives,
+  group and messages prepared), `kill` (a process stopped by SIGKILL at a kill point), `fault` (a port fault
+  injected into a running client), `restore` (the archive replaced by an older copy of itself), `restart` (a
+  new receiver instance and a new client open the existing archive) and `verify` (nothing is injected: the
+  client runs on by itself while the oracle observes it and reads its logs and the durable state);
+- `killPoints` is `{ operations, steps, openCandidate }`: for `killAtEveryWritePoint` the operations are the
+  five receive-state writes of the C-SDK record's `receiveState.methods` followed by `seal`, the steps are the
+  named write steps of the reference receiver in order, and `openCandidate` is `true`; the other timelines
+  declare no kill point;
+- `invariants` lists the named oracle checks of the timeline in a fixed order, each `{ id, holds, checks,
+  detail }`, with the one `holds` value each must have.
+
+The three timelines and their invariants are closed:
+
+| Timeline | Invariants (`holds`) |
+| --- | --- |
+| `killAtEveryWritePoint` | `killPointReached`, `stagedNotLost`, `committedNotOpenedAgain`, `everyMessageDeliveredWithPayload`, `noDeliveryAfterAcknowledgement`, `finalStateSettled`, `recoveredStateSealsToPeer`, `checkpointNotBehind`, `receiptsReachSender` (all `true`) |
+| `uncertainCommitResolved` | `resolveAnswersCommitted`, `resolveAnswersAborted`, `resolveRepeatable`, `resolveWritesNothing`, `abortedCommitNeverTakesEffect`, `eachMessageDeliveredOnce`, `committedNotOpenedAgain` (all `true`) |
+| `archiveRollbackUndetected` | `payloadAbsentAfterAcknowledgement` (`true`), `archiveRollbackDetected` (`false`), `acknowledgedPayloadReappears` (`true`) |
+
+A timeline's `clauses` are exactly the union of the `checks` of its runs and invariants, and each timeline
+cites C-SDK §8.5. The setup of each timeline is the one the executor runs: the parties `alice` and `bob`, one
+relay, `RECIPIENT_RECEIPT`, and three, two and one messages in the three timelines. A sentence of such a record
+that states either claim in words also names `ports.receiveState`, its condition (the checker's claim lint
+enforces this for the phrases it lists), and the record's title names it too; the record as a whole holds only
+under that condition.
+
 ## 2. Purpose items and the harness scenarios
 
 | Purpose item | File | Timelines | C-DLV §12 harness scenarios |
@@ -109,6 +181,7 @@ item. Two items of one timeline may have their first acceptances at different in
 | `duplicateAndReordered` | `duplicate-and-reordered.md` | `inboundDuplicateReordered`, `outboundDuplicateAccepted` | `duplicateAndReordered` |
 | `offlineRecipient` | `offline-recipient.md` | `receiptBeforeDeadline`, `receiptAfterDeadline`, `receiptExactlyAtDeadline` | `offlineRecipient` |
 | `queueRestartLost` | `queue-restart-lost.md` | `lostAtShutdownThenNewClient`, `nonEmptyStoreRefused` | `shutdownLostThenNewClient` |
+| `restartRecovery` | `restart-recovery.md` | `killAtEveryWritePoint`, `uncertainCommitResolved`, `archiveRollbackUndetected` | none; harness `referenceReceiver` (§1.5) |
 
 ## 3. The files
 
@@ -122,13 +195,22 @@ item. Two items of one timeline may have their first acceptances at different in
   deadline, after it, and exactly at it.
 - `queue-restart-lost.md` — the `LOST_ON_SHUTDOWN` transitions at an orderly shutdown, the timers that do not
   survive it, the new client that recovers nothing, and the storage port that refuses to adopt a queue.
+- `restart-recovery.md` — with `ports.receiveState` over the reference receiver: a recipient process stopped
+  at every write step and inside `openCandidate` and then restarted, the two answers of `resolve`, and the
+  declared limit of an older copy of the archive.
 - `README.md` — this index.
 
 ## 4. How the records are checked
 
 `validate_scen3.py` is an external checker written in the Python standard library, kept outside the
 repository and delivered as evidence of this card beside this directory; no file of this directory cites it
-as if it lived inside the repository. It reads the two ratified documents, parses the closed JSON record
+as if it lived inside the repository. Card `M3-RECEIVE-3` delivers its successor `validate_scen4.py` the same
+way, together with its executor `run_restart_recovery.mjs`. It checks every file against the two document
+versions that the file pins, found by their SHA-256 in the history of the repository, applies the rules of
+§1.5 to the cross-restart record, and with `--execute` runs that record's three timelines against the
+reference receiver of a repository checkout (real processes, stopped by SIGKILL at every kill point) and
+requires every observed invariant to equal the declared `holds` value. The description below of what it
+derives and checks applies to both checkers. It reads the two documents, parses the closed JSON record
 inside C-DLV §12 and derives from it the parameters and their bounds, the fixed values, the backoff
 formula and its base and cap, the closed state set, the `transitionsUsed` map, the per-relay outcome set, the
 code set, the relay behaviour list, the harness scenario list and the snapshot fields of C-SDK §11; it then
@@ -156,6 +238,7 @@ section of C-SDK or C-DLV. The table below lists the principal ones, the clauses
 | `duplicate-and-reordered.md` | C-DLV §8, C-DLV §7.1, C-DLV §7.2, C-DLV §7.3, C-DLV §5.4, C-DLV §5.3, C-SDK §2, C-SDK §4.3 |
 | `offline-recipient.md` | C-DLV §4.4, C-DLV §7.3, C-DLV §5.4, C-DLV §5.3, C-SDK §6.1, C-SDK §2 |
 | `queue-restart-lost.md` | C-DLV §4.6, C-DLV §4.5, C-DLV §5.2, C-DLV §6.4, C-DLV §2, C-SDK §8.1 |
+| `restart-recovery.md` | C-SDK §8.5, C-SDK §8.2, C-SDK §2, C-SDK §7.1, C-DLV §7.4, C-DLV §5.4 |
 
 ## 6. Injected clock and randomness
 
@@ -175,14 +258,18 @@ payload maximum 65536, the queue bound 256, the inbound pending bound 1024 and t
 
 ## 7. Non-claims
 
-Every record carries the same `nonClaims` object, whose flags are the C-DLV §2 outer bounds and the C-DLV §11
-non-claims: no exactly-once delivery, no ordering, no cross-restart recovery, no unbounded retransmission, no
+Every record of `O-SCEN3` carries the same `nonClaims` object, whose flags are the C-DLV §2 outer bounds and
+the C-DLV §11 non-claims: no exactly-once delivery, no ordering, no cross-restart recovery, no unbounded
+retransmission, no
 claim that relay acceptance is recipient receipt, no claim that a receipt proves that a message was opened
 (`receiptProvesOpening`) or read by a person (`receiptProvesReading`), no new cryptography, no normative wire
 format, no public relay, no durable persistence and
 no metadata protection. No scenario asserts that a person read a message, and no scenario asserts that a
 recipient's receipt or a relay's acceptance is evidence about a human. The records name the kinds, tags and
-record fields of C-DLV §6, which that section declares SDK-internal, experimental and non-normative.
+record fields of C-DLV §6, which that section declares SDK-internal, experimental and non-normative. The
+record of `restart-recovery.md` differs from that object only in `crossRestart` and `durablePersistence`, and
+only under the condition of §1.5; it does not claim exactly-once application effects, ordering, completeness
+or the resumption of outbound items either.
 
 ## 8. Hygiene and precedence
 
