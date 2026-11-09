@@ -99,7 +99,9 @@ describe('NostrChatTransport bounds inbound data before decoding', () => {
     t.onMessage(cb);
     expect(Number.isSafeInteger(chatTransport.MAX_EVENT_CONTENT_LENGTH)).toBe(true);
     const big = 'A'.repeat(chatTransport.MAX_EVENT_CONTENT_LENGTH + 4);
+    const verify = jest.spyOn(t, '_verifyEvent');
     t._onRelay(['EVENT', 'sub', signedEvent(senderSk, senderPk, pk, big)]);
+    expect(verify).not.toHaveBeenCalled(); // dropped before the signature check
     expect(cb).not.toHaveBeenCalled();
   });
 

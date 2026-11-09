@@ -7,7 +7,7 @@
 //     the same message (across a reload too), and never when turned off;
 //   - removing a contact writes the shortened history at once;
 //   - the group map has no prototype, so no key collides with Object.prototype.
-import { describe, test, expect, beforeAll, afterEach } from '@jest/globals';
+import { describe, test, expect, beforeAll, afterEach, jest } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { schnorr } from '@noble/curves/secp256k1';
@@ -67,9 +67,9 @@ async function answerInvite(chat, peer, peerName) {
   return started;
 }
 
-/** The raw peer sends one typed message to `chat`. */
-async function peerSays(chat, peer, peerName, id, text) {
-  const ct = peer.session(chat.me.pubkey).encrypt(utf8Encode(JSON.stringify({ t: 'msg', id, text, ts: Date.now() })));
+/** The raw peer sends one typed message to `chat`, by default stamped now. */
+async function peerSays(chat, peer, peerName, id, text, ts = Date.now()) {
+  const ct = peer.session(chat.me.pubkey).encrypt(utf8Encode(JSON.stringify({ t: 'msg', id, text, ts })));
   await chat._onWire(peerName, utf8Encode(JSON.stringify({ t: 'app', ct: bytesToBase64(ct) })));
 }
 
@@ -108,6 +108,13 @@ describe('StyxChat legacy robustness', () => {
     const out = await chat.sendText(BOB, 'nessun relay aperto');
     expect(out.state).toBe('failed');
     expect(states).toEqual(['failed']);
+    // Other callers keep their behaviour: typing stays best effort, and a pairing
+    // welcome that reached no relay is not reported, as before.
+    await expect(chat.setTyping(BOB, true)).resolves.toBeUndefined();
+    const other = await appChat(memBackend(), 'c7-sent-1b');
+    const { qr } = await other.createQrInvite();
+    await expect(chat.acceptQrInvite(qr)).resolves.toEqual({ contactPubkey: other.me.pubkey });
+    expect(chat._pending.has(other.me.pubkey)).toBe(true);
   });
 
   test('an envelope over MAX_WIRE_ENVELOPE_BYTES is dropped before decoding', async () => {
@@ -118,7 +125,13 @@ describe('StyxChat legacy robustness', () => {
     // Valid JSON padded with whitespace past the bound.
     const padded = utf8Encode(json + ' '.repeat(chatModule.MAX_WIRE_ENVELOPE_BYTES - json.length + 1));
     expect(padded.byteLength).toBe(chatModule.MAX_WIRE_ENVELOPE_BYTES + 1);
-    await chat._onWire(BOB, padded);
+    const parse = jest.spyOn(JSON, 'parse');
+    try {
+      await chat._onWire(BOB, padded);
+      expect(parse).not.toHaveBeenCalled(); // dropped before any decoding
+    } finally {
+      parse.mockRestore();
+    }
     expect((await chat.listMessages(BOB)).filter((m) => m.direction === 'in')).toHaveLength(0);
   });
 
@@ -134,13 +147,25 @@ describe('StyxChat legacy robustness', () => {
 
   test('markRead with a message id acknowledges only up to that message', async () => {
     const { chat, bob } = await pairedWithBob(memBackend(), 'c7-read-1');
-    await peerSays(chat, bob, BOB, 'm1', 'uno');
-    await peerSays(chat, bob, BOB, 'm2', 'due');
+    const t0 = Date.now() - 60_000;
+    await peerSays(chat, bob, BOB, 'm1', 'uno', t0);
+    await peerSays(chat, bob, BOB, 'm2', 'due', t0 + 2000);
+    // Arrives last but was written before m2: on screen it sits before m2.
+    await peerSays(chat, bob, BOB, 'm3', 'tre', t0 + 1000);
     const reads = countReadReceipts(chat);
     await chat.markRead(BOB, 'm1');
     expect(reads).toEqual(['m1']);
     await chat.markRead(BOB, 'm2');
-    expect(reads).toEqual(['m1', 'm2']);
+    expect(reads).toEqual(['m1', 'm3', 'm2']);
+    // The named message counts even beyond the newest 1 000 of the conversation.
+    await peerSays(chat, bob, BOB, 'm4', 'quattro', t0 + 2500);
+    for (let i = 0; i < 1000; i += 1) {
+      await chat._store.append({
+        id: `f${i}`, contactPubkey: BOB, direction: 'in', text: 'x', ts: t0 + 3000 + i, state: 'delivered',
+      });
+    }
+    await chat.markRead(BOB, 'm4');
+    expect(reads).toEqual(['m1', 'm3', 'm2', 'm4']);
   });
 
   test('markRead with an id that is not in the conversation acknowledges nothing', async () => {

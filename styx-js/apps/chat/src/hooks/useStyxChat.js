@@ -21,6 +21,9 @@ const advances = (from, to) => (STATE_RANK[to] ?? -1) > (STATE_RANK[from] ?? -1)
 /** Whether the user can see the page: a hidden tab has read nothing. */
 const pageVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 
+/** Conversation order, the same the library uses for read receipts: by time, ties stable. */
+const byTs = (a, b) => a.ts - b.ts;
+
 export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
@@ -48,7 +51,7 @@ export function useStyxChat() {
     setMessagesByContact((prev) => {
       const list = prev[msg.contactPubkey] || [];
       if (list.some((m) => m.id === msg.id)) return prev; // dedup by id
-      const next = [...list, msg].sort((a, b) => a.ts - b.ts);
+      const next = [...list, msg].sort(byTs);
       return { ...prev, [msg.contactPubkey]: next };
     });
   }, []);
@@ -253,11 +256,11 @@ export function useStyxChat() {
   const openConversation = useCallback(async (pubkey) => {
     const chat = chatRef.current;
     if (!chat) return;
-    const initial = await chat.listMessages(pubkey, { limit: PAGE });
+    const initial = [...await chat.listMessages(pubkey, { limit: PAGE })].sort(byTs);
     setMessagesByContact((prev) => ({ ...prev, [pubkey]: initial }));
     setNoMore((prev) => ({ ...prev, [pubkey]: initial.length < PAGE }));
     const last = initial[initial.length - 1];
-    if (last && pageVisible()) chat.markRead(pubkey, last.id);
+    if (last && pageVisible()) chat.markRead(pubkey, last.id)?.catch?.(() => {});
   }, []);
 
   const loadOlder = useCallback(async (pubkey) => {
@@ -272,7 +275,7 @@ export function useStyxChat() {
     }
     setMessagesByContact((prev) => {
       const seen = new Set((prev[pubkey] || []).map((m) => m.id));
-      const merged = [...older.filter((m) => !seen.has(m.id)), ...(prev[pubkey] || [])];
+      const merged = [...older.filter((m) => !seen.has(m.id)), ...(prev[pubkey] || [])].sort(byTs);
       return { ...prev, [pubkey]: merged };
     });
     return { added: older.length };
@@ -289,7 +292,7 @@ export function useStyxChat() {
   // nothing, so it acknowledges nothing; reopening the conversation does.
   const markRead = useCallback((pubkey, messageId) => {
     if (!pageVisible()) return;
-    chatRef.current?.markRead(pubkey, messageId);
+    chatRef.current?.markRead(pubkey, messageId)?.catch?.(() => {});
   }, []);
 
   const setReadReceipts = useCallback(async (enabled) => {

@@ -40,7 +40,6 @@ import {
   INBOUND_DISCARD_REASONS,
   MAX_MESSAGE_TEXT_LENGTH,
   classifyInboundPayload,
-  isValidMessageId,
   normalizeStoredMessages,
 } from './inbound-payload.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
@@ -81,7 +80,9 @@ const READ_SENT_MAX = 5000;
 /** Restore the remembered read-receipt ids, dropping anything that is not a valid id. */
 function loadReadSent(raw) {
   if (!Array.isArray(raw)) return new Set();
-  return new Set(raw.filter((id) => isValidMessageId(id)).slice(-READ_SENT_MAX));
+  // A stored message id: a non-empty string of at most 128 characters (as inbound validation).
+  const valid = (id) => typeof id === 'string' && id.length > 0 && id.length <= 128;
+  return new Set(raw.filter(valid).slice(-READ_SENT_MAX));
 }
 
 /** A group map with no prototype, so no stored key can collide with Object.prototype. */
@@ -465,14 +466,20 @@ export class StyxChat {
     this._groups[inv.pubkey] = groupId;
     await this._persistMls();
     const nonce = inv.nonce ? base64ToBytes(inv.nonce) : new Uint8Array(0);
-    await this._send(inv.pubkey, {
-      t: 'welcome',
-      from: { pubkey: this._identity.pubkey },
-      welcome: bytesToBase64(welcome),
-      tree: bytesToBase64(ratchetTree),
-      groupId,
-      hmac: bytesToBase64(this._welcomeMac(nonce, welcome, ratchetTree, groupId)),
-    });
+    try {
+      await this._send(inv.pubkey, {
+        t: 'welcome',
+        from: { pubkey: this._identity.pubkey },
+        welcome: bytesToBase64(welcome),
+        tree: bytesToBase64(ratchetTree),
+        groupId,
+        hmac: bytesToBase64(this._welcomeMac(nonce, welcome, ratchetTree, groupId)),
+      });
+    } catch (e) {
+      // Unchanged pairing behaviour: a welcome that reached no open relay
+      // connection is not reported here (it never was); other errors still throw.
+      if (e?.code !== 'NO_OPEN_RELAY') throw e;
+    }
     // The inviter's alias came over the QR — the in-person channel — so it is a
     // trustworthy default here. Ours goes back encrypted, never on the wire.
     this._pending.set(inv.pubkey, { pubkey: inv.pubkey, alias: sanitizeAlias(inv.alias) });
@@ -586,10 +593,12 @@ export class StyxChat {
    * Clear a contact's unread counter and acknowledge reading.
    *
    * With `upToMessageId`, only inbound messages up to and including that message
-   * (in conversation order) are acknowledged: pass the newest message the user
-   * actually has on screen. An id that is not in the conversation acknowledges
-   * nothing. Without it, every inbound message in the last 1 000 is acknowledged.
-   * Each message is acknowledged at most once, across reloads too.
+   * in conversation order (by timestamp, ties in arrival order, as the app shows
+   * them) are acknowledged, over the whole conversation: pass the newest message
+   * the user actually has on screen. An id that is not in the conversation
+   * acknowledges nothing. Without it, every inbound message in the last 1 000 is
+   * acknowledged. Each message is acknowledged at most once, across reloads too
+   * (within the newest 5 000 acknowledged ids).
    * @param {string} pubkey
    * @param {string} [upToMessageId]
    */
@@ -598,11 +607,18 @@ export class StyxChat {
     if (!this._readReceipts) return;
     // Acknowledge reading: one 'read' receipt per inbound message not yet acked.
     // Encrypted through MLS like any message — the relay only sees ciphertext.
+    const scoped = upToMessageId !== undefined;
     let history = [];
-    try { history = await this._store.list(pubkey, { limit: 1000 }); } catch { history = []; }
-    if (upToMessageId !== undefined) {
-      const end = history.findIndex((m) => m.id === upToMessageId);
-      history = end === -1 ? [] : history.slice(0, end + 1);
+    try {
+      history = await this._store.list(pubkey, { limit: scoped ? Number.MAX_SAFE_INTEGER : 1000 });
+    } catch { history = []; }
+    if (scoped) {
+      const ordered = history
+        .map((m, i) => ({ m, i }))
+        .sort((a, b) => ((a.m.ts - b.m.ts) || (a.i - b.i)))
+        .map(({ m }) => m);
+      const end = ordered.findIndex((m) => m.id === upToMessageId);
+      history = end === -1 ? [] : ordered.slice(0, end + 1);
     }
     const toAck = history.filter((m) => m.direction === 'in' && !this._readSent.has(m.id));
     if (!toAck.length) return;
@@ -650,7 +666,13 @@ export class StyxChat {
 
   async setTyping(pubkey, on) {
     // Ephemeral: typing must not be stored/replayed by relays (would get stuck).
-    if (this._engine.session(pubkey)) await this._send(pubkey, { t: 'typing', on: !!on }, { ephemeral: true });
+    // Best effort, as before: no open relay connection just means no indicator.
+    if (!this._engine.session(pubkey)) return;
+    try {
+      await this._send(pubkey, { t: 'typing', on: !!on }, { ephemeral: true });
+    } catch (e) {
+      if (e?.code !== 'NO_OPEN_RELAY') throw e;
+    }
   }
 
   destroy() {
