@@ -7,6 +7,8 @@ import { test, expect } from '@playwright/test';
 async function onboard(context, ns, alias) {
   const p = await context.newPage();
   // local=1 → BroadcastChannel transport (self-contained, no relay needed).
+  // The app asks to confirm connection parameters from a link: accept here.
+  p.on('dialog', (d) => d.accept());
   await p.goto(`/?ns=${ns}&local=1`, { waitUntil: 'networkidle' });
   await p.getByPlaceholder('Alias pubblico').fill(alias);
   await p.getByPlaceholder('Password locale').fill('pw123');

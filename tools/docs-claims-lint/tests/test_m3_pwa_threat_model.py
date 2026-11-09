@@ -100,7 +100,9 @@ KEY_STATEMENTS = (
     "The service worker's `push` handler ignores `event.data`",
     "with no content and no sender",
     "treat `local`, `relay`, `bridge` and `ns` from the URL as hostile input",
-    "These values are accepted from the URL without a confirmation step.",
+    "The app uses `local`, `relay` and `bridge` from the URL only after the user"
+    " confirms them in a dialog that lists them",
+    "`?ns=` is accepted without a confirmation step.",
     # Chat payload validation since #562, with its legacy exception.
     "validates the typed fields of every inbound payload that decodes to a JSON"
     " object before that payload is stored",
@@ -108,7 +110,11 @@ KEY_STATEMENTS = (
     " malformed.",
     "A payload that decodes to neither a JSON object nor a JSON array is still"
     " accepted as bare legacy text",
-    "Adding a confirmation step for these parameters is open work, not done.",
+    "`?ns=` still switches namespace without asking.",
+    # Legacy chat robustness since the C7 correction.
+    "marks a message sent only when its event was written to at least one open"
+    " relay connection, and failed otherwise; that is not a relay acknowledgement.",
+    "the user can turn read receipts off; delivery receipts stay automatic.",
     # Honest state.
     "The review was model-assisted, not a human audit.",
     "is not resolved by this document or by those corrections",
