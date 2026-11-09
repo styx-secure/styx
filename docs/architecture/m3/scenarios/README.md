@@ -2,7 +2,8 @@
 
 Card `O-SCEN3`, M3 early lane. This directory is the deliverable of the scope record `O-SCEN3`: a scenario set
 for the M3 delivery layer, authored by a model vendor different from the author of C-DLV, derived **only** from
-the two ratified documents.
+the two ratified documents. Those three statements describe its five records; the sixth record,
+`restart-recovery.md`, has the different provenance stated below.
 
 Sources, both read at the exact base `f14a8d54cbe5e62c844a9db12bf78f62a4858267` of `m3/integration`:
 
@@ -16,7 +17,11 @@ behaviour name from them. Nothing here is a new protocol, a new wire format, or 
 documents.
 
 Card `M3-RECEIVE-3` adds `restart-recovery.md`, the record of the conditional durable-receive exception, and
-the schema rules of §1.5 for it. Its sources are later versions of the same two documents:
+the schema rules of §1.5 for it. Its author model vendor is the same as the author of C-DLV, an exception that
+the owner granted for that record alone in the scope act of the card; its independence rests on a reviewer of
+another vendor and on the execution of the record against the reference receiver (§4). Besides the two
+documents, it takes the names of the write steps and the three declared limits from the description and code
+of the reference receiver, and states so. Its sources are later versions of the same two documents:
 
 | Document | Path | SHA-256 |
 | --- | --- | --- |
@@ -143,8 +148,8 @@ the immutable vendored WASM, the SDK client and a loopback relay. A timeline of 
   `process` is `separate` (a process of its own) or `same`, and `kind` is one of `setup` (parties, archives,
   group and messages prepared), `kill` (a process stopped by SIGKILL at a kill point), `fault` (a port fault
   injected into a running client), `restore` (the archive replaced by an older copy of itself), `restart` (a
-  new receiver instance and a new client open the existing archive) and `verify` (the oracle reads logs and
-  durable state);
+  new receiver instance and a new client open the existing archive) and `verify` (nothing is injected: the
+  client runs on by itself while the oracle observes it and reads its logs and the durable state);
 - `killPoints` is `{ operations, steps, openCandidate }`: for `killAtEveryWritePoint` the operations are the
   five receive-state writes of the C-SDK record's `receiveState.methods` followed by `seal`, the steps are the
   named write steps of the reference receiver in order, and `openCandidate` is `true`; the other timelines
@@ -161,8 +166,11 @@ The three timelines and their invariants are closed:
 | `archiveRollbackUndetected` | `payloadAbsentAfterAcknowledgement` (`true`), `archiveRollbackDetected` (`false`), `acknowledgedPayloadReappears` (`true`) |
 
 A timeline's `clauses` are exactly the union of the `checks` of its runs and invariants, and each timeline
-cites C-SDK §8.5. A sentence of such a record that names the recovery across restarts or the durable state
-also names `ports.receiveState`, its condition.
+cites C-SDK §8.5. The setup of each timeline is the one the executor runs: the parties `alice` and `bob`, one
+relay, `RECIPIENT_RECEIPT`, and three, two and one messages in the three timelines. A sentence of such a record
+that states either claim in words also names `ports.receiveState`, its condition (the checker's claim lint
+enforces this for the phrases it lists), and the record's title names it too; the record as a whole holds only
+under that condition.
 
 ## 2. Purpose items and the harness scenarios
 

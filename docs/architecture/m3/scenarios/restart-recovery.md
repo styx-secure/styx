@@ -1,4 +1,4 @@
-# Scenario `restartRecovery` — durable reception across stop, restart and crash
+# Scenario `restartRecovery` — durable reception across stop, restart and crash with `ports.receiveState`
 
 Purpose item: **the conditional durable-receive exception of C-SDK and C-DLV, exercised against the
 experimental Node reference receiver**. This is the only record of the set that declares the cross-restart
@@ -82,7 +82,7 @@ client and one loopback relay.
         "The sender and the recipient each use an SDK client whose ports.session and ports.receiveState are the reference receiver of their own archive, with the real MLS engine and the immutable vendored WASM.",
         "The two parties are joined in one MLS 1:1 group through the session ports before any message is sent; the recipient's binding is an invitee binding, completed by the first message.",
         "One loopback relay on 127.0.0.1 with an ephemeral port stores every event and serves stored matches on each new subscription; it is the only relay of both clients.",
-        "The sender's clock port is held while the recipient's processes run, so no deadline or periodic pass of the sender depends on how long those processes take; every wait of the oracle is a wait for an event, bounded only by a hang guard.",
+        "The sender's clock port is held while the recipient's processes run, so no deadline or periodic pass of the sender depends on how long those processes take; every wait of the oracle is a wait for an event, bounded only by a hang guard. Each recipient process pauses 50 ms before its orderly stop, after every condition the oracle reads has been reached; no invariant depends on that pause.",
         "One execution of the timeline is one kill point: every rewrite operation of the reference receiver at every named write step, and openCandidate, each in a fresh pair of archives; the n-th rewrite is the first for seal and commitCursor and the first, second or third for the others, by repetition."
       ],
       "clauses": [
@@ -112,7 +112,7 @@ client and one loopback relay.
           "run": "prepare",
           "process": "same",
           "kind": "setup",
-          "detail": "The sender's client starts over its reference receiver, the recipient's archive is created and joined to the sender's group through the session ports, and the sender sends the three messages, which the relay stores. The reference receiver and the crash child process are the two trees of the C-SDK §9 exception.",
+          "detail": "The sender's client starts over its reference receiver, the recipient's archive is created and joined to the sender's group through the session ports, and the sender sends the three messages one at a time, each after the relay has stored the previous one, so the event id of each payload is known. The reference receiver and the crash child process are the two trees of the C-SDK §9 exception.",
           "checks": [
             "C-SDK §8.2",
             "C-SDK §9"
