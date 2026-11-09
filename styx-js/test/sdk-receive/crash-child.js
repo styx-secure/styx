@@ -68,6 +68,7 @@ session.openCandidate = async (argument) => {
 };
 
 const delivered = new Map();
+// The clock stands still during every port call (helpers.js), so a slow real write never ages a timer.
 const h = makeClient({ urls: config.relays, keys, ports: { receiveState, session }, clock: fastClock(5) });
 const started = await h.start({
   onMessage: async (message) => {

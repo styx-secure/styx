@@ -82,25 +82,145 @@ export const untext = (bytes) => new TextDecoder().decode(bytes);
 /* --- loopback relay and SDK clients ------------------------------------------ */
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-export async function until(predicate, ms = 15_000) {
+/**
+ * The bound of every wait in these tests. Each wait is for an event (a delivery, a call, a receipt), so
+ * the bound only stops a hung test: it lies far beyond any legitimate duration, and no outcome depends on
+ * how fast the host runs (the per-test Jest timeouts of these files derive from it).
+ */
+export const HANG_GUARD_MS = 300_000;
+
+export async function until(predicate, ms = HANG_GUARD_MS) {
   const end = Date.now() + ms;
   while (!predicate() && Date.now() < end) await sleep(5);
   return predicate();
 }
 
 /**
- * An accelerated caller clock: time and timers both run `factor` times faster. The SDK bounds every port
- * call by its port-call timeout on this clock (6 000 ms by default), so the factor divides the host time a
- * real-file adapter call may take before the SDK treats it as uncertain and freezes the receive state; the
- * default of 5 keeps that budget at 1.2 s of host time.
+ * A virtual caller clock (the clock port of C-SDK section 8.4) for these tests. While it runs, its time
+ * goes `factor` times faster than the host's; while it is held, its time stands still and none of its
+ * timers fires. Timers fire in the order of their due times on this clock.
+ *
+ * `holdClock(clock)` holds it and returns the function that releases that hold (holds nest; the clock
+ * port itself stays the closed object of C-SDK section 8.4, so the hold lives outside it). `makeClient`
+ * holds the clock for the whole of every port call it hands to the SDK, so an adapter call takes no clock
+ * time however long its real file write lasts: the periodic passes, the connection phase, the relay
+ * supervision and the delivery deadlines never see the host's speed. A test holds it itself to keep the
+ * periodic passes out of a window. The SDK's own port-call timeout is a host timer (6 000 ms of host
+ * time, C-SDK section 8) and is not affected: only a test that injects a longer delay reaches it.
  */
+const clockHolds = new WeakMap();
+
+/** Hold a `fastClock` until the returned function is called (a no-op for any other clock). */
+export function holdClock(clock) {
+  const hold = clockHolds.get(clock);
+  return hold === undefined ? () => undefined : hold();
+}
+
 export function fastClock(factor = 5) {
-  const origin = Date.now();
-  return {
-    now: () => origin + (Date.now() - origin) * factor,
-    setTimer: (callback, delay) => setTimeout(callback, Math.max(0, Math.floor(delay / factor))),
-    clearTimer: (handle) => clearTimeout(handle),
+  let virtual = Date.now();
+  let anchor = performance.now();
+  let holds = 0;
+  let sequence = 0;
+  let host = null;
+  const timers = new Map();
+  const sync = () => {
+    const t = performance.now();
+    if (holds === 0) virtual += (t - anchor) * factor;
+    anchor = t;
   };
+  const schedule = () => {
+    if (host !== null) clearTimeout(host);
+    host = null;
+    if (holds > 0 || timers.size === 0) return;
+    let next = Number.POSITIVE_INFINITY;
+    for (const timer of timers.values()) next = Math.min(next, timer.due);
+    sync();
+    host = setTimeout(fire, Math.max(0, Math.ceil((next - virtual) / factor)));
+  };
+  function fire() {
+    host = null;
+    sync();
+    const due = [...timers.entries()].filter(([, timer]) => timer.due <= virtual)
+      .sort(([, x], [, y]) => x.due - y.due || x.sequence - y.sequence);
+    for (const [handle, timer] of due) {
+      if (!timers.delete(handle)) continue; // cleared by an earlier callback of this round
+      try {
+        timer.callback();
+      } catch (error) {
+        Promise.reject(error); // surfaces as an unhandled rejection, as a throwing host timer would
+      }
+    }
+    schedule();
+  }
+  const clock = {
+    now: () => {
+      sync();
+      return Math.floor(virtual);
+    },
+    setTimer: (callback, delay) => {
+      sync();
+      sequence += 1;
+      const handle = Object.freeze({ timer: sequence });
+      timers.set(handle, { due: virtual + Math.max(0, delay), sequence, callback });
+      schedule();
+      return handle;
+    },
+    clearTimer: (handle) => {
+      if (timers.delete(handle)) schedule();
+    },
+  };
+  clockHolds.set(clock, () => {
+    sync();
+    holds += 1;
+    schedule();
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      sync();
+      holds -= 1;
+      schedule();
+    };
+  });
+  return clock;
+}
+
+/**
+ * The ports with every method call holding `clock` until the call settles (its returned promise, if
+ * any, fulfils or rejects). A call the SDK abandons at its port-call timeout keeps holding the clock until
+ * it settles too.
+ */
+export function heldPorts(ports, clock) {
+  if (!clockHolds.has(clock)) return ports;
+  const wrap = (port) => {
+    if (port === null || port === undefined) return port;
+    const proto = Object.getPrototypeOf(port);
+    if (proto !== Object.prototype && proto !== null) throw new Error('heldPorts: a port must be a plain object');
+    const out = {};
+    for (const [name, member] of Object.entries(port)) {
+      if (typeof member !== 'function') {
+        out[name] = member;
+        continue;
+      }
+      out[name] = (...args) => {
+        const release = holdClock(clock);
+        let value;
+        try {
+          value = member.apply(port, args);
+        } catch (error) {
+          release();
+          throw error;
+        }
+        if (value !== null && typeof value === 'object' && typeof value.then === 'function') {
+          return value.then((settled) => { release(); return settled; }, (error) => { release(); throw error; });
+        }
+        release();
+        return value;
+      };
+    }
+    return out;
+  };
+  return Object.fromEntries(Object.entries(ports).map(([name, port]) => [name, wrap(port)]));
 }
 
 const eventHash = (event) => bytesToHex(sha256(utf8Encode(JSON.stringify([
@@ -200,9 +320,12 @@ export function identityPort(keys) {
   };
 }
 
-/** Wrap the reference ports to count calls: `calls.stage`, `calls.open` (by ciphertext hex) and so on. */
+/**
+ * Wrap the reference ports to count calls: `calls.stage`, `calls.open` (by ciphertext hex, when the call
+ * starts), `calls.opened` (by ciphertext hex, once the call has settled) and so on.
+ */
 export function counted(receiver) {
-  const calls = { stage: [], open: [], commit: [], ack: [], receiptDone: [], commitCursor: [], resolve: [] };
+  const calls = { stage: [], open: [], opened: [], commit: [], ack: [], receiptDone: [], commitCursor: [], resolve: [] };
   const receiveState = { ...receiver.receiveState };
   for (const name of ['stage', 'commit', 'ack', 'receiptDone', 'commitCursor', 'resolve']) {
     const inner = receiver.receiveState[name];
@@ -210,8 +333,10 @@ export function counted(receiver) {
   }
   const session = { ...receiver.session };
   session.openCandidate = (argument) => {
-    calls.open.push(bytesToHex(argument.ciphertext));
-    return receiver.session.openCandidate(argument);
+    const hex = bytesToHex(argument.ciphertext);
+    calls.open.push(hex);
+    const settled = () => { calls.opened.push(hex); };
+    return Promise.resolve(receiver.session.openCandidate(argument)).finally(settled);
   };
   return { receiveState, session, calls };
 }
@@ -221,14 +346,14 @@ export function makeClient({ urls, keys, ports, clock = fastClock(), receiptMode
   const records = new Map();
   const config = {
     interfaceVersion: SDK_INTERFACE_VERSION, relays: urls, clock, delivery: { receiptMode, ...delivery },
-    ports: {
+    ports: heldPorts({
       storage: {
         list: () => [...records.values()], get: (k) => records.get(k) ?? null,
         put: (record) => { records.set(record.deliveryId, record); return true; },
         update: (k, value) => { records.set(k, value); return true; }, remove: (k) => records.delete(k),
       },
       session: ports.session, identity: identityPort(keys), receiveState: ports.receiveState,
-    },
+    }, clock),
   };
   if (receive !== undefined) config.receive = receive;
   const made = createStyxClient(config);
