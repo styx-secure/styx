@@ -80,6 +80,14 @@ export default function ConversationView({
         <img className="avatar" src={identicon(contact.pubkey)} alt="" />
         <div style={{ minWidth: 0 }}>
           <div className="alias">{contact.alias}</div>
+          {/* The name the peer declares for itself is peer-chosen: it is shown
+              apart from the alias chosen on this device, never replaces it and
+              never carries the verified mark (verification binds the key). */}
+          {contact.peerAlias && contact.peerAlias !== contact.alias && (
+            <div className="status" data-testid="peer-declared-name" title="Nome scelto dal contatto, non verificato">
+              si presenta come «{contact.peerAlias}»
+            </div>
+          )}
           {/* No online/offline: the lib has no presence protocol, so any dot would be
               fabricated. The typing indicator is real (typing events) and stays. */}
           {typing && (

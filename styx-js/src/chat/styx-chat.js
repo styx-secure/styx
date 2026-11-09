@@ -450,7 +450,7 @@ export class StyxChat {
   async confirmPairing({ contactPubkey, alias }) {
     const pending = this._pending.get(contactPubkey);
     const finalAlias = sanitizeAlias(alias) || pending?.alias || contactPubkey;
-    await this._roster.add({ pubkey: contactPubkey, alias: finalAlias });
+    await this._roster.add({ pubkey: contactPubkey, alias: finalAlias, peerAlias: pending?.peerAlias });
     this._pending.delete(contactPubkey);
     return { contactPubkey };
   }
@@ -949,11 +949,15 @@ export class StyxChat {
     }
 
     if (inbound.kind === 'intro') {
-      // The peer's display name, arriving encrypted. Untrusted: sanitize it.
+      // The name the peer declares for itself, arriving encrypted. Untrusted:
+      // sanitize it. For an accepted contact it is recorded apart from the alias
+      // the user chose, which it never replaces, and it leaves `verified` as it
+      // is (verification binds the key, not a name). Before acceptance it is
+      // the default the user may accept at confirmPairing, as before.
       const alias = sanitizeAlias(inbound.alias);
       if (alias) {
-        if (await this._roster.get(from)) await this._roster.update(from, { alias });
-        else this._pending.set(from, { pubkey: from, alias });
+        if (await this._roster.get(from)) await this._roster.setPeerAlias(from, alias);
+        else this._pending.set(from, { pubkey: from, alias, peerAlias: alias });
       }
       return true;
     }
