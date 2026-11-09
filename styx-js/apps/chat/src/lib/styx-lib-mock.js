@@ -224,6 +224,8 @@ export class MockStyxChat {
   }
 
   async setTyping(/* pubkey, isTyping */) { return true; } // outgoing typing: no-op in mock
+  get readReceiptsEnabled() { return this._readReceipts !== false; }
+  async setReadReceipts(enabled) { this._readReceipts = !!enabled; }
   async markRead(pubkey /* , messageId */) {
     const c = this._contacts.find((x) => x.pubkey === pubkey);
     if (c && c.unread) { c.unread = 0; this._emit('contacts'); }

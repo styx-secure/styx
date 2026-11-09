@@ -132,14 +132,17 @@ const server = createServer(async (req, res) => {
       ? 'public, max-age=31536000, immutable'
       : 'no-cache';
 
-    const body = await readFile(file);
+    // HEAD needs only the size: stat the file instead of reading it.
+    const head = req.method === 'HEAD';
+    const body = head ? null : await readFile(file);
+    const length = head ? (await stat(file)).size : body.length;
     res.writeHead(200, {
       ...SECURITY_HEADERS,
       'content-type': type,
-      'content-length': body.length,
+      'content-length': length,
       'cache-control': cache,
     });
-    res.end(req.method === 'HEAD' ? undefined : body);
+    res.end(head ? undefined : body);
   } catch (err) {
     res.writeHead(500, SECURITY_HEADERS);
     res.end('Internal error');
@@ -148,7 +151,8 @@ const server = createServer(async (req, res) => {
 });
 
 // Only bind a port when run as a program (`node static-server.mjs`), not when imported
-// for its exports (e.g. buildCsp in tests).
+// for its exports (e.g. buildCsp in tests). Tests may listen on `server` themselves.
+export { server };
 const isMain = process.argv[1]
   && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
