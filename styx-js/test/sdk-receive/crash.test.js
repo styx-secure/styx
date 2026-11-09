@@ -12,7 +12,7 @@ import { WebSocket } from 'ws';
 import { bytesToHex } from '../../src/utils.js';
 import { WRITE_STEPS } from '../../reference/receive-state/index.js';
 import {
-  initWasm, tempRoot, removeTempRoots, party, loaded, invite, relay, makeClient, counted, fastClock, until, text, untext,
+  initWasm, tempRoot, removeTempRoots, party, loaded, invite, relay, makeClient, counted, fastClock, holdClock, until, text, untext, HANG_GUARD_MS,
 } from './helpers.js';
 
 jest.setTimeout(3_600_000);
@@ -57,11 +57,15 @@ async function crashCase(killAt) {
   const bob = party(root, 'bob');
   // Alice: an SDK client over her own reference receiver, in this process.
   const aliceReceiver = alice.instance();
+  const aliceClock = fastClock(5);
   const aliceClient = makeClient({
-    urls: [relayHandle.url], keys: alice.keys, ports: counted(aliceReceiver), clock: fastClock(5), receiptMode: 'RECIPIENT_RECEIPT',
+    urls: [relayHandle.url], keys: alice.keys, ports: counted(aliceReceiver), clock: aliceClock, receiptMode: 'RECIPIENT_RECEIPT',
     delivery: { deadlineMs: 600_000 },
   });
   expect((await aliceClient.start()).ok).toBe(true);
+  // Alice's clock stands still while Bob's processes run: her delivery deadlines never depend on how
+  // long they take on the host.
+  const releaseAlice = holdClock(aliceClock);
   try {
     // Bob's archive: created and joined in this process, then left to the child processes.
     const setup = bob.instance();
@@ -80,7 +84,7 @@ async function crashCase(killAt) {
     const logPath = join(root, 'bob.log');
     const base = {
       directory: bob.directory, atRestKeyHex: bytesToHex(bob.atRestKey), secretHex: bytesToHex(bob.keys.secret),
-      identity: bob.identity, peer: alice.identity, relays: [relayHandle.url], expected, logPath, timeoutMs: 60_000,
+      identity: bob.identity, peer: alice.identity, relays: [relayHandle.url], expected, logPath, timeoutMs: HANG_GUARD_MS,
     };
     const configFor = (phase, kill) => {
       const path = join(root, `${phase}.json`);
@@ -125,7 +129,7 @@ async function crashCase(killAt) {
     }
     // 4. The live MLS state was never ahead of or behind the committed one: Bob's reply (sealed
     //    from the recovered state) opens at Alice, and Alice received Bob's receipts.
-    if (!(await until(() => aliceClient.messages().some((m) => untext(m.payload) === 'reply-reply'), 30_000))) {
+    if (!(await until(() => aliceClient.messages().some((m) => untext(m.payload) === 'reply-reply')))) {
       problems.push('Alice did not receive the reply sealed after recovery');
     }
     // 5. The durable MLS checkpoint is not behind the committed entries: from the final archive, no
@@ -139,12 +143,13 @@ async function crashCase(killAt) {
       if (outcome === 'application') problems.push(`committed ${event.id} still opens from the durable MLS checkpoint`);
     }
     for (const deliveryId of deliveries) {
-      if (!(await until(() => aliceClient.events.some((e) => e.deliveryId === deliveryId && e.state === 'RECIPIENT_RECEIPT_RECEIVED'), 30_000))) {
+      if (!(await until(() => aliceClient.events.some((e) => e.deliveryId === deliveryId && e.state === 'RECIPIENT_RECEIPT_RECEIVED')))) {
         problems.push(`no receipt for ${deliveryId}`);
       }
     }
     return { reached, problems, opens: lines.filter((l) => l.kind === 'open').length };
   } finally {
+    releaseAlice();
     await aliceClient.client.shutdown();
   }
 }

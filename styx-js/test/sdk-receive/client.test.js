@@ -1,16 +1,19 @@
 // M3-RECEIVE-2: SDK clients over the reference receiver, the real MlsEngine
 // and loopback relays started inside the test: invitation, restart of the
 // invitee before any message (criterion 14), H17 with the port (criterion 13)
-// and a transient engine fault (criterion 7).
-import { describe, test, expect, beforeAll, afterAll, afterEach } from '@jest/globals';
+// and a transient engine fault (criterion 7). Every client of a test shares
+// one virtual clock that stands still during each port call (helpers.js
+// `fastClock`), so no outcome depends on how long a real file write takes; a
+// test that must keep the periodic passes out of a window holds that clock.
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from '@jest/globals';
 import { WebSocket } from 'ws';
 import { headerGroupId } from '../../reference/receive-state/index.js';
 import {
-  initWasm, tempRoot, removeTempRoots, party, relay, makeClient, counted, fastClock, until, sleep, text, untext,
+  initWasm, tempRoot, removeTempRoots, party, relay, makeClient, counted, fastClock, holdClock, until, sleep, text, untext, HANG_GUARD_MS,
 } from './helpers.js';
 
 import { jest } from '@jest/globals';
-jest.setTimeout(30_000);
+jest.setTimeout(2 * HANG_GUARD_MS); // a hang guard only (helpers.js)
 const cleanups = [];
 let originalWebSocket;
 beforeAll(async () => {
@@ -22,7 +25,16 @@ afterAll(() => {
   globalThis.WebSocket = originalWebSocket;
   removeTempRoots();
 });
+let testClock;
+beforeEach(() => { testClock = fastClock(); });
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });
+
+/** Hold the test clock from now until `release()` (or the end of the test): no periodic pass runs meanwhile. */
+function holdTestClock() {
+  const release = holdClock(testClock);
+  cleanups.push(release);
+  return release;
+}
 
 async function relays(count, options = []) {
   const out = [];
@@ -35,7 +47,7 @@ async function relays(count, options = []) {
 }
 
 /** One SDK client run of `who` over `rs`; shut down at the end of the test. */
-async function run(who, rs, { hooks, clock = fastClock(), onMessage, receiptMode } = {}) {
+async function run(who, rs, { hooks, clock = testClock, onMessage, receiptMode } = {}) {
   const receiver = who.instance(hooks ? { hooks } : {});
   const ports = counted(receiver);
   const h = makeClient({ urls: rs.map((r) => r.url), keys: who.keys, ports, clock, receiptMode });
@@ -64,7 +76,7 @@ const opensOf = (b, hex) => b.calls.open.filter((x) => x === hex).length;
  * Processing barrier (C-DLV 7.1: inbound frames are processed one at a time in arrival order, and
  * one socket keeps its order): for each relay in turn, only that relay forwards live, Alice sends a
  * sentinel and Bob must deliver it. Every frame that relay sent before the sentinel has then been
- * processed. The periodic catch-up must not run meanwhile (the tests use an unaccelerated clock).
+ * processed. The periodic catch-up must not run meanwhile (the tests hold the clock).
  */
 async function barrier(rs, a, b, bob, label) {
   for (let i = 0; i < rs.length; i += 1) {
@@ -147,21 +159,27 @@ describe('invitation and restart with the reference receiver (criterion 14)', ()
 
 describe('H17 with the port on the real engine (criterion 13) and transient faults (criterion 7)', () => {
   test('(a) a retry, then a copy from a second relay: retried and delivered exactly once, staged once', async () => {
-    const rs = await relays(2, [{}, { delayMs: 300 }]);
+    const rs = await relays(2);
     const { bob, a } = await invited(rs);
     let failures = 1;
     const b = await run(bob, rs, {
-      clock: fastClock(1), // the periodic pass is 10 s away: only the copy can trigger the retry
       hooks: { beforeCandidate: () => { if (failures > 0) { failures -= 1; throw new Error('transient'); } } },
     });
-    await a.client.send({ recipient: bob.identity, payload: text('h17-a') });
-    expect(await until(() => b.messages().length === 1, 15_000)).toBe(true);
+    holdTestClock(); // no periodic pass from here: only the copy can trigger the retry
+    rs[1].state.silent = true; // the second relay keeps its copy until the first attempt has failed
+    const id = await sentId(a, rs, bob, 'h17-a');
+    expect(await until(() => rs[1].events.has(id))).toBe(true);
+    expect(await until(() => b.calls.opened.length === 1)).toBe(true);
+    expect(b.messages()).toHaveLength(0);
+    rs[1].replay(id); // the copy from the second relay, after the failed attempt
+    expect(await until(() => b.messages().length === 1)).toBe(true);
     expect(untext(b.messages()[0].payload)).toBe('h17-a');
     expect(b.calls.stage).toHaveLength(1);
     expect(b.calls.open).toHaveLength(2);
     expect(b.calls.commit).toHaveLength(1);
-    await sleep(200);
-    expect(b.messages()).toHaveLength(1);
+    await barrier(rs, a, b, bob, 'a-done'); // every frame either relay sent so far has been processed
+    expect(b.messages().filter((m) => m.eventId === id)).toHaveLength(1);
+    expect(b.calls.open.filter((x) => x === hexOf(rs, id))).toHaveLength(2);
   });
 
   test('(b) a retry without any copy is retried by the periodic pass after its budget renews', async () => {
@@ -169,13 +187,15 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     const { bob, a } = await invited(rs);
     let failures = 1;
     const b = await run(bob, rs, {
-      clock: fastClock(5),
       hooks: { beforeCandidate: () => { if (failures > 0) { failures -= 1; throw new Error('transient'); } } },
     });
+    const release = holdTestClock(); // no periodic pass until the first attempt has failed
     await a.client.send({ recipient: bob.identity, payload: text('h17-b') });
-    expect(await until(() => b.calls.open.length === 1)).toBe(true);
+    expect(await until(() => b.calls.opened.length === 1)).toBe(true);
+    expect(b.calls.open).toHaveLength(1);
     expect(b.messages()).toHaveLength(0);
-    expect(await until(() => b.messages().length === 1, 15_000)).toBe(true);
+    release(); // the clock runs again: the next periodic pass retries
+    expect(await until(() => b.messages().length === 1)).toBe(true);
     expect(untext(b.messages()[0].payload)).toBe('h17-b');
     expect(b.calls.stage).toHaveLength(1);
     expect(b.calls.open).toHaveLength(2);
@@ -187,7 +207,6 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     // The first message this run opens is the target (nothing else is sent before it); only it fails.
     const target = { hex: null, failing: true };
     const b = await run(bob, rs, {
-      clock: fastClock(1), // catch-up interval: 10 s of host time, far beyond the copies and the barrier
       hooks: {
         beforeCandidate: ({ ciphertext }) => {
           const hex = Buffer.from(ciphertext).toString('hex');
@@ -196,6 +215,7 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
         },
       },
     });
+    const release = holdTestClock(); // no periodic pass during the copies and the barrier
     const id = await sentId(a, rs, bob, 'h17-d');
     expect(await until(() => target.hex !== null)).toBe(true);
     expect(target.hex).toBe(hexOf(rs, id));
@@ -206,14 +226,16 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     expect(opensOf(b, target.hex)).toBe(2); // the first attempt and one retry by the first copy
     expect(b.calls.stage.filter((x) => x.event.eventId === id)).toHaveLength(1);
     target.failing = false;
-    expect(await until(() => b.messages().some((m) => m.eventId === id), 20_000)).toBe(true); // the next periodic pass
+    release(); // the clock runs again: the next periodic pass after the budget renews retries
+    expect(await until(() => b.messages().some((m) => m.eventId === id))).toBe(true);
     expect(opensOf(b, target.hex)).toBe(3);
-  }, 40_000);
+  });
 
   test('(c) a copy of a READY or acknowledged id is dropped without openCandidate', async () => {
     const rs = await relays(2);
     const { bob, a } = await invited(rs);
-    const b = await run(bob, rs, { clock: fastClock(1) });
+    const b = await run(bob, rs);
+    holdTestClock(); // no periodic pass or catch-up during the copies and the barriers
     const id = await sentId(a, rs, bob, 'h17-c');
     const hex = hexOf(rs, id);
     expect(await until(() => b.messages().some((m) => m.eventId === id))).toBe(true);
@@ -237,22 +259,25 @@ describe('H17 with the port on the real engine (criterion 13) and transient faul
     const rs = await relays(1);
     const { bob, a } = await invited(rs);
     let slow = true;
-    const clock = fastClock(5);
     const b = await run(bob, rs, {
-      clock,
+      // An injected delay longer than the port-call timeout, a host timer of 6 000 ms armed before the call.
       hooks: { beforeCandidate: async () => { if (slow) { slow = false; await sleep(6_500); } } },
     });
     await a.client.send({ recipient: bob.identity, payload: text('slow') });
     expect(await until(() => b.calls.open.length === 1)).toBe(true);
     // The SDK abandons the call after the port-call timeout (6 000 ms of host time).
-    const got = await until(() => b.messages().length === 1, 20_000);
+    const got = await until(() => b.messages().length === 1);
     if (!got) console.log('DEBUG', JSON.stringify({ open: b.calls.open.length, stage: b.calls.stage.length, commit: b.calls.commit, events: b.events.map((e) => [e.kind, e.code]), insp: { ...b.receiver.inspect(), engine: null } }));
     expect(got).toBe(true);
     expect(untext(b.messages()[0].payload)).toBe('slow');
+    // Delivered by a second openCandidate: the SDK abandoned the first, slow call at the timeout
+    // (without a timeout the first call would itself have delivered it, with one call only).
+    expect(b.calls.open).toHaveLength(2);
+    expect(await until(() => b.calls.opened.length === 2)).toBe(true);
     expect(b.calls.commit).toHaveLength(1);
     expect(b.calls.stage).toHaveLength(1);
     // The MLS state stayed consistent: the next message opens too.
     await a.client.send({ recipient: bob.identity, payload: text('next') });
     expect(await until(() => b.messages().length === 2)).toBe(true);
-  }, 40_000);
+  });
 });
