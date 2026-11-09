@@ -143,6 +143,9 @@ export function fastClock(factor = 5) {
     const due = [...timers.entries()].filter(([, timer]) => timer.due <= virtual)
       .sort(([, x], [, y]) => x.due - y.due || x.sequence - y.sequence);
     for (const [handle, timer] of due) {
+      // A callback of this round that took a hold (a port call it started) stops the round: the timers
+      // not run yet stay armed and fire after the release.
+      if (holds > 0) break;
       if (!timers.delete(handle)) continue; // cleared by an earlier callback of this round
       try {
         timer.callback();
@@ -186,9 +189,11 @@ export function fastClock(factor = 5) {
 }
 
 /**
- * The ports with every method call holding `clock` until the call settles (its returned promise, if
- * any, fulfils or rejects). A call the SDK abandons at its port-call timeout keeps holding the clock until
- * it settles too.
+ * The ports with every method call holding `clock` until the call settles: a call that throws or returns
+ * a value that is not an object or a function releases at once; otherwise the hold ends when
+ * `Promise.resolve(value)` settles (a non-thenable at once, a thenable when it settles, a value whose
+ * `then` cannot be read when that read fails). The value the port returned is handed to the SDK
+ * unchanged. A call the SDK abandons at its port-call timeout keeps holding the clock until it settles.
  */
 export function heldPorts(ports, clock) {
   if (!clockHolds.has(clock)) return ports;
@@ -211,10 +216,11 @@ export function heldPorts(ports, clock) {
           release();
           throw error;
         }
-        if (value !== null && typeof value === 'object' && typeof value.then === 'function') {
-          return value.then((settled) => { release(); return settled; }, (error) => { release(); throw error; });
+        if (value !== null && (typeof value === 'object' || typeof value === 'function')) {
+          Promise.resolve(value).then(release, release);
+        } else {
+          release();
         }
-        release();
         return value;
       };
     }
