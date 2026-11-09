@@ -20,6 +20,8 @@ describe('peer-declared name in the conversation header', () => {
     expect(header).toMatch(
       /\{contact\.peerAlias && contact\.peerAlias !== contact\.alias && \(\s*<div className="status" data-testid="peer-declared-name"[^>]*>\s*si presenta come «\{contact\.peerAlias\}»\s*<\/div>\s*\)\}/,
     );
+    expect(header).toMatch(/data-testid="peer-declared-name" title="Nome scelto dal contatto, non verificato">/);
+    expect(src).not.toMatch(/dangerouslySetInnerHTML/);
   });
 
   test('the verified mark never refers to the declared name', () => {

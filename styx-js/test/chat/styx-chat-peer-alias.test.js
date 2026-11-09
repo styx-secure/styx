@@ -52,7 +52,7 @@ async function harness({ contact = true } = {}) {
     plaintext = new TextEncoder().encode(JSON.stringify(payload));
     return chat._processApp(PEER, { t: 'app', ct: 'AAAA' });
   };
-  return { chat, roster, backend, deliver };
+  return { chat, roster, backend, engine, deliver };
 }
 
 describe('peer-declared name for an accepted contact (StyxChat._processApp)', () => {
@@ -103,8 +103,14 @@ describe('peer-declared name for an accepted contact (StyxChat._processApp)', ()
     const h = await harness();
     await h.deliver({ t: 'intro', alias: 'Luca' });
     const writes = h.backend.writes.filter((k) => k === INDEX_KEY).length;
+    const changes = [];
+    h.roster.onChanged((list) => changes.push(list));
     await h.deliver({ t: 'intro', alias: 'Luca' });
     expect(h.backend.writes.filter((k) => k === INDEX_KEY).length).toBe(writes);
+    expect(changes).toHaveLength(0);
+    await h.deliver({ t: 'intro', alias: 'Luca R.' });
+    expect(h.backend.writes.filter((k) => k === INDEX_KEY).length).toBe(writes + 1);
+    expect(changes).toHaveLength(1);
   });
 
   test('the declared name is sanitized; one with nothing legible changes nothing', async () => {
@@ -127,6 +133,25 @@ describe('peer-declared name for an accepted contact (StyxChat._processApp)', ()
     await h.deliver({ t: 'intro', alias: 'Alice' });
     await h.chat.confirmPairing({ contactPubkey: PEER, alias: 'Alice (lavoro)' });
     expect(await h.roster.get(PEER)).toMatchObject({ alias: 'Alice (lavoro)', peerAlias: 'Alice' });
+    // An introduction that arrives after acceptance changes only the declared name.
+    await h.deliver({ t: 'intro', alias: 'Mamma' });
+    expect(await h.roster.get(PEER)).toMatchObject({
+      alias: 'Alice (lavoro)', peerAlias: 'Mamma', verified: false, verifiedAt: null,
+    });
+
+    // An introduction racing a new acceptance never replaces the typed alias, and
+    // a contact removed and paired again keeps no stale declared name.
+    h.engine.removeSession = jest.fn();
+    await h.chat.removeContact(PEER);
+    const racing = h.deliver({ t: 'intro', alias: 'Zia' });
+    await h.chat.confirmPairing({ contactPubkey: PEER, alias: 'Alice 2' });
+    await racing;
+    expect((await h.roster.get(PEER)).alias).toBe('Alice 2');
+    await h.chat.removeContact(PEER);
+    await h.chat.confirmPairing({ contactPubkey: PEER, alias: 'Alice 3' });
+    const again = await h.roster.get(PEER);
+    expect(again.alias).toBe('Alice 3');
+    expect(Object.prototype.hasOwnProperty.call(again, 'peerAlias')).toBe(false);
   });
 
   test('a contact accepted without any introduction has no peerAlias', async () => {
@@ -231,7 +256,12 @@ describe('ContactRoster.peerAlias', () => {
     await expect(roster.setPeerAlias('zz', 'X')).rejects.toThrow(/Unknown contact/);
     await expect(roster.setPeerAlias('aa', '')).rejects.toThrow(TypeError);
     await expect(roster.setPeerAlias('aa', { toString: 0 })).rejects.toThrow(TypeError);
+    await expect(roster.setPeerAlias('aa', 'x'.repeat(129))).rejects.toThrow(TypeError);
+    await expect(roster.setPeerAlias('aa', '😀'.repeat(65))).rejects.toThrow(TypeError);
     expect(Object.prototype.hasOwnProperty.call(await roster.get('aa'), 'peerAlias')).toBe(false);
+    // The bound is inclusive: 128 UTF-16 code units, or 64 astral characters.
+    expect((await roster.setPeerAlias('aa', 'x'.repeat(128))).peerAlias).toHaveLength(128);
+    expect((await roster.setPeerAlias('aa', '😀'.repeat(64))).peerAlias).toBe('😀'.repeat(64));
   });
 
   test('re-adding an existing contact keeps its peerAlias unless a new one is given', async () => {
