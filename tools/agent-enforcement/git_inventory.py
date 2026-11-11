@@ -9,7 +9,7 @@ import re
 import subprocess
 from typing import Sequence
 
-from contract import validate_repo_path
+from contract import pattern_matches, validate_repo_path
 from model import (
     BinaryArtifactAuthorization,
     ChangedEntry,
@@ -167,6 +167,80 @@ def verify_repository(
     if status:
         raise RepositoryStateError("repository worktree or index is dirty")
     return status
+
+
+def paths_touched_in_history(repo: Path, old_sha: str, new_sha: str) -> tuple[str, ...]:
+    """Every path touched by any commit in old..new, plus the endpoint diff.
+
+    History is inspected commit by commit with one diff-tree call each (merges
+    against each parent, renames split into delete plus add), so a change that was later reverted or
+    restored still counts. The endpoint diff is added as a belt-and-braces
+    check. Over-reporting is safe: it only forces a contract re-issue.
+    """
+
+    commits = run_git(repo, ["rev-list", f"{old_sha}..{new_sha}"], text=True).stdout.split()
+    queries = [
+        ["diff-tree", "-r", "-m", "--root", "--no-commit-id", "--name-only", "-z", "--no-renames", commit]
+        for commit in commits
+    ]
+    queries.append(["diff-tree", "-r", "--no-commit-id", "--name-only", "-z", "--no-renames", old_sha, new_sha])
+    paths: set[str] = set()
+    for args in queries:
+        # NUL-delimited records carry exact filename bytes: never trim them,
+        # so a control character in a historical name is validated, not hidden.
+        records = run_git(repo, args).stdout.split(b"\0")
+        if records and records[-1] == b"":
+            records.pop()
+        for record in records:
+            if not record:
+                raise GitInputError("empty path record in Git history output")
+            paths.add(record.decode("utf-8", "strict"))
+    return tuple(sorted(paths))
+
+
+def is_first_parent_ancestor(repo: Path, candidate_sha: str, tip_sha: str) -> bool:
+    """True when candidate_sha is on the first-parent chain of tip_sha.
+
+    Graph rule only: it does not prove the commit was ever a published tip
+    of the target branch, nor that it belongs to a given lane.
+    """
+
+    chain = run_git(repo, ["rev-list", "--first-parent", tip_sha], text=True).stdout.split()
+    return candidate_sha in chain
+
+
+def ancestor_base_problem(
+    repo: Path,
+    contract_base: str,
+    evaluated_base: str,
+    allowed_patterns: Sequence[str],
+) -> tuple[str, str | None] | None:
+    """Shared ancestor-base rule. None = accepted; otherwise (message, path).
+
+    Used by the scope guard and by the test planner so that both apply the
+    same rule to a contract base older than the evaluated base.
+    """
+
+    # Callers other than the scope guard (the test planner) do not run the
+    # repository-state checks first; a shallow history cannot prove the rule.
+    if run_git(repo, ["rev-parse", "--is-shallow-repository"], text=True).stdout.strip() != "false":
+        return "shallow repositories cannot prove an ancestor contract base", None
+    if run_git(repo, ["cat-file", "-e", f"{contract_base}^{{commit}}"], check=False).returncode != 0:
+        return "contract Base SHA does not resolve to a local commit object", None
+    if run_git(repo, ["merge-base", "--is-ancestor", contract_base, evaluated_base], check=False).returncode != 0:
+        return "contract Base SHA is neither the evaluated base nor its ancestor", None
+    if not is_first_parent_ancestor(repo, contract_base, evaluated_base):
+        return "contract Base SHA is not on the first-parent chain of the evaluated base", None
+    touched = sorted(
+        {
+            validate_repo_path(path)
+            for path in paths_touched_in_history(repo, contract_base, evaluated_base)
+            if any(pattern_matches(pattern, path) for pattern in allowed_patterns)
+        }
+    )
+    if touched:
+        return "allowed paths were touched after the contract Base SHA; re-issue the contract", touched[0]
+    return None
 
 
 def parse_changed_entries(raw: bytes) -> tuple[ChangedEntry, ...]:

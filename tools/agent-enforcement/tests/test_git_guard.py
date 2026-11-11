@@ -857,5 +857,262 @@ class GitGuardTests(GuardIntegrationCase):
         )
 
 
+
+class AncestorContractBaseTests(GuardIntegrationCase):
+    """Contract base older than the evaluated base (owner proposal, 2026-10)."""
+
+    ALLOWED = "tools/agent-enforcement/example.txt"
+
+    def drifted_history(self, drift_path: str, drift_data: str = "drift\n") -> tuple[str, str, str]:
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        self.repo.write(drift_path, drift_data)
+        evaluated_base = self.repo.commit("unrelated merge on main")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        return contract_base, evaluated_base, self.repo.commit("task change")
+
+    def codes(self, report) -> set[str]:
+        return {item["code"] for item in report["diagnostics"]}
+
+    def test_ancestor_base_with_unrelated_drift_passes(self) -> None:
+        contract_base, base, head = self.drifted_history("README.md")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertEqual(base, report["base_sha"])
+        self.assertEqual([self.ALLOWED], [item["new_path"] for item in report["changed_entries"]])
+        self.assertIn("accepted as first-parent ancestor", result.stderr)
+
+    def test_drift_on_forbidden_path_outside_allowlist_passes(self) -> None:
+        contract_base, base, head = self.drifted_history(".github/workflows/ci.yml")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "PASS", 0)
+
+    def test_drift_on_allowed_path_is_base_error(self) -> None:
+        contract_base, base, head = self.drifted_history("tools/agent-enforcement/other.txt")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+        paths = {item.get("path") for item in report["diagnostics"]}
+        self.assertIn("tools/agent-enforcement/other.txt", paths)
+
+    def test_rename_out_of_allowlist_in_drift_is_base_error(self) -> None:
+        self.repo.write("tools/agent-enforcement/moved.txt", "keep\n" * 20)
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        self.repo.remove("tools/agent-enforcement/moved.txt")
+        self.repo.write("docs/moved.txt", "keep\n" * 20)
+        base = self.repo.commit("rename out of scope")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+
+    def test_non_ancestor_contract_base_is_error(self) -> None:
+        self.repo.write(self.ALLOWED, "base\n")
+        root = self.repo.commit("root")
+        run(["git", "checkout", "-q", "-b", "side"], self.repo.root)
+        self.repo.write("README.md", "side\n")
+        side = self.repo.commit("side commit")
+        run(["git", "checkout", "-q", "-"], self.repo.root)
+        self.repo.write("NOTES.md", "main\n")
+        base = self.repo.commit("main commit")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        self.assertNotEqual(root, side)
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=side))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+
+    def test_descendant_contract_base_is_error(self) -> None:
+        contract_base, base, head = self.drifted_history("README.md")
+        result, report, _ = self.invoke(contract_base, head, body=contract_body(base_sha=base))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+
+    def test_change_later_restored_on_allowed_path_is_base_error(self) -> None:
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        self.repo.write(self.ALLOWED, "someone else\n")
+        self.repo.commit("other change")
+        self.repo.write(self.ALLOWED, "base\n")
+        base = self.repo.commit("restored")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+
+    def test_restored_change_through_merge_is_base_error(self) -> None:
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        run(["git", "checkout", "-q", "-b", "side"], self.repo.root)
+        self.repo.write(self.ALLOWED, "side edit\n")
+        self.repo.commit("side edit")
+        self.repo.write(self.ALLOWED, "base\n")
+        self.repo.commit("side restore")
+        run(["git", "checkout", "-q", "-"], self.repo.root)
+        self.repo.write("README.md", "main\n")
+        self.repo.commit("main moves")
+        run(["git", "merge", "-q", "--no-ff", "-m", "merge side", "side"], self.repo.root)
+        base = run(["git", "rev-parse", "HEAD"], self.repo.root).stdout.strip()
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+
+    def test_side_branch_base_merged_into_target_is_error(self) -> None:
+        self.repo.write(self.ALLOWED, "base\n")
+        self.repo.commit("root")
+        run(["git", "checkout", "-q", "-b", "side"], self.repo.root)
+        self.repo.write("NOTES.md", "side\n")
+        side = self.repo.commit("side commit")
+        run(["git", "checkout", "-q", "-"], self.repo.root)
+        self.repo.write("README.md", "main\n")
+        self.repo.commit("main moves")
+        run(["git", "merge", "-q", "--no-ff", "-m", "merge side", "side"], self.repo.root)
+        base = run(["git", "rev-parse", "HEAD"], self.repo.root).stdout.strip()
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=side))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_CONTRACT_BASE_SHA", self.codes(report))
+
+    def test_former_tip_through_merge_commit_passes(self) -> None:
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        run(["git", "checkout", "-q", "-b", "side"], self.repo.root)
+        self.repo.write("NOTES.md", "side\n")
+        self.repo.commit("side commit")
+        run(["git", "checkout", "-q", "-"], self.repo.root)
+        run(["git", "merge", "-q", "--no-ff", "-m", "merge side", "side"], self.repo.root)
+        base = run(["git", "rev-parse", "HEAD"], self.repo.root).stdout.strip()
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "PASS", 0)
+
+    def test_deleted_allowed_file_in_drift_is_base_error(self) -> None:
+        self.repo.write("tools/agent-enforcement/gone.txt", "x\n")
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        self.repo.remove("tools/agent-enforcement/gone.txt")
+        base = self.repo.commit("delete allowed file")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "ERROR", 3)
+
+    def test_copy_source_changed_in_drift_still_fails(self) -> None:
+        source, destination = "legacy/source.mjs", "new/copied.mjs"
+        data = ("export const immutable = true;\n" * 24).encode()
+        self.repo.write(source, data)
+        contract_base = self.repo.commit("contract base")
+        changed = data + b"// changed after the contract\n"
+        self.repo.write(source, changed)
+        base = self.repo.commit("source changed on main")
+        self.repo.write(destination, changed)
+        head = self.repo.commit("copy")
+        declaration = f"{hashlib.sha256(data).hexdigest()} {len(data)} {source}"
+        body = contract_body(
+            allowed=("new/**",), forbidden=("legacy/**",), copy_sources=(declaration,), base_sha=contract_base
+        )
+        result, report, _ = self.invoke(base, head, body=body)
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_COPY_SOURCE_LENGTH_MISMATCH", {item["code"] for item in report["diagnostics"]})
+
+    def test_binary_authorization_with_ancestor_base_passes(self) -> None:
+        path = "tools/agent-enforcement/blob.wasm"
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        self.repo.write("README.md", "drift\n")
+        base = self.repo.commit("unrelated")
+        data = b"wasm\x00authorized-add"
+        self.repo.write(path, data)
+        head = self.repo.commit("add binary")
+        declaration = f"{hashlib.sha256(data).hexdigest()} {len(data)} {path}"
+        body = contract_body(binary_artifacts=(declaration,), base_sha=contract_base)
+        result, report, _ = self.invoke(base, head, body=body)
+        self.assert_verdict(result, report, "PASS", 0)
+
+    def test_trusted_ci_shape_worktree_at_base_passes(self) -> None:
+        contract_base, base, head = self.drifted_history("README.md")
+        run(["git", "checkout", "-q", base], self.repo.root)
+        self.issue.write_text(contract_body(base_sha=contract_base), encoding="utf-8")
+        result = subprocess.run(
+            ["python3", str(TOOL), "--issue-number", "46", "--issue-body-file", str(self.issue),
+             "--base-sha", base, "--head-sha", head, "--worktree-sha", base,
+             "--execution-id", "trusted-ancestor", "--output", str(self.output), "--repo", str(self.repo.root)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        report = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertEqual(base, report["base_sha"])
+
+    def test_shared_pre_fork_ancestor_is_accepted_graph_rule_only(self) -> None:
+        # Documents the accepted limit: the rule is about the graph, not lanes.
+        self.repo.write(self.ALLOWED, "base\n")
+        shared = self.repo.commit("shared ancestor before a lane fork")
+        run(["git", "checkout", "-q", "-b", "lane"], self.repo.root)
+        self.repo.write("LANE.md", "lane root\n")
+        base = self.repo.commit("lane root")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        head = self.repo.commit("task change")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=shared))
+        self.assert_verdict(result, report, "PASS", 0)
+
+    def test_shallow_repository_with_ancestor_base_is_error(self) -> None:
+        contract_base, base, head = self.drifted_history("README.md")
+        clone_root = self.root / "shallow-ancestor"
+        run(["git", "clone", "-q", "--depth", "1", f"file://{self.repo.root}", str(clone_root)], self.root)
+        self.issue.write_text(contract_body(base_sha=contract_base), encoding="utf-8")
+        result = subprocess.run(
+            ["python3", str(TOOL), "--issue-number", "46", "--issue-body-file", str(self.issue),
+             "--base-sha", base, "--head-sha", head, "--execution-id", "shallow-ancestor",
+             "--output", str(self.output), "--repo", str(clone_root)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        report = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertNotIn("accepted as first-parent ancestor", result.stderr)
+
+    def test_shared_rule_rejects_shallow_history_for_direct_callers(self) -> None:
+        # The planner calls the shared rule directly, without verify_repository.
+        contract_base, base, _head = self.drifted_history("README.md")
+        clone_root = self.root / "shallow-direct"
+        run(["git", "clone", "-q", "--depth", "3", f"file://{self.repo.root}", str(clone_root)], self.root)
+        self.assertIsNone(git_inventory.ancestor_base_problem(self.repo.root, contract_base, base, (self.ALLOWED,)))
+        problem = git_inventory.ancestor_base_problem(clone_root, contract_base, base, (self.ALLOWED,))
+        self.assertIsNotNone(problem)
+        self.assertIn("shallow", problem[0])
+
+    def test_historical_filename_bytes_are_not_trimmed(self) -> None:
+        # A drift path ending in a newline must reach validation unchanged:
+        # trimming it to "item" would hide its match with "item?".
+        contract_base, base, _head = self.drifted_history("tools/agent-enforcement/item\n")
+        patterns = (self.ALLOWED, "tools/agent-enforcement/item?")
+        try:
+            problem = git_inventory.ancestor_base_problem(self.repo.root, contract_base, base, patterns)
+        except Exception as exc:  # fail closed through path validation
+            problem = (type(exc).__name__, None)
+        self.assertIsNotNone(problem)
+        self.assertEqual(
+            ("tools/agent-enforcement/item\n",),
+            tuple(path for path in git_inventory.paths_touched_in_history(self.repo.root, contract_base, base)),
+        )
+
+    def test_forbidden_change_in_pr_still_fails_with_ancestor_base(self) -> None:
+        self.repo.write(self.ALLOWED, "base\n")
+        contract_base = self.repo.commit("contract base")
+        self.repo.write("README.md", "drift\n")
+        base = self.repo.commit("unrelated")
+        self.repo.write(self.ALLOWED, "base\nhead\n")
+        self.repo.write(".github/workflows/evil.yml", "on: push\n")
+        head = self.repo.commit("task change touching forbidden")
+        result, report, _ = self.invoke(base, head, body=contract_body(base_sha=contract_base))
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_PATH_FORBIDDEN", self.codes(report))
+
 if __name__ == "__main__":
     unittest.main()

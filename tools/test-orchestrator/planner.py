@@ -15,7 +15,13 @@ from pathlib import Path
 import subprocess
 from typing import Any, Mapping, Sequence
 
-from contract_inputs import ScopeReport, TaskInputs
+from contract_inputs import (
+    TRUSTED_ENFORCEMENT_DIR,
+    ScopeReport,
+    TaskInputs,
+    load_trusted_ancestor_rule,
+    load_trusted_contract_parser,
+)
 from model import (
     DEFAULT_MAX_OUTPUT_BYTES,
     PLAN_SCHEMA_ID,
@@ -276,8 +282,39 @@ def build_plan(
         raise PlanError(
             f"scope report verdict is {scope_report.verdict}; an executable plan requires PASS"
         )
+    try:
+        # Re-parse the exact Issue bytes with the planner's own parser: the
+        # allowlist and base that drive the base check must not come from code
+        # in the repository being planned.
+        trusted = load_trusted_contract_parser(TRUSTED_ENFORCEMENT_DIR.parent.parent)(inputs.body_bytes)
+    except Exception as exc:
+        raise PlanError(f"trusted contract parser rejected the Issue body: {redact_text(str(exc))}") from exc
+    if trusted.base_sha != inputs.base_sha:
+        # Two base declarations that disagree (Exact base SHA versus the
+        # planner's `main @ sha` line) must never let one of them skip the check.
+        raise PlanError(
+            "declared base drifted from the Issue contract; renewed authorization is required "
+            "(conflicting base declarations)"
+        )
     if base_sha != inputs.base_sha:
-        raise PlanError("declared base drifted from the Issue contract; renewed authorization is required")
+        # The contract may pin an older base (scope tool 0.5.0, "ancestor base").
+        # Re-verify the relationship here with the same trusted rule instead of
+        # trusting the scope report; tests and checks stay bound to base_sha.
+        if scope_report.issue_body_sha256 != inputs.body_sha256:
+            raise PlanError("declared base drifted from the Issue contract; renewed authorization is required")
+        try:
+            problem = load_trusted_ancestor_rule()(
+                repo, trusted.base_sha, base_sha, tuple(trusted.allowed_patterns)
+            )
+        except PlanError:
+            raise
+        except Exception as exc:
+            raise PlanError(f"ancestor-base check failed: {redact_text(str(exc))}") from exc
+        if problem is not None:
+            raise PlanError(
+                "declared base drifted from the Issue contract; renewed authorization is required "
+                f"({problem[0]})"
+            )
     if scope_report.base_sha != base_sha or scope_report.head_sha != head_sha:
         raise PlanError("scope report is bound to a different base/head than this plan")
     if scope_report.issue_body_sha256 not in (None, inputs.body_sha256):

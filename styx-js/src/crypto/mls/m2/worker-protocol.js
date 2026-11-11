@@ -9,11 +9,11 @@
 // no durable write, no cryptographic operation and no transport action.
 //
 // Ratified inputs copied verbatim (see contract Issue #369 "Frozen shared interfaces"):
-//   C-API  docs/architecture/m2/adapter-contract.md  sha256 b77d39fb…05ad9  (#319 5886838783)
+//   C-API  docs/architecture/m2/adapter-contract.md  sha256 0afd0f21…c3871  (#319 6114147886)
 //   C-BIND docs/architecture/m2/binding-v0.md        sha256 2ee9b022…1d4a42 (#323 5890060894)
-//   C-MUT  docs/architecture/m2/mutation-table.md    sha256 6c2c045c…eb3060 (#324 5890545934)
-//   C-REC  docs/architecture/m2/recovery-and-coexistence.md  sha256 ab11271c…7149 (owner act #327 6035801582)
-//   O-SCEN docs/architecture/m2/scenarios/clause-scenarios.md sha256 75d84350…16532 (owner act #327 6035801582)
+//   C-MUT  docs/architecture/m2/mutation-table.md    sha256 f37915f1…3059c (#514 6433983465)
+//   C-REC  docs/architecture/m2/recovery-and-coexistence.md  sha256 be6a96b5…a87a15 (#583 6797802180)
+//   O-SCEN docs/architecture/m2/scenarios/clause-scenarios.md sha256 5d382c67…0d56f5 (#583 6797802180)
 
 import { STATES as ADAPTER_STATES, OPERATIONS as ADAPTER_OPERATIONS } from './state-machine.js';
 
@@ -34,11 +34,11 @@ const RESULT_KINDS = Object.freeze([
 /** The three C-API `/commitOutcomeEnum` members. */
 const COMMIT_OUTCOMES = Object.freeze(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
 
-/** The ten C-API `/successCodeEnum` members, in ratified order. */
+/** The eleven C-API `/successCodeEnum` members, in ratified order. */
 const SUCCESS_CODES = Object.freeze([
   'CREATED', 'RESTORED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED',
   'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED',
-  'DUPLICATE_IGNORED',
+  'DUPLICATE_IGNORED', 'RESTORED_EMPTY_SESSION',
 ]);
 
 /** The 25 C-API `/errorCodeEnum` members, in ratified order. */
@@ -63,9 +63,9 @@ const ERROR_CODES = Object.freeze([
  * `RS_TRI_STATE` decision-row dispositions can physically be held — CAPI-S001
  * `CREATED`, S006 `JOINED`, S009 `APPLICATION_PROTECTED`, S010 `APPLICATION_OPENED`,
  * S014 `SELF_UPDATED`, S016 `PEER_UPDATE_APPLIED`, S017 `CANDIDATE_SELECTED`
- * (C-API `/decisionRows`). `RESTORED` persists nothing and `DUPLICATE_IGNORED` is
- * not a mutation disposition, so both are grammatically permitted here but cannot
- * arise from a real row. Whether the grammar should be narrowed to the seven is an
+ * (C-API `/decisionRows`). `RESTORED` and `RESTORED_EMPTY_SESSION` persist nothing
+ * and `DUPLICATE_IGNORED` is not a mutation disposition, so all three are
+ * grammatically permitted here but cannot arise from a real row. Whether the grammar should be narrowed to the seven is an
  * owner decision, not a silent choice of this module.
  */
 const ORIGINAL_SUCCESS_CODE_SET = new Set(
@@ -108,6 +108,7 @@ const OUTPUT_BY_SUCCESS_CODE = Object.freeze({
   CANDIDATE_SELECTED: Object.freeze(['selectedCandidateRef']),
   RECONCILED_COMMITTED: Object.freeze(['originalSuccessCode', 'originalOutput']),
   DUPLICATE_IGNORED: Object.freeze([]),
+  RESTORED_EMPTY_SESSION: Object.freeze([]),
 });
 
 /** C-API `/response/outputBySuccessCode` members whose wire value is opaque bytes. */
@@ -121,6 +122,7 @@ const ALLOWED_CODES = Object.freeze({
   SUCCESS: Object.freeze([
     'CREATED', 'RESTORED', 'JOINED', 'APPLICATION_PROTECTED', 'APPLICATION_OPENED',
     'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED',
+    'RESTORED_EMPTY_SESSION',
   ]),
   NO_CHANGE: Object.freeze(['DUPLICATE_IGNORED']),
 });
@@ -190,7 +192,7 @@ const CODE_TO_KIND = Object.freeze({
   APPLICATION_PROTECTED: 'SUCCESS', APPLICATION_OPENED: 'SUCCESS',
   SELF_UPDATED: 'SUCCESS', PEER_UPDATE_APPLIED: 'SUCCESS',
   CANDIDATE_SELECTED: 'SUCCESS', RECONCILED_COMMITTED: 'SUCCESS',
-  DUPLICATE_IGNORED: 'NO_CHANGE',
+  DUPLICATE_IGNORED: 'NO_CHANGE', RESTORED_EMPTY_SESSION: 'SUCCESS',
   UNKNOWN_FIELD: 'REJECTED', INVALID_REQUEST: 'REJECTED', UNKNOWN_VALUE: 'REJECTED',
   UNSUPPORTED_API_VERSION: 'REJECTED', UNSUPPORTED_PROFILE: 'REJECTED',
   BINDING_MISMATCH: 'REJECTED', UNSUPPORTED_OPERATION: 'REJECTED',

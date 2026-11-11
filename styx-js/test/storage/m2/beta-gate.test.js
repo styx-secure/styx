@@ -969,22 +969,33 @@ describe('chat hook lifecycle with the gate (test-profile build)', () => {
   test('a logout during an unfinished unlock retires it: no worker, no chat, no lock afterwards', async () => {
     const state = { chatRunning: false, workerRunning: false, subs: 0 };
     let finishOpen;
+    let openEntered;
+    const entered = new Promise((resolve) => { openEntered = resolve; });
     let opens = 0;
-    const h = await harness(baseChat(state), () => {
+    let starts = 0; // chat.start() is the first network touch: a retired attempt must never reach it
+    const Base = baseChat(state);
+    class Chat extends Base { async start() { starts += 1; return super.start(); } }
+    const h = await harness(Chat, () => {
       opens += 1;
       if (opens > 1) return Promise.resolve(null); // the later unlock opens at once
       return new Promise((resolve) => {
         finishOpen = () => { state.workerRunning = true; resolve({ stop: () => { state.workerRunning = false; } }); };
+        openEntered();
       });
     });
     const unlocking = h.hook.unlock({ password: 'p' });
-    await drain();
+    // Wait for the opener call itself, not for a fixed delay: both locks take a timer turn before
+    // the opener runs, and a loaded event loop can let a fixed delay expire first.
+    await entered;
     expect(typeof finishOpen).toBe('function'); // the vault opener is pending
     h.hook.lock();
     finishOpen();
     await expect(unlocking).resolves.toBeUndefined();
     await drain();
+    expect(opens).toBe(1);
+    expect(starts).toBe(0);
     expect(state).toEqual({ chatRunning: false, workerRunning: false, subs: 0, destroyed: true });
+    expect(h.screen().ready).toBe(false);
     expect(h.held.size).toBe(0);
     expect(h.gates[0].token.isHeld()).toBe(false);
     // A later unlock is not refused by this tab's own locks.

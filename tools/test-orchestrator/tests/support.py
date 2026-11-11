@@ -324,6 +324,9 @@ class Fixture:
         *,
         failing_mandatory: bool = False,
         extra_files: dict[str, str] | None = None,
+        ancestor_drift: str | None = None,
+        allowed_drift: bool = False,
+        skip_scope_guard: bool = False,
     ):
         self.root = root
         self.repo = Repo(root / "repo")
@@ -336,6 +339,15 @@ class Fixture:
         self.repo.write("tools/sample/tests/test_sample.py", PASSING_TEST)
         self.repo.write("docs/governance/schemas/sample.schema.json", '{"type": "object"}\n')
         self.base_sha = self.repo.commit("base")
+        self.contract_base_sha = self.base_sha
+        if ancestor_drift is not None:
+            # An unrelated commit lands on the target after the contract base.
+            self.repo.write(ancestor_drift, "drift\n")
+            self.base_sha = self.repo.commit("unrelated drift on target")
+        if allowed_drift:
+            # Someone else touches an allowed path on the target after the contract base.
+            self.repo.write("tools/sample/other_owner.py", "OTHER = 1\n")
+            self.base_sha = self.repo.commit("allowed-path drift on target")
 
         test_body = FAILING_TEST.replace("{token}", FAKE_TOKEN) if failing_mandatory else PASSING_TEST
         self.repo.write("tools/sample/tests/test_sample.py", test_body)
@@ -350,9 +362,23 @@ class Fixture:
 
         self.issue_number = 54
         self.issue_body = self.root / "issue.md"
-        self.issue_body.write_text(contract_body(self.base_sha), encoding="utf-8")
+        self.issue_body.write_text(contract_body(self.contract_base_sha), encoding="utf-8")
         self.scope_report_path = self.evidence / "scope-report.json"
+        if skip_scope_guard:
+            self.forge_pass_report()
+        else:
+            self.run_scope_guard()
+
+    def forge_pass_report(self) -> None:
+        """A PASS report that claims the real Issue body: the planner must not trust it alone."""
+
+        real_body = self.issue_body.read_bytes()
+        self.issue_body.write_text(contract_body(self.base_sha), encoding="utf-8")
         self.run_scope_guard()
+        self.issue_body.write_bytes(real_body)
+        document = json.loads(self.scope_report_path.read_text(encoding="utf-8"))
+        document["issue_body_sha256"] = hashlib.sha256(real_body).hexdigest()
+        self.scope_report_path.write_bytes(model.canonical_json_bytes(document))
 
     def run_scope_guard(self) -> None:
         result = subprocess.run(

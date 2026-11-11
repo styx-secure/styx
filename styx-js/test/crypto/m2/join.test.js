@@ -288,6 +288,12 @@ const request = (operation, input, overrides = {}) => ({
   ...overrides,
 });
 
+// C-API §5 (C-API-RR): an SS/RS operation identity is the unpadded base64url encoding of 32 nonzero bytes, and
+// a held mutation carries the SS/RS 32-byte reconciliation reference its `reconciliationRef` is formed from.
+const identityOf = (byte) => Buffer.from(new Uint8Array(32).fill(byte)).toString('base64url');
+const referenceOf = (byte) => Uint8Array.from({ length: 32 }, (_, index) => (byte + index) & 0xff || 1);
+const refOf = (reference) => `I-SM-HOLD:${Buffer.from(reference).toString('base64url')}`;
+
 const empty = () => createAdapterSnapshot('EMPTY');
 const active = () => createAdapterSnapshot('ACTIVE');
 
@@ -297,13 +303,15 @@ const held = () => transitionAdapter(empty(), {
   applicableErrors: [],
   facts: 'SUPPORTED',
   commitOutcome: 'INDETERMINATE',
-  operationIdentity: 'held-op',
+  operationIdentity: identityOf(0x48),
+  reconciliationReference: referenceOf(0x48),
 }).snapshot;
 
 const createObservation = (onboarding, commitOutcome, stagedOutput) => ({
   onboarding,
   commitOutcome,
-  operationIdentity: commitOutcome === null ? null : 'op-create-1',
+  operationIdentity: commitOutcome === null ? null : identityOf(0x43),
+  reconciliationReference: commitOutcome === null ? null : referenceOf(0x43),
   stagedOutput: stagedOutput === undefined
     ? (commitOutcome === null ? null : { embeddedTreeWelcome: new Uint8Array([0x11, 0x22]) })
     : stagedOutput,
@@ -312,7 +320,8 @@ const createObservation = (onboarding, commitOutcome, stagedOutput) => ({
 const joinObservation = (keyPackage, commitOutcome) => ({
   keyPackage,
   commitOutcome,
-  operationIdentity: commitOutcome === null ? null : 'op-join-1',
+  operationIdentity: commitOutcome === null ? null : identityOf(0x4a),
+  reconciliationReference: commitOutcome === null ? null : referenceOf(0x4a),
 });
 
 const restoreObservation = (members) => ({
@@ -320,6 +329,7 @@ const restoreObservation = (members) => ({
     faults: [], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE',
     ...members,
   },
+  restoreHold: null,
 });
 
 const code = (result) => (result.kind === 'REJECTED' ? result.error.code : result.successCode);
@@ -334,6 +344,9 @@ const VECTOR_STATE = {
   'FMT-KAT-ACTIVE': 'ACTIVE',
   'FMT-KAT-HOLD': 'RECONCILIATION_REQUIRED',
   'FMT-KAT-EMPTY-HOLD': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-NONE-HOLD-S006': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-NONE-HOLD-S016': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-NONE-HISTORICAL-S016': 'ACTIVE',
 };
 
 function observationOfFixture(row) {
@@ -342,7 +355,7 @@ function observationOfFixture(row) {
   const legacy = Object.hasOwn(row, 'legacy') ? row.legacy : false;
   const faults = Object.hasOwn(row, 'faults') ? row.faults : [];
   const selectorState = vector === null ? 'ACTIVE' : VECTOR_STATE[vector];
-  return { restoreObservation: { faults: [...faults], inventory, legacy, vector, selectorState } };
+  return { restoreObservation: { faults: [...faults], inventory, legacy, vector, selectorState }, restoreHold: null };
 }
 
 const positive = (id) => FRESH_WORKER_FIXTURES.positive.find((row) => row.id === id);
@@ -353,7 +366,9 @@ const invokeRestore = (observation, snapshot = empty()) => invokeAdapter({
   observation,
 });
 
-const FAIL_CLOSED_POSITIVES = ['POS-EMPTY', 'POS-HOLD', 'POS-EMPTY-HOLD'];
+// C-API §6 (C-API-RR): with no hold the I-RESTART loader produced (`restoreHold` `null`), the four
+// RESTORED_RECONCILIATION_REQUIRED positives are CAPI-S004; POS-EMPTY is CAPI-S031.
+const FAIL_CLOSED_POSITIVES = ['POS-HOLD', 'POS-EMPTY-HOLD', 'POS-NONE-HOLD-S006', 'POS-NONE-HOLD-S016'];
 
 /**
  * The contract's closed C-REST outcome to C-API disposition table, typed here independently of the
@@ -364,7 +379,7 @@ const EXPECTED_RESTORE_DISPOSITIONS = {
   NO_M2_STATE: 'NO_STORED_SESSION',
   LEGACY_ONLY: 'STORED_SESSION_INCOMPATIBLE',
   RESTORED_ACTIVE: 'RESTORED',
-  RESTORED_EMPTY: 'AUTHENTICATED_STATE_INCONSISTENT',
+  RESTORED_EMPTY: 'RESTORED_EMPTY_SESSION',
   RESTORED_RECONCILIATION_REQUIRED: 'AUTHENTICATED_STATE_INCONSISTENT',
   LOCKED_ELSEWHERE: 'FAIL_CLOSED_INTERNAL',
   INCOMPATIBLE_BUILD: 'STORED_SESSION_INCOMPATIBLE',
@@ -412,7 +427,7 @@ describe('I-JOIN module surface and closure', () => {
       'SUCCESS', 'NO_CHANGE', 'NOT_COMMITTED', 'INDETERMINATE', 'REJECTED',
     ]);
     expect(M2_ADAPTER.ERROR_CODES).toHaveLength(25);
-    expect(M2_ADAPTER.SUCCESS_CODES).toHaveLength(10);
+    expect(M2_ADAPTER.SUCCESS_CODES).toHaveLength(11);
     expect(Object.keys(M2_ADAPTER.PROFILE)).toHaveLength(13);
     expect(M2_ADAPTER.CODE_TO_KIND.CREATED).toBe('SUCCESS');
     expect(M2_ADAPTER.CODE_TO_KIND.FAIL_CLOSED_INTERNAL).toBe('REJECTED');
@@ -494,9 +509,19 @@ describe('I-JOIN exact positive fixtures restore through adapter', () => {
     expect(result.stateAfter).toBe('ACTIVE');
   });
 
-  test('POS-EMPTY, POS-HOLD and POS-EMPTY-HOLD fail closed as AUTHENTICATED_STATE_INCONSISTENT', () => {
+  test('POS-EMPTY restores as CAPI-S031 RESTORED_EMPTY_SESSION with the state EMPTY and no output', () => {
+    const observation = observationOfFixture(positive('POS-EMPTY'));
+    expect(classifyRestore(observation.restoreObservation).result).toBe('RESTORED_EMPTY');
+    const { result, snapshot } = invokeAdapterTransition({ request: request('RESTORE', {}), snapshot: empty(), observation });
+    expect(result).toEqual({
+      api: API, requestId: 'req-1', operation: 'RESTORE', kind: 'SUCCESS', stateBefore: 'EMPTY', stateAfter: 'EMPTY',
+      successCode: 'RESTORED_EMPTY_SESSION',
+    });
+    expect(snapshot).toEqual({ state: 'EMPTY', held: null });
+  });
+
+  test('POS-HOLD and POS-EMPTY-HOLD with no loaded hold fail closed as CAPI-S004 AUTHENTICATED_STATE_INCONSISTENT', () => {
     const expectations = {
-      'POS-EMPTY': 'RESTORED_EMPTY',
       'POS-HOLD': 'RESTORED_RECONCILIATION_REQUIRED',
       'POS-EMPTY-HOLD': 'RESTORED_RECONCILIATION_REQUIRED',
     };
@@ -513,7 +538,7 @@ describe('I-JOIN exact positive fixtures restore through adapter', () => {
     }
   });
 
-  test('the fail-closed positives are exactly the three named cases and no other positive fails closed', () => {
+  test('the fail-closed positives are exactly the four named cases and no other positive fails closed', () => {
     const failedClosed = [];
     for (const row of FRESH_WORKER_FIXTURES.positive) {
       const observation = observationOfFixture(row);
@@ -523,13 +548,13 @@ describe('I-JOIN exact positive fixtures restore through adapter', () => {
       }
     }
     expect(failedClosed.sort()).toEqual([...FAIL_CLOSED_POSITIVES].sort());
-    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(7);
+    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(10);
   });
 });
 
-describe('I-JOIN all seventy negative fixtures', () => {
+describe('I-JOIN all seventy-one negative fixtures', () => {
   test('every negative fixture returns its exact mapped rejected code and never a success', () => {
-    expect(negatives).toHaveLength(70);
+    expect(negatives).toHaveLength(71);
     const seen = new Set();
     for (const row of negatives) {
       const observation = observationOfFixture(row);
@@ -559,6 +584,7 @@ describe('I-JOIN all seventy negative fixtures', () => {
     expect(locked.error.code).toBe('FAIL_CLOSED_INTERNAL');
     const internal = invokeRestore({
       restoreObservation: { faults: ['inventoryAmbiguous'], inventory: 'M2', legacy: false, vector: 'FMT-KAT-ACTIVE', selectorState: 'ACTIVE' },
+      restoreHold: null,
     });
     expect(internal.error.code).toBe('FAIL_CLOSED_INTERNAL');
   });

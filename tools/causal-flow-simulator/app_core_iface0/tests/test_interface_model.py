@@ -69,6 +69,11 @@ from interface_model import (  # noqa: E402
     validate_transcript,
     verify_native_authority,
 )
+from inventory import (  # noqa: E402
+    GOVERNANCE_STATE_PATHS,
+    GOVERNANCE_STATE_POLICY,
+    OWNER_MERGED_GOVERNANCE_STATES,
+)
 
 
 class InterfaceModelTests(unittest.TestCase):
@@ -447,6 +452,158 @@ class InterfaceModelTests(unittest.TestCase):
                 InterfaceModelError, "read-only native dependency drift"
             ):
                 verify_native_authority(checkout, contract)
+
+    def test_governance_documents_bind_exactly_one_owner_merged_state(self) -> None:
+        selection_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = Path(raw) / "checkout"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", str(REPO), str(checkout)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach", selection_head],
+                cwd=checkout,
+                check=True,
+            )
+            contract = checkout / "tools/causal-flow-simulator/app_core_iface0/contract"
+            registry_path = contract / "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
+            registry_bytes = registry_path.read_bytes()
+            agents, plan = (checkout / path for path in GOVERNANCE_STATE_PATHS)
+            originals = {path: path.read_bytes() for path in (agents, plan)}
+            states = {state["stateId"]: state for state in OWNER_MERGED_GOVERNANCE_STATES}
+
+            def blob(state_id: str, path: str) -> bytes:
+                oid = states[state_id]["files"][path]["gitBlobOid"]
+                found = subprocess.run(
+                    ["git", "cat-file", "blob", oid],
+                    cwd=checkout,
+                    capture_output=True,
+                )
+                if found.returncode != 0:
+                    self.skipTest(f"governance blob {oid} of {state_id} is not in this clone")
+                return found.stdout
+
+            def restore() -> None:
+                for path, data in originals.items():
+                    if path.is_symlink() or path.exists():
+                        path.unlink()
+                    path.write_bytes(data)
+                registry_path.write_bytes(registry_bytes)
+
+            verify_native_authority(checkout, contract)
+            for state_id in states:
+                with self.subTest(positive=state_id):
+                    agents.write_bytes(blob(state_id, GOVERNANCE_STATE_PATHS[0]))
+                    plan.write_bytes(blob(state_id, GOVERNANCE_STATE_PATHS[1]))
+                    verify_native_authority(checkout, contract)
+                    restore()
+            for agents_state, plan_state in (
+                ("BASE_E0AF4E1", "MAIN_PHASE_480_490"),
+                ("M3_PROC_497", "MAIN_PHASE_480_490"),
+                ("MAIN_PHASE_480_490", "BASE_E0AF4E1"),
+            ):
+                with self.subTest(mixed=(agents_state, plan_state)):
+                    agents.write_bytes(blob(agents_state, GOVERNANCE_STATE_PATHS[0]))
+                    plan.write_bytes(blob(plan_state, GOVERNANCE_STATE_PATHS[1]))
+                    with self.assertRaisesRegex(
+                        InterfaceModelError, "unratified governance state"
+                    ):
+                        verify_native_authority(checkout, contract)
+                    restore()
+            for target in (agents, plan):
+                for label, edit in (
+                    ("one-byte", lambda data: data + b" "),
+                    ("normative", lambda data: data.replace(b"human", b"agent", 1)),
+                    (
+                        "phase-exit-block",
+                        lambda data: data.replace(
+                            b"<!-- styx-protocol-phase-exit-status:v1:start -->", b"", 1
+                        ),
+                    ),
+                ):
+                    with self.subTest(path=target.name, edit=label):
+                        changed = edit(originals[target])
+                        self.assertNotEqual(changed, originals[target])
+                        target.write_bytes(changed)
+                        with self.assertRaisesRegex(
+                            InterfaceModelError, "unratified governance state"
+                        ):
+                            verify_native_authority(checkout, contract)
+                        restore()
+            with self.subTest(file="missing"):
+                agents.unlink()
+                with self.assertRaisesRegex(
+                    InterfaceModelError, "invalid native dependency: AGENTS.md"
+                ):
+                    verify_native_authority(checkout, contract)
+                restore()
+            with self.subTest(file="symlink"):
+                agents.unlink()
+                agents.symlink_to(Path(raw) / "elsewhere")
+                (Path(raw) / "elsewhere").write_bytes(originals[agents])
+                with self.assertRaisesRegex(
+                    InterfaceModelError, "invalid native dependency: AGENTS.md"
+                ):
+                    verify_native_authority(checkout, contract)
+                restore()
+            with self.subTest(source="working-tree-not-HEAD"):
+                agents.write_bytes(originals[agents] + b" ")
+                subprocess.run(
+                    [
+                        "git", "-c", "user.name=Styx Test",
+                        "-c", "user.email=styx-test.invalid",
+                        "commit", "--quiet", "-m", "negative control", "--", "AGENTS.md",
+                    ],
+                    cwd=checkout,
+                    check=True,
+                )
+                agents.write_bytes(originals[agents])
+                verify_native_authority(checkout, contract)
+                subprocess.run(
+                    ["git", "reset", "--quiet", "--soft", selection_head],
+                    cwd=checkout,
+                    check=True,
+                )
+                restore()
+            for label, expected in (
+                ("fourth-state", "owner-merged governance state registry drift"),
+                ("substituted-state", "owner-merged governance state registry drift"),
+                ("foreign-path", "unauthorized governance-state path"),
+                ("repin", "unexpected governance-state repin"),
+            ):
+                with self.subTest(registry=label):
+                    registry = json.loads(registry_bytes)
+                    if label == "fourth-state":
+                        extra = copy.deepcopy(registry["ownerMergedGovernanceStates"][1])
+                        extra["stateId"] = "EXTRA"
+                        registry["ownerMergedGovernanceStates"].append(extra)
+                    elif label == "substituted-state":
+                        registry["ownerMergedGovernanceStates"][2]["files"]["AGENTS.md"][
+                            "byteSize"
+                        ] += 1
+                    elif label == "foreign-path":
+                        row = next(
+                            row for row in registry["dependencies"]
+                            if row["mutationPolicy"] == "READ_ONLY_BYTE_IDENTICAL"
+                        )
+                        row["mutationPolicy"] = GOVERNANCE_STATE_POLICY
+                    else:
+                        row = next(
+                            row for row in registry["dependencies"]
+                            if row["path"] == "AGENTS.md"
+                        )
+                        row["repin"] = {"reason": "negative control only"}
+                    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+                    with self.assertRaisesRegex(InterfaceModelError, expected):
+                        verify_native_authority(checkout, contract)
+                    restore()
 
     def test_describe_profile_has_only_supported_or_unsupported_result(self) -> None:
         supported = describe_profile(self.authority, dict(SUPPORTED_PROFILE))

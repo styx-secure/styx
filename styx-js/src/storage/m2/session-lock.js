@@ -18,12 +18,12 @@
 //
 // Ratified inputs copied verbatim (see the contract Issue this card published; SHAs are
 // re-checked against the ratified bytes before publication, never re-derived here):
-//   C-API   docs/architecture/m2/adapter-contract.md  sha256 b77d39fb…05ad9 (#319 5886838783)
+//   C-API   docs/architecture/m2/adapter-contract.md  sha256 0afd0f21…c3871 (#319 6114147886)
 //           /rules/singleWriter — the second-active-context rule transcribed above.
-//   C-MUT   docs/architecture/m2/mutation-table.md    sha256 6c2c045c…eb3060 (#324 5890545934)
+//   C-MUT   docs/architecture/m2/mutation-table.md    sha256 f37915f1…3059c (#514 6433983465)
 //           "The D13/C-API `singleWriter` precondition is one worker and one writer per
 //           browser profile, enforced outside the adapter by I-LOCK."
-//   C-REC   docs/architecture/m2/recovery-and-coexistence.md  sha256 ab11271c…7149 (owner act #327 6035801582)
+//   C-REC   docs/architecture/m2/recovery-and-coexistence.md  sha256 be6a96b5…a87a15 (#583 6797802180)
 //           §8, /precedence, /faultPhaseOrder, /faultPrecedence, /restoreResults,
 //           /dispositionEnum, /fixtures (NEG-NO-LOCK), /marker/transitions.
 //   C-REST  docs/architecture/m2/restore-compatibility.md (reached through O-SCEN)
@@ -31,7 +31,7 @@
 //           legacy bytes before success."  /prose/19 — "Before reading any stored M2 or
 //           legacy byte, the one-writer Web Lock MUST be held and one complete
 //           `buildMatrix` row MUST match."
-//   O-SCEN  docs/architecture/m2/scenarios/clause-scenarios.md sha256 75d84350…16532 (owner act #327 6035801582)
+//   O-SCEN  docs/architecture/m2/scenarios/clause-scenarios.md sha256 5d382c67…0d56f5 (#583 6797802180)
 //           the blind scenario set whose lock clauses are transcribed in LOCK_SCENARIOS.
 //   SCOPE-M2 (owner proposal ratified into D13/D7): "one worker and one writer per
 //           browser profile under Web Lock; second tab is read-disabled/session-active

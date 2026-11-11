@@ -12,7 +12,7 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "e0af4e1e2173deb2481eabdb24d8622282b33455"
-MANIFEST_SHA256 = "7765f3a861ddf8e1fdcb6dfb9a21768fee13e63f8f60f64f93fa222ebdd1726e"
+MANIFEST_SHA256 = "d1712097280808205c751d4d2df84941ba6da87c27cb1c4d90ab77c0eed2dd07"
 STRUCTURAL_COUNT = 1553
 SEMANTIC_COUNT = 2356
 TOTAL_COUNT = 3909
@@ -52,8 +52,163 @@ ACV049_REQUEST_CASE_IDS = tuple(
 )
 
 
+GOVERNANCE_STATE_POLICY = "OWNER_MERGED_GOVERNANCE_EXACT_STATE"
+GOVERNANCE_STATE_PATHS = (
+    "AGENTS.md",
+    "docs/protocol/protocol-hardening-plan.md",
+)
+# Exact joint states of the two governance documents.  Each state is a pair of
+# literal Git blob identities that reached its branch through an owner-merged
+# pull request; any other pair, including a mix of two listed states, is
+# rejected.  Recognizing a state only lifts the Base byte-identity obligation
+# for these two documents; it grants no operational authority.
+OWNER_MERGED_GOVERNANCE_STATES = (
+    {
+        "stateId": "BASE_E0AF4E1",
+        "provenance": (
+            "Base e0af4e1e2173deb2481eabdb24d8622282b33455 of Issue #295"
+        ),
+        "files": {
+            "AGENTS.md": {
+                "gitBlobOid": "328914da1864b7ad40fe746631190c9448f6d7be",
+                "sha256": "ae4d3ca7dd7fc2123443c163462f16afddc31183a4287d9039ee66a8a9009078",
+                "byteSize": 8689,
+            },
+            "docs/protocol/protocol-hardening-plan.md": {
+                "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+                "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+                "byteSize": 61955,
+            },
+        },
+    },
+    {
+        "stateId": "M3_PROC_497",
+        "provenance": (
+            "m3/integration pull request #497 (contract #496), merged by the "
+            "owner as 3410059d13210fabfaf58f884ae6604318562644"
+        ),
+        "files": {
+            "AGENTS.md": {
+                "gitBlobOid": "20f7135b4acfde9447fdf1a266fecf2b791e7cc4",
+                "sha256": "476808a9fa1bd60b7cbcc91db90a32647eb216eeef1dce36fce426c7055de64e",
+                "byteSize": 8868,
+            },
+            "docs/protocol/protocol-hardening-plan.md": {
+                "gitBlobOid": "fc45fe12cfb6c377346ff6283558505f8d055582",
+                "sha256": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+                "byteSize": 61955,
+            },
+        },
+    },
+    {
+        "stateId": "MAIN_PHASE_480_490",
+        "provenance": (
+            "main pull requests #480 (merged by the owner as "
+            "932841b75a24ae2ccc533d466a41795484c1ec2f) and #490 (contract "
+            "#489, merged by the owner as "
+            "4e23c3aa29ceb13eb6286c296556b8b1007eb0b8)"
+        ),
+        "files": {
+            "AGENTS.md": {
+                "gitBlobOid": "d04e0133788a8ee91b60d491774e06cff53daea7",
+                "sha256": "6081e568c9bff5b24fb893b4c8afc702a4eb6be87354db67d4d1c8ecd95aecbb",
+                "byteSize": 10226,
+            },
+            "docs/protocol/protocol-hardening-plan.md": {
+                "gitBlobOid": "529ead4c0e42ffc70e51c502f0b5a15e49c6ae50",
+                "sha256": "0c12117d4c8651b01f25d9f29a385b8a051478bbe29de7b246e233db2f6ed79d",
+                "byteSize": 62782,
+            },
+        },
+    },
+)
+
+
+def governance_state_by_identity(
+    observed: dict[str, tuple[str, int]], field: str
+) -> str | None:
+    """Return the one exact state matching ``observed`` or ``None``.
+
+    ``observed`` maps each governance path to ``(identity, byte_size)`` where
+    the identity is the SHA-256 (``field="sha256"``) or the Git blob object id
+    (``field="gitBlobOid"``).  Only an exact match of both documents counts.
+    """
+
+    if field not in {"sha256", "gitBlobOid"}:
+        return None
+    if set(observed) != set(GOVERNANCE_STATE_PATHS):
+        return None
+    matches = [
+        state["stateId"]
+        for state in OWNER_MERGED_GOVERNANCE_STATES
+        if all(
+            observed[path]
+            == (state["files"][path][field], state["files"][path]["byteSize"])
+            for path in GOVERNANCE_STATE_PATHS
+        )
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
 class InventoryError(ValueError):
     """The ratified contract or derived inventory is inconsistent."""
+
+
+def verify_governance_state_relation(
+    registry: Any,
+    dependencies: Iterable[Any],
+    governance_bytes: Iterable[tuple[str, bytes]],
+) -> str:
+    """Check the governance registry and the observed bytes of both documents.
+
+    ``dependencies`` are rows with ``path``, ``mutation_policy``,
+    ``git_blob_oid``, ``sha256`` and ``byte_size`` attributes.  Returns the one
+    matching state or raises ``InventoryError``.
+    """
+
+    expected_states = [
+        {
+            "stateId": state["stateId"],
+            "provenance": state["provenance"],
+            "files": {
+                path: dict(state["files"][path]) for path in GOVERNANCE_STATE_PATHS
+            },
+        }
+        for state in OWNER_MERGED_GOVERNANCE_STATES
+    ]
+    if (
+        not isinstance(registry, dict)
+        or registry.get("ownerMergedGovernanceStatePaths") != list(GOVERNANCE_STATE_PATHS)
+        or registry.get("ownerMergedGovernanceStates") != expected_states
+    ):
+        raise InventoryError("owner-merged governance state registry drift")
+    governance_rows = {
+        row.path: row
+        for row in dependencies
+        if row.mutation_policy == GOVERNANCE_STATE_POLICY
+    }
+    observed: dict[str, tuple[str, int]] = {}
+    for path, data in governance_bytes:
+        if path in observed:
+            raise InventoryError("owner-merged governance state path drift")
+        observed[path] = (sha256_bytes(data), len(data))
+    if (
+        set(governance_rows) != set(GOVERNANCE_STATE_PATHS)
+        or set(observed) != set(GOVERNANCE_STATE_PATHS)
+    ):
+        raise InventoryError("owner-merged governance state path drift")
+    base_files = OWNER_MERGED_GOVERNANCE_STATES[0]["files"]
+    for path, row in governance_rows.items():
+        if base_files[path] != {
+            "gitBlobOid": row.git_blob_oid,
+            "sha256": row.sha256,
+            "byteSize": row.byte_size,
+        }:
+            raise InventoryError(f"Base governance state drift: {path}")
+    state = governance_state_by_identity(observed, "sha256")
+    if state is None:
+        raise InventoryError("unratified governance state")
+    return state
 
 
 @dataclass(frozen=True)

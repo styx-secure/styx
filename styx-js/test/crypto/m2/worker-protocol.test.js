@@ -149,12 +149,12 @@ describe('closed sets and merged-table binding', () => {
 
   test('the copied constants keep the ratified sizes', () => {
     expect(Object.keys(M2_WORKER.PROFILE)).toHaveLength(13);
-    expect(M2_WORKER.SUCCESS_CODES).toHaveLength(10);
+    expect(M2_WORKER.SUCCESS_CODES).toHaveLength(11);
     expect(M2_WORKER.ERROR_CODES).toHaveLength(25);
     expect(M2_WORKER.DETAIL_TAGS).toHaveLength(10);
-    expect(Object.keys(M2_WORKER.CODE_TO_KIND)).toHaveLength(37);
+    expect(Object.keys(M2_WORKER.CODE_TO_KIND)).toHaveLength(38);
     expect(Object.keys(INPUT_FOR)).toEqual(M2_WORKER.OPERATIONS);
-    expect(Object.keys(M2_WORKER.OUTPUT_BY_SUCCESS_CODE)).toHaveLength(10);
+    expect(Object.keys(M2_WORKER.OUTPUT_BY_SUCCESS_CODE)).toHaveLength(11);
     expect(M2_WORKER.COMMIT_OUTCOMES).toEqual(['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']);
   });
 
@@ -241,6 +241,7 @@ describe('positive grammar: every result kind', () => {
         originalOutput: { applicationBytes: bytes(5) },
       },
       DUPLICATE_IGNORED: undefined,
+      RESTORED_EMPTY_SESSION: {},
     };
     for (const code of M2_WORKER.SUCCESS_CODES) {
       const output = outputs[code];
@@ -578,6 +579,7 @@ describe('negative grammar: closed result fields', () => {
       PEER_UPDATE_APPLIED: {},
       CANDIDATE_SELECTED: { selectedCandidateRef: 'candidate:1' },
       DUPLICATE_IGNORED: {},
+      RESTORED_EMPTY_SESSION: {},
     };
     const held = M2_WORKER.SUCCESS_CODES.filter((code) => code !== 'RECONCILED_COMMITTED');
     expect(held).toHaveLength(M2_WORKER.SUCCESS_CODES.length - 1);

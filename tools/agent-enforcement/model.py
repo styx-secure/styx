@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 
 SCHEMA_ID = "styx.task-scope-report/v1"
-TOOL_VERSION = "0.4.0"
+TOOL_VERSION = "0.5.0"
 CONTRACT_MARKER = "<!-- styx-task-contract:v1 -->"
 
 EXIT_PASS = 0
