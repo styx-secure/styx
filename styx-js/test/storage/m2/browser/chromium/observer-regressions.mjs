@@ -23,6 +23,39 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const jsRoot = path.resolve(here, '../../../../..');
 const suite = path.join(here, 'suite');
 const { chromium } = createRequire(path.join(jsRoot, 'package.json'))('playwright-core');
+
+// ---- @noble/hashes, served read-only (owner amendment 3 of #493) -------------------------------------------
+// The integrated driver imports `@noble/hashes/sha256` by bare specifier; a browser resolves only URLs. The
+// suite serves the package installed from the lockfile (version checked, nothing installed or changed) under
+// /node_modules/@noble/hashes/ and rewrites each bare `@noble/hashes/<subpath>` specifier of a served module to
+// the URL of that subpath's `import` export. Any other bare specifier is left as is and fails in the browser.
+const NOBLE_DIR = path.join(jsRoot, 'node_modules', '@noble', 'hashes');
+const NOBLE_PKG = JSON.parse(fs.readFileSync(path.join(NOBLE_DIR, 'package.json'), 'utf8'));
+const NOBLE_LOCK = JSON.parse(fs.readFileSync(path.join(jsRoot, 'package-lock.json'), 'utf8')).packages['node_modules/@noble/hashes'];
+if (NOBLE_PKG.name !== '@noble/hashes' || NOBLE_LOCK === undefined || NOBLE_PKG.version !== NOBLE_LOCK.version) {
+  throw new Error(`@noble/hashes ${NOBLE_PKG.version} installed is not the lockfile's ${NOBLE_LOCK?.version}`);
+}
+const NOBLE_URL = '/node_modules/@noble/hashes/';
+/** The package-relative file of `@noble/hashes/<sub>` for a browser module import (conditions `import`, `default`). */
+function nobleExport(sub) {
+  const pick = (e) => {
+    if (typeof e === 'string') return e;
+    if (e === null || typeof e !== 'object') return null;
+    for (const [k, v] of Object.entries(e)) if (k === 'import' || k === 'default') { const r = pick(v); if (r !== null) return r; }
+    return null;
+  };
+  const target = Object.hasOwn(NOBLE_PKG.exports, `./${sub}`) ? pick(NOBLE_PKG.exports[`./${sub}`]) : null;
+  if (target === null || !/^\.\/[A-Za-z0-9_./-]+\.js$/.test(target) || target.includes('..')) throw new Error(`@noble/hashes/${sub}: no browser module export`);
+  return target.slice(2);
+}
+const NOBLE_SPECIFIER = /(\b(?:from|import)\s*)(['"])@noble\/hashes\/([A-Za-z0-9_-]+)\2/g;
+const rewriteNoble = (source) => source.replace(NOBLE_SPECIFIER, (m, kw, q, sub) => `${kw}${q}${NOBLE_URL}${nobleExport(sub)}${q}`);
+/** The package file a /node_modules/@noble/hashes/ URL names, or null. */
+function nobleFile(pathname) {
+  if (!pathname.startsWith(NOBLE_URL) || !pathname.endsWith('.js')) return null;
+  const file = path.resolve(NOBLE_DIR, pathname.slice(NOBLE_URL.length));
+  return file.startsWith(NOBLE_DIR + path.sep) && fs.existsSync(file) ? file : null;
+}
 const out = path.resolve(process.env.BCHR_OUT ?? 'observer-regressions-out');
 fs.mkdirSync(out, { recursive: true });
 const ONLY = process.env.BCHR_ONLY ? new Set(process.env.BCHR_ONLY.split(',')) : null;
@@ -330,7 +363,7 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === '/hook') return hookHandler(u, res);
   const coi = u.searchParams.get('coi') === '1';
-  if (coi || u.pathname.startsWith('/suite/') || u.pathname.startsWith('/src/')) {
+  if (coi || u.pathname.startsWith('/suite/') || u.pathname.startsWith('/src/') || u.pathname.startsWith(NOBLE_URL)) {
     res.setHeader('cross-origin-embedder-policy', 'require-corp'); res.setHeader('cross-origin-resource-policy', 'same-origin');
   }
   if (u.pathname === '/' || u.pathname === '/frame') {
@@ -340,11 +373,14 @@ const server = http.createServer((req, res) => {
     fs.appendFileSync(SERVED, `${JSON.stringify({ context, variant: mode, url: req.url, file: null, transformation: null, sha256: sha(body) })}\n`);
     return res.end(body);
   }
+  const noble = nobleFile(u.pathname);
   const root = u.pathname.startsWith('/src/') ? path.join(jsRoot, 'src') : suite;
-  const file = path.resolve(root, u.pathname.startsWith('/src/') ? u.pathname.slice(5) : u.pathname.slice(7));
-  if (!(u.pathname.startsWith('/src/') || u.pathname.startsWith('/suite/')) || !file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; return res.end(); }
+  const file = noble ?? path.resolve(root, u.pathname.startsWith('/src/') ? u.pathname.slice(5) : u.pathname.slice(7));
+  if (noble === null && (!(u.pathname.startsWith('/src/') || u.pathname.startsWith('/suite/')) || !file.startsWith(root + path.sep) || !fs.existsSync(file))) { res.statusCode = 404; return res.end(); }
   let source = fs.readFileSync(file, 'utf8'); let transformation = null;
   if (file === path.join(suite, 'reference-port.mjs') && mode !== 'control') { source = transformReference(source, mode); transformation = `transformReference:${mode}`; }
+  const rewritten = rewriteNoble(source);
+  if (rewritten !== source) { source = rewritten; transformation = transformation === null ? 'specifier:@noble/hashes' : `${transformation}+specifier:@noble/hashes`; }
   fs.appendFileSync(SERVED, `${JSON.stringify({ context, variant: mode, url: req.url, file: path.relative(jsRoot, file), original: sha(fs.readFileSync(file)), transformation, sha256: sha(source) })}\n`);
   res.setHeader('content-type', 'text/javascript'); res.setHeader('cache-control', 'no-store'); res.end(source);
 });

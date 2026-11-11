@@ -2,7 +2,7 @@
 //   node test/storage/m2/browser/chromium/run.mjs [browser=chromium] [factory=reference]
 // Environment: BCHR_OUT (output directory, default ./bchr-out), BCHR_EXE (browser executable, optional),
 // BCHR_SMOKE=1 (first row only; the verdict is then INCOMPLETE, never PASS).
-// It serves styx-js/src and the suite, drives the browser with a persistent profile (IndexedDB survives
+// It serves styx-js/src, the suite and the installed @noble/hashes package (read-only), drives the browser with a persistent profile (IndexedDB survives
 // a process kill), kills at every hook point the harness instrumentation reports, relaunches and reads
 // back. It never branches on the factory: the parameter is forwarded unchanged to the worker URL.
 import http from 'node:http';
@@ -24,6 +24,39 @@ const SRC = path.join(STYX_JS, 'src');
 const SUITE = path.join(HERE, 'suite');
 const require = createRequire(path.join(STYX_JS, 'package.json'));
 const playwright = require('playwright-core');
+
+// ---- @noble/hashes, served read-only (owner amendment 3 of #493) -------------------------------------------
+// The integrated driver imports `@noble/hashes/sha256` by bare specifier; a browser resolves only URLs. The
+// suite serves the package installed from the lockfile (version checked, nothing installed or changed) under
+// /node_modules/@noble/hashes/ and rewrites each bare `@noble/hashes/<subpath>` specifier of a served module to
+// the URL of that subpath's `import` export. Any other bare specifier is left as is and fails in the browser.
+const NOBLE_DIR = path.join(STYX_JS, 'node_modules', '@noble', 'hashes');
+const NOBLE_PKG = JSON.parse(fs.readFileSync(path.join(NOBLE_DIR, 'package.json'), 'utf8'));
+const NOBLE_LOCK = JSON.parse(fs.readFileSync(path.join(STYX_JS, 'package-lock.json'), 'utf8')).packages['node_modules/@noble/hashes'];
+if (NOBLE_PKG.name !== '@noble/hashes' || NOBLE_LOCK === undefined || NOBLE_PKG.version !== NOBLE_LOCK.version) {
+  throw new Error(`@noble/hashes ${NOBLE_PKG.version} installed is not the lockfile's ${NOBLE_LOCK?.version}`);
+}
+const NOBLE_URL = '/node_modules/@noble/hashes/';
+/** The package-relative file of `@noble/hashes/<sub>` for a browser module import (conditions `import`, `default`). */
+function nobleExport(sub) {
+  const pick = (e) => {
+    if (typeof e === 'string') return e;
+    if (e === null || typeof e !== 'object') return null;
+    for (const [k, v] of Object.entries(e)) if (k === 'import' || k === 'default') { const r = pick(v); if (r !== null) return r; }
+    return null;
+  };
+  const target = Object.hasOwn(NOBLE_PKG.exports, `./${sub}`) ? pick(NOBLE_PKG.exports[`./${sub}`]) : null;
+  if (target === null || !/^\.\/[A-Za-z0-9_./-]+\.js$/.test(target) || target.includes('..')) throw new Error(`@noble/hashes/${sub}: no browser module export`);
+  return target.slice(2);
+}
+const NOBLE_SPECIFIER = /(\b(?:from|import)\s*)(['"])@noble\/hashes\/([A-Za-z0-9_-]+)\2/g;
+const rewriteNoble = (source) => source.replace(NOBLE_SPECIFIER, (m, kw, q, sub) => `${kw}${q}${NOBLE_URL}${nobleExport(sub)}${q}`);
+/** The package file a /node_modules/@noble/hashes/ URL names, or null. */
+function nobleFile(pathname) {
+  if (!pathname.startsWith(NOBLE_URL) || !pathname.endsWith('.js')) return null;
+  const file = path.resolve(NOBLE_DIR, pathname.slice(NOBLE_URL.length));
+  return file.startsWith(NOBLE_DIR + path.sep) && fs.existsSync(file) ? file : null;
+}
 
 const [browserName = 'chromium', factory = 'reference'] = process.argv.slice(2);
 const engine = { chromium: playwright.chromium, firefox: playwright.firefox }[browserName];
@@ -67,13 +100,14 @@ const server = http.createServer((req, res) => {
     // request is reflected into the HTML.
     return res.end('<!doctype html><meta charset="utf-8"><script type="module" src="/suite/page.mjs"></script>');
   }
+  const noble = nobleFile(url.pathname);
   const [root, rel] = url.pathname.startsWith('/src/') ? [SRC, url.pathname.slice(5)]
     : (url.pathname.startsWith('/suite/') ? [SUITE, url.pathname.slice(7)] : [null, null]);
-  const file = root === null ? null : path.resolve(root, rel);
-  if (file === null || !file.startsWith(root + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; return res.end(); }
+  const file = noble ?? (root === null ? null : path.resolve(root, rel));
+  if (file === null || (noble === null && !file.startsWith(root + path.sep)) || !fs.existsSync(file)) { res.statusCode = 404; return res.end(); }
   res.setHeader('content-type', 'text/javascript');
   res.setHeader('cache-control', 'no-store');
-  return res.end(fs.readFileSync(file));
+  return res.end(rewriteNoble(fs.readFileSync(file, 'utf8')));
 });
 // CP6: a request the HTTP server rejects before any handler runs (e.g. a hook beyond the header size limit)
 // is a harness error of the run, never silent.

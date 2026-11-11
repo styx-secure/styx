@@ -29,6 +29,39 @@ const out = path.resolve(process.env.BCHR_OUT ?? 'concrete-path-out'); fs.mkdirS
 const requireJs = createRequire(path.join(root, 'package.json'));
 const { chromium } = requireJs('playwright-core');
 const acorn = requireJs('acorn');
+
+// ---- @noble/hashes, served read-only (owner amendment 3 of #493) -------------------------------------------
+// The integrated driver imports `@noble/hashes/sha256` by bare specifier; a browser resolves only URLs. The
+// suite serves the package installed from the lockfile (version checked, nothing installed or changed) under
+// /node_modules/@noble/hashes/ and rewrites each bare `@noble/hashes/<subpath>` specifier of a served module to
+// the URL of that subpath's `import` export. Any other bare specifier is left as is and fails in the browser.
+const NOBLE_DIR = path.join(root, 'node_modules', '@noble', 'hashes');
+const NOBLE_PKG = JSON.parse(fs.readFileSync(path.join(NOBLE_DIR, 'package.json'), 'utf8'));
+const NOBLE_LOCK = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8')).packages['node_modules/@noble/hashes'];
+if (NOBLE_PKG.name !== '@noble/hashes' || NOBLE_LOCK === undefined || NOBLE_PKG.version !== NOBLE_LOCK.version) {
+  throw new Error(`@noble/hashes ${NOBLE_PKG.version} installed is not the lockfile's ${NOBLE_LOCK?.version}`);
+}
+const NOBLE_URL = '/node_modules/@noble/hashes/';
+/** The package-relative file of `@noble/hashes/<sub>` for a browser module import (conditions `import`, `default`). */
+function nobleExport(sub) {
+  const pick = (e) => {
+    if (typeof e === 'string') return e;
+    if (e === null || typeof e !== 'object') return null;
+    for (const [k, v] of Object.entries(e)) if (k === 'import' || k === 'default') { const r = pick(v); if (r !== null) return r; }
+    return null;
+  };
+  const target = Object.hasOwn(NOBLE_PKG.exports, `./${sub}`) ? pick(NOBLE_PKG.exports[`./${sub}`]) : null;
+  if (target === null || !/^\.\/[A-Za-z0-9_./-]+\.js$/.test(target) || target.includes('..')) throw new Error(`@noble/hashes/${sub}: no browser module export`);
+  return target.slice(2);
+}
+const NOBLE_SPECIFIER = /(\b(?:from|import)\s*)(['"])@noble\/hashes\/([A-Za-z0-9_-]+)\2/g;
+const rewriteNoble = (source) => source.replace(NOBLE_SPECIFIER, (m, kw, q, sub) => `${kw}${q}${NOBLE_URL}${nobleExport(sub)}${q}`);
+/** The package file a /node_modules/@noble/hashes/ URL names, or null. */
+function nobleFile(pathname) {
+  if (!pathname.startsWith(NOBLE_URL) || !pathname.endsWith('.js')) return null;
+  const file = path.resolve(NOBLE_DIR, pathname.slice(NOBLE_URL.length));
+  return file.startsWith(NOBLE_DIR + path.sep) && fs.existsSync(file) ? file : null;
+}
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const rel = (f) => path.relative(root, f);
 const REF = path.join(suite, 'reference-port.mjs');
@@ -40,17 +73,31 @@ const failures = [];
 const check = (ok, what) => { if (!ok) failures.push(what); return ok; };
 
 // ============================================ A. static inventory ============================================
-/** Static import closure of a module (relative and /src/ specifiers). */
+/** Files of the installed @noble/hashes package reached by a static import (owner amendment 3 of #493). */
+const packageFiles = new Set();
+/** The package file of a bare `@noble/hashes/<sub>` specifier, or null for any other specifier. */
+function nobleSpecifierFile(s) {
+  const m = /^@noble\/hashes\/([A-Za-z0-9_-]+)$/.exec(s);
+  return m === null ? null : path.join(NOBLE_DIR, nobleExport(m[1]));
+}
+/** Static import closure of a module (relative and /src/ specifiers; `@noble/hashes/<sub>` into the package). */
 function closureOf(entry) {
   const files = new Set();
   const visit = (file) => {
-    if (files.has(file)) return; files.add(file);
+    const inPackage = file.startsWith(NOBLE_DIR + path.sep);
+    if (inPackage ? packageFiles.has(file) : files.has(file)) return;
+    (inPackage ? packageFiles : files).add(file);
     const ast = acorn.parse(fs.readFileSync(file, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
     for (const n of ast.body) {
       if ((n.type === 'ImportDeclaration' || n.type === 'ExportNamedDeclaration' || n.type === 'ExportAllDeclaration') && n.source) {
         const s = n.source.value;
-        if (s.startsWith('.')) visit(path.resolve(path.dirname(file), s));
-        else if (s.startsWith('/src/')) visit(path.join(root, s.slice(1)));
+        const noble = nobleSpecifierFile(s);
+        if (s.startsWith('.')) {
+          const target = path.resolve(path.dirname(file), s);
+          if (inPackage !== target.startsWith(NOBLE_DIR + path.sep)) throw new Error(`unexpected import ${s} in ${rel(file)}`);
+          visit(target);
+        } else if (s.startsWith('/src/') && !inPackage) visit(path.join(root, s.slice(1)));
+        else if (noble !== null) visit(noble);
         else throw new Error(`unexpected import ${s} in ${rel(file)}`);
       }
     }
@@ -195,8 +242,12 @@ function staticProof(sources) {
   const fileHashes = Object.fromEntries(files.map((x) => [rel(x), sha(src(x))]));
   for (const [file, h] of Object.entries(FROZEN_FILES)) want(fileHashes[file] === h, `the bytes of ${file} are not the reviewed ones (${(fileHashes[file] ?? 'missing').slice(0, 16)})`);
   want(Object.keys(fileHashes).every((x) => FROZEN_FILES[x] !== undefined), `files outside the reviewed closure: ${Object.keys(fileHashes).filter((x) => FROZEN_FILES[x] === undefined)}`);
+  // The package closure (amendment 3): exactly the pinned files of the lockfile version, byte-exact.
+  const packageHashes = Object.fromEntries([...packageFiles].sort().map((x) => [rel(x), sha(fs.readFileSync(x))]));
+  want(NOBLE_PKG.version === FROZEN_PACKAGE.version, `@noble/hashes ${NOBLE_PKG.version} is not the reviewed ${FROZEN_PACKAGE.version}`);
+  want(JSON.stringify(packageHashes) === JSON.stringify(FROZEN_PACKAGE.files), `the @noble/hashes closure is not the reviewed one: ${JSON.stringify(packageHashes)}`);
   const inv = canonicalInventory(all);
-  return { files: Object.fromEntries(files.map((x) => [rel(x), sha(src(x))])), counts: Object.fromEntries([...new Set(all.map((i) => i.kind))].map((k) => [k, all.filter((i) => i.kind === k).length])),
+  return { files: Object.fromEntries(files.map((x) => [rel(x), sha(src(x))])), packageFiles: packageHashes, counts: Object.fromEntries([...new Set(all.map((i) => i.kind))].map((k) => [k, all.filter((i) => i.kind === k).length])),
     inventorySha256: sha(inv), inventory: all, failures: f };
 }
 /** The mutation sites of memoryHold, pendingMemoryHold and buffer in the reference (dossier §2). */
@@ -217,12 +268,21 @@ const HOLD_SITES = Object.freeze([
 const FROZEN_FILES = Object.freeze({
   'src/crypto/m2-binding-v0.js': '78e4be3ab64826dee17175cd3fce44c8562db5354f2f2de8ce7feeba07332e2c',
   'src/crypto/vault-errors.js': '3304a78b4101c27d743e3804ddedc1d87d8a65372193c735fb3ec17426e31e2d',
-  'src/storage/m2/session-codec.js': '8ce4d3e883a27ae9ceb47ab5d299b04b307ff25984cd9e926097e2f66592e7be',
+  'src/storage/m2/session-codec.js': 'e945ca2a870cad6d8b0859860925b8a9bbcdb8533139eef8c328fd843708fb44',
   'src/storage/m2/session-root.js': 'c9a1f4aa27d07aa1c4e4434454619866b8a232bc5894a8fe0ecd699a6779df2e',
-  'src/storage/m2/session-transaction.js': '46af80bdcecd1271dfc09cecf3800101b060408f0bb1f8a2a93f28b1ef7783fb',
+  'src/storage/m2/session-transaction.js': 'b340ef2f9542210198dc6c077028214c42d4bea36eb1d4994eb84eeabc1ee1de',
   'src/storage/vault-db.js': '70569a64953be46055a59fbbe541e9bf4c241667ffc7d283becb219f894c243c',
   'test/storage/m2/browser/chromium/suite/reference-port.mjs': '55d333157665b3f3060df366c36e51ff2d51e3c07c9beaa89c1ae04b46cbceac',
 });
+/** The @noble/hashes files the driver's closure reaches (amendment 3), at the lockfile version, byte-exact. */
+const FROZEN_PACKAGE = Object.freeze({ version: '1.8.0', files: Object.freeze({
+  'node_modules/@noble/hashes/esm/_md.js': 'cefb1557e7715cb2117c83f82ef3e3175c7e0391c80bd5795b2d4effc45fc582',
+  'node_modules/@noble/hashes/esm/_u64.js': 'e48c0cfc10810439a4807b46db136ce603a3fa09b62584f513ef2f3ca496af54',
+  'node_modules/@noble/hashes/esm/crypto.js': '9211d026c5d21e60e0126dd6f01150d87da5ba7261b8f468215c1264372ff5a5',
+  'node_modules/@noble/hashes/esm/sha2.js': 'e729088b82e5450bff54c3a0013582aa42e1fe8f58dd31f5967f6ebe34c52299',
+  'node_modules/@noble/hashes/esm/sha256.js': '895f164acd980084bd5026c4363d7523ea4564f634dd0cc183111d42dbbc4ead',
+  'node_modules/@noble/hashes/esm/utils.js': '4cf4c1e05affedcb4fd584a43d76ae1a3711e34a36e2251b90c27e33ecc74fad',
+}) });
 /** The reviewed in-place write sites (null until reviewed). */
 const IN_PLACE = Object.freeze({
   reference: Object.freeze([
@@ -269,7 +329,7 @@ const IN_PLACE = Object.freeze({
 ]),
 });
 /** The frozen inventory of the exact sources (set after review of the dossier; any change invalidates). */
-const FROZEN_INVENTORY_SHA256 = '86e5c44c709ec040a38267c26c3c389d9d6865198a3e871aa59227fa2404c794';
+const FROZEN_INVENTORY_SHA256 = '96e346b993fbd97095f1a7bb0df5ba75ed88eebc608dd236d1cb3a062153a8d4';
 
 // ============================================ B/C. dynamic proof ============================================
 // Recorder (observation) transformations, applied only in HTTP responses. Flags off = equivalence arm.
@@ -407,11 +467,14 @@ const server = http.createServer((req, res) => {
     if (u.pathname === '/hook' && u.searchParams.get('p') === 'K19:LATE') { let d = null; try { d = JSON.parse(u.searchParams.get('d')); } catch { d = { unparsable: true }; } lateReports.push(d); return res.end('ok'); }
     if (u.pathname === '/hook') return res.end('ok');
     if (u.pathname === '/') { res.setHeader('content-type', 'text/html'); return res.end('<!doctype html><script type="module" src="/suite/page.mjs"></script>'); }
+    const noble = nobleFile(u.pathname);
     const base = u.pathname.startsWith('/src/') ? path.join(root, 'src') : suite;
-    const file = path.resolve(base, u.pathname.startsWith('/src/') ? u.pathname.slice(5) : u.pathname.slice(7));
-    if (!(u.pathname.startsWith('/src/') || u.pathname.startsWith('/suite/')) || !file.startsWith(base + path.sep) || !fs.existsSync(file)) { res.statusCode = 404; return res.end(); }
+    const file = noble ?? path.resolve(base, u.pathname.startsWith('/src/') ? u.pathname.slice(5) : u.pathname.slice(7));
+    if (noble === null && (!(u.pathname.startsWith('/src/') || u.pathname.startsWith('/suite/')) || !file.startsWith(base + path.sep) || !fs.existsSync(file))) { res.statusCode = 404; return res.end(); }
     const original = fs.readFileSync(file, 'utf8');
-    const { source, t } = transformFor(file, original);
+    const transformed = transformFor(file, original); const t = transformed.t;
+    const source = rewriteNoble(transformed.source);
+    if (source !== transformed.source) t.push('specifier:@noble/hashes');
     fs.appendFileSync(SERVED, `${JSON.stringify({ context, url: req.url, final: rel(file), original: sha(original), transformation: t, sha256: sha(source) })}\n`);
     res.setHeader('content-type', 'text/javascript'); res.setHeader('cache-control', 'no-store'); res.end(source);
   } catch (e) { res.statusCode = 500; res.end(String(e.stack)); }

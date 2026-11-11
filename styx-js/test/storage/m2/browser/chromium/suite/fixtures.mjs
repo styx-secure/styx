@@ -31,7 +31,7 @@ import {
   computeKeyedRoot, ciphertextDigest, deriveManifestRootKey, encodeManifest, encodeManifestKey, manifestEntry,
   manifestKeyDigest,
 } from '/src/storage/m2/session-root.js';
-import { buildMutationEnvelope, mutationRow } from '/src/storage/m2/session-transaction.js';
+import { buildMutationEnvelope, heldOutputDigest, mutationRow } from '/src/storage/m2/session-transaction.js';
 import { encodeBindingV0 } from '/src/crypto/m2-binding-v0.js';
 
 export const ROWS = Object.freeze(['CAPI-S001', 'CAPI-S006', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014', 'CAPI-S016', 'CAPI-S017']);
@@ -217,7 +217,9 @@ export function envelopeInput(scenario, op = 0x01, parentRoot = null) {
     candidate: { digest: bytesOf(32, op + 0x06), reference: bytesOf(32, op + 0x07) },
     componentSet: { digest: bytesOf(32, op + 0x08), reference: bytesOf(32, op + 0x09), entries: row.components.map((c) => ({ ...c })) },
     heldOutput: row.outputKind === 'NONE' ? { kind: 'NONE', digest: null, reference: null }
-      : { kind: row.outputKind, digest: bytesOf(32, op + 0x0a), reference: bytesOf(32, op + 0x0b) },
+      // OUTPUT-DIGEST-BIND (#513, integrated with the base of owner amendment 3 of #493): the held-output digest
+      // is the digest of the exact escrowed bytes of the row.
+      : { kind: row.outputKind, digest: heldOutputDigest({ kind: row.outputKind, output: escrowOutput(scenario) }), reference: bytesOf(32, op + 0x0b) },
     expectedSuccess: { code: row.successCode, stateAfter: row.stateAfterCommitted },
     reconciliationIdentity: { reference: bytesOf(32, op + 0x0c), owner: 'SS_RS' },
   };
