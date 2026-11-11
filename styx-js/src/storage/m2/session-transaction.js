@@ -1831,6 +1831,10 @@ function generationFactsFromStorage(value, generation, manifestRootKey) {
 // before any authority, hold or escrow decision reads it. A record plaintext that is not a canonical
 // kind-13 plaintext gives this module no authenticated view to compare (B-CHR item 12 owns that).
 function sidecarHoldMatchesRecord(records, sidecar, generation) {
+  // The codec coupling change must not turn a contradicted authenticated hold into opaque filler.
+  // Apply the same distinction on readback as at staging, before reconciliation changes authority.
+  if (heldOutputRuleBroken(records)) partial(
+    `generation ${generation} returns a kind-13 record that breaks its held-output rule`);
   const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
   if (record === undefined) return;
   let authenticated;

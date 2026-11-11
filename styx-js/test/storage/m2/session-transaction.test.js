@@ -2989,6 +2989,46 @@ function noneRowStore(scenario, { k13 = null, k9 = null, projection = null, escr
 }
 
 
+  describe('K13-NONE: readback cannot promote a held-output contradiction as opaque filler', () => {
+    const setKind = (plaintext, kind) => {
+      const wire = plaintext.slice();
+      const view = new DataView(wire.buffer, wire.byteOffset, wire.byteLength);
+      let offset = 15;
+      while (wire[offset] !== 13) offset += 5 + view.getUint32(offset + 1);
+      wire[offset + 5] = kind;
+      return wire;
+    };
+    for (const scenario of ['CAPI-S006', 'CAPI-S016', 'CAPI-S014']) {
+      for (const memory of ['RETAINED', 'LOST']) {
+        for (const outcome of ['COMMITTED', 'NOT_COMMITTED']) {
+          test(`${scenario} ${memory} ${outcome}: contradictory wire refuses before any write`, async () => {
+            const { store } = await boundStore(scenario);
+            const generation = store.generations.get(NEW_GENERATION);
+            const wire = scenario === 'CAPI-S014'
+              ? setKind(generation.records.find((r) => r.recordKind === K13).plaintext, 1)
+              : setKind(encodePlaintext(K13, { ...holdRecordFor(scenario), heldOutputKind: 2,
+                heldOutputDigest: bytesOf(32, 0x78), heldOutputReference: bytesOf(32, 0x79) }), 1);
+            generation.records = generation.records.map((r) => r.recordKind === K13 ? { ...r, plaintext: wire } : r);
+            const writesBefore = store.applied.length;
+            const selectorBefore = hex(store.selector);
+            await expect(reconcileWith(store, scenario, M2_OUTCOME[outcome], memory))
+              .rejects.toMatchObject({ code: 'PARTIAL_APPLICATION' });
+            expect(store.applied.length).toBe(writesBefore);
+            expect(hex(store.selector)).toBe(selectorBefore);
+          });
+          test(`${scenario} ${memory} ${outcome}: opaque filler readback keeps its compatibility path`, async () => {
+            const { store } = await boundStore(scenario);
+            const generation = store.generations.get(NEW_GENERATION);
+            generation.records = generation.records.map((r) => r.recordKind === K13
+              ? { ...r, plaintext: bytesOf(64, 0x7a) } : r);
+            const result = await reconcileWith(store, scenario, M2_OUTCOME[outcome], memory);
+            expect(result.reconciliation).toBe(outcome === 'COMMITTED' ? 'RECONCILED_COMMITTED' : 'NOT_COMMITTED');
+          });
+        }
+      }
+    }
+  });
+
   describe('T1: the loader reads the written hold and the two terminal reconciliations close it', () => {
     test.each(HOLD_ROWS)('%s: loadBoundHold returns exactly the Observable-1 members and the written hold', async (scenario) => {
       const isRef = mutationRow(scenario).outputKind === 'SELECTED_CANDIDATE_REF';
