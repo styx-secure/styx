@@ -1139,6 +1139,12 @@ export async function runMutation(input) {
         'the staged escrow is not the held output of the envelope, or its bytes do not have the held-output digest');
     }
   }
+  // K13-NONE-CODE change 2 at the staging surface (review code-r1): a kind-13 plaintext whose only defect is
+  // the heldOutputRule (held-output bytes beside NONE, or null beside an output kind) is a contradiction of
+  // this mutation's hold, never non-canonical filler (B-CHR item 12), and is refused before any write.
+  if (heldOutputRuleBroken(candidate.records)) {
+    fail(CODE.EVIDENCE_MISMATCH, 'the staged kind-13 record breaks the held-output rule of its heldOutputKind');
+  }
   // KIND13-RESOLVE change 1 (C-FMT historicalHoldRule, row F8), ORIGINAL path: before any write, a
   // canonical present kind-13 record the candidate stages must satisfy the record-derived conjuncts
   // against the candidate's own authenticated COMMIT_RESULT. The selection never tombstones it, so a
@@ -1897,6 +1903,20 @@ function recordDerivedHold(records) {
   try { authenticated = decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext); } catch { return null; }
   if (authenticated.presence !== 1) return null;
   return holdRecordFacts(authenticated, 'authenticated mutationHold');
+}
+
+// K13-NONE-CODE: whether the kind-13 plaintext of a list of records is rejected by the codec for the
+// heldOutputRule alone (every field decoded at its width, then the semantic coupling failed).
+function heldOutputRuleBroken(records) {
+  const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  if (record === undefined) return false;
+  try {
+    decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext);
+    return false;
+  } catch (e) {
+    return e?.code === 'UNSUPPORTED_VALUE' && typeof e.message === 'string'
+      && e.message.includes('held output digest/reference must be null exactly when heldOutputKind is NONE');
+  }
 }
 
 // The canonical kind-13 record of a list of records: the record-derived present hold, null for a

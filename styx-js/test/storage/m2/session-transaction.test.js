@@ -2608,6 +2608,49 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
       expect(port.memoryHold).toBeNull();
       expect(hex(port.selector)).toBe(selector);
     });
+    // Review code-r1 (Sol F1): raw kind-13 wire bytes that break only the heldOutputRule are this mutation's
+    // contradicted hold, never filler: refused before any write. Opaque filler keeps its #457 behaviour.
+    const setHeldOutputKind = (wire, kind) => {
+      const view = new DataView(wire.buffer, wire.byteOffset, wire.byteLength);
+      let offset = 15;
+      while (wire[offset] !== 13) offset += 5 + view.getUint32(offset + 1);
+      wire[offset + 5] = kind;
+      return wire;
+    };
+    const stageWire = async (scenario, outcome, makeWire) => {
+      const { parent, port } = parentFor(scenario);
+      const m = mutationOf(scenario, 0x30, parent, 2n, outcome);
+      const wire = makeWire(m);
+      const staged = canonGeneration(2n, { k13: wire });
+      const candidate = { ...m.candidate, ...staged, selectorBytes: selfSelector(staged, 2), holdSelectorBytes: boundSelector(parent, staged) };
+      const selector = hex(port.selector);
+      const error = await runMutation({ storage: port, manifestRootKey: ROOT_KEY, envelope: m.envelope, candidate, outcome })
+        .then(() => null, (e) => e);
+      return { wire, error, writes: port.applied.length, selectorUnchanged: hex(port.selector) === selector };
+    };
+    const NONE_WITH_BYTES = (m) => setHeldOutputKind(encodePlaintext(K13, {
+      ...m.hold, heldOutputKind: 2, heldOutputDigest: bytesOf(32, 0x78), heldOutputReference: bytesOf(32, 0x79),
+    }), 1);
+    const OUTPUT_KIND_TO_NONE = (m) => setHeldOutputKind(encodePlaintext(K13, { ...m.hold }), 1);
+    const NONE_TO_OUTPUT_KIND = (m) => setHeldOutputKind(encodePlaintext(K13, { ...m.hold }), 2);
+    test.each([
+      ...NONE_ROWS.flatMap((s) => [[s, 'INDETERMINATE', 'NONE_WITH_BYTES'], [s, 'COMMITTED', 'NONE_WITH_BYTES'],
+        [s, 'INDETERMINATE', 'NONE_TO_OUTPUT_KIND']]),
+      ['CAPI-S014', 'INDETERMINATE', 'OUTPUT_KIND_TO_NONE'], ['CAPI-S014', 'COMMITTED', 'OUTPUT_KIND_TO_NONE'],
+    ])('%s %s: a raw kind-13 plaintext breaking only the held-output rule (%s) is EVIDENCE_MISMATCH before any write', async (scenario, outcome, kind) => {
+      const make = { NONE_WITH_BYTES, OUTPUT_KIND_TO_NONE, NONE_TO_OUTPUT_KIND }[kind];
+      const r = await stageWire(scenario, M2_OUTCOME[outcome], make);
+      expect(() => decodePlaintext(K13, r.wire)).toThrow(/null exactly when heldOutputKind is NONE/);
+      expect(r.error?.code).toBe('EVIDENCE_MISMATCH');
+      expect(r.error?.message).toMatch(/held-output rule/);
+      expect(r.writes).toBe(0);
+      expect(r.selectorUnchanged).toBe(true);
+    });
+    test.each(['CAPI-S014', ...NONE_ROWS])('%s: opaque kind-13 filler keeps the #457 behaviour (staged, no held-output refusal)', async (scenario) => {
+      const r = await stageWire(scenario, M2_OUTCOME.INDETERMINATE, () => bytesOf(64, 0x5e));
+      expect(r.error).toBeNull();
+      expect(r.writes).toBeGreaterThan(0);
+    });
     test.each(NONE_ROWS)('%s: a held output carrying bytes on a NONE row cannot be staged', (scenario) => {
       const { parent } = parentFor(scenario);
       expect(() => mutationOf(scenario, 0x30, parent, 2n, M2_OUTCOME.INDETERMINATE,
