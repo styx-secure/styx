@@ -344,6 +344,9 @@ const VECTOR_STATE = {
   'FMT-KAT-ACTIVE': 'ACTIVE',
   'FMT-KAT-HOLD': 'RECONCILIATION_REQUIRED',
   'FMT-KAT-EMPTY-HOLD': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-NONE-HOLD-S006': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-NONE-HOLD-S016': 'RECONCILIATION_REQUIRED',
+  'FMT-KAT-NONE-HISTORICAL-S016': 'ACTIVE',
 };
 
 function observationOfFixture(row) {
@@ -363,9 +366,9 @@ const invokeRestore = (observation, snapshot = empty()) => invokeAdapter({
   observation,
 });
 
-// C-API §6 (C-API-RR): with no hold the I-RESTART loader produced (`restoreHold` `null`), the two
+// C-API §6 (C-API-RR): with no hold the I-RESTART loader produced (`restoreHold` `null`), the four
 // RESTORED_RECONCILIATION_REQUIRED positives are CAPI-S004; POS-EMPTY is CAPI-S031.
-const FAIL_CLOSED_POSITIVES = ['POS-HOLD', 'POS-EMPTY-HOLD'];
+const FAIL_CLOSED_POSITIVES = ['POS-HOLD', 'POS-EMPTY-HOLD', 'POS-NONE-HOLD-S006', 'POS-NONE-HOLD-S016'];
 
 /**
  * The contract's closed C-REST outcome to C-API disposition table, typed here independently of the
@@ -535,7 +538,7 @@ describe('I-JOIN exact positive fixtures restore through adapter', () => {
     }
   });
 
-  test('the fail-closed positives are exactly the two named cases and no other positive fails closed', () => {
+  test('the fail-closed positives are exactly the four named cases and no other positive fails closed', () => {
     const failedClosed = [];
     for (const row of FRESH_WORKER_FIXTURES.positive) {
       const observation = observationOfFixture(row);
@@ -545,13 +548,13 @@ describe('I-JOIN exact positive fixtures restore through adapter', () => {
       }
     }
     expect(failedClosed.sort()).toEqual([...FAIL_CLOSED_POSITIVES].sort());
-    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(7);
+    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(10);
   });
 });
 
-describe('I-JOIN all seventy negative fixtures', () => {
+describe('I-JOIN all seventy-one negative fixtures', () => {
   test('every negative fixture returns its exact mapped rejected code and never a success', () => {
-    expect(negatives).toHaveLength(70);
+    expect(negatives).toHaveLength(71);
     const seen = new Set();
     for (const row of negatives) {
       const observation = observationOfFixture(row);

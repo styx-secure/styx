@@ -47,7 +47,7 @@ const EV = {
 };
 
 // ------------------------------------------------------------------------------------------------
-// C-REC §13 rows, transcribed verbatim (C-REC sha256 ac66aafa…e8fc22, #514 comment 6433983465).
+// C-REC §13 rows, transcribed verbatim (C-REC sha256 be6a96b5…a87a15, #583 comment 6797802180).
 // ------------------------------------------------------------------------------------------------
 
 const CREC_OWNED_DISPATCH_ROWS = [
