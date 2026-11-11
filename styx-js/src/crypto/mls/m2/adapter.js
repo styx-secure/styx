@@ -1644,11 +1644,12 @@ function readRestoreHold(value) {
   const outputKind = registryName(registries.outputKind, hold.heldOutputKind);
   // The complete structure the I-RESTART loader returns for a present hold (`holdRecordFacts`): every
   // digest and reference exactly 32 bytes, the held output digest and reference `null` exactly for a `NONE`
-  // output, the parent generation an unsigned 64-bit bigint. R3: the loader refuses a `NONE`-output row, so
-  // a hold for one is not its output either.
+  // output, the parent generation an unsigned 64-bit bigint. K13-NONE: a `NONE`-output hold is admitted
+  // exactly when both held-output fields are literal `null`; an output kind needs both 32-byte.
   const outputBytes = [hold.heldOutputDigest, hold.heldOutputReference];
   if (!RESTORE_HOLD_BYTES32_KEYS.every((key) => isBytes32(hold[key])) || !isU64(hold.parentGeneration)
-    || outputKind === null || outputKind === 'NONE' || !outputBytes.every(isBytes32)) {
+    || outputKind === null
+    || (outputKind === 'NONE' ? !outputBytes.every((v) => v === null) : !outputBytes.every(isBytes32))) {
     return invalid;
   }
   if (hold.presence !== 1 || hold.resultStatus !== registries.commitOutcome.INDETERMINATE

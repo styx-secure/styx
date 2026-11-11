@@ -344,8 +344,10 @@ function canonicalRecords(envelope, outcome, output) {
       entries: bytesOf(64, 0x61),
     }),
   };
+  // K13-NONE: a NONE-output hold encodes with null held-output fields; its OUTPUT_ESCROW is the canonical tombstone.
+  plain[K13] = encodePlaintext(K13, holdRecordOf(envelope));
+  if (row.outputKind === 'NONE') plain[K9] = encodePlaintext(K9, { presence: 0 });
   if (row.outputKind !== 'NONE') {
-    plain[K13] = encodePlaintext(K13, holdRecordOf(envelope));
     plain[K9] = encodePlaintext(K9, {
       presence: 1, operationIdentity: evidence.operationIdentity, candidateDigest: evidence.candidateDigest,
       candidateReference: evidence.candidateReference, mutationSetDigest: evidence.mutationSetDigest,
@@ -415,8 +417,8 @@ const LIVE = {
   'CAPI-S017': { operation: 'APPLY_PEER_UPDATE', origin: 'ACTIVE', input: { protectedCommitBytes: bytesOf(16, 0x36) }, member: 'selectedCandidateRef' },
 };
 const TRI_STATE_ROWS = Object.keys(LIVE);
-/** The rows that can hold durably under the merged I-TXN (R3: CAPI-S006 and CAPI-S016 cannot). */
-const HOLD_ROWS = ['CAPI-S001', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014', 'CAPI-S017'];
+/** The rows that hold durably: all seven RS_TRI_STATE rows (K13-NONE: CAPI-S006 and CAPI-S016 hold a NONE output). */
+const HOLD_ROWS = ['CAPI-S001', 'CAPI-S006', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014', 'CAPI-S016', 'CAPI-S017'];
 const STAGED_ROWS = ['CAPI-S001', 'CAPI-S009', 'CAPI-S010', 'CAPI-S014'];
 
 const request = (operation, input, overrides = {}) => ({
@@ -685,7 +687,9 @@ describe('T7: response never received — a fresh adapter re-exposes the durable
     expect(resolved.result.stateAfter).toBe('ACTIVE');
     expect(resolved.result.output.originalSuccessCode).toBe(mutationRow(scenario).successCode);
     const released = resolved.result.output.originalOutput[member];
-    if (member === 'selectedCandidateRef') expect(released).toBe('cand:winner');
+    // A NONE-output row (CAPI-S006, CAPI-S016) releases nothing: its original output is the empty closed object.
+    if (member === null) expect(resolved.result.output.originalOutput).toEqual({});
+    else if (member === 'selectedCandidateRef') expect(released).toBe('cand:winner');
     else expect(hex(released)).toBe(hex(output));
     expect((await classifyAuthority({ storage: store, manifestRootKey: ROOT_KEY, oldGeneration: OLD_GENERATION, newGeneration: NEW_GENERATION })).authority)
       .toBe('COMPLETE_NEW');
@@ -1066,13 +1070,24 @@ describe('T7: loader failure — CAPI-S004 for a contradiction, FAIL_CLOSED_INTE
       expect(`${label}:${code(answer.result)}`).toBe(`${label}:FAIL_CLOSED_INTERNAL`);
       expect(answer.snapshot).toBeNull();
     }
-    // R3: a hold of a NONE-output row (CAPI-S016) is not a loader output either.
-    const noneRow = {
+    // K13-NONE: a hold of a NONE-output row (CAPI-S016) is a loader output only with both held-output fields
+    // literal `null`; a present or half-present pair is not.
+    const noneRow = (change) => ({
       hold: { ...loaded.hold, scenario: M2_TXN.SCENARIOS.indexOf('CAPI-S016') + 1, operation: OPERATIONS.indexOf('APPLY_PEER_UPDATE') + 1,
-        expectedSuccessCode: SUCCESS_CODES.indexOf('PEER_UPDATE_APPLIED') + 1, heldOutputKind: 1, heldOutputDigest: null, heldOutputReference: null },
+        expectedSuccessCode: SUCCESS_CODES.indexOf('PEER_UPDATE_APPLIED') + 1, heldOutputKind: 1, heldOutputDigest: null, heldOutputReference: null,
+        ...change },
       facts: { ...loaded.facts, scenario: 'CAPI-S016', operation: 'APPLY_PEER_UPDATE', expectedSuccessCode: 'PEER_UPDATE_APPLIED', outputKind: 'NONE' },
-    };
-    expect(code(restoreWith(hold, noneRow).result)).toBe('FAIL_CLOSED_INTERNAL');
+    });
+    for (const [label, change] of [
+      ['NONE with both fields present', { heldOutputDigest: bytesOf(32, 1), heldOutputReference: bytesOf(32, 2) }],
+      ['NONE with a present digest', { heldOutputDigest: bytesOf(32, 1) }],
+      ['NONE with a present reference', { heldOutputReference: bytesOf(32, 2) }],
+      ['NONE with an all-zero digest', { heldOutputDigest: new Uint8Array(32) }],
+      ['NONE with an undefined digest', { heldOutputDigest: undefined }],
+      ['NONE with an empty reference', { heldOutputReference: new Uint8Array(0) }],
+    ]) {
+      expect(`${label}:${code(restoreWith(hold, noneRow(change)).result)}`).toBe(`${label}:FAIL_CLOSED_INTERNAL`);
+    }
     for (const [label, value] of [
       ['another string', 'BOUND_HOLD_INVALID'], ['undefined', undefined], ['a number', 0], ['an array', []],
       ['an extra member', { ...loaded, extra: 1 }], ['a missing member', { hold: loaded.hold }],
@@ -1103,18 +1118,26 @@ describe('T7: loader failure — CAPI-S004 for a contradiction, FAIL_CLOSED_INTE
   });
 });
 
-describe('T7: R3 rows — CAPI-S006 and CAPI-S016 reach no durable hold and restore fail-closed (CAPI-S004)', () => {
+describe('T7: NONE-output rows — CAPI-S006 and CAPI-S016 hold durably and restore re-exposes them (K13-NONE-CODE)', () => {
   test.each(['CAPI-S006', 'CAPI-S016'])(
-    '%s: restore fails closed; its C-API INDETERMINATE restart obligation remains outstanding (R3, K13-NONE-CODE)',
+    '%s: the loader returns the canonical NONE hold (null held output, tombstone escrow); RESTORE → CAPI-S030, no write',
     async (scenario) => {
-      const { store } = await produce(scenario, M2_OUTCOME.INDETERMINATE, null);
+      const { store, envelope } = await produce(scenario, M2_OUTCOME.INDETERMINATE, outputOf(scenario));
       store.memoryHold = null;
       expect(decodePlaintext(K17, store.selector).state).toBe(3);
-      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      const loaded = await loadOf(store);
+      expect(loaded.facts.outputKind).toBe('NONE');
+      expect(loaded.hold.heldOutputKind).toBe(1);
+      expect(loaded.hold.heldOutputDigest).toBeNull();
+      expect(loaded.hold.heldOutputReference).toBeNull();
+      const g = await store.readGeneration(NEW_GENERATION);
+      expect(g.escrow).toBeNull();
+      expect(decodePlaintext(K9, g.records.find((r) => r.recordKind === K9).plaintext)).toEqual({ presence: 0 });
       const before = fingerprint(store);
       const restored = await relaunch(store);
-      expect(code(restored.result)).toBe('AUTHENTICATED_STATE_INCONSISTENT');
-      expect(restored.snapshot).toBeNull();
+      expect(restored.result.kind).toBe('INDETERMINATE');
+      expect(restored.result.reconciliationRef).toBe(refOf(envelope.reconciliationIdentity.reference));
+      expect(restored.snapshot).toEqual(live(scenario, 'INDETERMINATE').snapshot);
       expect(fingerprint(store)).toBe(before);
     },
   );
