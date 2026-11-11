@@ -213,6 +213,11 @@ function outcomeValue(value) {
   return value;
 }
 const equal = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+// K13-NONE-FORMAT: field equality for kind-13 facts, where a held-output field may be null. null equals only
+// null; bytes compare by value; other scalars by identity. Never throws on a null/bytes pair.
+const sameValue = (a, b) => (a === null || b === null ? a === b
+  : (a instanceof Uint8Array || b instanceof Uint8Array)
+    ? a instanceof Uint8Array && b instanceof Uint8Array && equal(a, b) : a === b);
 const deepEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const freezeDeep = (o) => (Array.isArray(o)
   ? Object.freeze(o.map(freezeDeep))
@@ -699,7 +704,16 @@ function holdRecordFacts(value, name = 'hold') {
       && resultStatus !== M2_OUTCOME.INDETERMINATE) {
     unsupported(`${name}.resultStatus is not a defined commit outcome`);
   }
-  const nullable = (v, field) => (v === null || v === undefined ? null : bytes(v, 32, `${name}.${field}`));
+  // K13-NONE-FORMAT: only a literal null is absence (the codec ob32 rule); undefined is malformed.
+  const nullable = (v, field) => (v === null ? null : bytes(v, 32, `${name}.${field}`));
+  // K13-NONE-FORMAT: the held-output pair is null exactly when the held output kind is NONE (C-MUT
+  // noneRule/presentRule, C-FMT kind-13 heldOutputRule), on every projection, not only on the codec.
+  const heldOutputDigest = nullable(h.heldOutputDigest, 'heldOutputDigest');
+  const heldOutputReference = nullable(h.heldOutputReference, 'heldOutputReference');
+  const noneOutput = heldOutputKind === OUTPUT_KINDS.indexOf('NONE') + 1;
+  if ((heldOutputDigest === null) !== noneOutput || (heldOutputReference === null) !== noneOutput) {
+    unsupported(`${name} held output digest/reference must be null exactly when heldOutputKind is NONE`);
+  }
   return Object.freeze({
     presence: 1,
     operationIdentity: bytes(h.operationIdentity, 32, `${name}.operationIdentity`),
@@ -715,8 +729,8 @@ function holdRecordFacts(value, name = 'hold') {
     componentSetDigest: bytes(h.componentSetDigest, 32, `${name}.componentSetDigest`),
     componentSetReference: bytes(h.componentSetReference, 32, `${name}.componentSetReference`),
     heldOutputKind,
-    heldOutputDigest: nullable(h.heldOutputDigest, 'heldOutputDigest'),
-    heldOutputReference: nullable(h.heldOutputReference, 'heldOutputReference'),
+    heldOutputDigest,
+    heldOutputReference,
     expectedSuccessCode,
     expectedStateAfter,
     reconciliationReference: bytes(h.reconciliationReference, 32, `${name}.reconciliationReference`),
@@ -1101,6 +1115,12 @@ export async function runMutation(input) {
   const candidate = candidateFacts(s.candidate, manifestRootKey);
   const outcome = outcomeValue(s.outcome);
   const row = ROW_BY_SCENARIO.get(envelope.scenario);
+  // K13-NONE-FORMAT: the candidate escrow exists exactly when the row has an output, and is that output
+  // (C-MUT: a NONE row has no OUTPUT_ESCROW component; C-FMT: a mismatched escrow association rejects).
+  if (row.outputKind === 'NONE' ? candidate.escrow !== null
+    : (candidate.escrow === null || candidate.escrow.kind !== row.outputKind)) {
+    fail(CODE.EVIDENCE_MISMATCH, 'the candidate escrow does not match the output kind of this mutation row');
+  }
 
   const authenticated = validateCommitResultEvidence({ evidence: candidate.resultEvidence, envelope });
   if (authenticated.outcome !== outcome) {
@@ -1118,6 +1138,12 @@ export async function runMutation(input) {
       fail(CODE.EVIDENCE_MISMATCH,
         'the staged escrow is not the held output of the envelope, or its bytes do not have the held-output digest');
     }
+  }
+  // K13-NONE-CODE change 2 at the staging surface (review code-r1): a kind-13 plaintext whose only defect is
+  // the heldOutputRule (held-output bytes beside NONE, or null beside an output kind) is a contradiction of
+  // this mutation's hold, never non-canonical filler (B-CHR item 12), and is refused before any write.
+  if (heldOutputRuleBroken(candidate.records)) {
+    fail(CODE.EVIDENCE_MISMATCH, 'the staged kind-13 record breaks the held-output rule of its heldOutputKind');
   }
   // KIND13-RESOLVE change 1 (C-FMT historicalHoldRule, row F8), ORIGINAL path: before any write, a
   // canonical present kind-13 record the candidate stages must satisfy the record-derived conjuncts
@@ -1720,14 +1746,21 @@ async function readBoundHold(storage, manifestRootKey) {
   } catch (e) {
     loadBoundHoldInvalid(`the held mutation does not rebuild its mutation envelope: ${e.message}`);
   }
-  // Change 2(f), R3: a NONE-output row is refused by the loader.
-  if (OUTPUT_KINDS[hold.heldOutputKind - 1] === 'NONE') {
-    loadBoundHoldInvalid('the held mutation has no output; the bound-hold loader refuses this row');
-  }
+  // K13-NONE change 8: a NONE-output row loads with a null candidate escrow (requireEscrowMatchesHold) and
+  // a canonical kind-9 OUTPUT_ESCROW tombstone; an output row keeps the full escrow-record check.
+  const noneOutput = OUTPUT_KINDS[hold.heldOutputKind - 1] === 'NONE';
   checkCandidateResult(candidate, hold, true, loadBoundHoldInvalid);
   checkComponentSet(candidate.records, hold, true, loadBoundHoldInvalid);
   requireEscrowMatchesHold(candidate.escrow, hold, loadBoundHoldInvalid);
-  checkEscrowRecord(candidate, hold, true, loadBoundHoldInvalid);
+  if (noneOutput) {
+    const k9 = candidate.records.find((r) => r.recordKind === M2_KIND.OUTPUT_ESCROW);
+    const decoded = k9 === undefined ? undefined : optionalCanonicalPlaintext(k9.plaintext, M2_KIND.OUTPUT_ESCROW);
+    if (decoded === undefined || decoded.presence !== 0) {
+      loadBoundHoldInvalid('a NONE-output row stores no canonical OUTPUT_ESCROW tombstone');
+    }
+  } else {
+    checkEscrowRecord(candidate, hold, true, loadBoundHoldInvalid);
+  }
   const selectedCandidateRef = selectedCandidateRefOf(hold, candidate.escrow);
   return Object.freeze({
     hold,
@@ -1798,6 +1831,10 @@ function generationFactsFromStorage(value, generation, manifestRootKey) {
 // before any authority, hold or escrow decision reads it. A record plaintext that is not a canonical
 // kind-13 plaintext gives this module no authenticated view to compare (B-CHR item 12 owns that).
 function sidecarHoldMatchesRecord(records, sidecar, generation) {
+  // The codec coupling change must not turn a contradicted authenticated hold into opaque filler.
+  // Apply the same distinction on readback as at staging, before reconciliation changes authority.
+  if (heldOutputRuleBroken(records)) partial(
+    `generation ${generation} returns a kind-13 record that breaks its held-output rule`);
   const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
   if (record === undefined) return;
   let authenticated;
@@ -1820,7 +1857,7 @@ function sidecarHoldMatchesRecord(records, sidecar, generation) {
   for (const k of keys) {
     const a = projected[k];
     const b = truth[k];
-    if (!((a instanceof Uint8Array || b instanceof Uint8Array) ? equal(a, b) : a === b)) refuse();
+    if (!sameValue(a, b)) refuse();
   }
 }
 
@@ -1870,6 +1907,20 @@ function recordDerivedHold(records) {
   try { authenticated = decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext); } catch { return null; }
   if (authenticated.presence !== 1) return null;
   return holdRecordFacts(authenticated, 'authenticated mutationHold');
+}
+
+// K13-NONE-CODE: whether the kind-13 plaintext of a list of records is rejected by the codec for the
+// heldOutputRule alone (every field decoded at its width, then the semantic coupling failed).
+function heldOutputRuleBroken(records) {
+  const record = records.find((r) => r.recordKind === M2_KIND.MUTATION_HOLD);
+  if (record === undefined) return false;
+  try {
+    decodePlaintext(M2_KIND.MUTATION_HOLD, record.plaintext);
+    return false;
+  } catch (e) {
+    return e?.code === 'UNSUPPORTED_VALUE' && typeof e.message === 'string'
+      && e.message.includes('held output digest/reference must be null exactly when heldOutputKind is NONE');
+  }
 }
 
 // The canonical kind-13 record of a list of records: the record-derived present hold, null for a
@@ -2160,8 +2211,8 @@ async function repeatCommittedEmission(storage, manifestRootKey, held, evidence,
 }
 
 function sameHold(a, b) {
-  return a !== null && b !== null && a.presence === 1 && b.presence === 1 && HOLD_COMPARE.every((k) => (
-    (a[k] instanceof Uint8Array || b[k] instanceof Uint8Array) ? equal(a[k], b[k]) : a[k] === b[k]));
+  return a !== null && b !== null && a.presence === 1 && b.presence === 1
+    && HOLD_COMPARE.every((k) => sameValue(a[k], b[k]));
 }
 
 // Rule-only retainedHoldLookup (C-FMT draft): the SS memory retains one unresolved hold together with
@@ -2239,10 +2290,12 @@ export async function reconcileIndeterminate(input) {
   for (const field of ['operationIdentity', 'originalAuthorityDigest', 'originalAuthorityReference',
     'candidateDigest', 'candidateReference', 'componentSetDigest', 'componentSetReference',
     'bindingRef', 'profileDigest', 'parentGeneration', 'parentKeyedRoot', 'heldOutputKind',
+    'heldOutputDigest', 'heldOutputReference',
     'expectedSuccessCode', 'expectedStateAfter', 'reconciliationReference']) {
     const a = supplied[field];
     const b = held[field];
-    const same = (a instanceof Uint8Array || b instanceof Uint8Array) ? equal(a, b) : a === b;
+    // K13-NONE-FORMAT: the held-output pair may be null (NONE); null matches only null.
+    const same = sameValue(a, b);
     if (!same) fail(CODE.EVIDENCE_MISMATCH, `the supplied hold ${field} does not match the held envelope`);
   }
   const evidence = evidenceFacts(s.evidence, 'reconciliation evidence');

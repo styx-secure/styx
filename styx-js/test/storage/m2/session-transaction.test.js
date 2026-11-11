@@ -1896,16 +1896,11 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
     'SELF_UPDATED', 'PEER_UPDATE_APPLIED', 'CANDIDATE_SELECTED', 'RECONCILED_COMMITTED',
     'DUPLICATE_IGNORED'];
   const MEMORY = ['RETAINED', 'LOST'];
-  // The ratified kind-13 v2 layout stores heldOutputDigest/heldOutputReference as b32, while C-MUT
-  // requires them null for a NONE output (KIND_NONE_REQUIRES_DIGEST_AND_REFERENCE_NULL). A present
-  // canonical kind-13 record therefore exists only for the rows with an output; for the two NONE rows
-  // (CAPI-S006, CAPI-S016) no canonical hold plaintext can be encoded at all. Owner disposition of
-  // finding R3 on #468 (issue comment 6123056674): those two rows are excluded from this card's
-  // INDETERMINATE matrix and deferred to a codec/format card; this is a temporary deferral, not a
-  // waiver. Fail-closed behaviour stays required and is pinned below: encoding a present hold throws,
-  // and an INDETERMINATE request staging a tombstone is EVIDENCE_MISMATCH before any write. Their
-  // C-API INDETERMINATE obligations remain outstanding and are not met by this refusal.
-  const HOLD_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind !== 'NONE');
+  // C-MUT requires heldOutputDigest/heldOutputReference null for a NONE output
+  // (KIND_NONE_REQUIRES_DIGEST_AND_REFERENCE_NULL). K13-NONE-FORMAT: heldOutputDigest/heldOutputReference are `ob32` (null = zero-length TLV value
+  // exactly when heldOutputKind is NONE), so every RS_TRI_STATE row carries a canonical present hold.
+  const HOLD_ROWS = [...M2_TXN.SCENARIOS];
+  const OUTPUT_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind !== 'NONE');
   const NONE_ROWS = M2_TXN.SCENARIOS.filter((s) => mutationRow(s).outputKind === 'NONE');
   const tomb = (kind) => encodePlaintext(kind, { presence: 0 });
   const stateCode = (s) => (s === 'EMPTY' ? 1 : 2);
@@ -2177,13 +2172,98 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
   }
 
   describe('every RS_TRI_STATE row, memory RETAINED and LOST', () => {
-    test('the rows without an output cannot carry a canonical present kind-13 hold (C-FMT b32 vs C-MUT null)', () => {
+    // K13-NONE-FORMAT: the memory-hold projection obeys the same coupling as the codec. A retained hold
+    // whose held-output pair contradicts its kind is UNSUPPORTED_VALUE and nothing is selected or written.
+    test.each([...NONE_ROWS, 'CAPI-S014'])('%s: a retained memory hold with a cross-form held output is refused before any write', async (scenario) => {
+      const held = await heldFirst(scenario);
+      const none = mutationRow(scenario).outputKind === 'NONE';
+      const bad = none
+        ? { ...held.port.memoryHold, heldOutputDigest: bytesOf(32, 0x78), heldOutputReference: bytesOf(32, 0x79) }
+        : { ...held.port.memoryHold, heldOutputDigest: null, heldOutputReference: null };
+      held.port.memoryHold = bad;
+      const before = held.port.applied.length;
+      const selector = hex(held.port.selector);
+      const error = await reconcileIt(held.port, held.m, M2_OUTCOME.COMMITTED, 'RETAINED').then(() => null, (e) => e);
+      expect(error.code).toBe('UNSUPPORTED_VALUE');
+      expect(error.message).toMatch(/null exactly when heldOutputKind is NONE/);
+      expect(held.port.applied).toHaveLength(before);
+      expect(hex(held.port.selector)).toBe(selector);
+    });
+    // K13-NONE-FORMAT: only a literal null is absence on a projection, as on the codec.
+    test.each([...NONE_ROWS])('%s: a retained memory hold with an undefined held output is malformed before any write', async (scenario) => {
+      const held = await heldFirst(scenario);
+      for (const field of ['heldOutputDigest', 'heldOutputReference']) {
+        held.port.memoryHold = { ...held.port.memoryHold, [field]: undefined };
+        const before = held.port.applied.length;
+        const selector = hex(held.port.selector);
+        const error = await reconcileIt(held.port, held.m, M2_OUTCOME.COMMITTED, 'RETAINED').then(() => null, (e) => e);
+        expect(error.code).toBe('MALFORMED_INPUT');
+        expect(held.port.applied).toHaveLength(before);
+        expect(hex(held.port.selector)).toBe(selector);
+        held.port.memoryHold = { ...held.port.memoryHold, [field]: null };
+      }
+    });
+    // A supplied hold must match the held envelope on the held-output pair too, not only on its kind.
+    test.each(OUTPUT_ROWS)('%s: a supplied hold with another held output digest or reference is an evidence mismatch', async (scenario) => {
+      for (const field of ['heldOutputDigest', 'heldOutputReference']) {
+        // Memory LOST; the caller supplies a hold that differs from the stored record only on this field.
+        const held = await heldFirst(scenario);
+        const supplied = { ...held.port.memoryHold, [field]: bytesOf(32, 0x5a) };
+        held.port.memoryHold = null;
+        const before = held.port.applied.length;
+        const error = await reconcileIndeterminate({
+          storage: held.port, manifestRootKey: ROOT_KEY, hold: supplied,
+          evidence: evidenceFor(held.m.envelope, M2_OUTCOME.COMMITTED),
+          reference: held.m.envelope.reconciliationIdentity.reference,
+        }).then(() => null, (e) => e);
+        expect(error.code).toBe('EVIDENCE_MISMATCH');
+        expect(error.message).toMatch(new RegExp(`supplied hold ${field} does not match`));
+        expect(held.port.applied).toHaveLength(before);
+      }
+    });
+    // The candidate escrow exists exactly when the row has an output, and is of that output kind.
+    // A NONE held envelope: a supplied hold (memory LOST) that is an internally consistent output hold is a mismatch.
+    test.each(NONE_ROWS)('%s: a supplied output-form hold against a NONE held envelope is an evidence mismatch', async (scenario) => {
+      const held = await heldFirst(scenario);
+      const supplied = { ...held.port.memoryHold, heldOutputKind: 2, heldOutputDigest: bytesOf(32, 0x5a), heldOutputReference: bytesOf(32, 0x5b) };
+      held.port.memoryHold = null;
+      const before = held.port.applied.length;
+      const error = await reconcileIndeterminate({
+        storage: held.port, manifestRootKey: ROOT_KEY, hold: supplied,
+        evidence: evidenceFor(held.m.envelope, M2_OUTCOME.COMMITTED), reference: held.m.envelope.reconciliationIdentity.reference,
+      }).then(() => null, (e) => e);
+      expect(error?.code).toBe('EVIDENCE_MISMATCH');
+      expect(held.port.applied).toHaveLength(before);
+    });
+    test.each(M2_TXN.SCENARIOS)('%s: an escrow that contradicts the row output kind is refused before any write', async (scenario) => {
+      const { parent, port } = parentFor(scenario);
+      const m = mutationOf(scenario, 0x30, parent, 2n, M2_OUTCOME.COMMITTED);
+      const none = m.row.outputKind === 'NONE';
+      const other = { kind: m.row.outputKind === 'APPLICATION_BYTES' ? 'PROTECTED_COMMIT_BYTES' : 'APPLICATION_BYTES', digest: bytesOf(32, 0x61), reference: bytesOf(32, 0x62), output: bytesOf(8, 0x63) };
+      const variants = none ? [other] : [null, other];
+      for (const escrow of variants) {
+        const before = port.applied.length;
+        const error = await runIt(port, { ...m, candidate: { ...m.candidate, escrow } }).then(() => null, (e) => e);
+        expect(error?.code).toBe('EVIDENCE_MISMATCH');
+        expect(port.applied).toHaveLength(before);
+      }
+    });
+    test('the rows without an output carry a canonical present kind-13 hold with a null round-trip (K13-NONE-FORMAT)', () => {
       expect(NONE_ROWS).toEqual(['CAPI-S006', 'CAPI-S016']);
+      expect(OUTPUT_ROWS.length + NONE_ROWS.length).toBe(M2_TXN.SCENARIOS.length);
       for (const scenario of NONE_ROWS) {
         const parent = canonGeneration(1n, { scope: mutationRow(scenario).stateBefore === 'EMPTY' ? 1 : 2 });
         const hold = canonicalHold(envelopeAt(scenario, 0x30, parent), parent);
         expect(hold.heldOutputDigest).toBeNull();
-        expect(() => encodePlaintext(K13, hold)).toThrow(/heldOutputDigest has wrong byte width/);
+        const bytes = encodePlaintext(K13, hold);
+        const decoded = decodePlaintext(K13, bytes);
+        expect(decoded.heldOutputDigest).toBeNull();
+        expect(decoded.heldOutputReference).toBeNull();
+        expect(hex(encodePlaintext(K13, { ...decoded }))).toBe(hex(bytes));
+        // Semantic coupling: bytes with NONE, null with an output kind, and a half-null pair all refuse.
+        expect(() => encodePlaintext(K13, { ...hold, heldOutputDigest: bytesOf(32, 1) })).toThrow(/null exactly when heldOutputKind is NONE/);
+        expect(() => encodePlaintext(K13, { ...hold, heldOutputKind: 2 })).toThrow(/null exactly when heldOutputKind is NONE/);
+        expect(() => encodePlaintext(K13, { ...hold, heldOutputKind: 2, heldOutputDigest: bytesOf(32, 1) })).toThrow(/null exactly when heldOutputKind is NONE/);
       }
     });
     // #468 R3 disposition (comment 6123056674): fail closed, no waiver beyond that deferral.
@@ -2480,6 +2560,23 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
       expect(error.code).toBe('PARTIAL_APPLICATION');
       expect(error.message).toMatch(/differs from its authenticated kind-13 record/);
     });
+    // K13-NONE-FORMAT: a NONE-row selected hold (S016, null held output) whose complete sidecar projection
+    // carries a cross-form or half-null held output is PARTIAL_APPLICATION, never an untyped error.
+    test.each([
+      ['present digest and reference', { heldOutputDigest: bytesOf(32, 0x71), heldOutputReference: bytesOf(32, 0x72) }],
+      ['a present digest only', { heldOutputDigest: bytesOf(32, 0x71) }],
+      ['an output kind with null pair', { heldOutputKind: 2 }],
+    ])('control: a NONE record with a sidecar projection carrying %s is refused', async (_label, tweak) => {
+      const parent = canonGeneration(1n);
+      const m = mutationOf('CAPI-S016', 0x30, parent, 2n, M2_OUTCOME.COMMITTED);
+      expect(m.hold.heldOutputDigest).toBeNull();
+      const port = derivedPort().store(parent)
+        .store(m.staged, { escrow: m.escrow, resultEvidence: m.candidate.resultEvidence, sidecar: { ...m.hold, ...tweak } })
+        .select(selfSelector(m.staged, 2));
+      const error = await classifyAt(port, 1n, 2n).then(() => null, (e) => e);
+      expect(error?.code).toBe('PARTIAL_APPLICATION');
+      expect(error.message).toMatch(/differs from its authenticated kind-13 record/);
+    });
   });
 
   describe('negative, ORIGINAL path: a candidate staging a hold that is not its own', () => {
@@ -2497,6 +2594,68 @@ describe('KIND13-RESOLVE: canonical kind-13 records, resolution by selector', ()
       expect(port.applied).toHaveLength(0);
       expect(port.memoryHold).toBeNull();
       expect(hex(port.selector)).toBe(selector);
+    });
+    // K13-NONE-FORMAT: the same WRITE_HOLD agreement binds the rows without an output. A NONE-row
+    // INDETERMINATE candidate staging a tombstone, or a hold whose held output is not the null pair,
+    // is refused before any write; a present-bytes NONE hold cannot even be encoded.
+    test.each(NONE_ROWS)('%s: an INDETERMINATE candidate staging a tombstone is EVIDENCE_MISMATCH before any write', async (scenario) => {
+      const { port, parent } = parentFor(scenario);
+      const m = mutationOf(scenario, 0x30, parent, 2n, M2_OUTCOME.INDETERMINATE, { k13: 'TOMB' });
+      const selector = hex(port.selector);
+      const error = await runIt(port, m).then(() => null, (e) => e);
+      expect(error.code).toBe('EVIDENCE_MISMATCH');
+      expect(port.applied).toHaveLength(0);
+      expect(port.memoryHold).toBeNull();
+      expect(hex(port.selector)).toBe(selector);
+    });
+    // Review code-r1 (Sol F1): raw kind-13 wire bytes that break only the heldOutputRule are this mutation's
+    // contradicted hold, never filler: refused before any write. Opaque filler keeps its #457 behaviour.
+    const setHeldOutputKind = (wire, kind) => {
+      const view = new DataView(wire.buffer, wire.byteOffset, wire.byteLength);
+      let offset = 15;
+      while (wire[offset] !== 13) offset += 5 + view.getUint32(offset + 1);
+      wire[offset + 5] = kind;
+      return wire;
+    };
+    const stageWire = async (scenario, outcome, makeWire) => {
+      const { parent, port } = parentFor(scenario);
+      const m = mutationOf(scenario, 0x30, parent, 2n, outcome);
+      const wire = makeWire(m);
+      const staged = canonGeneration(2n, { k13: wire });
+      const candidate = { ...m.candidate, ...staged, selectorBytes: selfSelector(staged, 2), holdSelectorBytes: boundSelector(parent, staged) };
+      const selector = hex(port.selector);
+      const error = await runMutation({ storage: port, manifestRootKey: ROOT_KEY, envelope: m.envelope, candidate, outcome })
+        .then(() => null, (e) => e);
+      return { wire, error, writes: port.applied.length, selectorUnchanged: hex(port.selector) === selector };
+    };
+    const NONE_WITH_BYTES = (m) => setHeldOutputKind(encodePlaintext(K13, {
+      ...m.hold, heldOutputKind: 2, heldOutputDigest: bytesOf(32, 0x78), heldOutputReference: bytesOf(32, 0x79),
+    }), 1);
+    const OUTPUT_KIND_TO_NONE = (m) => setHeldOutputKind(encodePlaintext(K13, { ...m.hold }), 1);
+    const NONE_TO_OUTPUT_KIND = (m) => setHeldOutputKind(encodePlaintext(K13, { ...m.hold }), 2);
+    test.each([
+      ...NONE_ROWS.flatMap((s) => [[s, 'INDETERMINATE', 'NONE_WITH_BYTES'], [s, 'COMMITTED', 'NONE_WITH_BYTES'],
+        [s, 'INDETERMINATE', 'NONE_TO_OUTPUT_KIND']]),
+      ['CAPI-S014', 'INDETERMINATE', 'OUTPUT_KIND_TO_NONE'], ['CAPI-S014', 'COMMITTED', 'OUTPUT_KIND_TO_NONE'],
+    ])('%s %s: a raw kind-13 plaintext breaking only the held-output rule (%s) is EVIDENCE_MISMATCH before any write', async (scenario, outcome, kind) => {
+      const make = { NONE_WITH_BYTES, OUTPUT_KIND_TO_NONE, NONE_TO_OUTPUT_KIND }[kind];
+      const r = await stageWire(scenario, M2_OUTCOME[outcome], make);
+      expect(() => decodePlaintext(K13, r.wire)).toThrow(/null exactly when heldOutputKind is NONE/);
+      expect(r.error?.code).toBe('EVIDENCE_MISMATCH');
+      expect(r.error?.message).toMatch(/held-output rule/);
+      expect(r.writes).toBe(0);
+      expect(r.selectorUnchanged).toBe(true);
+    });
+    test.each(['CAPI-S014', ...NONE_ROWS])('%s: opaque kind-13 filler keeps the #457 behaviour (staged, no held-output refusal)', async (scenario) => {
+      const r = await stageWire(scenario, M2_OUTCOME.INDETERMINATE, () => bytesOf(64, 0x5e));
+      expect(r.error).toBeNull();
+      expect(r.writes).toBeGreaterThan(0);
+    });
+    test.each(NONE_ROWS)('%s: a held output carrying bytes on a NONE row cannot be staged', (scenario) => {
+      const { parent } = parentFor(scenario);
+      expect(() => mutationOf(scenario, 0x30, parent, 2n, M2_OUTCOME.INDETERMINATE,
+        { holdTweak: { heldOutputDigest: bytesOf(32, 0x78), heldOutputReference: bytesOf(32, 0x79) } }))
+        .toThrow(/null exactly when heldOutputKind is NONE/);
     });
     test.each([
       ['a foreign operation identity', { operationIdentity: bytesOf(32, 0x99) }],
@@ -2809,9 +2968,10 @@ describe('I-RESTART: bound-hold loader', () => {
   const s017Store = (bytes) => boundStore('CAPI-S017', { output: bytes });
   const s017Load = (bytes) => s017Store(bytes).then(({ store }) => loadOf(store));
 
-function noneRowStore(scenario, { k13 = null, projection = null, escrow = null } = {}) {
+function noneRowStore(scenario, { k13 = null, k9 = null, projection = null, escrow = null } = {}) {
   const envelope = buildMutationEnvelope(envelopeInput(scenario));
-  const records = canonicalCandidateRecords(scenario, M2_OUTCOME.INDETERMINATE, null, [K6, K8, K14]);
+  const records = canonicalCandidateRecords(scenario, M2_OUTCOME.INDETERMINATE, null, [K6, K8, K14])
+    .map((r) => (k9 !== null && r.recordKind === K9 ? { ...r, plaintext: k9 } : r));
   const store = storeWith([selectedGeneration()], HOLD_SELECTOR);
   store.generations.set(NEW_GENERATION, {
     generation: NEW_GENERATION,
@@ -2828,6 +2988,46 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
   return store;
 }
 
+
+  describe('K13-NONE: readback cannot promote a held-output contradiction as opaque filler', () => {
+    const setKind = (plaintext, kind) => {
+      const wire = plaintext.slice();
+      const view = new DataView(wire.buffer, wire.byteOffset, wire.byteLength);
+      let offset = 15;
+      while (wire[offset] !== 13) offset += 5 + view.getUint32(offset + 1);
+      wire[offset + 5] = kind;
+      return wire;
+    };
+    for (const scenario of ['CAPI-S006', 'CAPI-S016', 'CAPI-S014']) {
+      for (const memory of ['RETAINED', 'LOST']) {
+        for (const outcome of ['COMMITTED', 'NOT_COMMITTED']) {
+          test(`${scenario} ${memory} ${outcome}: contradictory wire refuses before any write`, async () => {
+            const { store } = await boundStore(scenario);
+            const generation = store.generations.get(NEW_GENERATION);
+            const wire = scenario === 'CAPI-S014'
+              ? setKind(generation.records.find((r) => r.recordKind === K13).plaintext, 1)
+              : setKind(encodePlaintext(K13, { ...holdRecordFor(scenario), heldOutputKind: 2,
+                heldOutputDigest: bytesOf(32, 0x78), heldOutputReference: bytesOf(32, 0x79) }), 1);
+            generation.records = generation.records.map((r) => r.recordKind === K13 ? { ...r, plaintext: wire } : r);
+            const writesBefore = store.applied.length;
+            const selectorBefore = hex(store.selector);
+            await expect(reconcileWith(store, scenario, M2_OUTCOME[outcome], memory))
+              .rejects.toMatchObject({ code: 'PARTIAL_APPLICATION' });
+            expect(store.applied.length).toBe(writesBefore);
+            expect(hex(store.selector)).toBe(selectorBefore);
+          });
+          test(`${scenario} ${memory} ${outcome}: opaque filler readback keeps its compatibility path`, async () => {
+            const { store } = await boundStore(scenario);
+            const generation = store.generations.get(NEW_GENERATION);
+            generation.records = generation.records.map((r) => r.recordKind === K13
+              ? { ...r, plaintext: bytesOf(64, 0x7a) } : r);
+            const result = await reconcileWith(store, scenario, M2_OUTCOME[outcome], memory);
+            expect(result.reconciliation).toBe(outcome === 'COMMITTED' ? 'RECONCILED_COMMITTED' : 'NOT_COMMITTED');
+          });
+        }
+      }
+    }
+  });
 
   describe('T1: the loader reads the written hold and the two terminal reconciliations close it', () => {
     test.each(HOLD_ROWS)('%s: loadBoundHold returns exactly the Observable-1 members and the written hold', async (scenario) => {
@@ -2904,19 +3104,47 @@ function noneRowStore(scenario, { k13 = null, projection = null, escrow = null }
     });
   });
 
-  describe('T1b: the R3 rows stay refused by the loader', () => {
-    // A canonical present kind-13 plaintext for a NONE-output row cannot be encoded at all: the
-    // ratified kind-13 layout demands 32-byte output fields, while C-MUT requires them null for a
-    // NONE output. The store that a conformant port can hold for such a row therefore carries either
-    // a non-canonical kind-13 record or a canonical record that is not this row's hold.
-    test.each(NONE_ROWS)('%s: no canonical hold is encodable for a NONE row', (scenario) => {
+  describe('T1b: the NONE rows load with a null held output and a tombstone escrow (K13-NONE change 8)', () => {
+    const syncCode = (fn) => { try { fn(); return 'OK'; } catch (e) { return e.code ?? e.message; } };
+    const tombstone = () => encodePlaintext(K9, { presence: 0 });
+    test.each(NONE_ROWS)('%s: the canonical NONE hold encodes; held-output bytes on it do not', (scenario) => {
       const row = mutationRow(scenario);
       expect(row.outputKind).toBe('NONE');
       const hold = holdRecordFor(scenario);
       expect(hold.heldOutputDigest).toBeNull();
       expect(hold.heldOutputReference).toBeNull();
-      expect(() => encodePlaintext(K13, hold)).toThrow(/wrong byte width/);
-      expect(() => encodePlaintext(K13, { ...hold, heldOutputDigest: bytesOf(32, 0xee) })).toThrow(/wrong byte width/);
+      expect(decodePlaintext(K13, encodePlaintext(K13, hold))).toEqual(hold);
+      expect(syncCode(() => encodePlaintext(K13, { ...hold, heldOutputDigest: bytesOf(32, 0xee) }))).toBe('UNSUPPORTED_VALUE');
+    });
+
+    test.each(NONE_ROWS)('%s: a canonical NONE hold with a kind-9 tombstone loads; nothing is written', async (scenario) => {
+      const store = noneRowStore(scenario, { k13: encodePlaintext(K13, holdRecordFor(scenario)), k9: tombstone() });
+      const selectorBefore = hex(store.selector);
+      const loaded = await loadOf(store);
+      expect(loaded.facts.scenario).toBe(scenario);
+      expect(loaded.facts.outputKind).toBe('NONE');
+      expect(loaded.facts.selectedCandidateRef).toBeNull();
+      expect(loaded.hold.heldOutputKind).toBe(outputCode('NONE'));
+      expect(loaded.hold.heldOutputDigest).toBeNull();
+      expect(loaded.hold.heldOutputReference).toBeNull();
+      expect(store.applied).toHaveLength(0);
+      expect(hex(store.selector)).toBe(selectorBefore);
+    });
+
+    test.each(NONE_ROWS)('%s: a canonical NONE hold without a kind-9 tombstone is refused and nothing is written', async (scenario) => {
+      const store = noneRowStore(scenario, { k13: encodePlaintext(K13, holdRecordFor(scenario)) });
+      const selectorBefore = hex(store.selector);
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      expect(store.applied).toHaveLength(0);
+      expect(hex(store.selector)).toBe(selectorBefore);
+    });
+
+    test.each(NONE_ROWS)('%s: a canonical NONE hold beside a candidate escrow is refused and nothing is written', async (scenario) => {
+      const store = noneRowStore(scenario, { k13: encodePlaintext(K13, holdRecordFor(scenario)), k9: tombstone(), escrow: { ...ESCROW } });
+      const selectorBefore = hex(store.selector);
+      expect(await codeOf(loadOf(store))).toBe('BOUND_HOLD_INVALID');
+      expect(store.applied).toHaveLength(0);
+      expect(hex(store.selector)).toBe(selectorBefore);
     });
 
     test.each(NONE_ROWS)('%s: a candidate without a canonical hold record is refused and nothing is written', async (scenario) => {
