@@ -1349,7 +1349,7 @@ const UNBOUND_VECTORS = [
 ];
 const RATIFIED_VECTOR_IDS = ["FMT-KAT-EMPTY", "FMT-KAT-ACTIVE", "FMT-KAT-HOLD", "FMT-KAT-EMPTY-HOLD", "FMT-KAT-UNBOUND-HOLD", "FMT-KAT-EMPTY-UNBOUND-HOLD"];
 // The kind-13 plaintexts of the seven vectors of the C-FMT bytes in force (SHA-256
-// 526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2 at commit 2c6e82d, act #514 6433983465),
+// 9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786 at commit 0fc698f, act #583 6797802180),
 // copied verbatim. The six C-API-RR vectors above are the older 9ff945e1 bytes and stay as legacy coverage.
 const CURRENT_AUTHORITY_HOLD_PLAINTEXTS = [
   ['FMT-KAT-EMPTY', '53545958504c4e310001000d000000'],

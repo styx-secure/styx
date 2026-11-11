@@ -21,7 +21,7 @@ import { createAdapterSnapshot } from '../../../src/crypto/mls/m2/state-machine.
 import { fromWireBytes, toWireBytes, validateWorkerResult } from '../../../src/crypto/mls/m2/worker-protocol.js';
 
 // The ratified O-SCEN rows citing each C-API clause this card implements (registry sha256 0e05f023…abba0,
-// O-SCEN markdown sha256 849c3229…bdbb92; derived by the card's gen_mapping.py with the I-UPD rule).
+// O-SCEN markdown sha256 5d382c67…0d56f5; derived by the card's gen_mapping.py with the I-UPD rule).
 const OSCEN_SCENARIOS = Object.freeze({
   '/rules/candidateSelector': ['OSC-0885ca4fd15bf91b'],
   'CAPI-S016': ['OSC-43bc2f410abce99b'],

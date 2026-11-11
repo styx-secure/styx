@@ -228,7 +228,12 @@ describe('the closed metadata', () => {
     expect([...UNSUPPORTED_RUNTIME_CLASSES]).toEqual([
       'MOBILE', 'NATIVE_NON_BROWSER', 'PRIVATE_BROWSING', 'EVICTED_OR_PARTIAL_PROFILE',
     ]);
-    expect(READER_PROFILE).toBe('CFMT_EXACT_526FC4C3');
+    expect(READER_PROFILE).toBe('CFMT_EXACT_9D3C7E75');
+    // C-REST /buildMatrix: both rows name the ratified C-FMT profile and document hash (#583 6797802180).
+    expect(BUILD_MATRIX.map((row) => [row.buildId, row.readerProfile, row.cFmtDocumentSha256])).toEqual([
+      ['M2_WEB_CHROMIUM_STANDARD', 'CFMT_EXACT_9D3C7E75', '9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786'],
+      ['M2_WEB_FIREFOX_STANDARD', 'CFMT_EXACT_9D3C7E75', '9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786'],
+    ]);
   });
 
   test('the copied C-REST value registries are exactly the eleven closed registries', () => {
@@ -241,13 +246,13 @@ describe('the closed metadata', () => {
 });
 
 describe('the fresh-worker fixture matrix', () => {
-  test('the matrix carries exactly seven positive and seventy negative fixtures', () => {
-    expect(runFreshWorkerFixtureMatrix()).toHaveLength(77);
-    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(7);
-    expect(FRESH_WORKER_FIXTURES.negative).toHaveLength(70);
+  test('the matrix carries exactly ten positive and seventy-one negative fixtures', () => {
+    expect(runFreshWorkerFixtureMatrix()).toHaveLength(81);
+    expect(FRESH_WORKER_FIXTURES.positive).toHaveLength(10);
+    expect(FRESH_WORKER_FIXTURES.negative).toHaveLength(71);
   });
 
-  test('all seventy-seven fixtures return their exact typed outcome at their exact first phase', () => {
+  test('all eighty-one fixtures return their exact typed outcome at their exact first phase', () => {
     for (const row of runFreshWorkerFixtureMatrix()) {
       expect({ id: row.id, result: row.actual.result, stage: row.actual.stage })
         .toEqual({ id: row.id, result: row.expected.result, stage: row.expected.firstPhase });
@@ -262,16 +267,16 @@ describe('the fresh-worker fixture matrix', () => {
     }
   });
 
-  test('only the five M2 positives expose authority, and only at EXPOSE', () => {
+  test('only the eight M2 positives expose authority, and only at EXPOSE', () => {
     const exposing = runFreshWorkerFixtureMatrix().filter((row) => row.actual.exposed);
-    expect(exposing).toHaveLength(5);
+    expect(exposing).toHaveLength(8);
     for (const row of exposing) {
       expect(row.kind).toBe('positive');
       expect(row.actual.stage).toBe('EXPOSE');
       expect(SUCCESS_RESULTS.includes(row.actual.result)).toBe(true);
     }
     expect(runFreshWorkerFixtureMatrix().filter((row) => row.kind === 'positive'))
-      .toHaveLength(7);
+      .toHaveLength(10);
   });
 
   test('the fixture rows are copied verbatim from the record and are frozen', () => {
@@ -332,7 +337,7 @@ describe('fault precedence', () => {
   });
 
   test('the negative class map agrees with the fault precedence table', () => {
-    expect(NEGATIVE_CLASSES).toHaveLength(25);
+    expect(NEGATIVE_CLASSES).toHaveLength(26);
     for (const row of NEGATIVE_CLASSES) {
       const fault = FAULT_PRECEDENCE.find((item) => item.fault === row.fault);
       expect({ negativeClass: row.negativeClass, phase: fault.phase, result: fault.result })
@@ -341,8 +346,8 @@ describe('fault precedence', () => {
     }
   });
 
-  // Independent transcription of the five rows C-REST (commit 32075ed, SHA-256 bc3026e7…d5dc0, act #514
-  // 6433983465) carries for the C-FMT rule-only hold locator. The literals below are copied from the
+  // Independent transcription of the five rows C-REST (commit f2fdd81, SHA-256 39b57dda…659a1, act #583
+  // 6797802180; unchanged from #514) carries for the C-FMT rule-only hold locator. The literals below are copied from the
   // ratified record, not derived from the module, so a count-preserving substitution, a wrong code or
   // phase, or a duplicated identity fails here even when every length assertion still holds.
   test('the five hold-locator rows carry exactly the ratified C-REST identities, codes and phases', () => {
@@ -354,9 +359,9 @@ describe('fault precedence', () => {
       ['UNBOUND_CANDIDATE_GENERATION_REUSE', 'referenceOrLifecycleInconsistent', 'REFERENCES', 'REFERENCE_INCONSISTENT'],
     ];
     const ratifiedNames = ratifiedClasses.map(([negativeClass]) => negativeClass);
-    expect(NEGATIVE_CLASSES.slice(20)
+    expect(NEGATIVE_CLASSES.slice(20, 25)
       .map((row) => [row.negativeClass, row.fault, row.phase, row.result])).toEqual(ratifiedClasses);
-    const added = FRESH_WORKER_FIXTURES.negative.slice(65).map((row) => ({
+    const added = FRESH_WORKER_FIXTURES.negative.slice(65, 70).map((row) => ({
       id: row.id, inventory: row.inventory, vector: row.vector, legacy: row.legacy,
       negativeClass: row.negativeClass, faults: [...row.faults], result: row.result, firstPhase: row.firstPhase,
     }));
@@ -368,12 +373,64 @@ describe('fault precedence', () => {
       expect(ratifiedNames).not.toContain(row.negativeClass);
     }
     const ids = FRESH_WORKER_FIXTURES.negative.map((row) => row.id);
-    expect(new Set(ids).size).toBe(70);
-    expect(new Set(NEGATIVE_CLASSES.map((row) => row.negativeClass)).size).toBe(25);
+    expect(new Set(ids).size).toBe(71);
+    expect(new Set(NEGATIVE_CLASSES.map((row) => row.negativeClass)).size).toBe(26);
     for (const [negativeClass, fault, phase, result] of ratifiedClasses) {
       const outcome = outcomeOf({ faults: [fault] });
       expect({ negativeClass, result: outcome.result, stage: outcome.stage })
         .toEqual({ negativeClass, result, stage: phase });
+    }
+  });
+
+  // Independent transcription of the K13-NONE additions of C-REST (commit f2fdd81, SHA-256 39b57dda…659a1, act
+  // #583 6797802180): three NONE-output positive fixtures, one negative fixture and one negativeClassMap row.
+  // The literals are copied from the ratified record, not derived from the module.
+  test('the K13-NONE rows carry exactly the ratified C-REST identities, vectors, codes and phases', () => {
+    const ratifiedPositives = [
+      ['POS-NONE-HOLD-S006', 'FMT-KAT-NONE-HOLD-S006', 'RESTORED_RECONCILIATION_REQUIRED'],
+      ['POS-NONE-HOLD-S016', 'FMT-KAT-NONE-HOLD-S016', 'RESTORED_RECONCILIATION_REQUIRED'],
+      ['POS-NONE-HISTORICAL-S016', 'FMT-KAT-NONE-HISTORICAL-S016', 'RESTORED_ACTIVE'],
+    ];
+    const artifacts = [
+      { id: 'fixed-selector', kind: 'GENERATION_SELECTOR' },
+      { id: 'selected-manifest', kind: 'MANIFEST' },
+      { id: 'selected-record-set', kind: 'DATA_RECORD_SET' },
+    ];
+    const gates = Object.fromEntries(PHASES.filter((phase) => phase !== 'EXPOSE').map((phase) => [phase, 'PASS']));
+    expect(FRESH_WORKER_FIXTURES.positive.map((row) => row.id)).toEqual([
+      'POS-NO-M2', 'POS-LEGACY-ONLY', 'POS-EMPTY', 'POS-ACTIVE', 'POS-HOLD', 'POS-EMPTY-HOLD',
+      'POS-NONE-HOLD-S006', 'POS-NONE-HOLD-S016', 'POS-NONE-HISTORICAL-S016', 'POS-M2-LEGACY-PRESENT',
+    ]);
+    expect(FRESH_WORKER_FIXTURES.positive.slice(6, 9).map((row) => JSON.parse(JSON.stringify(row))))
+      .toEqual(ratifiedPositives.map(([id, vector, result]) => ({
+        id, inventory: 'M2', vector, legacy: false, result, firstPhase: 'EXPOSE', gates, artifacts,
+      })));
+    expect(JSON.parse(JSON.stringify(FRESH_WORKER_FIXTURES.negative[70]))).toEqual({
+      id: 'NEG-CFMT-HELD_OUTPUT_PRESENCE_KIND_MISMATCH', inventory: 'M2', vector: 'FMT-KAT-NONE-HOLD-S016',
+      legacy: false, faults: ['recordCanonicalKeyKindVersionGenerationInvalid'],
+      negativeClass: 'HELD_OUTPUT_PRESENCE_KIND_MISMATCH', result: 'RECORD_INVALID', firstPhase: 'RECORD_DECODE',
+      gates, artifacts,
+    });
+    expect({ ...NEGATIVE_CLASSES[25] }).toEqual({
+      negativeClass: 'HELD_OUTPUT_PRESENCE_KIND_MISMATCH', fault: 'recordCanonicalKeyKindVersionGenerationInvalid',
+      phase: 'RECORD_DECODE', result: 'RECORD_INVALID',
+    });
+    for (const [vector, state, result] of [
+      ['FMT-KAT-NONE-HOLD-S006', 'RECONCILIATION_REQUIRED', 'RESTORED_RECONCILIATION_REQUIRED'],
+      ['FMT-KAT-NONE-HOLD-S016', 'RECONCILIATION_REQUIRED', 'RESTORED_RECONCILIATION_REQUIRED'],
+      ['FMT-KAT-NONE-HISTORICAL-S016', 'ACTIVE', 'RESTORED_ACTIVE'],
+    ]) {
+      expect(outcomeOf({ vector, selectorState: state }))
+        .toMatchObject({ result, stage: 'EXPOSE', exposed: true });
+      expect(outcomeOf({ vector, selectorState: state, faults: ['recordCanonicalKeyKindVersionGenerationInvalid'] }))
+        .toMatchObject({ result: 'RECORD_INVALID', stage: 'RECORD_DECODE', exposed: false });
+    }
+    const matrix = runFreshWorkerFixtureMatrix();
+    for (const id of ['POS-NONE-HOLD-S006', 'POS-NONE-HOLD-S016', 'POS-NONE-HISTORICAL-S016',
+      'NEG-CFMT-HELD_OUTPUT_PRESENCE_KIND_MISMATCH']) {
+      const row = matrix.find((item) => item.id === id);
+      expect({ id, result: row.actual.result, stage: row.actual.stage })
+        .toEqual({ id, result: row.expected.result, stage: row.expected.firstPhase });
     }
   });
 });
@@ -420,6 +477,9 @@ describe('the ordered outcome', () => {
       'FMT-KAT-ACTIVE': 'ACTIVE',
       'FMT-KAT-HOLD': 'RECONCILIATION_REQUIRED',
       'FMT-KAT-EMPTY-HOLD': 'RECONCILIATION_REQUIRED',
+      'FMT-KAT-NONE-HOLD-S006': 'RECONCILIATION_REQUIRED',
+      'FMT-KAT-NONE-HOLD-S016': 'RECONCILIATION_REQUIRED',
+      'FMT-KAT-NONE-HISTORICAL-S016': 'ACTIVE',
     };
     for (const [vector, state] of Object.entries(stateOfVector)) {
       expect(outcomeOf({ vector, selectorState: state }))

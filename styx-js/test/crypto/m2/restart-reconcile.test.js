@@ -9,7 +9,7 @@
 // a relaunch is a fresh adapter snapshot at EMPTY over the same port with the SS memory hold dropped.
 //
 // Ratified inputs: C-API docs/architecture/m2/adapter-contract.md sha256 0afd0f21…c3871 (#319 6114147886);
-// C-MUT f37915f1…3059c, C-FMT 526fc4c3…3f3e2, C-REST bc3026e7…d5dc0 (#514 6433983465).
+// C-MUT f37915f1…3059c (#514 6433983465), C-FMT 9d3c7e75…f8786, C-REST 39b57dda…659a1 (#583 6797802180).
 
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';

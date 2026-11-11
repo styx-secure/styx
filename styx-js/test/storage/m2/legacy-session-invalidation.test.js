@@ -12,8 +12,8 @@ import { M2_KIND, decodeRecordKey, M2StorageCodecError } from '../../../src/stor
 
 // The ratified C-REC vocabulary asserted below is copied verbatim from
 // `docs/architecture/m2/recovery-and-coexistence.md` §13 `/marker` and `/fixtures`
-// (commit 9307ec00f0f359b4913faf466b47a130be87a3dc, SHA-256
-// ac66aafa779288925aab8e1a3bb044dffc02021126dd0339ffe50c2f2de8fc22, #514 comment 6433983465).
+// (commit 564b3b9360177275951f7625fe994fe80ab998ee, SHA-256
+// be6a96b568c89cda6f0a0335c348aebb061b9c4fde5a0815b70bbed62ba87a15, #583 comment 6797802180).
 
 const ABSENT = 'ABSENT';
 const PENDING = 'PENDING_NEW_SESSION';
