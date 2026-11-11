@@ -1230,6 +1230,126 @@ describe('Identity bound: exactly 43 canonical characters for the seven RS_TRI_S
   });
 });
 
+describe('Owner completions F1/F2: P01 precedence beside an empty or non-conforming identity', () => {
+  const canonical = b64(IDENTITY_BYTES);
+  const refused = (answer, expected, origin) => {
+    expect(code(answer.result)).toBe(expected);
+    expect(answer.result.kind).toBe('REJECTED');
+    expect(answer.result.stateAfter).toBe(origin);
+    expect(Object.hasOwn(answer.result, 'output')).toBe(false);
+    expect(answer.snapshot).toBeNull();
+  };
+  const heldSnapshot = () => {
+    const held = live('CAPI-S014', 'INDETERMINATE').snapshot;
+    expect(held.state).toBe('RECONCILIATION_REQUIRED');
+    return held;
+  };
+  const snapshotOf = (origin) => (origin === 'RECONCILIATION_REQUIRED' ? heldSnapshot() : createAdapterSnapshot(origin));
+  const invokeWith = (scenario, origin, observation) => invokeAdapterTransition({
+    request: request(LIVE[scenario].operation, LIVE[scenario].input), snapshot: snapshotOf(origin), observation,
+  });
+  /** An observation whose `member` is an accessor that throws: the failed post-request evidence member. */
+  const failing = (observation, member) => {
+    const out = { ...observation };
+    delete out[member];
+    Object.defineProperty(out, member, { enumerable: true, get() { throw new Error('unreadable'); } });
+    return out;
+  };
+
+  // F1: an empty identity names no issued RS commit request, so a missing or unknown outcome is the P01
+  // defect of its member, in each of the three states (P01 precedes the P05 gate), with or without a reference.
+  const F1_OUTCOMES = [
+    ['a null outcome', (o) => ({ ...o, commitOutcome: null }), 'INVALID_REQUEST'],
+    ['an out-of-set outcome', (o) => ({ ...o, commitOutcome: 'MAYBE' }), 'UNKNOWN_VALUE'],
+    ['a non-string outcome', (o) => ({ ...o, commitOutcome: 7 }), 'INVALID_REQUEST'],
+    ['a failing outcome accessor', (o) => failing(o, 'commitOutcome'), 'INVALID_REQUEST'],
+  ];
+  const F1_CASES = ['CAPI-S014', 'CAPI-S016', 'CAPI-S017'].flatMap((scenario) => ['ACTIVE', 'EMPTY', 'RECONCILIATION_REQUIRED']
+    .flatMap((origin) => [true, false].flatMap((withReference) => F1_OUTCOMES
+      .map(([label, shape, expected]) => [scenario, origin, label, withReference, shape, expected]))));
+  test.each(F1_CASES)('F1 %s at %s, empty identity with %s (reference %s): P01, nothing held',
+    (scenario, origin, _label, withReference, shape, expected) => {
+      const base = liveObservation(scenario, 'INDETERMINATE', { identity: '' });
+      if (!withReference) base.reconciliationReference = null;
+      refused(invokeWith(scenario, origin, shape(base)), expected, origin);
+    });
+
+  test.each(['CAPI-S014', 'CAPI-S016', 'CAPI-S017'])('F1 %s controls: unchanged beside a named outcome or a non-empty identity', (scenario) => {
+    // An empty identity beside a named outcome stays the P06 identity refusal (I-RESTART-API cycle 1).
+    for (const outcome of ['COMMITTED', 'NOT_COMMITTED', 'INDETERMINATE']) {
+      refused(live(scenario, outcome, { identity: '' }), 'FAIL_CLOSED_INTERNAL', 'ACTIVE');
+    }
+    // A non-empty identity beside a null outcome is an issued request: INDETERMINATE, then P06 or held.
+    const nullOutcome = (identity) => invokeWith(scenario, 'ACTIVE', { ...liveObservation(scenario, 'INDETERMINATE', { identity }), commitOutcome: null });
+    refused(nullOutcome('AAAA'), 'FAIL_CLOSED_INTERNAL', 'ACTIVE');
+    const held = nullOutcome(canonical);
+    expect(held.result.kind).toBe('INDETERMINATE');
+    expect(held.snapshot.held.operationIdentity).toBe(canonical);
+    // A non-string identity stays P01; a null identity beside a null outcome too.
+    refused(nullOutcome(7), 'INVALID_REQUEST', 'ACTIVE');
+    refused(nullOutcome(null), 'INVALID_REQUEST', 'ACTIVE');
+    if (scenario === 'CAPI-S014') {
+      // An empty identity beside a named, non-COMMITTED outcome and a failed escrow member: still the P06
+      // refusal (the cycle-5j absent-escrow reading is unchanged).
+      for (const outcome of ['NOT_COMMITTED', 'INDETERMINATE']) {
+        refused(invokeWith(scenario, 'ACTIVE', failing(liveObservation(scenario, outcome, { identity: '' }), 'stagedOutput')),
+          'FAIL_CLOSED_INTERNAL', 'ACTIVE');
+      }
+    }
+  });
+
+  // F2: the post-commit retention exception holds only beside an identity the C-API §5 rule admits.
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const nonCanonical = `${canonical.slice(0, 42)}${ALPHABET[ALPHABET.indexOf(canonical[42]) + 1]}`;
+  const NON_CONFORMING = [
+    ['0 characters', ''],
+    ['4 characters', 'AAAA'],
+    ['42 characters', canonical.slice(0, 42)],
+    ['44 characters', `${canonical}A`],
+    ['a non-alphabet character', `+${canonical.slice(1)}`],
+    ['a non-canonical last character', nonCanonical],
+    ['an all-zero identity', b64(new Uint8Array(32))],
+  ];
+  /** A staged record whose only member is an accessor that throws. */
+  const failingInner = () => Object.defineProperty({}, 'protectedCommitBytes', { enumerable: true, get() { throw new Error('unreadable'); } });
+  const BAD_STAGED = [
+    ['a wrong-type member', (o) => ({ ...o, stagedOutput: { protectedCommitBytes: 7 } }), 'INVALID_REQUEST'],
+    ['an unknown member', (o) => ({ ...o, stagedOutput: { extra: 1 } }), 'UNKNOWN_FIELD'],
+    ['an unknown member beside the bytes', (o) => ({ ...o, stagedOutput: { protectedCommitBytes: STAGED, extra: 1 } }), 'UNKNOWN_FIELD'],
+    ['a missing member', (o) => ({ ...o, stagedOutput: {} }), 'INVALID_REQUEST'],
+    ['a non-record', (o) => ({ ...o, stagedOutput: 'x' }), 'INVALID_REQUEST'],
+    ['a failing staged accessor', (o) => failing(o, 'stagedOutput'), 'INVALID_REQUEST'],
+    ['a failing inner member accessor', (o) => ({ ...o, stagedOutput: failingInner() }), 'INVALID_REQUEST'],
+  ];
+  const F2_CASES = ['ACTIVE', 'EMPTY', 'RECONCILIATION_REQUIRED'].flatMap((origin) => NON_CONFORMING.flatMap(([idLabel, identity]) => BAD_STAGED
+    .map(([label, shape, expected]) => [origin, idLabel, label, identity, shape, expected])));
+  test.each(F2_CASES)('F2 CAPI-S014 COMMITTED at %s, %s identity, staged output with %s: P01, nothing held or released',
+    (origin, _idLabel, _label, identity, shape, expected) => {
+      expect(nonCanonical).not.toBe(canonical);
+      expect(Buffer.from(nonCanonical, 'base64url').toString('base64url')).not.toBe(nonCanonical);
+      refused(invokeWith('CAPI-S014', origin, shape(liveObservation('CAPI-S014', 'COMMITTED', { identity }))), expected, origin);
+    });
+
+  test.each(BAD_STAGED.map(([label, shape]) => [label, shape]))(
+    'F2 control: the canonical identity beside a COMMITTED report and staged output with %s still retains, nothing released',
+    (_label, shape) => {
+      const answer = invokeWith('CAPI-S014', 'ACTIVE', shape(liveObservation('CAPI-S014', 'COMMITTED')));
+      expect(answer.result.kind).not.toBe('REJECTED');
+      expect(hasBytes(answer.result)).toBe(false);
+      expect(answer.snapshot.held.operationIdentity).toBe(canonical);
+    },
+  );
+
+  test('F2 controls: a non-conforming identity beside a well-formed staged output stays the P06 refusal', () => {
+    for (const [, identity] of NON_CONFORMING) {
+      const expected = identity.length > 43 ? 'VALUE_OUT_OF_RANGE' : 'FAIL_CLOSED_INTERNAL';
+      refused(live('CAPI-S014', 'COMMITTED', { identity }), expected, 'ACTIVE');
+    }
+    // Before a commit proof the staged defect was already P01 at the base.
+    refused(invokeWith('CAPI-S014', 'ACTIVE', { ...liveObservation('CAPI-S014', 'NOT_COMMITTED'), stagedOutput: { extra: 1 } }), 'UNKNOWN_FIELD', 'ACTIVE');
+  });
+});
+
 describe('D-A1: a defective reconciliationReference is a producer contradiction (FAIL_CLOSED_INTERNAL at P06)', () => {
   const DEFECTS = [
     ['missing', undefined],

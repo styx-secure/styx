@@ -1423,8 +1423,11 @@ function readApplyObservation(value, slotContext, slotDefects) {
   if (typeof value.authentication !== 'string') defects.push('INVALID_REQUEST');
   else if (!AUTHENTICATION_VALUES.includes(value.authentication)) defects.push('UNKNOWN_VALUE');
   // C-API §5: any string, the empty one included, is judged by the P06 identity rule; a non-string is P01.
-  const identityIssued = typeof value.operationIdentity === 'string';
-  if (value.operationIdentity !== null && !identityIssued) defects.push('INVALID_REQUEST');
+  const identityString = typeof value.operationIdentity === 'string';
+  // Owner completion F1: an empty identity names no issued RS commit request, so it never turns a missing or
+  // unknown outcome into INDETERMINATE; that outcome stays the P01 defect of its member.
+  const identityIssued = identityString && value.operationIdentity.length > 0;
+  if (value.operationIdentity !== null && !identityString) defects.push('INVALID_REQUEST');
   const outcomeNull = value.commitOutcome === null;
 
   if (value.authentication === 'AUTHENTICATION_FAILED' || value.authentication === 'AUTHENTICATED_STATE_INCONSISTENT') {
@@ -1455,9 +1458,13 @@ function readApplyObservation(value, slotContext, slotDefects) {
     };
   }
   // A supported shape always issues exactly one RS commit request, identified by its operation identity.
-  if (!identityIssued) defects.push('INVALID_REQUEST');
+  if (!identityString) defects.push('INVALID_REQUEST');
   const commitOutcome = identityIssued && !COMMIT_OUTCOMES.includes(value.commitOutcome)
     ? 'INDETERMINATE' : value.commitOutcome;
+  if (identityString && !identityIssued) {
+    if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
+    else if (!COMMIT_OUTCOMES.includes(commitOutcome)) defects.push('UNKNOWN_VALUE');
+  }
   if (defects.length > 0) return { error: worst(defects) };
   return {
     error: null, facts, applicableErrors: [], extraCodes: [], refOverBound, refIllFormed,
@@ -1804,7 +1811,8 @@ function readObservationValue(operation, value) {
     // outcome is therefore the ambiguous outcome and is held (probe p14); so is one carrying an unknown
     // outcome (cycle 5e review). With no identity, no request was ever made and the missing or unknown
     // proof stays the P01 defect below. `CREATE` and `JOIN_WELCOME` keep the merged I-JOIN closure unchanged.
-    const requestIssued = selfUpdate && typeof value.operationIdentity === 'string';
+    // Owner completion F1: an empty identity names no issued request (a missing outcome stays P01).
+    const requestIssued = selfUpdate && typeof value.operationIdentity === 'string' && value.operationIdentity.length > 0;
     const commitOutcome = requestIssued && !COMMIT_OUTCOMES.includes(value.commitOutcome)
       ? 'INDETERMINATE' : value.commitOutcome;
     if (typeof commitOutcome !== 'string') defects.push('INVALID_REQUEST');
@@ -1812,7 +1820,10 @@ function readObservationValue(operation, value) {
     // C-API §5: any string, the empty one included, is judged by the P06 identity rule; a non-string is P01.
     if (typeof value.operationIdentity !== 'string') defects.push('INVALID_REQUEST');
     let staged = null;
-    if (selfUpdate && requestIssued && value.stagedOutput === ABSENT_MEMBER && commitOutcome !== 'COMMITTED') {
+    // The cycle-5j absent-escrow reading keeps its string test: an empty identity beside a named outcome is
+    // still decided by the P06 identity rule, not by a P01 defect of the failed escrow member.
+    if (selfUpdate && typeof value.operationIdentity === 'string' && value.stagedOutput === ABSENT_MEMBER
+      && commitOutcome !== 'COMMITTED') {
       // A failed escrow member of an issued update that RS has not proved committed is the absent escrow:
       // the ambiguous outcome is still held and nothing is released (cycle 5j review).
       staged = null;
@@ -1825,8 +1836,11 @@ function readObservationValue(operation, value) {
         // reconciliation evidence and never emits REJECTED. A `SELF_UPDATE` escrow the owning layer cannot
         // hand over after a commit report is therefore held, exactly as an absent, empty or over-bound one
         // is; before a commit proof the same defect stays the P01 rejection the closure fixes. `CREATE`
-        // keeps the merged I-JOIN behaviour unchanged.
-        if (!(selfUpdate && commitOutcome === 'COMMITTED')) defects.push(stagedShape.error);
+        // keeps the merged I-JOIN behaviour unchanged. Owner completion F2: the exception holds only beside an
+        // identity the C-API §5 rule admits; beside a non-conforming one (refused at P06 before any RS
+        // request, so nothing is retained) the P01 defect of the staged member prevails.
+        const retained = selfUpdate && commitOutcome === 'COMMITTED' && decodeReference32(value.operationIdentity) !== null;
+        if (!retained) defects.push(stagedShape.error);
       } else {
         staged = stagedShape.staged;
       }
