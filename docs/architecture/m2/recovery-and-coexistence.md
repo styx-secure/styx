@@ -10,7 +10,7 @@ It implements nothing, imports no legacy state, releases no output, deletes no b
 
 ## 2. Frozen inputs and ownership
 
-The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `a7f09ab0e3f0aec9f9a3e8088ee5ab383db7b28e`, SHA-256 `f37915f11d178aefe2918d457d29eeb345c0ec508087cc2527e7c1a9d223059c`; C-FMT `docs/architecture/m2/storage-format.md` at `2c6e82de9d4b98ba20b7f15a46107a25fecf4546`, SHA-256 `526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `32075ed493a29b1e0d5dd2995531d72ecc400c7a`, SHA-256 `bc3026e730e78ef259b97fd3cc6290b29aa97481955218efde37483c349d5dc0`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
+The exact external read-only inputs are C-MUT `docs/architecture/m2/mutation-table.md` at `a7f09ab0e3f0aec9f9a3e8088ee5ab383db7b28e`, SHA-256 `f37915f11d178aefe2918d457d29eeb345c0ec508087cc2527e7c1a9d223059c`; C-FMT `docs/architecture/m2/storage-format.md` at `0fc698fcbba1f0e28ecf20a83d278fd6beccc131`, SHA-256 `9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786`; and C-REST `docs/architecture/m2/restore-compatibility.md` at `f2fdd8101bcd094fe507c16dccb5cafb9dd3300e`, SHA-256 `39b57dda3f1077fac366aaa6b0ea9bce7bf0cbef67e5e98cda49f3f80e3659a1`. Their ratifications and evidence-bundle hashes are copied in `provenance`. Drift is BLOCK.
 
 Every transition and invariant is classified in `dependencyCoverage`. `DEPENDENCY_DERIVED` facts are only those entailed by the cited exact fields. `C_REC_OWNED` rules are authorized recovery consequences whose consumed dependency preconditions are cited and unchanged. A missing or insufficient field is BLOCK; prose or an evidence bundle cannot fill it.
 
@@ -30,7 +30,7 @@ The exact outcome rows and eight related crash-boundary identifiers are copied. 
 
 For the M2 recovery surface, password re-wrap requires successful wrapper authentication and `RESTORED_ACTIVE` or `RESTORED_EMPTY`. This owned precondition neither grants nor removes the existing vault password-change facility for `NO_M2_STATE` or `LEGACY_ONLY`. It atomically replaces only the wrapper around the same Root Storage Key; every M2 byte and fact remains identical. A crash leaves the old or new valid wrapper. Re-wrap is unavailable during reconciliation. Wrong or forgotten credentials permit no re-wrap, reset-by-default, salvage, migration or record oracle; there is no forgotten-password recovery.
 
-`INCOMPATIBLE_BUILD` has only `SHOW_COMPATIBLE_BUILD`: identify reader profile `CFMT_EXACT_526FC4C3`, preserve and stop, and read or change no byte. A feature flag, acknowledgement or partial match cannot widen eligibility. It is not reset-eligible.
+`INCOMPATIBLE_BUILD` has only `SHOW_COMPATIBLE_BUILD`: identify reader profile `CFMT_EXACT_9D3C7E75`, preserve and stop, and read or change no byte. A feature flag, acknowledgement or partial match cannot widen eligibility. It is not reset-eligible.
 
 ## 6. Legacy coexistence and re-establishment
 
@@ -99,19 +99,19 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
       },
       {
         "card": "C-FMT",
-        "commit": "2c6e82de9d4b98ba20b7f15a46107a25fecf4546",
+        "commit": "0fc698fcbba1f0e28ecf20a83d278fd6beccc131",
         "path": "docs/architecture/m2/storage-format.md",
-        "sha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
-        "evidenceBundleSha256": "19fd90f05c8cf89eb3bb60b487c2c17383ff9aedfd108014124785cdccde630e",
-        "ratification": "issue-514-owner-act-output-digest-bind-docs-526fc4c3"
+        "sha256": "9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786",
+        "evidenceBundleSha256": "2dce7239422dfb8049754db0cce9d8eaefbecc8d2722c8d32821de65563b106d",
+        "ratification": "issue-583-owner-act-k13-none-docs-9d3c7e75"
       },
       {
         "card": "C-REST",
-        "commit": "32075ed493a29b1e0d5dd2995531d72ecc400c7a",
+        "commit": "f2fdd8101bcd094fe507c16dccb5cafb9dd3300e",
         "path": "docs/architecture/m2/restore-compatibility.md",
-        "sha256": "bc3026e730e78ef259b97fd3cc6290b29aa97481955218efde37483c349d5dc0",
-        "evidenceBundleSha256": "44f43c258efbfdd1094383923fa365cd1a4d2cfe889f85feebfe7dd36619ceab",
-        "ratification": "issue-514-owner-act-output-digest-bind-docs-526fc4c3"
+        "sha256": "39b57dda3f1077fac366aaa6b0ea9bce7bf0cbef67e5e98cda49f3f80e3659a1",
+        "evidenceBundleSha256": "371227dd443c27869ecdb1c1aadca4d1a7af59fbdade1ae7e430dd8e184a1f8f",
+        "ratification": "issue-583-owner-act-k13-none-docs-9d3c7e75"
       }
     ]
   },
@@ -841,7 +841,7 @@ The exact results, dispositions, reset booleans, marker states, actions, transit
   "compatibleBuild": {
     "result": "INCOMPATIBLE_BUILD",
     "disposition": "SHOW_COMPATIBLE_BUILD",
-    "readerProfile": "CFMT_EXACT_526FC4C3",
+    "readerProfile": "CFMT_EXACT_9D3C7E75",
     "preserveAndStop": true,
     "readsOrMutatesBytes": false,
     "resetEligible": false
