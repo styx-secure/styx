@@ -467,7 +467,7 @@ function reencode(kind, plaintext, change) {
  */
 async function contradict({ scenario, kind }) {
   const hold = await port.readMemoryHold();
-  const { candidate, staged } = requestOf(scenario, M2_OUTCOME.INDETERMINATE);
+  const { candidate, staged, envelope } = requestOf(scenario, M2_OUTCOME.INDETERMINATE);
   const current = await port.readSelector();
   const start = (await readback({})).dbDigest;
   let setup;
@@ -491,7 +491,16 @@ async function contradict({ scenario, kind }) {
       forged = restage(staged, k8((x) => { x.outcome = 2; x.terminal = false; }));
     } else if (kind === 'CONTRADICT_ESCROW') {
       const e = staged.content[K.OUTPUT_ESCROW];
-      forged = restage(staged, { [K.OUTPUT_ESCROW]: reencode(K.OUTPUT_ESCROW, e, (x) => { x.outputKind = x.outputKind === 6 ? 2 : x.outputKind + 1; }) });
+      // A row with no output (R3 released, owner amendment 3 of #493): the contradiction is an OUTPUT_ESCROW
+      // that the held NONE output forbids, with the row's own identity, an output kind and bytes.
+      forged = restage(staged, { [K.OUTPUT_ESCROW]: e === undefined
+        ? encodePlaintext(K.OUTPUT_ESCROW, {
+          presence: 1, operationIdentity: envelope.operationIdentity.value, candidateDigest: envelope.candidate.digest,
+          candidateReference: envelope.candidate.reference, mutationSetDigest: envelope.componentSet.digest,
+          mutationSetReference: envelope.componentSet.reference, outputKind: 2, output: new Uint8Array(24).fill(0xa3),
+          resultDigest: new Uint8Array(32).fill(0x0e),
+        })
+        : reencode(K.OUTPUT_ESCROW, e, (x) => { x.outputKind = x.outputKind === 6 ? 2 : x.outputKind + 1; }) });
     } else {
       forged = restage(staged, {}, { drop: K.ABSENCE_COMMITMENTS });
     }
