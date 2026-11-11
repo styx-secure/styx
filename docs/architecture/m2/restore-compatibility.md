@@ -10,13 +10,15 @@ It specifies no restore implementation, transaction, migration, rewrite, repair,
 
 ## 2. Frozen input
 
-The only format authority is `docs/architecture/m2/storage-format.md` at `2c6e82de9d4b98ba20b7f15a46107a25fecf4546`, SHA-256 `526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `19fd90f05c8cf89eb3bb60b487c2c17383ff9aedfd108014124785cdccde630e`; access is not required. The input remains external and read-only. Drift is BLOCK.
+The only format authority is `docs/architecture/m2/storage-format.md` at `0fc698fcbba1f0e28ecf20a83d278fd6beccc131`, SHA-256 `9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786`, ratified in Issue #327 by the same owner act that ratifies this document. Its external evidence bundle is cited only as SHA-256 `2dce7239422dfb8049754db0cce9d8eaefbecc8d2722c8d32821de65563b106d`; access is not required. The input remains external and read-only. Drift is BLOCK.
 
 The exact readable profile is the conjunction copied under `compatibilityRegistry`: all eight versions, algorithms and widths, big-endian integers, framing and zero-salt rules, four 32-byte HKDF outputs, magic/domain/label strings, key/envelope/AAD/plaintext/manifest/selector grammar, all 17 kind IDs and versions, bounds, registries, mappings, generation rules, crash boundaries, vectors, negative classes, and non-claims. ProductProfile is exactly 306 bytes as stated by C-FMT; its layout remains C-BIND-owned and is not independently accepted here. Compatibility is equality, never a range, minimum, semver rule, downgrade, or partial recognition. Unknown, future, missing, mixed, or downgraded versions are `UNSUPPORTED_VERSION`; other profile mismatches are `INCOMPATIBLE_FORMAT`.
 
 ## 3. Build eligibility
 
 Byte validity and build eligibility are separate. Before reading any stored M2 or legacy byte, the one-writer Web Lock MUST be held and one complete `buildMatrix` row MUST match. Each row binds the C-FMT digest, all eight versions, OpenMLS revision, WASM path and digest, SS-0 IANA ID and name, Gate-A decisions digest, and browser/runtime class. Chromium and Firefox standard non-private, non-evicted browser profiles are the only listed classes. Mobile, native non-browser, private-browsing, and evicted/partial profiles are not eligible. No flag, acknowledgement, diagnostic override, or partly matching row widens the matrix. Any M2 store on an ineligible build is `INCOMPATIBLE_BUILD`, untouched, before unlock or decode, with compatible-build guidance.
+
+A reader built for any earlier C-FMT profile does not interpret this profile's kind-13 layout: `(recordKind, recordKindVersion)` names a layout only together with the exact C-FMT profile, and kind 13 version 2 here types `heldOutputDigest` and `heldOutputReference` as C-FMT `ob32`, coupled to `heldOutputKind` by C-FMT `heldOutputRule`. Such a build has no matching `buildMatrix` row and is `INCOMPATIBLE_BUILD` (`buildNotListed`) before unlock or decode; an eligible build that authenticates a different profile is `INCOMPATIBLE_FORMAT` (`authenticatedProfileIncompatible`). A kind-13 held-output field whose value length is neither 0 nor 32 is `RECORD_INVALID` (`recordCanonicalKeyKindVersionGenerationInvalid`) as a wrong fixed width. A kind-13 record whose held-output field presence violates `heldOutputRule` is `RECORD_INVALID` (`recordCanonicalKeyKindVersionGenerationInvalid`) with negative class `HELD_OUTPUT_PRESENCE_KIND_MISMATCH`. Each preserves all bytes and stops.
 
 ## 4. Ordered restore decision
 
@@ -46,7 +48,7 @@ The located candidate is a complete immutable unselected generation. Its `MUTATI
 
 Legacy inventory is disjoint. Legacy envelopes, ciphersuites, identifiers, records, and provider states are never decoded as M2, compared against selected SS-0, copied into M2, or used as fallback. Valid M2 plus legacy uses the M2 result with `LEGACY_PRESENT`; invalid M2 plus legacy keeps the M2 failure with that flag. All bytes remain preserved and visible re-establishment guidance may be shown. The legacy shipping ciphersuite at an M2 locator is rejected as incompatible legacy-shaped M2 input without comparing it to SS-0.
 
-Compatible-build guidance identifies reader profile `CFMT_EXACT_526FC4C3` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
+Compatible-build guidance identifies reader profile `CFMT_EXACT_9D3C7E75` and preserves bytes. Destructive reset is separate, explicit, irreversible, never automatic, and not performed here. Password change only re-wraps the same Root Storage Key and is not migration or repair.
 
 ## 9. Corruption, diagnostics, and immutability
 
@@ -64,7 +66,7 @@ Authentication proves consistency, not freshness. Counters, timestamps, AEAD, co
 
 ## 12. Fixtures and executable interpretation
 
-The positive fixtures bind absence, legacy-only, and the four exact C-FMT vectors, including both active-parent and empty-parent reconciliation. The M2-plus-legacy fixture adds only `LEGACY_PRESENT`. Negative fixtures cover every failure and boundary named by Issue #332. `mutationCoverage` and `crashCoverage` are exhaustive obligations, not implementation claims.
+The positive fixtures bind absence, legacy-only, and seven exact C-FMT vectors, including both active-parent and empty-parent reconciliation and the three `NONE`-output holds: `FMT-KAT-NONE-HOLD-S006` and `FMT-KAT-NONE-HOLD-S016` restore as `RESTORED_RECONCILIATION_REQUIRED`, and `FMT-KAT-NONE-HISTORICAL-S016` as `RESTORED_ACTIVE`. The M2-plus-legacy fixture adds only `LEGACY_PRESENT`. Negative fixtures cover every failure and boundary named by Issue #332. `mutationCoverage` and `crashCoverage` are exhaustive obligations, not implementation claims.
 
 The external validator parses both records with duplicate rejection, checks exact copied C-FMT coverage, mutates every listed compatibility family, runs all fixtures and crash cases through two independently structured models, combines every pair of faults, permutes enumeration order, and hashes inputs before and after. A fixture proves only this abstract contract model—not IndexedDB, product implementation, browser parity, lock behavior, recovery UX, or production readiness.
 
@@ -91,10 +93,10 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "issue": 332,
     "card": "C-REST",
     "exactBase": "e1538ef9c070e463a8256872a3fd0882c424e2ef",
-    "cFmtCommit": "2c6e82de9d4b98ba20b7f15a46107a25fecf4546",
+    "cFmtCommit": "0fc698fcbba1f0e28ecf20a83d278fd6beccc131",
     "cFmtPath": "docs/architecture/m2/storage-format.md",
-    "cFmtSha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
-    "cFmtEvidenceBundleSha256": "19fd90f05c8cf89eb3bb60b487c2c17383ff9aedfd108014124785cdccde630e"
+    "cFmtSha256": "9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786",
+    "cFmtEvidenceBundleSha256": "2dce7239422dfb8049754db0cce9d8eaefbecc8d2722c8d32821de65563b106d"
   },
   "compatibilityRegistry": {
     "versions": {
@@ -269,7 +271,11 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "length overflow",
         "truncation",
         "trailing bytes"
-      ]
+      ],
+      "optionalValueTypes": {
+        "ob32": "an optional 32-byte value; the TLV value length MUST be 0 (absent) or 32 (present); any other length rejects as wrong fixed width; ob32 is used only where a record kind names it"
+      },
+      "layoutIdentity": "(recordKind, recordKindVersion) identifies a record layout only together with the exact C-FMT profile; equality of kind versions alone is never a compatibility claim; kind 13 version 2 under this profile types the two held-output fields ob32"
     },
     "recordKinds": [
       {
@@ -451,8 +457,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
           "componentSetDigest:b32",
           "componentSetReference:b32",
           "heldOutputKind:u8",
-          "heldOutputDigest:b32",
-          "heldOutputReference:b32",
+          "heldOutputDigest:ob32",
+          "heldOutputReference:ob32",
           "expectedSuccessCode:u8",
           "expectedStateAfter:u8",
           "reconciliationReference:b32",
@@ -1141,7 +1147,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
           "output": "NONE",
           "blindRetry": "FORBIDDEN"
         }
-      }
+      },
+      "heldOutputRule": "MUTATION_HOLD heldOutputDigest and heldOutputReference are both absent if and only if heldOutputKind is NONE; otherwise both are present; any other combination rejects as HELD_OUTPUT_PRESENCE_KIND_MISMATCH; an all-zero present value is not absence; this is the physical form of the C-MUT heldOutput noneRule and presentRule and adds no semantics; for a NONE mutation OUTPUT_ESCROW is a canonical tombstone"
     },
     "outputEscrow": {
       "binding": [
@@ -1447,7 +1454,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "HOLD_LOCATOR_SCOPE_SESSION_SUBSTITUTION",
       "HOLD_LOCATOR_ON_NON_CANDIDATE_HOLD",
       "HOLD_LOCATOR_GENERATION_MISMATCH",
-      "UNBOUND_CANDIDATE_GENERATION_REUSE"
+      "UNBOUND_CANDIDATE_GENERATION_REUSE",
+      "HELD_OUTPUT_PRESENCE_KIND_MISMATCH"
     ],
     "nonClaims": [
       "freshness",
@@ -1554,13 +1562,52 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "recordsCanonicalJsonSha256": "68e59dff3be59e7a1b044198030f98a0583e60981a6b35a78b6522e2dc916d3e",
         "literalVectorCanonicalJsonSha256": "6793dbdf248deb39e0aa5bce469a7105f3a4a1971976cf7492c3a9b1abdb978b",
         "authorityRule": "selector names this generation and repeats it as the candidate binding; its present MUTATION_HOLD is historical mutation-envelope evidence of its own mutation under historicalHoldRule, never an unresolved hold, a candidate or authority for another mutation"
+      },
+      {
+        "id": "FMT-KAT-NONE-HOLD-S006",
+        "state": "RECONCILIATION_REQUIRED",
+        "generation": 8,
+        "selectedGeneration": 1,
+        "candidateGeneration": 8,
+        "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
+        "keyedRootHex": "17a96b0c0059cb47314a35900cce654c716555afadfa7b6f1d690ccbd255361c",
+        "selectorEnvelopeSha256": "fa6052c26a4cb9870d3798649d974cd19a40003c901b450f052d5f0be77cec0f",
+        "recordsCanonicalJsonSha256": "33dfb12449050300d1a30f7003f4ca0422d89e14f3108e75c72c290fa7b4442e",
+        "literalVectorCanonicalJsonSha256": "88ebb2f2595aa764affaf361bddc83ca0a2e82a7c4f344e5794e1a5f402a2d3b",
+        "authorityRule": "selector names FMT-KAT-EMPTY pre-session authority and uses its pre-session selector AAD while the exact candidateManifestKey locates this SESSION-scoped immutable non-authoritative CAPI-S006 candidate; its present MUTATION_HOLD has heldOutputKind NONE with both held-output fields absent and its OUTPUT_ESCROW is a canonical tombstone"
+      },
+      {
+        "id": "FMT-KAT-NONE-HOLD-S016",
+        "state": "RECONCILIATION_REQUIRED",
+        "generation": 9,
+        "selectedGeneration": 2,
+        "candidateGeneration": 9,
+        "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
+        "keyedRootHex": "4989128af44b46c81c71936229fe490f6e3a93bdbf464195cb207d50281bb863",
+        "selectorEnvelopeSha256": "3833d1b6f0c90c3c068a070397db35e72be994cfe631f49c19529ae9946df67e",
+        "recordsCanonicalJsonSha256": "b49a176949e899d4c6d3137f53b2d05dcdd7db25feaf7c28b0b5332ef24ccd23",
+        "literalVectorCanonicalJsonSha256": "71159ee22a05e581840fe70c03bd3d782d492f63b892a8ed4a396f3f9e38e1c1",
+        "authorityRule": "selector names FMT-KAT-ACTIVE as authority and binds this immutable non-authoritative CAPI-S016 candidate; its present MUTATION_HOLD has heldOutputKind NONE with both held-output fields absent and its OUTPUT_ESCROW is a canonical tombstone"
+      },
+      {
+        "id": "FMT-KAT-NONE-HISTORICAL-S016",
+        "state": "ACTIVE",
+        "generation": 10,
+        "selectedGeneration": 10,
+        "candidateGeneration": 10,
+        "profileDigestHex": "5d7f97afb28ee85e05aa9278044467ef6ed3fe0b1162195b07edfc738910126b",
+        "keyedRootHex": "a0fa9c2b498a9dd5942cf9a380e316394a5ac86ad5019a0022e277beb24d07de",
+        "selectorEnvelopeSha256": "21edc18099178f5c19ea9631d4cee9d863955592b35ff8d9c21d7623f44c2498",
+        "recordsCanonicalJsonSha256": "80fe9137d83735884ca652b4e84ae04924c68ff2d17ec4802d8811fbc1c1276e",
+        "literalVectorCanonicalJsonSha256": "897bc9cf0d3047c5d3f984f43bd6565f99d8f171dfc894640276147f3ba43756",
+        "authorityRule": "selector names this generation and repeats it as the candidate binding; its present CAPI-S016 MUTATION_HOLD (heldOutputKind NONE, both held-output fields absent) is historical mutation-envelope evidence of its own mutation under historicalHoldRule, never an unresolved hold, a candidate or authority for another mutation; its OUTPUT_ESCROW is a canonical tombstone"
       }
     ]
   },
   "buildMatrix": [
     {
-      "readerProfile": "CFMT_EXACT_526FC4C3",
-      "cFmtDocumentSha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
+      "readerProfile": "CFMT_EXACT_9D3C7E75",
+      "cFmtDocumentSha256": "9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -1584,8 +1631,8 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "browserClass": "CHROMIUM"
     },
     {
-      "readerProfile": "CFMT_EXACT_526FC4C3",
-      "cFmtDocumentSha256": "526fc4c3b6a209699af9563fcc454161aeba84ad8b35b7253d8690b997e3f3e2",
+      "readerProfile": "CFMT_EXACT_9D3C7E75",
+      "cFmtDocumentSha256": "9d3c7e75055875acbfebfe8e657821d1d9cca18d868d0e0aa6dfac3a480f8786",
       "versions": {
         "format": 1,
         "envelope": 1,
@@ -2022,6 +2069,12 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
       "fault": "referenceOrLifecycleInconsistent",
       "phase": "REFERENCES",
       "result": "REFERENCE_INCONSISTENT"
+    },
+    {
+      "negativeClass": "HELD_OUTPUT_PRESENCE_KIND_MISMATCH",
+      "fault": "recordCanonicalKeyKindVersionGenerationInvalid",
+      "phase": "RECORD_DECODE",
+      "result": "RECORD_INVALID"
     }
   ],
   "failureDefault": "INTERNAL_VALIDATION_FAILED",
@@ -2113,7 +2166,7 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
     "automaticReset": false
   },
   "guidance": {
-    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_526FC4C3 and preserve all bytes.",
+    "compatibleBuild": "Identify the exact reader profile CFMT_EXACT_9D3C7E75 and preserve all bytes.",
     "destructiveReset": "Explicit, separate, irreversible, never automatic; not implemented here.",
     "passwordChange": "Re-wrap the same Root Storage Key; not migration or repair.",
     "legacy": "Visible re-establishment guidance only; preserve all bytes."
@@ -2290,6 +2343,117 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         "vector": "FMT-KAT-EMPTY-HOLD",
         "legacy": false,
         "result": "RESTORED_RECONCILIATION_REQUIRED",
+        "firstPhase": "EXPOSE",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "POS-NONE-HOLD-S006",
+        "inventory": "M2",
+        "vector": "FMT-KAT-NONE-HOLD-S006",
+        "legacy": false,
+        "result": "RESTORED_RECONCILIATION_REQUIRED",
+        "firstPhase": "EXPOSE",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "POS-NONE-HOLD-S016",
+        "inventory": "M2",
+        "vector": "FMT-KAT-NONE-HOLD-S016",
+        "legacy": false,
+        "result": "RESTORED_RECONCILIATION_REQUIRED",
+        "firstPhase": "EXPOSE",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "POS-NONE-HISTORICAL-S016",
+        "inventory": "M2",
+        "vector": "FMT-KAT-NONE-HISTORICAL-S016",
+        "legacy": false,
+        "result": "RESTORED_ACTIVE",
         "firstPhase": "EXPOSE",
         "gates": {
           "LOCK": "PASS",
@@ -5060,6 +5224,47 @@ This contract makes no implementation, freshness, rollback-prevention, physical-
         ],
         "result": "REFERENCE_INCONSISTENT",
         "firstPhase": "REFERENCES",
+        "gates": {
+          "LOCK": "PASS",
+          "BUILD_ELIGIBILITY": "PASS",
+          "INVENTORY": "PASS",
+          "WRAPPER_AUTH": "PASS",
+          "KEY_DERIVATION": "PASS",
+          "SELECTOR_HEADER": "PASS",
+          "SELECTOR_AUTH": "PASS",
+          "AUTHENTICATED_COMPATIBILITY": "PASS",
+          "MANIFEST_ROOT": "PASS",
+          "RECORD_SET": "PASS",
+          "RECORD_DECODE": "PASS",
+          "REFERENCES": "PASS",
+          "CLASSIFY": "PASS"
+        },
+        "artifacts": [
+          {
+            "id": "fixed-selector",
+            "kind": "GENERATION_SELECTOR"
+          },
+          {
+            "id": "selected-manifest",
+            "kind": "MANIFEST"
+          },
+          {
+            "id": "selected-record-set",
+            "kind": "DATA_RECORD_SET"
+          }
+        ]
+      },
+      {
+        "id": "NEG-CFMT-HELD_OUTPUT_PRESENCE_KIND_MISMATCH",
+        "inventory": "M2",
+        "vector": "FMT-KAT-NONE-HOLD-S016",
+        "legacy": false,
+        "negativeClass": "HELD_OUTPUT_PRESENCE_KIND_MISMATCH",
+        "faults": [
+          "recordCanonicalKeyKindVersionGenerationInvalid"
+        ],
+        "result": "RECORD_INVALID",
+        "firstPhase": "RECORD_DECODE",
         "gates": {
           "LOCK": "PASS",
           "BUILD_ELIGIBILITY": "PASS",
