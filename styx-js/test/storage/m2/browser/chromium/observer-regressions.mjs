@@ -50,12 +50,19 @@ function nobleExport(sub) {
 }
 const NOBLE_SPECIFIER = /(\b(?:from|import)\s*)(['"])@noble\/hashes\/([A-Za-z0-9_-]+)\2/g;
 const rewriteNoble = (source) => source.replace(NOBLE_SPECIFIER, (m, kw, q, sub) => `${kw}${q}${NOBLE_URL}${nobleExport(sub)}${q}`);
-/** The package file a /node_modules/@noble/hashes/ URL names, or null. */
-function nobleFile(pathname) {
+/**
+ * The package file a /node_modules/@noble/hashes/ URL names, or null: a regular `.js` file whose real path
+ * (symbolic links resolved) is inside the real package directory `dir`. Nothing outside the package is served.
+ */
+function nobleFileIn(dir, pathname) {
   if (!pathname.startsWith(NOBLE_URL) || !pathname.endsWith('.js')) return null;
-  const file = path.resolve(NOBLE_DIR, pathname.slice(NOBLE_URL.length));
-  return file.startsWith(NOBLE_DIR + path.sep) && fs.existsSync(file) ? file : null;
+  try {
+    const real = fs.realpathSync(dir);
+    const file = fs.realpathSync(path.resolve(real, pathname.slice(NOBLE_URL.length)));
+    return file.startsWith(real + path.sep) && file.endsWith('.js') && fs.statSync(file).isFile() ? file : null;
+  } catch { return null; }
 }
+const nobleFile = (pathname) => nobleFileIn(NOBLE_DIR, pathname);
 const out = path.resolve(process.env.BCHR_OUT ?? 'observer-regressions-out');
 fs.mkdirSync(out, { recursive: true });
 const ONLY = process.env.BCHR_ONLY ? new Set(process.env.BCHR_ONLY.split(',')) : null;

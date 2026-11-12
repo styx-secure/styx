@@ -461,7 +461,8 @@ function reencode(kind, plaintext, change) {
  * - CONTRADICT_RESULT / CONTRADICT_RESULT_NONTERMINAL / CONTRADICT_ESCROW / CONTRADICT_PARTIAL: a selector
  *   naming a complete canonical generation 2 whose COMMIT_RESULT keeps the held identity but is not
  *   authenticated by the RS / is a non-terminal NOT_COMMITTED, whose OUTPUT_ESCROW has another output
- *   kind, or that lacks one data record (B-CHR PR-r1 F1; B-CHR-CANON r1 C2).
+ *   kind (for a row with no output: an OUTPUT_ESCROW the held NONE output forbids), or that lacks one data
+ *   record (B-CHR PR-r1 F1; B-CHR-CANON r1 C2).
  * The port may refuse the write (nothing written); otherwise the producer must fail closed (never
  * NOT_COMMITTED, COMMITTED or S024) and write nothing.
  */
@@ -492,8 +493,11 @@ async function contradict({ scenario, kind }) {
     } else if (kind === 'CONTRADICT_ESCROW') {
       const e = staged.content[K.OUTPUT_ESCROW];
       // A row with no output (R3 released, owner amendment 3 of #493): the contradiction is an OUTPUT_ESCROW
-      // that the held NONE output forbids, with the row's own identity, an output kind and bytes.
-      forged = restage(staged, { [K.OUTPUT_ESCROW]: e === undefined
+      // that the held NONE output forbids, with the row's own identity, an output kind and bytes. The branch
+      // follows the row (C-MUT outputKind); a fixture whose escrow record disagrees with it is a harness error.
+      const none = mutationRow(scenario).outputKind === 'NONE';
+      if (none !== (e === undefined)) throw new Error(`fixture: ${scenario} ${none ? 'stages an escrow beside a NONE output' : 'stages no escrow'}`);
+      forged = restage(staged, { [K.OUTPUT_ESCROW]: none
         ? encodePlaintext(K.OUTPUT_ESCROW, {
           presence: 1, operationIdentity: envelope.operationIdentity.value, candidateDigest: envelope.candidate.digest,
           candidateReference: envelope.candidate.reference, mutationSetDigest: envelope.componentSet.digest,

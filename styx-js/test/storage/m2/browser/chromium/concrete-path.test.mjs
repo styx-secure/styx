@@ -19,6 +19,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -56,12 +57,20 @@ function nobleExport(sub) {
 }
 const NOBLE_SPECIFIER = /(\b(?:from|import)\s*)(['"])@noble\/hashes\/([A-Za-z0-9_-]+)\2/g;
 const rewriteNoble = (source) => source.replace(NOBLE_SPECIFIER, (m, kw, q, sub) => `${kw}${q}${NOBLE_URL}${nobleExport(sub)}${q}`);
-/** The package file a /node_modules/@noble/hashes/ URL names, or null. */
-function nobleFile(pathname) {
+/**
+ * The package file a /node_modules/@noble/hashes/ URL names, or null: a regular `.js` file whose real path
+ * (symbolic links resolved) is inside the real package directory `dir`. Nothing outside the package is served.
+ */
+function nobleFileIn(dir, pathname) {
   if (!pathname.startsWith(NOBLE_URL) || !pathname.endsWith('.js')) return null;
-  const file = path.resolve(NOBLE_DIR, pathname.slice(NOBLE_URL.length));
-  return file.startsWith(NOBLE_DIR + path.sep) && fs.existsSync(file) ? file : null;
+  try {
+    const real = fs.realpathSync(dir);
+    const file = fs.realpathSync(path.resolve(real, pathname.slice(NOBLE_URL.length)));
+    return file.startsWith(real + path.sep) && file.endsWith('.js') && fs.statSync(file).isFile() ? file : null;
+  } catch { return null; }
 }
+const nobleFile = (pathname) => nobleFileIn(NOBLE_DIR, pathname);
+const NOBLE_REAL = fs.realpathSync(NOBLE_DIR);
 const sha = (b) => createHash('sha256').update(b).digest('hex');
 const rel = (f) => path.relative(root, f);
 const REF = path.join(suite, 'reference-port.mjs');
@@ -78,13 +87,18 @@ const packageFiles = new Set();
 /** The package file of a bare `@noble/hashes/<sub>` specifier, or null for any other specifier. */
 function nobleSpecifierFile(s) {
   const m = /^@noble\/hashes\/([A-Za-z0-9_-]+)$/.exec(s);
-  return m === null ? null : path.join(NOBLE_DIR, nobleExport(m[1]));
+  if (m === null) return null;
+  const file = nobleFile(NOBLE_URL + nobleExport(m[1]));
+  if (file === null) throw new Error(`${s}: not a regular file inside the package`);
+  return file;
 }
 /** Static import closure of a module (relative and /src/ specifiers; `@noble/hashes/<sub>` into the package). */
 function closureOf(entry) {
   const files = new Set();
   const visit = (file) => {
-    const inPackage = file.startsWith(NOBLE_DIR + path.sep);
+    const inPackage = file.startsWith(NOBLE_REAL + path.sep);
+    // A package file is reached only through its real path inside the package (no symbolic link leaves it).
+    if (inPackage && nobleFile(NOBLE_URL + path.relative(NOBLE_REAL, file).split(path.sep).join('/')) !== file) throw new Error(`unexpected package file ${file}`);
     if (inPackage ? packageFiles.has(file) : files.has(file)) return;
     (inPackage ? packageFiles : files).add(file);
     const ast = acorn.parse(fs.readFileSync(file, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
@@ -94,7 +108,7 @@ function closureOf(entry) {
         const noble = nobleSpecifierFile(s);
         if (s.startsWith('.')) {
           const target = path.resolve(path.dirname(file), s);
-          if (inPackage !== target.startsWith(NOBLE_DIR + path.sep)) throw new Error(`unexpected import ${s} in ${rel(file)}`);
+          if (inPackage !== target.startsWith(NOBLE_REAL + path.sep)) throw new Error(`unexpected import ${s} in ${rel(file)}`);
           visit(target);
         } else if (s.startsWith('/src/') && !inPackage) visit(path.join(root, s.slice(1)));
         else if (noble !== null) visit(noble);
@@ -467,6 +481,8 @@ const server = http.createServer((req, res) => {
     if (u.pathname === '/hook' && u.searchParams.get('p') === 'K19:LATE') { let d = null; try { d = JSON.parse(u.searchParams.get('d')); } catch { d = { unparsable: true }; } lateReports.push(d); return res.end('ok'); }
     if (u.pathname === '/hook') return res.end('ok');
     if (u.pathname === '/') { res.setHeader('content-type', 'text/html'); return res.end('<!doctype html><script type="module" src="/suite/page.mjs"></script>'); }
+    // E: a constant blank document for the specifier equivalence control (no suite page, no worker).
+    if (u.pathname === '/specifier-equivalence') { res.setHeader('content-type', 'text/html'); return res.end('<!doctype html><title>specifier</title>'); }
     const noble = nobleFile(u.pathname);
     const base = u.pathname.startsWith('/src/') ? path.join(root, 'src') : suite;
     const file = noble ?? path.resolve(base, u.pathname.startsWith('/src/') ? u.pathname.slice(5) : u.pathname.slice(7));
@@ -526,6 +542,94 @@ const normalize = (steps) => JSON.stringify(steps.map((s) => ({ op: s.op, error:
   return v;
 });
 
+
+// E: equivalence control of the @noble/hashes specifier transformation (owner amendment 3 of #493). A worker
+// cannot run the bare specifier, so there is no untransformed browser arm; the control is instead:
+//   E1 every rewritten module equals its original with only the bare import/export specifier literals replaced
+//      by the URL of the resolved package file, byte for byte;
+//   E2 the driver's specifier resolves to the same package file as the platform's native ESM resolution, and
+//      every reached package file is a pinned one;
+//   E3 the held-output digest and SHA-256 over fixed vectors, computed in the browser by the rewritten modules,
+//      equal those of the original modules under native resolution;
+//   E4 the package server refuses a symbolic link out of the package, a directory and a non-.js file.
+function specifierEquivalence() {
+  const f = [];
+  const files = [...new Set([...closureOf(REF), ...closureOf(VAULT), ...closureOf(DRIVER)])].concat([...packageFiles]);
+  let rewritten = 0;
+  for (const file of files) {
+    const original = fs.readFileSync(file, 'utf8');
+    const ast = acorn.parse(original, { ecmaVersion: 'latest', sourceType: 'module' });
+    let expected = ''; let at = 0;
+    for (const n of ast.body) {
+      if ((n.type === 'ImportDeclaration' || n.type === 'ExportNamedDeclaration' || n.type === 'ExportAllDeclaration') && n.source) {
+        const m = /^@noble\/hashes\/([A-Za-z0-9_-]+)$/.exec(n.source.value);
+        if (m === null) continue;
+        const q = original[n.source.start];
+        expected += original.slice(at, n.source.start) + q + NOBLE_URL + nobleExport(m[1]) + q; at = n.source.end;
+      }
+    }
+    expected += original.slice(at);
+    const got = rewriteNoble(original);
+    if (got !== original) rewritten += 1;
+    if (got !== expected) f.push(`E1: the rewrite of ${rel(file)} changes more than its import specifiers`);
+  }
+  if (rewritten === 0) f.push('E1: no module was rewritten (the driver import is no longer exercised)');
+  // E2: native resolution of the driver's specifier, from the driver's own directory.
+  const native = execFileSync(process.execPath, ['--input-type=module', '-e', "process.stdout.write(import.meta.resolve('@noble/hashes/sha256'))"], { cwd: path.dirname(DRIVER) }).toString();
+  const nativeFile = fs.realpathSync(fileURLToPath(native));
+  const served = nobleFile(NOBLE_URL + nobleExport('sha256'));
+  if (nativeFile !== served) f.push(`E2: the served driver import ${served} is not the native resolution ${nativeFile}`);
+  for (const file of packageFiles) if (FROZEN_PACKAGE.files[rel(file)] !== sha(fs.readFileSync(file))) f.push(`E2: ${rel(file)} is not a pinned package file`);
+  return { failures: f, rewritten, native: rel(nativeFile) };
+}
+const E_VECTORS = [0, 1, 55, 56, 63, 64, 65, 1000, 70000].map((n) => Array.from({ length: n }, (_, i) => (i * 31 + 7) & 255));
+const E_KINDS = ['EMBEDDED_TREE_WELCOME', 'PROTECTED_APPLICATION_BYTES', 'APPLICATION_BYTES', 'PROTECTED_COMMIT_BYTES', 'SELECTED_CANDIDATE_REF'];
+function digestsOf(T, H) {
+  const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  const out = [];
+  for (const v of E_VECTORS) {
+    out.push(hex(H.sha256(Uint8Array.from(v))));
+    for (const kind of E_KINDS) out.push(hex(T.heldOutputDigest({ kind, output: Uint8Array.from(v) })));
+  }
+  return out;
+}
+async function specifierBehaviour(browser) {
+  const T = await import(pathToFileURL(DRIVER).href);
+  const H = await import(pathToFileURL(nobleFile(NOBLE_URL + nobleExport('sha256'))).href);
+  const nodeSide = await digestsOf(T, H);
+  context = 'specifier-equivalence';
+  const ctx = await browser.newContext(); const page = await ctx.newPage();
+  try {
+    await page.goto(`http://127.0.0.1:${server.address().port}/specifier-equivalence`);
+    // The same computation as digestsOf, in the page, over the rewritten modules as served.
+    const browserSide = await page.evaluate(async ([driver, hashes, vectors, kinds]) => {
+      const T = await import(driver); const H = await import(hashes);
+      const hex = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+      const r = [];
+      for (const v of vectors) {
+        r.push(hex(H.sha256(Uint8Array.from(v))));
+        for (const kind of kinds) r.push(hex(T.heldOutputDigest({ kind, output: Uint8Array.from(v) })));
+      }
+      return r;
+    }, ['/src/' + path.relative(path.join(root, 'src'), DRIVER).split(path.sep).join('/'), NOBLE_URL + nobleExport('sha256'), E_VECTORS, E_KINDS]);
+    return { identical: JSON.stringify(nodeSide) === JSON.stringify(browserSide), count: nodeSide.length, node: sha(JSON.stringify(nodeSide)), browser: sha(JSON.stringify(browserSide)) };
+  } finally { await ctx.close(); }
+}
+function packageServingRegression() {
+  const f = [];
+  const base = fs.mkdtempSync(path.join(process.env.TMPDIR ?? out, 'bchr-noble-'));
+  const pkg = path.join(base, 'pkg'); fs.mkdirSync(path.join(pkg, 'esm', 'dir.js'), { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'esm', 'ok.js'), 'export const ok = 1;\n');
+  fs.writeFileSync(path.join(pkg, 'esm', 'data.json'), '{}\n');
+  fs.writeFileSync(path.join(base, 'outside.js'), 'export const outside = 1;\n');
+  fs.symlinkSync(path.join('..', '..', 'outside.js'), path.join(pkg, 'esm', 'evil.js'));
+  fs.symlinkSync(path.join('..', '..', 'outside.js'), path.join(pkg, 'esm', 'evil2.json.js'));
+  const want = (pathname, expected) => { const got = nobleFileIn(pkg, pathname); if (got !== expected) f.push(`E4: ${pathname} served as ${got} (expected ${expected})`); };
+  want(`${NOBLE_URL}esm/ok.js`, fs.realpathSync(path.join(pkg, 'esm', 'ok.js')));
+  for (const bad of ['esm/evil.js', 'esm/evil2.json.js', 'esm/dir.js', 'esm/data.json', '../outside.js', 'esm/../../outside.js', '/etc/hostname.js', 'esm/missing.js']) want(`${NOBLE_URL}${bad}`, null);
+  return { failures: f };
+}
+
 // ============================================ run ============================================
 const sources = new Map();
 const staticResult = staticProof(sources);
@@ -553,6 +657,14 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const browser = await chromium.launch({ executablePath: process.env.BCHR_EXE, headless: true,
   args: ['--disable-gpu', '--disable-extensions', '--no-zygote', '--renderer-process-limit=1'] });
 try {
+  // E: the specifier transformation (owner amendment 3 of #493).
+  {
+    const e = specifierEquivalence(); const b = await specifierBehaviour(browser); const r = packageServingRegression();
+    results.specifier = { ...e, behaviour: b, serving: r };
+    for (const x of [...e.failures, ...r.failures]) check(false, x);
+    check(b.identical === true && b.count === E_VECTORS.length * (1 + E_KINDS.length), `E3: the rewritten modules compute the same digests as the original ones (${b.node} / ${b.browser})`);
+    console.log(JSON.stringify({ part: 'E', failures: e.failures.length + r.failures.length, rewritten: e.rewritten, native: e.native, behaviour: b.identical }));
+  }
   // B: the recorder arm on every scenario.
   const recorded = {};
   for (const name of Object.keys(SCENARIOS)) {
