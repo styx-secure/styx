@@ -42,8 +42,8 @@ client, the library an application calls:
 
 **Why it matters:** whistleblowers, journalists and the people who handle their cases need to work
 over infrastructure that anyone can run, without trusting whoever runs it with their words. With
-the SDK, an application reaches this delivery layer through one interface; that is how Flegias, a
-casework channel for whistleblowers and case handlers and our Milestone 4 goal, will use it.
+the SDK, an application reaches this delivery layer through one interface; Flegias is the
+synthetic-data reference demonstration of that integration, not an operational reporting service.
 
 *Limits: synthetic data, short-lived identities and one pair of participants; experimental Nostr
 event kinds; metadata and KeyPackages stay public; on the public relays the relays themselves
@@ -63,10 +63,10 @@ It is intended for human-rights and civil-society teams, journalists, safeguardi
 trusted intermediaries, and developers building casework, evidence, coordination, or other
 sensitive applications.
 
-The lead product vertical is **Flegias**: a planned case-management application intended to let a
-person open and continue a confidential case without providing an email address, phone number, or
-ordinary account. This can support abuse, harassment, discrimination, whistleblowing, safeguarding,
-and other sensitive casework, but the software cannot replace trained handlers, legal and privacy
+Styx delivers an experimental **SDK**. **Flegias** is its synthetic-data reference demonstration
+for confidential case intake and return dialogue without an email address, phone number, or
+ordinary account, not a managed casework product. Organizations build and operate their own
+applications and infrastructure; the SDK does not replace trained handlers, legal and privacy
 review, safeguarding procedures, or emergency channels.
 
 ## Where the project stands
@@ -95,21 +95,20 @@ review, safeguarding procedures, or emergency channels.
   protocol, an SDK release on `main` with persistent identity and session state,
   metadata-minimizing case routing, an accountless return channel, organizational workflow,
   distribution assurance, a targeted independent review of a bounded high-risk scope, and any
-  separately approved exercise or pilot remain future work.
-- **Current technical direction:** Marmot is the preferred compatibility target for the
-  MLS-over-Nostr session profile. At the exact OpenMLS, Marmot and MDK revisions recorded in the
+  synthetic-data validation remain future work.
+- **Historical exact-pin evidence:** at the exact OpenMLS, Marmot and MDK revisions recorded in the
   final Phase B report, Styx interoperated with the pinned MDK peer in an isolated synthetic
   direct-MLS profile through durable Welcome join, bidirectional application traffic, sequential
   self-update, the five-past-epoch delivery boundary and bounded two-candidate same-parent
   convergence. This is not general Marmot conformance or product activation. The chat is a
   minimal reference application and interoperability harness, not the product roadmap.
 
-The proposed funded programme preserves the completed bounded secure-session evidence and takes
+The proposed engineering programme preserves the completed bounded secure-session evidence and takes
 the project through a conformance-backed Styx application protocol, a supported session adapter,
-a reusable SDK and reliable delivery, a text-first Flegias alpha, stronger distribution assurance,
+a reusable SDK and reliable delivery, a text-first Flegias reference demonstration, stronger distribution assurance,
 a targeted review of a contractually bounded high-risk scope with remediation and retest, and a
-separately gated synthetic or non-sensitive organizational exercise or later controlled-pilot
-decision. See the
+separately gated synthetic-data validation. This is an engineering plan, not a statement of
+awarded funding. See the
 [project brief](docs/PROJECT_BRIEF.md) for the mission,
 evidence, milestones, measurable outcomes, and explicit non-claims. The
 [public identity guide](docs/BRAND_IDENTITY.md) defines naming and claim boundaries; the
@@ -119,12 +118,34 @@ public surface without deploying it.
 This programme description is not a promise of a complete-product audit or authorization for a
 live high-risk pilot.
 
-Current transports expose routing, timing, size, and relationship metadata. E2EE also does not
+Relays do not receive application plaintext, but can observe IP addresses, timing, sizes,
+transport public keys, routing and relationship metadata according to the transport profile. E2EE also does not
 protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
 controlled by the adversary; the browser profile is weaker against such an adversary (see the
 bounded [Phase B verdict](docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)). No current build offers a universal anonymity guarantee.
 
 > *In Greek mythology, the River Styx marked a boundary and the gods swore solemn oaths upon its waters. The project uses that image to represent explicit trust boundaries in digital systems—not a promise of invulnerability.*
+
+### Persistence, recovery and browser limits
+
+Authenticated storage checks integrity and consistency, not freshness. An old authentic snapshot
+of one case may remain undetected alongside current cases. Restoring an entire profile, including
+its local witnesses, may also remain undetected. Cross-case witnesses can only detect regressions
+relative to facts they have already incorporated; this is not a claim of an implemented multi-case
+rollback detector.
+
+The required recovery policy treats every reopening of persisted state as untrusted: no new
+emissions until authenticated reattachment completes. Only archive reads and byte-identical replay
+of previously committed output are allowed before that point. New messages, proposals, commits,
+invitation keys, joins, transport envelopes and receipts must remain blocked. This policy is not
+yet a qualified SDK guarantee; key/nonce reuse protection and consumed invitation-key handling
+still require verification on the actual engine. Authenticated records alone do not make sending
+after restore safe.
+
+The design targets a finite simultaneous active-case window, not continuous reception for every
+resident case or a measured capacity. Dormant-case recovery depends on epoch/history limits,
+invitation expiry and relay retention; messages may be lost. Chromium and Firefox are qualification
+targets, not a general browser-support guarantee. Safari/WebKit support is not claimed.
 
 ## Dart reference quick start
 

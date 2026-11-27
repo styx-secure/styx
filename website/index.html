@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Styx is open-source secure infrastructure for sensitive work. Explore its experimental foundations, planned Flegias case-management vertical, and evidence-led roadmap.">
+  <meta name="description" content="Styx is an experimental open-source SDK for sensitive applications. Explore its foundations, Flegias synthetic-data reference demonstration, and evidence-led roadmap.">
   <meta name="color-scheme" content="light">
   <title>Styx — Secure infrastructure for sensitive work</title>
   <link rel="icon" href="assets/styx-mark.svg" type="image/svg+xml">
@@ -33,7 +33,7 @@
       </div>
       <div class="hero-copy">
         <p class="eyebrow">Open-source application infrastructure
-          <span class="mobile-status">Experimental · Flegias casework is planned, not live</span>
+          <span class="mobile-status">Experimental SDK · Flegias is a synthetic-data demo</span>
         </p>
         <h1 id="hero-title">Secure infrastructure<br>for <em>sensitive work.</em></h1>
         <p class="hero-lede">Build confidential, resilient applications over
@@ -53,9 +53,9 @@
           <span>Experimental foundation</span>
         </div>
         <h2>Flegias by Styx</h2>
-        <p>The planned first vertical: confidential case intake and ongoing
-          dialogue without requiring an email address, phone number, or
-          ordinary account.</p>
+        <p>The synthetic-data reference demonstration of the Styx SDK:
+          confidential case intake and return dialogue without an email
+          address, phone number, or ordinary account. Not a managed reporting service.</p>
         <p class="status-warning"><strong>Not ready for live reporting.</strong>
           Styx has not completed an independent security audit. Current builds
           must not be used for sensitive, high-risk, or life-critical work.</p>
@@ -137,7 +137,7 @@
           remains <code>NO-GO</code>.</p>
       </div>
       <ol class="layer-list">
-        <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Planned first vertical</p><h3>Flegias product experience</h3><p>Workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
+        <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Reference demonstration</p><h3>Flegias SDK demonstration</h3><p>Synthetic workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
         <li class="layer"><span class="layer-number">03</span><div><p class="layer-state evidence">Conformance evidence on main</p><h3>Styx application protocol</h3><p>A fully synthetic transcript corpus is replayed independently in Python and JavaScript against adversarial mutations. Corpus construction is complete; protocol completion and implementation alignment are not.</p></div><span class="layer-side">Durable meaning</span></li>
         <li class="layer"><span class="layer-number">02</span><div><p class="layer-state evidence">Bounded evidence</p><h3>Secure-session profiles</h3><p>Membership, epochs, continuous group key agreement, convergence, and confidential delivery. Exact-pin interoperability is proven only for the isolated Phase B scope; a supported product adapter remains future work.</p></div><span class="layer-side">Protected exchange</span></li>
         <li class="layer"><span class="layer-number">01</span><div><p class="layer-state evidence">Browser foundation exists</p><h3>Runtime profiles</h3><p>Key custody, encrypted storage, workers, notifications, distribution, and platform integration. A future signed native profile could offer stronger origin assurance.</p></div><span class="layer-side">Local custody</span></li>
@@ -146,10 +146,10 @@
     </section>
 
     <section class="section flegias" id="flegias" aria-labelledby="flegias-title">
-      <div class="section-label">The first vertical</div>
+      <div class="section-label">The reference demonstration</div>
       <div class="flegias-grid">
         <div>
-          <p class="eyebrow dark">Planned · not yet available</p>
+          <p class="eyebrow dark">Synthetic data only · not a live service</p>
           <h2 id="flegias-title">Flegias by Styx</h2>
           <p class="flegias-lede">Confidential case intake with a path back to conversation.</p>
         </div>
@@ -158,13 +158,14 @@
             capability locally, submit an encrypted case object, and use that
             capability later to receive questions and send answers—without an
             ordinary account.</p>
-          <p>Organizations would need role-based intake, assignment, rotation,
+          <p>Organizations build and operate their own applications and infrastructure.
+            They would need role-based intake, assignment, rotation,
             revocation, retention, controlled export, continuity, and minimized
             administrative audit. Safe deployment also depends on trained
             handlers, independent escalation routes, legal and privacy review,
             incident procedures, and tested backups.</p>
-          <p class="callout">Flegias targets anonymity or pseudonymity only
-            against declared observers under tested conditions. Network,
+          <p class="callout">Flegias does not establish an anonymity guarantee.
+            Any future claim must name its observers and tested conditions. Network,
             device, timing, content, and human factors may still identify a
             reporter.</p>
           <a class="text-link" href="https://github.com/styx-secure/styx/blob/main/docs/platform/use-cases/anonymous-dialogue.md" target="_blank" rel="noopener noreferrer">Explore the anonymous-dialogue use case <span aria-hidden="true">↗</span></a>
@@ -211,20 +212,21 @@
     </section>
 
     <section class="section roadmap" id="roadmap" aria-labelledby="roadmap-title">
-      <div class="section-label">Proposed funded roadmap</div>
+      <div class="section-label">Proposed engineering roadmap</div>
       <div class="roadmap-heading">
-        <h2 id="roadmap-title">From tested foundations to a controlled pilot.</h2>
+        <h2 id="roadmap-title">From tested foundations to a reusable SDK.</h2>
         <p>These are proposed engineering outputs, not delivery promises. Each
           security-sensitive change remains subject to a bounded contract,
-          independent review, exact tests, and human approval.</p>
+          independent review, exact tests, and human approval. This plan does not
+          imply awarded funding or authorization for live sensitive use.</p>
       </div>
       <ol class="roadmap-list">
         <li><span>01</span><div><h3>Protocol and conformance</h3><p>The transcript-only synthetic corpus and cross-runtime replay are merged. Remaining protocol decisions, conformance work, and implementation alignment stay separately gated.</p></div></li>
         <li><span>02</span><div><h3>Secure-session decision</h3><p>Bounded exact-pin proof complete. A supported application adapter, transport scope, persistence and retention policy remain separately gated work.</p></div></li>
         <li><span>03</span><div><h3>SDK and reliable delivery</h3><p>Separate application semantics from chat and make offline, retry, acknowledgement, and recovery states truthful.</p></div></li>
-        <li><span>04</span><div><h3>Flegias alpha</h3><p>Build text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX.</p></div></li>
+        <li><span>04</span><div><h3>Flegias reference demonstration</h3><p>Demonstrate text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX with synthetic data.</p></div></li>
         <li><span>05</span><div><h3>Distribution assurance</h3><p>Strengthen browser release controls and decide a future signed native profile with reproducible operations.</p></div></li>
-        <li><span>06</span><div><h3>Audit and controlled pilot</h3><p>Commission independent review, remediate findings, test procedures, and pilot only within an approved scope.</p></div></li>
+        <li><span>06</span><div><h3>Bounded review and synthetic validation</h3><p>Review a bounded SDK scope, remediate findings and retest. This roadmap does not authorize a live reporting service or sensitive use.</p></div></li>
       </ol>
       <a class="button button-dark" href="https://github.com/styx-secure/styx/blob/main/docs/PROJECT_BRIEF.md#proposed-funded-milestones" target="_blank" rel="noopener noreferrer">Review milestones and measures <span aria-hidden="true">↗</span></a>
     </section>
@@ -238,7 +240,11 @@
         </div>
         <div class="boundary-list">
           <article><span>Origin</span><p>The browser profile is weaker against an adversary controlling the web origin. Reproducible WASM does not authenticate every script delivered to a user.</p></article>
-          <article><span>Metadata</span><p>Current delivery exposes routing, timing, size, and relationship information. Additional relays can improve availability while increasing the observer set.</p></article>
+          <article><span>Metadata</span><p>Relays do not receive application plaintext, but can observe IP addresses, timing, sizes, transport public keys, routing and relationship metadata according to the transport profile. Additional relays can improve availability while increasing the observer set.</p></article>
+          <article><span>Freshness</span><p>Authenticated storage checks integrity and consistency, not freshness. An old authentic snapshot of one case may remain undetected alongside current cases. Restoring an entire profile, including its local witnesses, may also remain undetected. Cross-case witnesses can only detect regressions relative to facts already incorporated; no implemented multi-case rollback detector is claimed.</p></article>
+          <article><span>Recovery</span><p>The required policy treats every reopening of persisted state as untrusted: block all new emissions until authenticated reattachment completes. Only archive reads and byte-identical replay of previously committed output are allowed before that point. This is not yet a qualified SDK guarantee; key/nonce reuse protection and consumed invitation-key handling still require verification on the actual engine.</p></article>
+          <article><span>Availability</span><p>The design targets a finite simultaneous active-case window, not measured capacity or continuous reception for every resident case. Dormant recovery depends on epoch/history limits, invitation expiry and relay retention; messages may be lost.</p></article>
+          <article><span>Browsers</span><p>Chromium and Firefox are qualification targets, not a general browser-support guarantee. Safari/WebKit support is not claimed.</p></article>
           <article><span>Endpoints</span><p>End-to-end encryption does not protect a compromised device, keylogger, screen capture, or content copied by an authorized recipient.</p></article>
           <article><span>Anonymity</span><p>IP addresses, browser fingerprints, writing style, attachments, monitored networks, and colluding infrastructure may identify a person.</p></article>
           <article><span>Deletion</span><p>Pruning cannot guarantee physical erasure from flash storage, backups, screenshots, or third-party replicas.</p></article>
