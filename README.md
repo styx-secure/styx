@@ -2,6 +2,8 @@
 
 **Secure infrastructure for sensitive work.**
 
+Styx is an experimental SDK being developed for confidential workflows under declared protocol, runtime, transport and operational conditions. Current builds are not qualified for live sensitive use. Flegias is a synthetic-data reference demonstration, not an operational reporting service.
+
 > ⚠️ **Experimental software.** Styx is under active development and has **not** completed an
 > independent security audit. Do not use current builds for sensitive, high-risk, or life-critical use.
 
@@ -52,16 +54,14 @@ that forward every duplicate (each message still reached the application once); 
 rejected event without its id, so rejections were matched to attacks by their timing in the log; pre-audit
 code, not yet on `main`.*
 
-The recorded synthetic test used an experimental Nostr invitation path with a public KeyPackage.
-It is not the qualified case-profile first-contact design: that design requires a single-use
-out-of-band invitation and keeps KeyPackage and Welcome in the private channel.
+The historical public-relay invitation tests used public KeyPackages and an encrypted Welcome. They do not implement or qualify the isolated-case out-of-band invitation design, private KeyPackage delivery or its recovery profile.
+The target design keeps KeyPackage and Welcome in the private channel.
 
 ## Mission
 
 Styx is an open-source, platform-neutral secure application substrate for sensitive workflows over
-infrastructure that must not be trusted with plaintext. It combines self-custodied identity,
-end-to-end-encrypted collaboration, verifiable state transitions, offline operation, and redundant
-delivery. It is not a general-purpose messenger or a replacement for Signal.
+infrastructure that must not be trusted with plaintext. Styx is being designed to combine self-custodied per-case keys, end-to-end-encrypted collaboration, authenticated state transitions, offline archive reading, bounded queuing within a continuously live session, and multi-relay retry.
+It is not a general-purpose messenger or a replacement for Signal.
 
 It is intended for human-rights and civil-society teams, journalists, safeguarding organizations,
 trusted intermediaries, and developers building casework, evidence, coordination, or other
@@ -72,6 +72,10 @@ for confidential case intake and return dialogue without an email address, phone
 ordinary account, not a managed casework product. Organizations build and operate their own
 applications and infrastructure; the SDK does not replace trained handlers, legal and privacy
 review, safeguarding procedures, or emergency channels.
+
+In the target isolated-case design, a reporter first obtains a single-use secret out-of-band invitation, then establishes a per-case encrypted context without an ordinary account. Returning to archived history does not guarantee the ability to send new replies.
+
+Offline capability is bounded: archive reading and transient-disconnect queuing within the same eligible live session are distinct from reopening persistent state. New replies after reopening require successful authenticated reattachment. A finite active-case window, epoch-history limits, invitation expiry, relay retention and recovery availability can cause permanent message loss; neither uninterrupted return access nor delivery is guaranteed.
 
 ## Where the project stands
 
@@ -122,35 +126,41 @@ public surface without deploying it.
 This programme description is not a promise of a complete-product audit or authorization for a
 live high-risk pilot.
 
-Relays do not receive application plaintext, but can observe IP addresses, timing, sizes,
-transport public keys, routing and relationship metadata according to the transport profile. E2EE also does not
-protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
-controlled by the adversary; the browser profile is weaker against such an adversary (see the
-bounded [Phase B verdict](docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)). No current build offers a universal anonymity guarantee.
+Conforming endpoints encrypt application plaintext before relay delivery; relay operators are not given application decryption keys. Relays can still observe IP addresses, timing, sizes, transport keys or identifiers, routing metadata and within-case activity. Authorized recipients, compromised endpoints and code delivered by a hostile application origin can disclose plaintext.
+No current build offers a universal anonymity guarantee.
+
+The isolated-case target design requires a single-use secret invitation delivered through an authenticated out-of-band channel and kept confidential from relays. The invitation is a bearer capability, not a public reusable QR code. That channel authenticates the complete invitation object and the selected organization; a compromised channel can substitute recipient keys and actively intercept content.
+
+Knowledge of the invitation secret removes the design's claimed initial-carrier privacy under the supported malicious-key model. It does not, by itself, imply passive decryption of every initial flight for an independently generated recipient key or of later MLS application traffic without the corresponding private keys or an active key-substitution attack.
+
+First-contact unlinkability does not hold when invitation distributors and relay operators combine assignment, portal, socket, IP-address or timing records. Honest endpoints must generate independent per-case keys. No unlinkability is claimed against an authorized peer that reveals its transcript, plaintext, keys or key reuse to a relay.
 
 > *In Greek mythology, the River Styx marked a boundary and the gods swore solemn oaths upon its waters. The project uses that image to represent explicit trust boundaries in digital systems—not a promise of invulnerability.*
 
 ### Persistence, recovery and browser limits
 
-Authenticated storage checks integrity and consistency, not freshness. An old authentic snapshot
-of one case may remain undetected alongside current cases. Restoring an entire profile, including
-its local witnesses, may also remain undetected. Cross-case witnesses can only detect regressions
-relative to facts they have already incorporated; this is not a claim of an implemented multi-case
-rollback detector.
+Authenticated storage and signed transitions do not prove freshness. An old authentic snapshot of one case, or an entire profile with its local witnesses, may remain undetected. Rollback can re-expose previously removed or revoked history. Reattachment is not proof that the local archive contains every latest event.
+An old authentic snapshot of one case may remain undetected alongside current cases.
+Restoring an entire profile, including its local witnesses, may also remain undetected.
+Cross-case witnesses can only detect regressions relative to facts they have already incorporated;
+this is not a claim of an implemented multi-case rollback detector.
 
-The required recovery policy treats every reopening of persisted state as untrusted: all new
-emissions must remain blocked. Only archive reads and byte-identical replay of previously committed
-output are allowed while blocked. New messages, proposals, commits, invitation keys, joins,
-transport envelopes and receipts must remain blocked. This policy is not yet a qualified SDK
-guarantee. Authenticated reattachment is itself not yet qualified. Completing it is not sufficient
+The required recovery policy treats every reopening of persisted secure-session state as untrusted: no new application, invitation, outer-transport, receipt or old-session protocol output is allowed from the reopened state; archive reads and byte-identical replay of independently verified, eligible committed output are the only exceptions. A separate fresh recovery subsystem may attempt authenticated reattachment without using the restored ratchet.
+
+The current candidate requires a counterparty instance that retains the same exclusive volatile capability and one exclusive, non-rolled-back case signing journal. Focus changes, network reconnects or screen suspension do not by themselves constitute reopening while that capability remains live; a new worker, tab or process that imports persisted state does.
+
+A peer being offline prevents completion. If both sides have reopened, the current baseline cannot resume case transmission. This is not a claim that every separately qualified future recovery design is impossible. No automatic new-case fallback is provided. Reattachment authenticates case-recovery authority and the new cutover; it does not prove that the restored archive contains every latest event. This is a design requirement, not a qualified SDK guarantee; key/nonce reuse protection and consumed invitation-key handling still require verification on the actual engine.
+Authenticated reattachment is itself not yet qualified. Completing it is not sufficient
 to resume sending until the actual engine has been qualified to prevent key/nonce reuse and the
-reuse or resurrection of consumed invitation keys. Authenticated records alone do not make sending
-after restore safe.
+reuse or resurrection of consumed invitation keys.
+
+Old backups containing per-case recovery signing keys and recovery secrets retain case-recovery authority. Possession alone does not decrypt all subsequent MLS traffic. If an eligible live peer accepts a recovery flow, the holder can impersonate that case role, cause denial of service and gain access to subsequent case content after cutover. Session ratchets do not physically revoke these recovery credentials. This limits the post-compromise security of the composed recovery design; it is not a universal break of MLS post-compromise security.
+
+The archive-only capability policy does not contain independent raw-engine imports, old binaries, forked clones, concurrent copies, or whole-runtime, VM or RNG rollback.
 
 The design targets a finite simultaneous active-case window, not continuous reception for every
 resident case or a measured capacity. Dormant-case recovery depends on epoch/history limits,
-invitation expiry and relay retention; messages may be lost. Chromium and Firefox are qualification
-targets, not a general browser-support guarantee. Safari/WebKit support is not claimed.
+invitation expiry and relay retention; messages may be lost. Chromium and Firefox are browser qualification targets, not a general support guarantee. Safari/WebKit is not claimed as supported. Runtime-specific storage, locking and lifecycle behavior remains part of security qualification.
 
 ## Dart reference quick start
 
@@ -257,11 +267,13 @@ not used here because the suites change as the protocol and reference implementa
 - Deterministic merge on reconnect (order by vector clock sum, then lexicographic pubkey)
 - Failover transport: Nostr → Email/IMAP → optional Tor overlay
 
-### Privacy & logical pruning
+### Privacy and retention
 - Three push notification profiles: **Balanced** (no dummies), **Private** (Poisson-distributed dummy pushes), **Paranoid** (dummy pushes with real relay connections)
 - Bilateral pruning protocol: `PRUNE_REQUEST` → `PRUNE_ACK` → payload removed, hash preserved
-- Unilateral logical pruning; this does not establish GDPR compliance or physical erasure from backups, replicas, or recipients
+- Application-directed removal; no guarantee of physical erasure from backups, replicas, restored snapshots or copies held by recipients
 - Configurable retention policies with automatic expiration
+
+The SDK provides mechanisms for signed state transitions and application-directed retention. It does not establish GDPR compliance or guarantee erasure from backups, replicas, restored snapshots or copies held by recipients.
 
 ### Device Migration
 - **Re-keying** via Blessing Events (old device signs the new device's public key)
@@ -272,9 +284,9 @@ not used here because the suites change as the protocol and reference implementa
 - **No central server of record** — peers hold the authoritative event chain; messages are
   E2E-encrypted and routed by federated relays that cannot read content but do observe some
   transport metadata (not a zero-metadata or "serverless" system)
-- **Cryptographic Trust** — Every event is signed, hashed, and chained
+- **Cryptographic Trust** — Events are signed, hashed, and chained; authenticated storage and signed transitions do not prove freshness
 - **Sovereign Identity** — Keys are generated locally; storage protections depend on the selected runtime profile
-- **Logical pruning** — Bilateral payload removal with hash persistence; no legal-compliance or physical-erasure claim
+- **Retention controls** — Application-directed retention and bilateral payload removal with hash persistence; no legal-compliance or physical-erasure claim
 - **Offline-First** — Bounded local queueing and deterministic merge in tested cases; no general availability, automatic-resume, or post-reopen sending guarantee
 
 ## Development
