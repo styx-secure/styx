@@ -52,6 +52,10 @@ that forward every duplicate (each message still reached the application once); 
 rejected event without its id, so rejections were matched to attacks by their timing in the log; pre-audit
 code, not yet on `main`.*
 
+The recorded synthetic test used an experimental Nostr invitation path with a public KeyPackage.
+It is not the qualified case-profile first-contact design: that design requires a single-use
+out-of-band invitation and keeps KeyPackage and Welcome in the private channel.
+
 ## Mission
 
 Styx is an open-source, platform-neutral secure application substrate for sensitive workflows over
@@ -134,12 +138,13 @@ its local witnesses, may also remain undetected. Cross-case witnesses can only d
 relative to facts they have already incorporated; this is not a claim of an implemented multi-case
 rollback detector.
 
-The required recovery policy treats every reopening of persisted state as untrusted: no new
-emissions until authenticated reattachment completes. Only archive reads and byte-identical replay
-of previously committed output are allowed before that point. New messages, proposals, commits,
-invitation keys, joins, transport envelopes and receipts must remain blocked. This policy is not
-yet a qualified SDK guarantee; key/nonce reuse protection and consumed invitation-key handling
-still require verification on the actual engine. Authenticated records alone do not make sending
+The required recovery policy treats every reopening of persisted state as untrusted: all new
+emissions must remain blocked. Only archive reads and byte-identical replay of previously committed
+output are allowed while blocked. New messages, proposals, commits, invitation keys, joins,
+transport envelopes and receipts must remain blocked. This policy is not yet a qualified SDK
+guarantee. Authenticated reattachment is itself not yet qualified. Completing it is not sufficient
+to resume sending until the actual engine has been qualified to prevent key/nonce reuse and the
+reuse or resurrection of consumed invitation keys. Authenticated records alone do not make sending
 after restore safe.
 
 The design targets a finite simultaneous active-case window, not continuous reception for every
@@ -192,7 +197,7 @@ await styx.sendTransaction(
 // 5. Read history
 final history = await styx.getHistory();
 
-// 6. GDPR pruning
+// 6. Logical pruning (not proof of legal compliance or physical erasure)
 await styx.requestPrune(targetEventId: history.last.eventId);
 
 // 7. Backup identity (Shamir 2-of-3)
@@ -248,14 +253,14 @@ not used here because the suites change as the protocol and reference implementa
 - Hybrid Logical Clocks (HLC) for causal ordering across peers
 
 ### Offline & Sync
-- Full offline operation — events queue in the outbox
+- Bounded offline queueing in the reference outbox; no post-reopen sending guarantee
 - Deterministic merge on reconnect (order by vector clock sum, then lexicographic pubkey)
 - Failover transport: Nostr → Email/IMAP → optional Tor overlay
 
-### Privacy & GDPR
+### Privacy & logical pruning
 - Three push notification profiles: **Balanced** (no dummies), **Private** (Poisson-distributed dummy pushes), **Paranoid** (dummy pushes with real relay connections)
 - Bilateral pruning protocol: `PRUNE_REQUEST` → `PRUNE_ACK` → payload removed, hash preserved
-- Unilateral pruning for GDPR Article 17 (right to erasure)
+- Unilateral logical pruning; this does not establish GDPR compliance or physical erasure from backups, replicas, or recipients
 - Configurable retention policies with automatic expiration
 
 ### Device Migration
@@ -269,8 +274,8 @@ not used here because the suites change as the protocol and reference implementa
   transport metadata (not a zero-metadata or "serverless" system)
 - **Cryptographic Trust** — Every event is signed, hashed, and chained
 - **Sovereign Identity** — Keys are generated locally; storage protections depend on the selected runtime profile
-- **GDPR by Design** — Bilateral pruning with hash persistence
-- **Offline-First** — Full operation without connectivity, deterministic sync on reconnect
+- **Logical pruning** — Bilateral payload removal with hash persistence; no legal-compliance or physical-erasure claim
+- **Offline-First** — Bounded local queueing and deterministic merge in tested cases; no general availability, automatic-resume, or post-reopen sending guarantee
 
 ## Development
 
